@@ -13,6 +13,7 @@ import { formatActivityAction } from '@/lib/constants/activity-labels';
 import { extractApiError } from '@/lib/api/errors';
 import { cn } from '@/lib/utils/cn';
 import { useWorkTimer } from '@/hooks/useWorkTimer';
+import { EmployeeAttendanceSummaryCard } from '@/components/attendance/EmployeeAttendanceSummaryCard';
 
 function formatWhen(iso: string) {
   if (!iso) return '—';
@@ -157,6 +158,10 @@ export function EmployeeDashboard() {
             },
           ]}
         />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <EmployeeAttendanceSummaryCard />
       </div>
 
       <div className="grid gap-0 border border-slate-300 lg:grid-cols-2">

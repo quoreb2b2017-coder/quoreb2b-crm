@@ -69,9 +69,9 @@ export function isPanelSettingsPath(pathname: string) {
   return /^\/(admin|db-admin|employee)\/settings$/.test(pathname);
 }
 
-/** Attendance pages — full width, page scrolls */
+/** Attendance pages (list + details) — full width, page scrolls */
 export function isAttendancePath(pathname: string) {
-  return /^\/(admin|db-admin|employee)\/attendance$/.test(pathname);
+  return /^\/(admin|db-admin|employee)\/attendance(\/.*)?$/.test(pathname);
 }
 
 /** Leave apply pages — full width, page scrolls */
@@ -519,7 +519,8 @@ function SidebarInner({
 export function DashboardLayout({ children, title, variant, navItems }: DashboardLayoutProps) {
   const pathname = usePathname() ?? '';
   const batchExcelView = isBatchExcelViewPath(pathname);
-  const edgeToEdge = isAdminEdgeToEdgePath(pathname);
+  const attendancePage = isAttendancePath(pathname);
+  const edgeToEdge = isAdminEdgeToEdgePath(pathname) || attendancePage;
   const contentLocked = isAdminContentLockedPath(pathname);
   const { user, clearAuth } = useAuthStore();
   const [collapsed, setCollapsed] = useState(false);
@@ -876,12 +877,20 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
         {/* ── Page content ── */}
         <div
           className={cn(
-            'flex-1 min-h-0',
+            'flex-1 min-h-0 min-w-0 w-full',
             edgeToEdge ? 'p-0' : 'overflow-auto p-4 sm:p-6',
             contentLocked ? 'flex flex-col overflow-hidden' : 'overflow-auto',
           )}
         >
-          {children}
+          <div
+            className={cn(
+              'min-h-0 min-w-0 w-full max-w-none flex-1',
+              edgeToEdge ? 'flex flex-col self-stretch' : '',
+              attendancePage && 'attendance-full-bleed',
+            )}
+          >
+            {children}
+          </div>
         </div>
       </main>
     </div>

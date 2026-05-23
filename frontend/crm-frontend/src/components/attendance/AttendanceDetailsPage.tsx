@@ -1,13 +1,24 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Calendar, Users, BarChart3, RefreshCw, TrendingUp } from 'lucide-react';
-import { attendanceService, type YearlyAnalytics } from '@/lib/api/attendance.service';
+import { ArrowLeft, RefreshCw } from 'lucide-react';
+import {
+  attendanceService,
+  type AttendanceAnalytics,
+  type YearlyAnalytics,
+} from '@/lib/api/attendance.service';
 import { usersService } from '@/lib/api/users.service';
+import { AttendanceDailyExcelGrid } from '@/components/attendance/AttendanceDailyExcelGrid';
+import { AttendanceYearlyExcelGrid } from '@/components/attendance/AttendanceYearlyExcelGrid';
+import { AttendanceMonthlySummarySheet } from '@/components/attendance/AttendanceMonthlySummarySheet';
+import { AttendancePeriodTabs, type AttendancePeriodView } from '@/components/attendance/AttendancePeriodTabs';
+import { AttendanceFullBleed } from '@/components/attendance/AttendanceFullBleed';
+import { cn } from '@/lib/utils/cn';
 
 interface UserDetails {
-  _id: string;
+  id: string;
   firstName: string;
   lastName: string;
   email: string;
@@ -15,295 +26,273 @@ interface UserDetails {
   roles: string[];
 }
 
-interface MonthlyStats {
-  presentDays: number;
-  absentDays: number;
-  leaveDays: number;
-  attendancePercentage: number;
-}
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
 
 export function AttendanceDetailsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const userId = searchParams.get('userId');
+  const backPath = searchParams.get('from') === 'db-admin' ? '/db-admin/attendance' : '/admin/attendance';
+
   const [user, setUser] = useState<UserDetails | null>(null);
-  const [monthlyStats, setMonthlyStats] = useState<MonthlyStats | null>(null);
+  const [monthly, setMonthly] = useState<AttendanceAnalytics | null>(null);
   const [yearlyData, setYearlyData] = useState<YearlyAnalytics[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+  const [view, setView] = useState<AttendancePeriodView>('monthly');
 
   const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthLabel = `${MONTHS[selectedMonth - 1]} ${selectedYear}`;
+
+  useEffect(() => {
+    const v = searchParams.get('view');
+    if (v === 'yearly' || v === 'monthly') setView(v);
+    const m = searchParams.get('month');
+    const y = searchParams.get('year');
+    if (m && !Number.isNaN(Number(m))) setSelectedMonth(Number(m));
+    if (y && !Number.isNaN(Number(y))) setSelectedYear(Number(y));
+  }, [searchParams]);
+
+  const syncUrl = useCallback(
+    (nextView: AttendancePeriodView, month: number, year: number) => {
+      if (!userId) return;
+      const params = new URLSearchParams();
+      params.set('userId', userId);
+      params.set('view', nextView);
+      params.set('month', String(month));
+      params.set('year', String(year));
+      if (searchParams.get('from')) params.set('from', searchParams.get('from')!);
+      router.replace(`${backPath}/details?${params.toString()}`, { scroll: false });
+    },
+    [userId, router, backPath, searchParams],
+  );
+
+  const fetchData = useCallback(async () => {
+    if (!userId) return;
+    setLoading(true);
+    try {
+      const [userRes, monthlyRes, yearlyRes] = await Promise.all([
+        usersService.getById(userId),
+        attendanceService.getMonthlyAnalytics(userId, selectedMonth, selectedYear),
+        attendanceService.getYearlyAnalytics(userId, selectedYear),
+      ]);
+
+      const userData = userRes.data as Record<string, unknown>;
+      setUser({
+        id: String(userData.id ?? userData._id ?? ''),
+        firstName: String(userData.firstName ?? ''),
+        lastName: String(userData.lastName ?? ''),
+        email: String(userData.email ?? ''),
+        employeeId: userData.employeeId ? String(userData.employeeId) : undefined,
+        roles: Array.isArray(userData.roles) ? (userData.roles as string[]) : [],
+      });
+      setMonthly(monthlyRes);
+      setYearlyData(yearlyRes);
+    } catch (error) {
+      console.error('Failed to fetch attendance details:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [userId, selectedMonth, selectedYear]);
 
   useEffect(() => {
     if (!userId) {
-      router.push('/super-admin/attendance');
+      router.replace(backPath);
       return;
     }
-
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const [userRes, monthlyRes, yearlyRes] = await Promise.all([
-          usersService.getById(userId),
-          attendanceService.getMonthlyAnalytics(userId, new Date().getMonth() + 1, new Date().getFullYear()),
-          attendanceService.getYearlyAnalytics(userId, selectedYear),
-        ]);
-
-        const userData = userRes.data;
-        setUser({
-          _id: String(userData.id ?? userData._id ?? ''),
-          firstName: String(userData.firstName ?? ''),
-          lastName: String(userData.lastName ?? ''),
-          email: String(userData.email ?? ''),
-          employeeId: userData.employeeId ? String(userData.employeeId) : undefined,
-          roles: Array.isArray(userData.roles) ? (userData.roles as string[]) : [],
-        });
-
-        setMonthlyStats({
-          presentDays: monthlyRes.presentDays || 0,
-          absentDays: monthlyRes.absentDays || 0,
-          leaveDays: monthlyRes.leaveDays || 0,
-          attendancePercentage: monthlyRes.attendancePercentage || 0,
-        });
-
-        setYearlyData(yearlyRes);
-      } catch (error) {
-        console.error('Failed to fetch attendance details:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchData();
-  }, [userId, selectedYear, router]);
+  }, [userId, fetchData, router, backPath]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
-        <div className="flex items-center justify-center h-96">
-          <div className="text-center">
-            <RefreshCw className="h-8 w-8 animate-spin text-slate-400 mx-auto mb-2" />
-            <p className="text-slate-500">Loading attendance details...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
-        <div className="flex items-center justify-center h-96">
-          <div className="text-center">
-            <p className="text-slate-500 mb-4">User not found</p>
-            <button
-              onClick={() => router.back()}
-              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Go Back
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const getRoleColor = (role: string) => {
-    switch (role) {
-      case 'super-admin':
-        return 'bg-purple-100 text-purple-700';
-      case 'db-admin':
-        return 'bg-indigo-100 text-indigo-700';
-      case 'employee':
-        return 'bg-slate-100 text-slate-700';
-      default:
-        return 'bg-slate-100 text-slate-700';
-    }
+  const handleViewChange = (next: AttendancePeriodView) => {
+    setView(next);
+    syncUrl(next, selectedMonth, selectedYear);
   };
 
-  const getAttendanceColor = (percentage: number) => {
-    if (percentage >= 90) return 'from-green-500 to-green-600';
-    if (percentage >= 75) return 'from-blue-500 to-blue-600';
-    if (percentage >= 60) return 'from-yellow-500 to-yellow-600';
-    return 'from-red-500 to-red-600';
+  const handleMonthYearChange = (month: number, year: number) => {
+    setSelectedMonth(month);
+    setSelectedYear(year);
+    syncUrl(view, month, year);
   };
+
+  const openMonthFromYearly = (monthIndex: number) => {
+    setSelectedMonth(monthIndex);
+    setView('monthly');
+    syncUrl('monthly', monthIndex, selectedYear);
+  };
+
+  const yearlyTotals = useMemo(() => {
+    if (!yearlyData.length) return null;
+    return {
+      present: yearlyData.reduce((s, m) => s + m.presentDays, 0),
+      absent: yearlyData.reduce((s, m) => s + m.absentDays, 0),
+      avgPct: Math.round(
+        yearlyData.reduce((s, m) => s + m.attendancePercentage, 0) / yearlyData.length,
+      ),
+    };
+  }, [yearlyData]);
+
+  if (!userId) return null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <button
-            onClick={() => router.back()}
-            className="inline-flex items-center gap-2 rounded-lg hover:bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back
-          </button>
-          <h1 className="text-3xl font-bold text-slate-900">Attendance Details</h1>
-          <div className="w-24" />
-        </div>
-
-        {/* User Card */}
-        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-start justify-between">
+    <AttendanceFullBleed className="gap-3 py-3 sm:gap-4 sm:py-4 animate-fade-in">
+      <div className="relative w-full max-w-none overflow-hidden rounded-none bg-gradient-to-br from-[#1a5c38] via-[#217346] to-[#0d0f14] px-4 py-4 text-white shadow-lg ring-1 ring-emerald-500/30 sm:rounded-xl sm:px-5 sm:py-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <button
+              type="button"
+              onClick={() => router.push(backPath)}
+              className="rounded-xl border border-white/30 p-2.5 hover:bg-white/10"
+              title="Back"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
             <div>
-              <h2 className="text-2xl font-bold text-slate-900">
-                {user.firstName} {user.lastName}
-              </h2>
-              <p className="text-sm text-slate-500 mt-1">{user.email}</p>
-              {user.employeeId && (
-                <p className="text-xs font-mono text-slate-400 mt-2 bg-slate-50 px-2 py-1 rounded w-fit">
-                  ID: {user.employeeId}
-                </p>
+              {loading ? (
+                <p className="text-sm text-white/70">Loading…</p>
+              ) : user ? (
+                <>
+                  <h1 className="text-xl font-bold md:text-2xl">
+                    {user.firstName} {user.lastName}
+                  </h1>
+                  <p className="mt-1 text-sm text-white/75">{user.email}</p>
+                </>
+              ) : (
+                <h1 className="text-xl font-bold">User not found</h1>
               )}
             </div>
-            <span className={`inline-block rounded-full px-3 py-1 text-sm font-semibold capitalize ${getRoleColor(user.roles[0])}`}>
-              {user.roles[0]?.replace('-', ' ')}
-            </span>
           </div>
+          <button
+            type="button"
+            onClick={fetchData}
+            disabled={loading}
+            className="rounded-xl border border-white/30 p-2.5 hover:bg-white/10 disabled:opacity-50"
+          >
+            <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
+          </button>
         </div>
+      </div>
 
-        {/* Current Month Stats */}
-        {monthlyStats && (
-          <div className="space-y-6">
-            <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-4">
-              {/* Present Days */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-widest text-slate-600">Present Days</span>
-                  <Calendar className="h-5 w-5 text-green-600" />
-                </div>
-                <p className="text-6xl font-bold text-green-600">{monthlyStats.presentDays}</p>
-                <p className="text-sm text-slate-500">Days marked present this month</p>
-              </div>
-
-              {/* Absent Days */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-widest text-slate-600">Absent Days</span>
-                  <BarChart3 className="h-5 w-5 text-red-600" />
-                </div>
-                <p className="text-6xl font-bold text-red-600">{monthlyStats.absentDays}</p>
-                <p className="text-sm text-slate-500">Days marked absent this month</p>
-              </div>
-
-              {/* Leave Days */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-widest text-slate-600">Leave Days</span>
-                  <Users className="h-5 w-5 text-blue-600" />
-                </div>
-                <p className="text-6xl font-bold text-blue-600">{monthlyStats.leaveDays}</p>
-                <p className="text-sm text-slate-500">Days on leave this month</p>
-              </div>
-
-              {/* Attendance Percentage */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-widest text-slate-600">Attendance %</span>
-                  <TrendingUp className="h-5 w-5 text-slate-600" />
-                </div>
-                <p className="text-6xl font-bold text-slate-900">{monthlyStats.attendancePercentage}%</p>
-                <div className="h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-green-500 to-green-600 transition-all duration-500"
-                    style={{ width: `${monthlyStats.attendancePercentage}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        )}}}
-
-        {/* Yearly Trends */}
-        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h3 className="text-lg font-semibold text-slate-900">Yearly Trends</h3>
-              <p className="text-sm text-slate-500 mt-1">Monthly breakdown for {selectedYear}</p>
-            </div>
+      <div className="flex w-full max-w-none flex-wrap items-center gap-3 border-y border-slate-200/80 bg-white px-3 py-3 sm:rounded-xl sm:border sm:px-4">
+        <AttendancePeriodTabs view={view} onChange={handleViewChange} />
+        {view === 'monthly' ? (
+          <>
+            <label className="text-sm font-medium text-slate-600">Month</label>
+            <select
+              value={selectedMonth}
+              onChange={(e) => handleMonthYearChange(Number(e.target.value), selectedYear)}
+              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm"
+            >
+              {MONTHS.map((m, i) => (
+                <option key={m} value={i + 1}>{m}</option>
+              ))}
+            </select>
+            <label className="text-sm font-medium text-slate-600">Year</label>
             <select
               value={selectedYear}
-              onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={(e) => handleMonthYearChange(selectedMonth, Number(e.target.value))}
+              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm"
             >
               {years.map((y) => (
                 <option key={y} value={y}>{y}</option>
               ))}
             </select>
-          </div>
-
-          {yearlyData.length > 0 ? (
-            <div className="space-y-4">
-              {yearlyData.map((month, idx) => (
-                <div key={month.month} className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3 w-24">
-                      <span className="text-sm font-semibold text-slate-700">{months[idx]}</span>
-                    </div>
-                    <div className="flex-1 flex items-center gap-4">
-                      <div className="flex-1">
-                        <div className="h-3 rounded-full bg-slate-200 overflow-hidden">
-                          <div
-                            className={`h-full bg-gradient-to-r ${getAttendanceColor(month.attendancePercentage)} transition-all`}
-                            style={{ width: `${month.attendancePercentage}%` }}
-                          />
-                        </div>
-                      </div>
-                      <div className="text-right min-w-[120px]">
-                        <p className="text-sm font-semibold text-slate-900">{month.attendancePercentage}%</p>
-                        <p className="text-xs text-slate-500">
-                          {month.presentDays}P / {month.absentDays}A / {month.leaveDays}L
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+          </>
+        ) : (
+          <>
+            <label className="text-sm font-medium text-slate-600">Year</label>
+            <select
+              value={selectedYear}
+              onChange={(e) => handleMonthYearChange(selectedMonth, Number(e.target.value))}
+              className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm"
+            >
+              {years.map((y) => (
+                <option key={y} value={y}>{y}</option>
               ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-slate-500">
-              <p>No attendance data available for {selectedYear}</p>
-            </div>
-          )}
-        </div>
-
-        {/* Summary Stats */}
-        {yearlyData.length > 0 && (
-          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h3 className="text-lg font-semibold text-slate-900 mb-4">Year Summary</h3>
-            <div className="grid gap-4 md:grid-cols-4">
-              <div className="rounded-lg bg-green-50 p-4 border border-green-200">
-                <p className="text-xs font-semibold uppercase text-green-700">Total Present</p>
-                <p className="mt-2 text-2xl font-bold text-green-700">
-                  {yearlyData.reduce((sum, m) => sum + m.presentDays, 0)}
-                </p>
-              </div>
-              <div className="rounded-lg bg-red-50 p-4 border border-red-200">
-                <p className="text-xs font-semibold uppercase text-red-700">Total Absent</p>
-                <p className="mt-2 text-2xl font-bold text-red-700">
-                  {yearlyData.reduce((sum, m) => sum + m.absentDays, 0)}
-                </p>
-              </div>
-              <div className="rounded-lg bg-blue-50 p-4 border border-blue-200">
-                <p className="text-xs font-semibold uppercase text-blue-700">Total Leave</p>
-                <p className="mt-2 text-2xl font-bold text-blue-700">
-                  {yearlyData.reduce((sum, m) => sum + m.leaveDays, 0)}
-                </p>
-              </div>
-              <div className="rounded-lg bg-slate-50 p-4 border border-slate-200">
-                <p className="text-xs font-semibold uppercase text-slate-700">Avg Attendance</p>
-                <p className="mt-2 text-2xl font-bold text-slate-900">
-                  {Math.round(yearlyData.reduce((sum, m) => sum + m.attendancePercentage, 0) / yearlyData.length)}%
-                </p>
-              </div>
-            </div>
-          </div>
+            </select>
+          </>
         )}
       </div>
-    </div>
+
+      {view === 'monthly' && monthly && !loading && (
+        <div className="grid w-full max-w-none grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-5">
+          {[
+            {
+              label: 'Present',
+              value: monthly.presentDays,
+              tone: 'text-[#217346]',
+              checkHistoryHref: '#attendance-daily-log',
+            },
+            { label: 'Absent', value: monthly.absentDays, tone: 'text-[#c00000]' },
+            { label: 'Leave', value: monthly.leaveDays, tone: 'text-[#2e75b6]' },
+            { label: 'Half', value: monthly.halfDays, tone: 'text-[#bf8f00]' },
+            { label: '%', value: `${monthly.attendancePercentage}%`, tone: 'text-slate-900' },
+          ].map((s) => (
+            <div key={s.label} className="rounded-lg border border-slate-200 bg-white px-3 py-3 shadow-sm sm:rounded-xl sm:px-4">
+              <p className="text-[10px] font-bold uppercase text-slate-500">{s.label}</p>
+              <p className={cn('mt-1 text-2xl font-bold', s.tone)}>{s.value}</p>
+              {'checkHistoryHref' in s && s.checkHistoryHref && (
+                <Link
+                  href={s.checkHistoryHref}
+                  className="mt-1.5 inline-block text-xs font-semibold text-[#217346] underline underline-offset-2"
+                >
+                  Check history
+                </Link>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {view === 'yearly' && yearlyTotals && !loading && (
+        <div className="grid w-full gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <p className="text-[10px] font-bold uppercase text-slate-500">Year present</p>
+            <p className="mt-1 text-2xl font-bold text-[#217346]">{yearlyTotals.present}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <p className="text-[10px] font-bold uppercase text-slate-500">Year absent</p>
+            <p className="mt-1 text-2xl font-bold text-[#c00000]">{yearlyTotals.absent}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+            <p className="text-[10px] font-bold uppercase text-slate-500">Avg %</p>
+            <p className="mt-1 text-2xl font-bold text-slate-900">{yearlyTotals.avgPct}%</p>
+          </div>
+        </div>
+      )}
+
+      {view === 'monthly' ? (
+        <div className="flex w-full min-w-0 flex-col gap-5">
+          <AttendanceMonthlySummarySheet
+            data={monthly}
+            monthLabel={monthLabel}
+            loading={loading}
+            checkHistoryHref="#attendance-daily-log"
+          />
+          <section id="attendance-daily-log" className="w-full space-y-2 scroll-mt-24">
+            <h2 className="text-sm font-semibold text-slate-700">Daily log — {monthLabel}</h2>
+            <AttendanceDailyExcelGrid
+              rows={monthly?.dailyBreakdown ?? []}
+              loading={loading}
+              sheetTitle={`${user?.firstName ?? ''} — Daily`}
+              monthLabel={monthLabel}
+            />
+          </section>
+        </div>
+      ) : (
+        <div className="w-full min-w-0">
+        <AttendanceYearlyExcelGrid
+          rows={yearlyData}
+          loading={loading}
+          year={selectedYear}
+          sheetTitle={`${user?.firstName ?? ''} ${user?.lastName ?? ''} — ${selectedYear}`}
+          onSelectMonth={openMonthFromYearly}
+        />
+        </div>
+      )}
+    </AttendanceFullBleed>
   );
 }

@@ -97,7 +97,7 @@ export function AttendanceDailyExcelGrid({
           }
         }}
       >
-        <table className="w-full min-w-[520px] border-collapse text-[13px]">
+        <table className="w-full min-w-full border-collapse text-[13px]">
           <thead className="sticky top-0 z-20">
             <tr>
               {COLUMNS.map((label, i) => (

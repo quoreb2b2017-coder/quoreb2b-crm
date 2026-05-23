@@ -22,7 +22,12 @@ export function ExcelSheetShell({
   hint = 'Navigate cells (Excel style)',
 }: ExcelSheetShellProps) {
   return (
-    <div className={cn('flex min-h-0 w-full flex-col overflow-hidden border border-[#b4b4b4] bg-[#e6e6e6]', className)}>
+    <div
+      className={cn(
+        'flex min-h-0 w-full max-w-none self-stretch flex-col overflow-hidden border-x-0 border-y border-[#b4b4b4] bg-[#e6e6e6] sm:border',
+        className,
+      )}
+    >
       <div className="flex flex-shrink-0 items-center justify-between bg-[#217346] px-3 py-1.5 text-white">
         <div className="flex items-center gap-2">
           <span className="flex h-5 w-5 items-center justify-center rounded bg-white/20 text-[9px] font-bold">

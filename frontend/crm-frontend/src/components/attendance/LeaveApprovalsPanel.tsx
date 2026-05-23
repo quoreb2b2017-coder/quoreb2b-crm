@@ -6,6 +6,7 @@ import { leaveService, type LeaveApplication, type LeaveStatus } from '@/lib/api
 import { extractApiError } from '@/lib/api/errors';
 import { LeaveApplicationsExcelTable } from '@/components/attendance/LeaveApplicationsExcelTable';
 import { useAttendancePanelOptional } from '@/components/attendance/AttendancePanelContext';
+import { AttendanceFullBleed } from '@/components/attendance/AttendanceFullBleed';
 import { cn } from '@/lib/utils/cn';
 
 const FILTERS: { id: LeaveStatus | 'all'; label: string }[] = [
@@ -101,7 +102,7 @@ export function LeaveApprovalsPanel({
   const pendingCount = leaves.filter((l) => l.status === 'pending').length;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-5 p-4 md:p-6 animate-fade-in">
+    <AttendanceFullBleed className="gap-4 py-3 sm:py-4 md:gap-5 animate-fade-in">
       <div
         className={cn(
           'relative overflow-hidden rounded-2xl bg-gradient-to-br px-5 py-5 text-white shadow-lg ring-1',
@@ -178,6 +179,6 @@ export function LeaveApprovalsPanel({
         onApprove={handleApprove}
         onReject={handleReject}
       />
-    </div>
+    </AttendanceFullBleed>
   );
 }

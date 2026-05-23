@@ -3,13 +3,21 @@
 import { CalendarDays, Plus, FileText, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { useAttendancePanelOptional } from '@/components/attendance/AttendancePanelContext';
+import { AttendanceFullBleed } from '@/components/attendance/AttendanceFullBleed';
 
-type Accent = 'emerald' | 'violet';
+type Accent = 'emerald' | 'violet' | 'admin';
 
 const themes: Record<
   Accent,
   { hero: string; ring: string; btn: string; btnOutline: string; stat: string }
 > = {
+  admin: {
+    hero: 'from-[#1a5c38] via-[#217346] to-[#0d0f14]',
+    ring: 'ring-emerald-500/30',
+    btn: 'bg-white text-[#217346] hover:bg-emerald-50',
+    btnOutline: 'border-white/30 text-white hover:bg-white/10',
+    stat: 'text-[#217346]',
+  },
   emerald: {
     hero: 'from-emerald-600/90 via-teal-600/80 to-[#0d0f14]',
     ring: 'ring-emerald-500/30',
@@ -33,7 +41,13 @@ interface AttendancePageChromeProps {
   loading?: boolean;
   onRefresh: () => void;
   monthControl: React.ReactNode;
-  stats?: { label: string; value: string | number; tone?: 'green' | 'red' | 'blue' | 'neutral' }[];
+  stats?: {
+    label: string;
+    value: string | number;
+    tone?: 'green' | 'red' | 'blue' | 'neutral';
+    checkHistoryHref?: string;
+    onCheckHistory?: () => void;
+  }[];
   children: React.ReactNode;
 }
 
@@ -58,10 +72,10 @@ export function AttendancePageChrome({
   const t = themes[accent];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-5 p-4 md:p-6 animate-fade-in">
+    <AttendanceFullBleed className="gap-4 py-3 sm:py-4 md:gap-5 animate-fade-in">
       <div
         className={cn(
-          'relative overflow-hidden rounded-2xl bg-gradient-to-br px-5 py-5 text-white shadow-lg ring-1',
+          'relative mx-0 w-full overflow-hidden rounded-none sm:rounded-xl bg-gradient-to-br px-4 py-4 sm:px-5 sm:py-5 text-white shadow-lg ring-1',
           t.hero,
           t.ring,
         )}
@@ -117,27 +131,47 @@ export function AttendancePageChrome({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm">
+      <div className="flex w-full max-w-none flex-wrap items-center gap-3 border-y border-slate-200/80 bg-white px-3 py-3 shadow-sm sm:rounded-xl sm:border sm:px-4">
         {monthControl}
       </div>
 
       {stats && stats.length > 0 && !loading && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid w-full max-w-none grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3 lg:grid-cols-4">
           {stats.map((s) => (
             <div
               key={s.label}
-              className="rounded-xl border border-slate-200/80 bg-white px-4 py-3 shadow-sm transition-shadow hover:shadow-md"
+              className="rounded-lg border border-slate-200/80 bg-white px-3 py-3 shadow-sm sm:rounded-xl sm:px-4"
             >
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{s.label}</p>
               <p className={cn('mt-1 text-2xl font-bold tabular-nums', toneClass[s.tone ?? 'neutral'])}>
                 {s.value}
               </p>
+              {(s.checkHistoryHref || s.onCheckHistory) && s.label === 'Present' && (
+                s.checkHistoryHref ? (
+                  <a
+                    href={s.checkHistoryHref}
+                    className="mt-1.5 inline-block text-xs font-semibold text-[#217346] underline decoration-[#217346]/40 underline-offset-2 hover:text-[#1a5c38]"
+                  >
+                    Check history
+                  </a>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={s.onCheckHistory}
+                    className="mt-1.5 block text-xs font-semibold text-[#217346] underline decoration-[#217346]/40 underline-offset-2 hover:text-[#1a5c38]"
+                  >
+                    Check history
+                  </button>
+                )
+              )}
             </div>
           ))}
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1 flex-col gap-5">{children}</div>
-    </div>
+      <div className="flex min-h-0 w-full max-w-none min-w-0 flex-1 flex-col gap-4 sm:gap-5">
+        {children}
+      </div>
+    </AttendanceFullBleed>
   );
 }

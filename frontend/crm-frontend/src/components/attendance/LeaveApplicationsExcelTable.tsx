@@ -105,7 +105,7 @@ export function LeaveApplicationsExcelTable({
           }
         }}
       >
-        <table className="w-full min-w-[640px] border-collapse text-[13px]">
+        <table className="w-full min-w-full border-collapse text-[13px]">
           <thead className="sticky top-0 z-20">
             <tr>
               {cols.map((label, i) => (

@@ -1,0 +1,97 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  lint-and-test-backend:
+    name: Backend Lint & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci || npm install
+      - run: npm run build
+
+  lint-and-build-crm-frontend:
+    name: CRM Frontend Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/crm-frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: npm ci || npm install
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: https://api.quoreb2b.com/api/v1
+
+  lint-and-build-client-frontend:
+    name: Client Frontend Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/client-frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: npm ci || npm install
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: https://api.quoreb2b.com/api/v1
+
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: [lint-and-test-backend, lint-and-build-crm-frontend, lint-and-build-client-frontend]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build API image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: false
+          tags: quoreb2b/api:latest
+      - name: Build CRM Frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend/crm-frontend
+          push: false
+          tags: quoreb2b/crm-frontend:latest
+      - name: Build Client Frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend/client-frontend
+          push: false
+          tags: quoreb2b/client-frontend:latest
+
+  deploy:
+    name: Deploy (Production)
+    runs-on: ubuntu-latest
+    needs: [docker-build]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy placeholder
+        run: echo "Configure deployment to your cloud provider (ECS, K8s, etc.)"

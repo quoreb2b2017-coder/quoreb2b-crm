@@ -1,0 +1,25 @@
+{
+  "name": "quoreb2b-crm",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Enterprise B2B CRM Monorepo",
+  "workspaces": [
+    "frontend/crm-frontend",
+    "frontend/client-frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev:crm": "npm run dev --workspace=frontend/crm-frontend",
+    "dev:client": "npm run dev --workspace=frontend/client-frontend",
+    "dev:api": "npm run start:dev --workspace=backend",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "docker:up": "docker compose -f docker/docker-compose.yml up -d",
+    "docker:down": "docker compose -f docker/docker-compose.yml down",
+    "docker:build": "docker compose -f docker/docker-compose.yml build"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}

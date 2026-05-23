@@ -1,0 +1,14 @@
+{
+  "name": "@quoreb2b/frontend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "QuoreB2B CRM frontends",
+  "scripts": {
+    "dev": "npm run dev --prefix crm-frontend",
+    "dev:crm": "npm run dev --prefix crm-frontend",
+    "dev:client": "npm run dev --prefix client-frontend",
+    "build": "npm run build --prefix crm-frontend && npm run build --prefix client-frontend",
+    "build:crm": "npm run build --prefix crm-frontend",
+    "build:client": "npm run build --prefix client-frontend"
+  }
+}

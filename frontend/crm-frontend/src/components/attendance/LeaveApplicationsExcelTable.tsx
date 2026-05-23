@@ -1,0 +1,236 @@
+'use client';
+
+import { cn } from '@/lib/utils/cn';
+import { useExcelTableNavigation } from '@/hooks/useExcelTableNavigation';
+import { ExcelSheetShell } from '@/components/attendance/ExcelSheetShell';
+import type { LeaveApplication } from '@/lib/api/leave.service';
+
+const COLUMNS = ['#', 'Type', 'From', 'To', 'Days', 'Reason', 'Status', 'Applied'] as const;
+const COL_COUNT = COLUMNS.length;
+
+const STATUS_STYLES: Record<string, string> = {
+  approved: 'bg-[#e2efda] text-[#217346] font-semibold',
+  rejected: 'bg-[#fce4d6] text-[#c00000] font-semibold',
+  pending: 'bg-[#fff2cc] text-[#bf8f00] font-semibold',
+};
+
+interface LeaveApplicationsExcelTableProps {
+  leaves: LeaveApplication[];
+  loading?: boolean;
+  title?: string;
+  showEmployee?: boolean;
+  actionLoading?: string | null;
+  onApprove?: (id: string) => void;
+  onReject?: (id: string) => void;
+}
+
+function formatDate(val: string) {
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function GridCell({
+  row,
+  col,
+  active,
+  align = 'left',
+  className,
+  sticky,
+  onActivate,
+  children,
+}: {
+  row: number;
+  col: number;
+  active: boolean;
+  align?: 'left' | 'center';
+  className?: string;
+  sticky?: boolean;
+  onActivate: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <td
+      data-grid-row={row}
+      data-grid-col={col}
+      tabIndex={active ? 0 : -1}
+      onFocus={onActivate}
+      onClick={onActivate}
+      className={cn(
+        'border border-[#e0e0e0] p-0 text-[13px] text-slate-900 outline-none transition-colors cursor-default',
+        align === 'center' && 'text-center',
+        sticky && 'sticky left-0 z-10 bg-[#f2f2f2]',
+        active && 'relative z-[1] bg-[#e7f3ff] ring-2 ring-inset ring-[#217346]',
+        !active && 'hover:bg-[#e7f3ff]/50',
+        className,
+      )}
+    >
+      <div className={cn('px-2 py-1 truncate', align === 'center' && 'flex justify-center')}>
+        {children}
+      </div>
+    </td>
+  );
+}
+
+export function LeaveApplicationsExcelTable({
+  leaves,
+  loading,
+  title = 'Leave Applications',
+  showEmployee = false,
+  actionLoading,
+  onApprove,
+  onReject,
+}: LeaveApplicationsExcelTableProps) {
+  const cols = showEmployee
+    ? (['#', 'Employee', ...COLUMNS.slice(1)] as const)
+    : COLUMNS;
+  const colCount = cols.length;
+
+  const { containerRef, setCell, activeCell } = useExcelTableNavigation({
+    rowCount: leaves.length,
+    colCount,
+    enabled: !loading && leaves.length > 0,
+  });
+
+  return (
+    <ExcelSheetShell title={title} rowCount={leaves.length} loading={loading}>
+      <div
+        ref={containerRef}
+        className="min-h-[200px] max-h-[min(52vh,520px)] w-full overflow-x-auto overflow-y-auto bg-white"
+        onMouseDown={(e) => {
+          const cell = (e.target as HTMLElement).closest('[data-grid-row]');
+          if (cell) {
+            const row = Number(cell.getAttribute('data-grid-row'));
+            const col = Number(cell.getAttribute('data-grid-col'));
+            if (!Number.isNaN(row) && !Number.isNaN(col)) setCell({ row, col });
+          }
+        }}
+      >
+        <table className="w-full min-w-[640px] border-collapse text-[13px]">
+          <thead className="sticky top-0 z-20">
+            <tr>
+              {cols.map((label, i) => (
+                <th
+                  key={label}
+                  className={cn(
+                    'border border-[#c6c6c6] bg-[#f2f2f2] px-2 py-1.5 text-xs font-semibold text-slate-800',
+                    i === 0 && 'sticky left-0 z-40 w-10 text-center',
+                    i >= 4 && i <= 6 && 'text-center',
+                  )}
+                >
+                  {label}
+                </th>
+              ))}
+              {(onApprove || onReject) && (
+                <th className="border border-[#c6c6c6] bg-[#f2f2f2] px-2 py-1.5 text-xs font-semibold text-center text-slate-800">
+                  Actions
+                </th>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={colCount + (onApprove ? 1 : 0)} className="border py-8 text-center text-slate-500">
+                  Loading…
+                </td>
+              </tr>
+            ) : leaves.length === 0 ? (
+              <tr>
+                <td colSpan={colCount + (onApprove ? 1 : 0)} className="border py-8 text-center text-slate-500">
+                  No leave applications
+                </td>
+              </tr>
+            ) : (
+              leaves.map((leave, rowIdx) => {
+                const employeeName =
+                  typeof leave.userId === 'object' && leave.userId
+                    ? `${leave.userId.firstName} ${leave.userId.lastName}`
+                    : '';
+
+                return (
+                  <tr key={leave._id} className="even:bg-[#fafafa]">
+                    <GridCell
+                      row={rowIdx}
+                      col={0}
+                      active={activeCell.row === rowIdx && activeCell.col === 0}
+                      sticky
+                      align="center"
+                      onActivate={() => setCell({ row: rowIdx, col: 0 })}
+                    >
+                      {rowIdx + 1}
+                    </GridCell>
+                    {showEmployee && (
+                      <GridCell
+                        row={rowIdx}
+                        col={1}
+                        active={activeCell.row === rowIdx && activeCell.col === 1}
+                        onActivate={() => setCell({ row: rowIdx, col: 1 })}
+                      >
+                        {employeeName}
+                      </GridCell>
+                    )}
+                    {[
+                      leave.leaveType,
+                      formatDate(leave.startDate),
+                      formatDate(leave.endDate),
+                      String(leave.numberOfDays),
+                      leave.reason,
+                      leave.status,
+                      formatDate(leave.createdAt),
+                    ].map((val, i) => {
+                      const col = showEmployee ? i + 2 : i + 1;
+                      const isStatus = (showEmployee && i === 5) || (!showEmployee && i === 5);
+                      return (
+                        <GridCell
+                          key={col}
+                          row={rowIdx}
+                          col={col}
+                          active={activeCell.row === rowIdx && activeCell.col === col}
+                          align={i >= 1 && i <= 3 ? 'center' : 'left'}
+                          className={isStatus ? STATUS_STYLES[leave.status] : undefined}
+                          onActivate={() => setCell({ row: rowIdx, col })}
+                        >
+                          {isStatus ? leave.status : val}
+                        </GridCell>
+                      );
+                    })}
+                    {(onApprove || onReject) && (
+                      <td className="border border-[#e0e0e0] px-2 py-1 text-center">
+                        {leave.status === 'pending' ? (
+                          <div className="flex justify-center gap-1">
+                            {onApprove && (
+                              <button
+                                type="button"
+                                disabled={actionLoading === leave._id}
+                                onClick={() => onApprove(leave._id)}
+                                className="rounded bg-[#217346] px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-[#1a5c38] disabled:opacity-50"
+                              >
+                                Approve
+                              </button>
+                            )}
+                            {onReject && (
+                              <button
+                                type="button"
+                                disabled={actionLoading === leave._id}
+                                onClick={() => onReject(leave._id)}
+                                className="rounded bg-[#c00000] px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-[#a00000] disabled:opacity-50"
+                              >
+                                Reject
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-slate-400">—</span>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </ExcelSheetShell>
+  );
+}

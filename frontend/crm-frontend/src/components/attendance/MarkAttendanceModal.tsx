@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Clock, CheckCircle, AlertCircle } from 'lucide-react';
 import { attendanceService } from '@/lib/api/attendance.service';
 import { extractApiError } from '@/lib/api/errors';
@@ -27,6 +27,12 @@ interface MarkAttendanceModalProps {
   accent?: SideSheetAccent;
 }
 
+function isWeekend(date: string): boolean {
+  const d = new Date(date + 'T00:00:00Z');
+  const day = d.getUTCDay();
+  return day === 0 || day === 6;
+}
+
 export function MarkAttendanceModal({
   isOpen,
   onClose,
@@ -39,9 +45,15 @@ export function MarkAttendanceModal({
   const [checkInTime, setCheckInTime] = useState(DEFAULT_SHIFT_CHECK_IN);
   const [checkOutTime, setCheckOutTime] = useState(DEFAULT_SHIFT_CHECK_OUT);
   const [notes, setNotes] = useState('');
+  const [isPaidLeave, setIsPaidLeave] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [isWeekendDay, setIsWeekendDay] = useState(false);
+
+  useEffect(() => {
+    setIsWeekendDay(isWeekend(date));
+  }, [date]);
 
   const calculateHours = () => calculateShiftHours(checkInTime, checkOutTime);
 
@@ -62,6 +74,7 @@ export function MarkAttendanceModal({
         status === 'present' || status === 'half-day'
           ? { checkIn: checkInTime, checkOut: checkOutTime }
           : undefined,
+        status === 'leave' ? isPaidLeave : undefined,
       );
       setSuccess('Attendance saved successfully');
       setTimeout(() => {
@@ -100,7 +113,7 @@ export function MarkAttendanceModal({
       isOpen={isOpen}
       onClose={onClose}
       title="Mark Attendance"
-      subtitle="Log today’s status — opens from the sidebar"
+      subtitle={isWeekendDay ? 'Weekend - Auto-marked' : "Log today's status — opens from the sidebar"}
       icon={<Clock className="h-5 w-5 text-emerald-400" />}
       accent={accent}
       footer={footer}
@@ -117,6 +130,11 @@ export function MarkAttendanceModal({
             max={new Date().toISOString().split('T')[0]}
             className={sideSheetFieldClass(accent)}
           />
+          {isWeekendDay && (
+            <p className="mt-2 text-xs text-amber-600 font-medium">
+              📅 This is a weekend day (Saturday/Sunday)
+            </p>
+          )}
         </div>
 
         <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm">
@@ -166,6 +184,25 @@ export function MarkAttendanceModal({
             <div className="rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2 text-sm text-emerald-800">
               <span className="font-medium">{calculateHours().toFixed(2)} hrs</span> worked
             </div>
+          </div>
+        )}
+
+        {status === 'leave' && (
+          <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isPaidLeave}
+                onChange={(e) => setIsPaidLeave(e.target.checked)}
+                className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+              />
+              <span className="text-sm font-medium text-slate-700">
+                Paid Leave
+                <span className="block text-xs text-slate-500 font-normal mt-0.5">
+                  Check if this is a paid leave day
+                </span>
+              </span>
+            </label>
           </div>
         )}
 

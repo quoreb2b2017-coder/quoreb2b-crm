@@ -6,6 +6,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsBoolean,
   Matches,
   Max,
   Min,
@@ -19,8 +20,8 @@ export class MarkAttendanceDto {
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   date: string;
 
-  @IsEnum(['present', 'absent', 'leave', 'half-day'])
-  status: 'present' | 'absent' | 'leave' | 'half-day';
+  @IsEnum(['present', 'absent', 'leave', 'half-day', 'weekend'])
+  status: 'present' | 'absent' | 'leave' | 'half-day' | 'weekend';
 
   /** HH:mm (optional, for present / half-day) */
   @IsOptional()
@@ -40,6 +41,11 @@ export class MarkAttendanceDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  isPaidLeave?: boolean;
 }
 
 export class AttendanceQueryDto {
@@ -56,7 +62,7 @@ export class AttendanceQueryDto {
   endDate?: string;
 
   @IsOptional()
-  @IsEnum(['present', 'absent', 'leave', 'half-day'])
+  @IsEnum(['present', 'absent', 'leave', 'half-day', 'weekend'])
   status?: string;
 
   @IsOptional()

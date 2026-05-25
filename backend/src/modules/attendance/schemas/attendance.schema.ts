@@ -9,7 +9,7 @@ export class Attendance extends Document {
   @Prop({ required: true })
   date: Date;
 
-  @Prop({ enum: ['present', 'absent', 'leave', 'half-day'], default: 'absent' })
+  @Prop({ enum: ['present', 'absent', 'leave', 'half-day', 'weekend'], default: 'absent' })
   status: string;
 
   @Prop()
@@ -23,6 +23,9 @@ export class Attendance extends Document {
 
   @Prop()
   notes?: string;
+
+  @Prop({ default: false })
+  isPaidLeave: boolean;
 
   @Prop({ default: false })
   isApproved: boolean;

@@ -26,3 +26,8 @@ export function combineDateAndTime(dateStr: string, timeStr: string): Date {
   const [hh, mm] = timeStr.split(':').map(Number);
   return new Date(Date.UTC(y, m - 1, d, hh || 0, mm || 0, 0, 0));
 }
+
+/** Check if day is weekend (Saturday=6, Sunday=0) */
+export function isWeekend(dayOfWeek: number): boolean {
+  return dayOfWeek === 0 || dayOfWeek === 6;
+}

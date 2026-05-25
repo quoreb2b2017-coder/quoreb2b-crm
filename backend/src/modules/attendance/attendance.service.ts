@@ -8,6 +8,7 @@ import {
   monthRangeUtc,
   parseDateOnly,
   toDateKey,
+  isWeekend,
 } from './attendance-date.util';
 
 @Injectable()
@@ -16,6 +17,13 @@ export class AttendanceService {
 
   async markAttendance(dto: MarkAttendanceDto) {
     const normalizedDate = parseDateOnly(dto.date);
+    const dayOfWeek = normalizedDate.getUTCDay();
+    
+    // Auto-mark Saturday (6) and Sunday (0) as weekend
+    let status = dto.status;
+    if (isWeekend(dayOfWeek)) {
+      status = 'weekend';
+    }
 
     let checkInTime: Date | undefined;
     let checkOutTime: Date | undefined;
@@ -42,11 +50,12 @@ export class AttendanceService {
       },
       {
         $set: {
-          status: dto.status,
+          status,
           checkInTime,
           checkOutTime,
           hoursWorked: Math.round(hoursWorked * 100) / 100,
           notes: dto.notes,
+          isPaidLeave: status === 'leave' ? (dto.isPaidLeave ?? false) : false,
         },
       },
       { upsert: true, new: true },
@@ -127,13 +136,16 @@ export class AttendanceService {
       presentDays: 0,
       absentDays: 0,
       leaveDays: 0,
+      paidLeaveDays: 0,
       halfDays: 0,
+      weekendDays: 0,
       attendancePercentage: 0,
       totalHoursWorked: 0,
       dailyBreakdown: [] as Array<{
         date: string;
         status: string;
         hoursWorked: number;
+        isPaidLeave?: boolean;
       }>,
     };
 
@@ -143,11 +155,14 @@ export class AttendanceService {
     for (let day = 1; day <= daysInMonth; day++) {
       const dateKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       const dayRecord = recordByDay.get(dateKey);
+      const dateObj = new Date(Date.UTC(year, month - 1, day));
+      const dayOfWeek = dateObj.getUTCDay();
 
       const dayData = {
         date: dateKey,
-        status: dayRecord?.status || 'absent',
+        status: dayRecord?.status || (isWeekend(dayOfWeek) ? 'weekend' : 'absent'),
         hoursWorked: dayRecord?.hoursWorked ?? 0,
+        isPaidLeave: dayRecord?.isPaidLeave,
       };
 
       analytics.dailyBreakdown.push(dayData);
@@ -155,18 +170,26 @@ export class AttendanceService {
       if (dayRecord) {
         if (dayRecord.status === 'present') analytics.presentDays++;
         else if (dayRecord.status === 'absent') analytics.absentDays++;
-        else if (dayRecord.status === 'leave') analytics.leaveDays++;
-        else if (dayRecord.status === 'half-day') analytics.halfDays++;
+        else if (dayRecord.status === 'leave') {
+          analytics.leaveDays++;
+          if (dayRecord.isPaidLeave) analytics.paidLeaveDays++;
+        } else if (dayRecord.status === 'half-day') analytics.halfDays++;
+        else if (dayRecord.status === 'weekend') analytics.weekendDays++;
 
         analytics.totalHoursWorked += dayRecord.hoursWorked || 0;
       } else {
-        analytics.absentDays++;
+        if (isWeekend(dayOfWeek)) {
+          analytics.weekendDays++;
+        } else {
+          analytics.absentDays++;
+        }
       }
     }
 
+    const workingDays = analytics.totalDays - analytics.weekendDays;
     analytics.attendancePercentage =
-      analytics.totalDays > 0
-        ? Math.round(((analytics.presentDays + analytics.halfDays * 0.5) / analytics.totalDays) * 100)
+      workingDays > 0
+        ? Math.round(((analytics.presentDays + analytics.halfDays * 0.5) / workingDays) * 100)
         : 0;
 
     return analytics;
@@ -192,7 +215,9 @@ export class AttendanceService {
         presentDays: 0,
         absentDays: 0,
         leaveDays: 0,
+        paidLeaveDays: 0,
         halfDays: 0,
+        weekendDays: 0,
         attendancePercentage: 0,
       });
     });
@@ -203,15 +228,19 @@ export class AttendanceService {
 
       if (record.status === 'present') analytics.presentDays++;
       else if (record.status === 'absent') analytics.absentDays++;
-      else if (record.status === 'leave') analytics.leaveDays++;
-      else if (record.status === 'half-day') analytics.halfDays++;
+      else if (record.status === 'leave') {
+        analytics.leaveDays++;
+        if (record.isPaidLeave) analytics.paidLeaveDays++;
+      } else if (record.status === 'half-day') analytics.halfDays++;
+      else if (record.status === 'weekend') analytics.weekendDays++;
     });
 
     const daysInMonth = new Date(Date.UTC(currentYear, currentMonth, 0)).getUTCDate();
 
     analyticsMap.forEach((analytics) => {
+      const workingDays = daysInMonth - analytics.weekendDays;
       analytics.attendancePercentage = Math.round(
-        ((analytics.presentDays + analytics.halfDays * 0.5) / daysInMonth) * 100,
+        ((analytics.presentDays + analytics.halfDays * 0.5) / workingDays) * 100,
       );
     });
 
@@ -241,7 +270,9 @@ export class AttendanceService {
         presentDays: 0,
         absentDays: 0,
         leaveDays: 0,
+        paidLeaveDays: 0,
         halfDays: 0,
+        weekendDays: 0,
         attendancePercentage: 0,
       }));
 
@@ -251,14 +282,18 @@ export class AttendanceService {
 
       if (record.status === 'present') monthData.presentDays++;
       else if (record.status === 'absent') monthData.absentDays++;
-      else if (record.status === 'leave') monthData.leaveDays++;
-      else if (record.status === 'half-day') monthData.halfDays++;
+      else if (record.status === 'leave') {
+        monthData.leaveDays++;
+        if (record.isPaidLeave) monthData.paidLeaveDays++;
+      } else if (record.status === 'half-day') monthData.halfDays++;
+      else if (record.status === 'weekend') monthData.weekendDays++;
     });
 
     monthlyData.forEach((monthData) => {
       const totalDays = 30;
+      const workingDays = totalDays - monthData.weekendDays;
       monthData.attendancePercentage = Math.round(
-        ((monthData.presentDays + monthData.halfDays * 0.5) / totalDays) * 100,
+        ((monthData.presentDays + monthData.halfDays * 0.5) / workingDays) * 100,
       );
     });
 

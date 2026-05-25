@@ -5,11 +5,12 @@ export interface AttendanceRecord {
   _id: string;
   userId: string;
   date: string;
-  status: 'present' | 'absent' | 'leave' | 'half-day';
+  status: 'present' | 'absent' | 'leave' | 'half-day' | 'weekend';
   checkInTime?: string;
   checkOutTime?: string;
   hoursWorked: number;
   notes?: string;
+  isPaidLeave?: boolean;
   isApproved: boolean;
 }
 
@@ -18,13 +19,16 @@ export interface AttendanceAnalytics {
   presentDays: number;
   absentDays: number;
   leaveDays: number;
+  paidLeaveDays: number;
   halfDays: number;
+  weekendDays: number;
   attendancePercentage: number;
   totalHoursWorked: number;
   dailyBreakdown: Array<{
     date: string;
     status: string;
     hoursWorked: number;
+    isPaidLeave?: boolean;
   }>;
 }
 
@@ -33,7 +37,9 @@ export interface YearlyAnalytics {
   presentDays: number;
   absentDays: number;
   leaveDays: number;
+  paidLeaveDays: number;
   halfDays: number;
+  weekendDays: number;
   attendancePercentage: number;
 }
 
@@ -50,6 +56,7 @@ export const attendanceService = {
     hoursWorked?: number,
     notes?: string,
     times?: { checkIn?: string; checkOut?: string },
+    isPaidLeave?: boolean,
   ) {
     const dateStr = typeof date === 'string' ? date : formatLocalDate(date);
     const res = await apiClient.post('attendance/mark', {
@@ -60,6 +67,7 @@ export const attendanceService = {
       notes,
       checkInTime: times?.checkIn,
       checkOutTime: times?.checkOut,
+      isPaidLeave,
     });
     return unwrap(res);
   },
@@ -108,7 +116,9 @@ export const attendanceService = {
         presentDays: number;
         absentDays: number;
         leaveDays: number;
+        paidLeaveDays: number;
         halfDays: number;
+        weekendDays: number;
         attendancePercentage: number;
       }>
     >(res);

@@ -29,6 +29,37 @@ export interface MasterDataRecord {
   mode?: MasterDataSaveMode;
 }
 
+export type MasterDataUploadRequestStatus = 'pending' | 'approved' | 'rejected';
+
+export interface MasterDataUploadRequest {
+  id: string;
+  fileName: string;
+  sheetName: string;
+  headers: string[];
+  rowCount: number;
+  duplicateCount: number;
+  duplicatePreviewRows: string[][];
+  missingValueCount: number;
+  status: MasterDataUploadRequestStatus;
+  submittedByEmail?: string;
+  reason?: string;
+  reviewedByEmail?: string;
+  reviewedAt?: string;
+  mergedAddedRows?: number;
+  mergedTotalRows?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface MasterDataUploadRequestSubmitResult {
+  request: MasterDataUploadRequest | null;
+  duplicateCount: number;
+  duplicatePreviewRows: string[][];
+  pendingRows: number;
+  missingValueCount: number;
+  templateHeaders: string[];
+}
+
 function unwrap<T>(response: { data: unknown }): T {
   const body = response.data as { data?: T };
   return (body?.data ?? body) as T;
@@ -71,6 +102,53 @@ export const masterDataService = {
       if (status === 404) return null;
       throw err;
     }
+  },
+
+  createUploadRequest: async (
+    payload: SpreadsheetData,
+  ): Promise<MasterDataUploadRequestSubmitResult> => {
+    const { data } = await apiClient.post('/master-data/upload-requests', {
+      fileName: payload.fileName,
+      sheetName: payload.sheetName,
+      headers: payload.headers,
+      rows: payload.rows,
+    });
+    return unwrap<MasterDataUploadRequestSubmitResult>({ data });
+  },
+
+  getUploadRequests: async (
+    status?: MasterDataUploadRequestStatus | 'all',
+  ): Promise<MasterDataUploadRequest[]> => {
+    const params = status && status !== 'all' ? `?status=${status}` : '';
+    const { data } = await apiClient.get(`/master-data/upload-requests${params}`);
+    return unwrap<MasterDataUploadRequest[]>({ data });
+  },
+
+  getMyUploadRequests: async (
+    status?: MasterDataUploadRequestStatus | 'all',
+  ): Promise<MasterDataUploadRequest[]> => {
+    const params = status && status !== 'all' ? `?status=${status}` : '';
+    const { data } = await apiClient.get(`/master-data/upload-requests/my${params}`);
+    return unwrap<MasterDataUploadRequest[]>({ data });
+  },
+
+  reviewUploadRequest: async (
+    requestId: string,
+    status: MasterDataUploadRequestStatus,
+    reason?: string,
+  ): Promise<MasterDataUploadRequest> => {
+    const { data } = await apiClient.post(
+      `/master-data/upload-requests/${requestId}/review`,
+      { status, reason },
+    );
+    return unwrap<MasterDataUploadRequest>({ data });
+  },
+
+  deleteUploadRequest: async (
+    requestId: string,
+  ): Promise<{ deleted: boolean; id: string }> => {
+    const { data } = await apiClient.delete(`/master-data/upload-requests/${requestId}`);
+    return unwrap<{ deleted: boolean; id: string }>({ data });
   },
 
   clear: async () => {

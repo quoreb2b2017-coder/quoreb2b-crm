@@ -24,6 +24,59 @@ import { useDebouncedAutoSave, type AutoSaveStatus } from '@/hooks/useDebouncedA
 
 const ACCEPT = '.csv,.xlsx,.xls';
 
+function mergeHeaders(existing: string[], incoming: string[]) {
+  const seen = new Set(existing);
+  const merged = [...existing];
+  for (const header of incoming) {
+    if (!seen.has(header)) {
+      merged.push(header);
+      seen.add(header);
+    }
+  }
+  return merged;
+}
+
+function alignRowToHeaders(
+  row: string[],
+  sourceHeaders: string[],
+  targetHeaders: string[],
+) {
+  return targetHeaders.map((header) => {
+    const idx = sourceHeaders.indexOf(header);
+    return idx >= 0 ? String(row[idx] ?? '').trim() : '';
+  });
+}
+
+function rowKey(row: string[]) {
+  return row.join('\u001f');
+}
+
+function collectDuplicateRows(
+  existing: SpreadsheetData | null,
+  incoming: SpreadsheetData,
+) {
+  const headers = mergeHeaders(existing?.headers ?? [], incoming.headers);
+  const seen = new Set(
+    (existing?.rows ?? []).map((row) =>
+      rowKey(alignRowToHeaders(row, existing?.headers ?? [], headers)),
+    ),
+  );
+  const duplicateRows: string[][] = [];
+
+  for (const row of incoming.rows) {
+    const aligned = alignRowToHeaders(row, incoming.headers, headers);
+    if (!aligned.some((cell) => cell.length > 0)) continue;
+    const key = rowKey(aligned);
+    if (seen.has(key)) {
+      duplicateRows.push(aligned);
+    } else {
+      seen.add(key);
+    }
+  }
+
+  return { headers, duplicateRows };
+}
+
 function AutoSaveHint({ status }: { status: AutoSaveStatus }) {
   if (status === 'idle') return null;
   const label =
@@ -74,6 +127,14 @@ export function MasterDataUploadPanel() {
   const [batchName, setBatchName] = useState('');
   const [batchDesc, setBatchDesc] = useState('');
   const [savingBatch, setSavingBatch] = useState(false);
+  const [duplicateModal, setDuplicateModal] = useState<{
+    fileName: string;
+    headers: string[];
+    duplicateRows: string[][];
+    addedRows: number;
+    duplicateCount: number;
+    totalRows: number;
+  } | null>(null);
 
   const applyRecord = useCallback((record: Awaited<ReturnType<typeof masterDataService.save>>) => {
     const sheet = recordToSpreadsheet(record);
@@ -132,6 +193,8 @@ export function MasterDataUploadPanel() {
     async (payload: SpreadsheetData, mode: 'append' | 'replace' = 'append') => {
       setSavingDb(true);
       try {
+        const duplicatePreview =
+          mode === 'append' ? collectDuplicateRows(dataRef.current, payload) : null;
         const record = await masterDataService.save(payload, mode);
         applyRecord(record);
         await logUploadActivity(mode, record, payload.fileName);
@@ -139,10 +202,21 @@ export function MasterDataUploadPanel() {
           const skipped = record.skippedDuplicates && record.skippedDuplicates > 0
             ? ` · ${record.skippedDuplicates} duplicate(s) skipped` : '';
           toast.success('Added to master database', `+${record.addedRows} rows · ${record.rowCount} total${skipped}`);
-        window.dispatchEvent(new CustomEvent('master-data-updated'));
+          window.dispatchEvent(new CustomEvent('master-data-updated'));
+          if ((record.skippedDuplicates ?? 0) > 0) {
+            setDuplicateModal({
+              fileName: payload.fileName,
+              headers: duplicatePreview?.headers ?? payload.headers,
+              duplicateRows: duplicatePreview?.duplicateRows ?? [],
+              addedRows: record.addedRows ?? 0,
+              duplicateCount:
+                record.skippedDuplicates ?? duplicatePreview?.duplicateRows.length ?? 0,
+              totalRows: record.rowCount,
+            });
+          }
         } else {
           toast.success('Saved to database', `${record.rowCount} rows in master data`);
-        window.dispatchEvent(new CustomEvent('master-data-updated'));
+          window.dispatchEvent(new CustomEvent('master-data-updated'));
         }
       } catch (e) {
         toast.error('Could not save to MongoDB', extractApiError(e, 'Save failed'));
@@ -220,6 +294,27 @@ export function MasterDataUploadPanel() {
       await downloadSpreadsheetXlsx({ ...data, rows: filteredRows.length > 0 || data.rows.length === 0 ? filteredRows : data.rows });
       toast.success('Download started', 'Excel file with current filters');
     } catch { toast.error('Export failed', 'Could not create Excel file'); }
+  };
+
+  const handleDownloadDuplicates = async () => {
+    if (!duplicateModal) return;
+    try {
+      await downloadSpreadsheetXlsx(
+        {
+          fileName: duplicateModal.fileName,
+          sheetName: 'Duplicates',
+          headers: duplicateModal.headers,
+          rows: duplicateModal.duplicateRows,
+        },
+        duplicateModal.fileName.replace(/\.(csv|xlsx|xls)$/i, '') + '-duplicates.xlsx',
+      );
+      toast.success(
+        'Duplicate file downloaded',
+        `${duplicateModal.duplicateCount} duplicate row(s) exported`,
+      );
+    } catch {
+      toast.error('Download failed', 'Could not export duplicate rows');
+    }
   };
 
   const handleSampleTemplate = async () => {
@@ -484,6 +579,86 @@ export function MasterDataUploadPanel() {
                 >
                   {savingBatch && <Loader2 className="w-4 h-4 animate-spin" />}
                   {savingBatch ? 'Creating...' : 'Create Batch'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {duplicateModal && (
+        <>
+          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" />
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="flex items-start justify-between border-b border-slate-100 px-6 py-4">
+                <div>
+                  <p className="font-semibold text-slate-900">Duplicate rows found</p>
+                  <p className="mt-0.5 text-sm text-slate-500">
+                    Upload completed, but some rows were skipped as duplicates.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDuplicateModal(null)}
+                  className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                  aria-label="Close duplicate summary"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="space-y-4 px-6 py-5">
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Duplicates</p>
+                    <p className="mt-1 text-2xl font-bold text-amber-700">
+                      {duplicateModal.duplicateCount}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Added</p>
+                    <p className="mt-1 text-2xl font-bold text-[#217346]">
+                      {duplicateModal.addedRows}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Total DB rows</p>
+                    <p className="mt-1 text-2xl font-bold text-slate-900">
+                      {duplicateModal.totalRows}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  <p className="font-medium">
+                    {duplicateModal.duplicateCount} row(s) were already present in the master database
+                    or repeated inside the uploaded file.
+                  </p>
+                  <p className="mt-1 text-xs text-amber-800">
+                    Download the duplicate sheet to review them. This popup will stay open until you close it manually.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-3 border-t border-slate-100 px-6 pb-5 pt-4">
+                <button
+                  type="button"
+                  onClick={handleDownloadDuplicates}
+                  disabled={duplicateModal.duplicateRows.length === 0}
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#217346] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#1a5c38] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Download className="h-4 w-4" />
+                  Download duplicates
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDuplicateModal(null)}
+                  className="inline-flex flex-1 items-center justify-center rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+                >
+                  Close
                 </button>
               </div>
             </div>

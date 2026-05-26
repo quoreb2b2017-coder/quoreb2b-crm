@@ -7,9 +7,11 @@ import { User, UserSchema } from '../users/schemas/user.schema';
 import { Batch, BatchSchema } from '../batches/schemas/batch.schema';
 import { UsersRepository } from '../users/users.repository';
 import { ActivityLoggingInterceptor } from '../../common/interceptors/activity-logging.interceptor';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
+    NotificationsModule,
     MongooseModule.forFeature([
       { name: ActivityLog.name, schema: ActivityLogSchema },
       { name: User.name, schema: UserSchema },

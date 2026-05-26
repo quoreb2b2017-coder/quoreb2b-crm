@@ -478,8 +478,15 @@ export function ExcelPreviewGrid({
           'overflow-auto scroll-smooth',
           fillHeight ? 'min-h-0 flex-1' : '',
         )}
-        style={{ scrollBehavior: 'smooth' }}
-        style={fillHeight ? undefined : { maxHeight: 'calc(100vh - 120px)', minHeight: 360 }}
+        style={
+          fillHeight
+            ? { scrollBehavior: 'smooth' }
+            : {
+                scrollBehavior: 'smooth',
+                maxHeight: 'calc(100vh - 120px)',
+                minHeight: 360,
+              }
+        }
         onMouseDownCapture={(e) => {
           if (!editable) return;
           const target = e.target as HTMLElement;

@@ -39,8 +39,34 @@ export class NotificationService {
       return userRole === targetRole;
     }
     
-    // Default: only super admin gets it
-    return false;
+    // Generic notifications are already user-scoped on the socket.
+    return true;
+  }
+
+  private normalizeNotification(raw: any): Notification {
+    const metadata = raw?.metadata ?? {};
+    const timestampSource =
+      raw?.timestamp ??
+      raw?.createdAt ??
+      raw?.updatedAt ??
+      Date.now();
+    const timestamp =
+      typeof timestampSource === 'number'
+        ? timestampSource
+        : new Date(timestampSource).getTime();
+
+    return {
+      id: String(raw?.id ?? raw?._id ?? `${Date.now()}-${Math.random()}`),
+      type: raw?.type ?? 'info',
+      title: raw?.title ?? 'Notification',
+      message: raw?.message ?? '',
+      timestamp: Number.isFinite(timestamp) ? timestamp : Date.now(),
+      read: Boolean(raw?.read ?? raw?.isRead),
+      actionUrl: raw?.actionUrl ?? metadata?.actionUrl,
+      actionLabel: raw?.actionLabel ?? metadata?.actionLabel,
+      metadata,
+      priority: raw?.priority ?? metadata?.priority ?? 'medium',
+    };
   }
 
   /**
@@ -123,8 +149,8 @@ export class NotificationService {
           type: 'data_uploaded',
           title: 'Data Uploaded',
           message: `${data.rowCount} rows uploaded successfully`,
-          actionUrl: `/admin/master-data-upload`,
-          actionLabel: 'View Upload',
+          actionUrl: `/admin/master-data-upload/requests`,
+          actionLabel: 'Review request',
           metadata: data,
           priority: 'medium',
         });
@@ -184,25 +210,34 @@ export class NotificationService {
   /**
    * Mark notification as read
    */
-  markAsRead(notificationId: string) {
-    if (!this.socket) return;
-    this.socket.emit(NOTIFICATION_EVENTS.MARK_READ, { notificationId });
+  async markAsRead(notificationId: string) {
+    try {
+      await apiClient.patch(`/notifications/${notificationId}/read`);
+    } catch (error) {
+      console.error('Failed to mark notification as read:', error);
+    }
   }
 
   /**
    * Mark all notifications as read
    */
-  markAllAsRead() {
-    if (!this.socket) return;
-    this.socket.emit(NOTIFICATION_EVENTS.MARK_ALL_READ);
+  async markAllAsRead() {
+    try {
+      await apiClient.patch('/notifications/read-all');
+    } catch (error) {
+      console.error('Failed to mark all notifications as read:', error);
+    }
   }
 
   /**
    * Delete notification
    */
-  deleteNotification(notificationId: string) {
-    if (!this.socket) return;
-    this.socket.emit(NOTIFICATION_EVENTS.DELETE, { notificationId });
+  async deleteNotification(notificationId: string) {
+    try {
+      await apiClient.delete(`/notifications/${notificationId}`);
+    } catch (error) {
+      console.error('Failed to delete notification:', error);
+    }
   }
 
   /**
@@ -213,7 +248,8 @@ export class NotificationService {
       const { data } = await apiClient.get('/notifications', {
         params: { limit, offset },
       });
-      return (data?.data ?? data) as Notification[];
+      const rows = (data?.data ?? data) as any[];
+      return Array.isArray(rows) ? rows.map((row) => this.normalizeNotification(row)) : [];
     } catch (error) {
       console.error('Failed to fetch notifications:', error);
       return [];

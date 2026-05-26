@@ -32,4 +32,8 @@ export class NotificationsService {
   async markAllAsRead(userId: string) {
     return this.model.updateMany({ userId, isRead: false }, { isRead: true });
   }
+
+  async delete(id: string, userId: string) {
+    return this.model.findOneAndDelete({ _id: id, userId });
+  }
 }

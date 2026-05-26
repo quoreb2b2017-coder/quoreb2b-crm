@@ -3,10 +3,16 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Leave } from './schemas/leave.schema';
 import { ApplyLeaveDto, LeaveQueryDto } from './dto/leave.dto';
+import { User } from '../users/schemas/user.schema';
+import { NotificationTriggerService } from '../notifications/notification-trigger.service';
 
 @Injectable()
 export class LeaveService {
-  constructor(@InjectModel(Leave.name) private leaveModel: Model<Leave>) {}
+  constructor(
+    @InjectModel(Leave.name) private leaveModel: Model<Leave>,
+    @InjectModel(User.name) private userModel: Model<User>,
+    private notifications: NotificationTriggerService,
+  ) {}
 
   async applyLeave(dto: ApplyLeaveDto) {
     const leave = new this.leaveModel({
@@ -19,7 +25,23 @@ export class LeaveService {
       status: 'pending',
     });
 
-    return leave.save();
+    const saved = await leave.save();
+    const applicant = await this.userModel.findById(dto.userId).lean().exec();
+    const applicantName = [applicant?.firstName, applicant?.lastName].filter(Boolean).join(' ').trim() || applicant?.email || 'Employee';
+
+    try {
+      await this.notifications.notifyLeaveApplied(
+        dto.userId,
+        applicantName,
+        dto.leaveType,
+        dto.startDate,
+        dto.endDate,
+      );
+    } catch {
+      /* notification should not block leave apply */
+    }
+
+    return saved;
   }
 
   async getLeaveApplications(dto: LeaveQueryDto) {
@@ -58,7 +80,7 @@ export class LeaveService {
   }
 
   async approveLeave(leaveId: string, approvedBy: string) {
-    return this.leaveModel.findByIdAndUpdate(
+    const leave = await this.leaveModel.findByIdAndUpdate(
       leaveId,
       {
         status: 'approved',
@@ -67,10 +89,31 @@ export class LeaveService {
       },
       { new: true },
     );
+    if (leave) {
+      const [applicant, approver] = await Promise.all([
+        this.userModel.findById(leave.userId).lean().exec(),
+        this.userModel.findById(approvedBy).lean().exec(),
+      ]);
+      const applicantName = [applicant?.firstName, applicant?.lastName].filter(Boolean).join(' ').trim() || applicant?.email || 'Employee';
+      const approverName = [approver?.firstName, approver?.lastName].filter(Boolean).join(' ').trim() || approver?.email || 'Admin';
+      try {
+        await this.notifications.notifyLeaveApproved(
+          leave.userId.toString(),
+          applicantName,
+          leave.leaveType,
+          new Date(leave.startDate).toISOString().slice(0, 10),
+          new Date(leave.endDate).toISOString().slice(0, 10),
+          approverName,
+        );
+      } catch {
+        /* notification should not block leave approval */
+      }
+    }
+    return leave;
   }
 
   async rejectLeave(leaveId: string, rejectionReason: string) {
-    return this.leaveModel.findByIdAndUpdate(
+    const leave = await this.leaveModel.findByIdAndUpdate(
       leaveId,
       {
         status: 'rejected',
@@ -78,6 +121,23 @@ export class LeaveService {
       },
       { new: true },
     );
+    if (leave) {
+      const applicant = await this.userModel.findById(leave.userId).lean().exec();
+      const applicantName = [applicant?.firstName, applicant?.lastName].filter(Boolean).join(' ').trim() || applicant?.email || 'Employee';
+      try {
+        await this.notifications.notifyLeaveRejected(
+          leave.userId.toString(),
+          applicantName,
+          leave.leaveType,
+          new Date(leave.startDate).toISOString().slice(0, 10),
+          new Date(leave.endDate).toISOString().slice(0, 10),
+          rejectionReason,
+        );
+      } catch {
+        /* notification should not block leave rejection */
+      }
+    }
+    return leave;
   }
 
   async getUserLeaves(userId: string, status?: string) {

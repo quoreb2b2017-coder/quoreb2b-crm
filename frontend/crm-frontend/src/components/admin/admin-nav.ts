@@ -3,6 +3,7 @@ import type { CompanyProductId } from '@/lib/constants/company-products';
 export interface AdminNavItem {
   label: string;
   href: string;
+  badgeCount?: number;
 }
 
 /** CRM-only sidebar — company products are chosen via login popup, not listed here */
@@ -10,6 +11,7 @@ const crmNav: AdminNavItem[] = [
   { label: 'Dashboard', href: '/admin/dashboard' },
   { label: 'Users', href: '/admin/users' },
   { label: 'Master Data Upload', href: '/admin/master-data-upload' },
+  { label: 'DB Admin Upload Requests', href: '/admin/master-data-upload/requests' },
   { label: 'Batches', href: '/admin/batches' },
   { label: 'Attendance', href: '/admin/attendance' },
   { label: 'Leave Requests', href: '/admin/leave-apply' },

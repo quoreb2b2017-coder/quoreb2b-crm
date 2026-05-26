@@ -16,9 +16,13 @@ export function HolidayTracking({ userId, variant = 'employee' }: HolidayTrackin
   const [selectedUserId, setSelectedUserId] = useState(userId || '');
   const [users, setUsers] = useState<Array<{ _id: string; firstName: string; lastName: string; email: string }>>([]);
 
-  const { data: yearlyData, loading } = useFetch(
-    selectedUserId ? `holiday-tracking:${selectedUserId}:${selectedYear}` : null,
-    () => selectedUserId ? attendanceService.getYearlyAnalytics(selectedUserId, selectedYear) : Promise.resolve([]),
+  const { data: yearlyData, loading } = useFetch<YearlyAnalytics[]>(
+    `holiday-tracking:${selectedUserId || 'none'}:${selectedYear}`,
+    () =>
+      selectedUserId
+        ? attendanceService.getYearlyAnalytics(selectedUserId, selectedYear)
+        : Promise.resolve([]),
+    { skip: !selectedUserId },
   );
 
   useEffect(() => {
@@ -29,8 +33,7 @@ export function HolidayTracking({ userId, variant = 'employee' }: HolidayTrackin
   }, [userId, variant]);
 
   const totalLeaves = yearlyData?.reduce((sum, m) => sum + m.leaveDays, 0) || 0;
-  const totalPaidLeaves = yearlyData?.reduce((sum, m) => sum + m.paidLeaveDays, 0) || 0;
-  const totalUnpaidLeaves = totalLeaves - totalPaidLeaves;
+  const totalHalfDays = yearlyData?.reduce((sum, m) => sum + m.halfDays, 0) || 0;
 
   const accentColor = variant === 'admin' ? 'emerald' : variant === 'db_admin' ? 'violet' : 'emerald';
   const accentBg = accentColor === 'emerald' ? 'bg-emerald-50 dark:bg-emerald-900/20' : 'bg-violet-50 dark:bg-violet-900/20';
@@ -90,15 +93,17 @@ export function HolidayTracking({ userId, variant = 'employee' }: HolidayTrackin
         </div>
 
         <div className={cn('rounded-xl border p-4', accentBg, accentBorder)}>
-          <p className={cn('text-xs font-semibold uppercase tracking-wide', accentText)}>Paid Leaves</p>
-          <p className="mt-2 text-3xl font-bold text-emerald-600 dark:text-emerald-400">{totalPaidLeaves}</p>
-          <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">Paid leave days</p>
+          <p className={cn('text-xs font-semibold uppercase tracking-wide', accentText)}>Half Days</p>
+          <p className="mt-2 text-3xl font-bold text-emerald-600 dark:text-emerald-400">{totalHalfDays}</p>
+          <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">Half-day attendance entries</p>
         </div>
 
         <div className={cn('rounded-xl border p-4', accentBg, accentBorder)}>
-          <p className={cn('text-xs font-semibold uppercase tracking-wide', accentText)}>Unpaid Leaves</p>
-          <p className="mt-2 text-3xl font-bold text-amber-600 dark:text-amber-400">{totalUnpaidLeaves}</p>
-          <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">Unpaid leave days</p>
+          <p className={cn('text-xs font-semibold uppercase tracking-wide', accentText)}>Absent Days</p>
+          <p className="mt-2 text-3xl font-bold text-amber-600 dark:text-amber-400">
+            {yearlyData?.reduce((sum, m) => sum + m.absentDays, 0) || 0}
+          </p>
+          <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">Absent days in {selectedYear}</p>
         </div>
       </div>
 
@@ -135,14 +140,8 @@ export function HolidayTracking({ userId, variant = 'employee' }: HolidayTrackin
                     <span className="font-semibold text-blue-600 dark:text-blue-400">{month.leaveDays}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-600 dark:text-slate-400">Paid</span>
-                    <span className="font-semibold text-green-600 dark:text-green-400">{month.paidLeaveDays}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-600 dark:text-slate-400">Unpaid</span>
-                    <span className="font-semibold text-amber-600 dark:text-amber-400">
-                      {month.leaveDays - month.paidLeaveDays}
-                    </span>
+                    <span className="text-slate-600 dark:text-slate-400">Half Days</span>
+                    <span className="font-semibold text-green-600 dark:text-green-400">{month.halfDays}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-600 dark:text-slate-400">Absent</span>

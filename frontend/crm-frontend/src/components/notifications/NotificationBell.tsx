@@ -1,14 +1,137 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { Bell, X, CheckCheck, Trash2 } from 'lucide-react';
+import {
+  Activity,
+  Bell,
+  BellRing,
+  CheckCheck,
+  CheckCircle2,
+  Info,
+  Package,
+  RefreshCw,
+  Trash2,
+  TriangleAlert,
+  Upload,
+  UserPlus,
+  X,
+  XCircle,
+  type LucideIcon,
+} from 'lucide-react';
 import { useNotifications } from '@/hooks/useNotifications';
-import { Notification, NOTIFICATION_COLORS } from '@/types/notifications';
+import { Notification, type NotificationType, PRIORITY_COLORS } from '@/types/notifications';
 import { cn } from '@/lib/utils/cn';
+
+type NotificationFilter = 'all' | 'unread' | 'actions' | 'batches' | 'users' | 'system';
+
+const FILTERS: Array<{ id: NotificationFilter; label: string }> = [
+  { id: 'all', label: 'All' },
+  { id: 'unread', label: 'Unread' },
+  { id: 'actions', label: 'Actions' },
+  { id: 'batches', label: 'Batches' },
+  { id: 'users', label: 'Users' },
+  { id: 'system', label: 'System' },
+];
+
+const NOTIFICATION_META: Record<
+  NotificationType,
+  {
+    label: string;
+    category: Exclude<NotificationFilter, 'all' | 'unread'>;
+    icon: LucideIcon;
+    iconClass: string;
+    chipClass: string;
+  }
+> = {
+  success: {
+    label: 'Success',
+    category: 'actions',
+    icon: CheckCircle2,
+    iconClass: 'bg-emerald-50 text-emerald-600',
+    chipClass: 'bg-emerald-50 text-emerald-700',
+  },
+  error: {
+    label: 'Error',
+    category: 'system',
+    icon: XCircle,
+    iconClass: 'bg-red-50 text-red-600',
+    chipClass: 'bg-red-50 text-red-700',
+  },
+  warning: {
+    label: 'Warning',
+    category: 'actions',
+    icon: TriangleAlert,
+    iconClass: 'bg-amber-50 text-amber-600',
+    chipClass: 'bg-amber-50 text-amber-700',
+  },
+  info: {
+    label: 'Info',
+    category: 'actions',
+    icon: Info,
+    iconClass: 'bg-blue-50 text-blue-600',
+    chipClass: 'bg-blue-50 text-blue-700',
+  },
+  batch_created: {
+    label: 'Batch Created',
+    category: 'batches',
+    icon: Package,
+    iconClass: 'bg-indigo-50 text-indigo-600',
+    chipClass: 'bg-indigo-50 text-indigo-700',
+  },
+  batch_updated: {
+    label: 'Batch Updated',
+    category: 'batches',
+    icon: RefreshCw,
+    iconClass: 'bg-violet-50 text-violet-600',
+    chipClass: 'bg-violet-50 text-violet-700',
+  },
+  batch_completed: {
+    label: 'Batch Completed',
+    category: 'batches',
+    icon: CheckCircle2,
+    iconClass: 'bg-emerald-50 text-emerald-600',
+    chipClass: 'bg-emerald-50 text-emerald-700',
+  },
+  user_added: {
+    label: 'User Added',
+    category: 'users',
+    icon: UserPlus,
+    iconClass: 'bg-sky-50 text-sky-600',
+    chipClass: 'bg-sky-50 text-sky-700',
+  },
+  data_uploaded: {
+    label: 'Upload',
+    category: 'actions',
+    icon: Upload,
+    iconClass: 'bg-indigo-50 text-indigo-600',
+    chipClass: 'bg-indigo-50 text-indigo-700',
+  },
+  system_alert: {
+    label: 'System Alert',
+    category: 'system',
+    icon: BellRing,
+    iconClass: 'bg-rose-50 text-rose-600',
+    chipClass: 'bg-rose-50 text-rose-700',
+  },
+  activity_alert: {
+    label: 'Activity',
+    category: 'actions',
+    icon: Activity,
+    iconClass: 'bg-amber-50 text-amber-600',
+    chipClass: 'bg-amber-50 text-amber-700',
+  },
+};
+
+function matchesFilter(notification: Notification, filter: NotificationFilter) {
+  if (filter === 'all') return true;
+  if (filter === 'unread') return !notification.read;
+  return NOTIFICATION_META[notification.type].category === filter;
+}
 
 export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
+  const [selectedFilter, setSelectedFilter] = useState<NotificationFilter>('all');
   const panelRef = useRef<HTMLDivElement>(null);
   const {
     notifications,
@@ -32,6 +155,22 @@ export function NotificationBell() {
     }
   }, [isOpen]);
 
+  const filteredNotifications = useMemo(
+    () => notifications.filter((notification) => matchesFilter(notification, selectedFilter)),
+    [notifications, selectedFilter],
+  );
+
+  const filterCounts = useMemo(
+    () =>
+      FILTERS.reduce<Record<NotificationFilter, number>>((acc, filter) => {
+        acc[filter.id] = notifications.filter((notification) =>
+          matchesFilter(notification, filter.id),
+        ).length;
+        return acc;
+      }, { all: 0, unread: 0, actions: 0, batches: 0, users: 0, system: 0 }),
+    [notifications],
+  );
+
   return (
     <div className="relative">
       {/* Bell button */}
@@ -52,41 +191,85 @@ export function NotificationBell() {
       {isOpen && (
         <div
           ref={panelRef}
-          className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-xl border border-slate-200 z-50 max-h-96 flex flex-col"
+          className="absolute right-0 mt-2 flex w-[28rem] max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl z-50"
         >
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b border-slate-200">
-            <h3 className="font-semibold text-slate-900">Notifications</h3>
-            <div className="flex items-center gap-2">
-              {unreadCount > 0 && (
+          <div className="border-b border-slate-200 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="font-semibold text-slate-900">Notifications</h3>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {unreadCount} unread of {notifications.length} total
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {unreadCount > 0 && (
+                  <button
+                    onClick={() => {
+                      markAllAsRead();
+                    }}
+                    className="p-1 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors"
+                    title="Mark all as read"
+                  >
+                    <CheckCheck className="w-4 h-4" />
+                  </button>
+                )}
                 <button
-                  onClick={() => {
-                    markAllAsRead();
-                  }}
+                  onClick={() => setIsOpen(false)}
                   className="p-1 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors"
-                  title="Mark all as read"
                 >
-                  <CheckCheck className="w-4 h-4" />
+                  <X className="w-4 h-4" />
                 </button>
-              )}
-              <button
-                onClick={() => setIsOpen(false)}
-                className="p-1 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              {FILTERS.map((filter) => (
+                <button
+                  key={filter.id}
+                  type="button"
+                  onClick={() => setSelectedFilter(filter.id)}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors',
+                    selectedFilter === filter.id
+                      ? 'border-slate-900 bg-slate-900 text-white'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
+                  )}
+                >
+                  <span>{filter.label}</span>
+                  <span
+                    className={cn(
+                      'inline-flex min-w-[1.1rem] items-center justify-center rounded-full px-1 py-0.5 text-[10px]',
+                      selectedFilter === filter.id ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-600',
+                    )}
+                  >
+                    {filterCounts[filter.id]}
+                  </span>
+                </button>
+              ))}
             </div>
           </div>
 
           {/* Notifications list */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="max-h-[28rem] flex-1 overflow-y-auto">
             {notifications.length === 0 ? (
-              <div className="flex items-center justify-center h-32 text-slate-500">
+              <div className="flex h-32 items-center justify-center text-slate-500">
                 <p className="text-sm">No notifications yet</p>
+              </div>
+            ) : filteredNotifications.length === 0 ? (
+              <div className="flex h-32 flex-col items-center justify-center gap-1 text-slate-500">
+                <p className="text-sm font-medium">No notifications in this filter</p>
+                <button
+                  type="button"
+                  onClick={() => setSelectedFilter('all')}
+                  className="text-xs font-semibold text-blue-600 hover:text-blue-700"
+                >
+                  Show all
+                </button>
               </div>
             ) : (
               <div className="divide-y divide-slate-100">
-                {notifications.map((notification) => (
+                {filteredNotifications.map((notification) => (
                   <NotificationItem
                     key={notification.id}
                     notification={notification}
@@ -98,15 +281,9 @@ export function NotificationBell() {
             )}
           </div>
 
-          {/* Footer */}
           {notifications.length > 0 && (
-            <div className="border-t border-slate-200 p-3">
-              <Link
-                href="/notifications"
-                className="block text-center text-sm font-medium text-blue-600 hover:text-blue-700 py-2"
-              >
-                View all notifications
-              </Link>
+            <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-[11px] text-slate-500">
+              Showing {filteredNotifications.length} of {notifications.length} notifications
             </div>
           )}
         </div>
@@ -126,7 +303,9 @@ function NotificationItem({
   onMarkRead,
   onDelete,
 }: NotificationItemProps) {
-  const colors = NOTIFICATION_COLORS[notification.type];
+  const meta = NOTIFICATION_META[notification.type];
+  const Icon = meta.icon;
+  const priorityColor = PRIORITY_COLORS[notification.priority];
   const timeAgo = getTimeAgo(notification.timestamp);
 
   return (
@@ -137,14 +316,28 @@ function NotificationItem({
       )}
     >
       <div className="flex items-start gap-3">
-        {/* Color indicator */}
-        <div className={cn('w-1 h-1 rounded-full mt-2 flex-shrink-0', colors.bg)} />
+        <div
+          className={cn(
+            'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl',
+            meta.iconClass,
+          )}
+        >
+          <Icon className="h-4 w-4" />
+        </div>
 
         {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div>
-              <h4 className="font-semibold text-sm text-slate-900">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold', meta.chipClass)}>
+                  {meta.label}
+                </span>
+                <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold text-slate-700', priorityColor)}>
+                  {notification.priority}
+                </span>
+              </div>
+              <h4 className="mt-1 font-semibold text-sm text-slate-900">
                 {notification.title}
               </h4>
               <p className="text-xs text-slate-600 mt-0.5 line-clamp-2">

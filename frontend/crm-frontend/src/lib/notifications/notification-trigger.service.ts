@@ -49,8 +49,8 @@ export class NotificationTriggerService {
         type: 'data_uploaded',
         title: '📤 Data Uploaded',
         message: '1,250 rows uploaded successfully',
-        actionUrl: '/admin/master-data-upload',
-        actionLabel: 'View Upload',
+        actionUrl: '/admin/master-data-upload/requests',
+        actionLabel: 'Review request',
         priority: 'medium',
       },
       user_added: {
@@ -171,8 +171,8 @@ export class NotificationTriggerService {
       type: 'data_uploaded',
       title: '📤 Data Uploaded',
       message: `${rowCount.toLocaleString()} rows uploaded successfully`,
-      actionUrl: '/admin/master-data-upload',
-      actionLabel: 'View Upload',
+      actionUrl: '/admin/master-data-upload/requests',
+      actionLabel: 'Review request',
       priority: 'medium',
     });
   }

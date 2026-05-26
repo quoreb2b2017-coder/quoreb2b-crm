@@ -65,7 +65,9 @@ export function DbAdminAttendanceDashboard() {
         attendanceService.getMonthlyAnalytics(user.id, selectedMonth, selectedYear),
       ]);
       setMyMonthly(myData);
-      const raw = Array.isArray(usersRes) ? usersRes : [];
+      const raw: Record<string, unknown>[] = Array.isArray(usersRes)
+        ? (usersRes as Record<string, unknown>[])
+        : [];
       const members: TeamMember[] = raw
         .filter((u) => {
           const roles = Array.isArray(u.roles) ? (u.roles as string[]) : [];

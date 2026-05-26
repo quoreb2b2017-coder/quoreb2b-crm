@@ -5,7 +5,6 @@ import { connectSocket } from '@/lib/socket/socket.client';
 import { useAuthStore } from '@/store/auth.store';
 import { useNotificationStore } from '@/store/notification.store';
 import { notificationService } from '@/lib/notifications/notification.service';
-import { notificationTriggerService } from '@/lib/notifications/notification-trigger.service';
 
 export function useNotifications() {
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -23,7 +22,6 @@ export function useNotifications() {
 
     const socket = connectSocket(accessToken);
     notificationService.setSocket(socket);
-    notificationTriggerService.setSocket(socket);
 
     // Subscribe to notification events
     notificationService.subscribe();
@@ -37,16 +35,6 @@ export function useNotifications() {
     notificationService.getUnreadCount().then((count) => {
       useNotificationStore.getState().setUnreadCount(count);
     });
-
-    // Send login notification
-    const userName = user?.firstName && user?.lastName
-      ? `${user.firstName} ${user.lastName}`
-      : user?.email ?? 'User';
-    
-    // Delay to ensure socket is ready
-    setTimeout(() => {
-      notificationTriggerService.notifyLogin(userName);
-    }, 500);
 
     return () => {
       notificationService.unsubscribe();

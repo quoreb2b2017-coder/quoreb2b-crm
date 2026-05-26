@@ -29,6 +29,7 @@ import {
   PASSIVE_ACTIVITY_ACTIONS,
   isRecordableTrackAction,
 } from './activity-actions.constant';
+import { NotificationTriggerService } from '../notifications/notification-trigger.service';
 
 export interface TrackActivityContext {
   userId: string;
@@ -47,6 +48,7 @@ export class ActivityLogsService {
     @InjectModel(ActivityLog.name) private model: Model<ActivityLog>,
     @InjectModel(Batch.name) private batchModel: Model<Batch>,
     private usersRepository: UsersRepository,
+    private notifications: NotificationTriggerService,
   ) {}
 
   private userSnapshot(user: User): SanitizedUserSnapshot {
@@ -75,7 +77,7 @@ export class ActivityLogsService {
     const resolved = await this.resolveActor(actor);
     const fields = actorFields(resolved);
     const { ipAddress: _ip, ...rest } = data;
-    return this.log({
+    const created = await this.log({
       ...rest,
       ...fields,
       metadata: {
@@ -83,6 +85,270 @@ export class ActivityLogsService {
         recordedAt: new Date().toISOString(),
       },
     });
+    try {
+      await this.notifyFromActivityLog(created as ActivityLog, resolved);
+    } catch {
+      /* notifications should not block activity logging */
+    }
+    return created;
+  }
+
+  private actorPanelPath(actor: ActivityActor | null) {
+    const roles = actor?.roles ?? [];
+    if (roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN)) {
+      return '/admin/dashboard';
+    }
+    if (roles.includes(SystemRole.DB_ADMIN)) {
+      return '/db-admin/dashboard';
+    }
+    return '/employee/dashboard';
+  }
+
+  private actorSettingsPath(actor: ActivityActor | null) {
+    const roles = actor?.roles ?? [];
+    if (roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN)) {
+      return '/admin/settings';
+    }
+    if (roles.includes(SystemRole.DB_ADMIN)) {
+      return '/db-admin/settings';
+    }
+    return '/employee/settings';
+  }
+
+  private buildNotificationPayload(log: ActivityLog, actor: ActivityActor | null) {
+    const meta = (log.metadata ?? {}) as Record<string, unknown>;
+    const actorName =
+      displayNameFromMeta({
+        userName: log.userName,
+        userEmail: log.userEmail,
+        metadata: meta,
+      }) || log.userEmail || 'A user';
+
+    const fallbackActorUrl = this.actorPanelPath(actor);
+    const basePayload = {
+      actorTitle: 'Activity recorded',
+      superAdminTitle: `${actorName} activity`,
+      actorMessage: `${log.action} completed successfully`,
+      superAdminMessage: `${actorName} performed ${log.action}`,
+      actorActionUrl: fallbackActorUrl,
+      superAdminActionUrl: '/admin/activity-logs',
+      actorActionLabel: 'Open',
+      superAdminActionLabel: 'Review',
+      priority: 'medium' as const,
+      notifyActor: Boolean(actor?.id),
+      notifySuperAdmins: Boolean(actor?.id),
+    };
+
+    switch (log.action) {
+      case 'LOGIN':
+        return {
+          ...basePayload,
+          actorTitle: 'Login successful',
+          superAdminTitle: 'User login',
+          actorMessage: 'You signed in successfully.',
+          superAdminMessage: `${actorName} signed in to the system`,
+          actorActionLabel: 'Open dashboard',
+          superAdminActionLabel: 'View activity',
+          priority: 'low' as const,
+        };
+      case 'LOGOUT':
+      case 'IDLE_LOGOUT':
+        return {
+          ...basePayload,
+          actorTitle: 'Logged out',
+          superAdminTitle: 'User logged out',
+          actorMessage: 'You signed out successfully.',
+          superAdminMessage: `${actorName} signed out of the system`,
+          notifyActor: false,
+          priority: 'low' as const,
+        };
+      case 'USER_CREATED':
+        return {
+          ...basePayload,
+          actorTitle: 'User created',
+          superAdminTitle: 'New user created',
+          actorMessage: `User "${String(meta.targetEmail ?? 'new user')}" was created successfully`,
+          superAdminMessage: `${actorName} created user "${String(meta.targetEmail ?? 'new user')}"`,
+          actorActionUrl: '/admin/users',
+          superAdminActionUrl: '/admin/users',
+          actorActionLabel: 'View users',
+          superAdminActionLabel: 'View users',
+          priority: 'high' as const,
+        };
+      case 'USER_BLOCKED':
+      case 'USER_UNBLOCKED':
+        return {
+          ...basePayload,
+          actorTitle: log.action === 'USER_BLOCKED' ? 'User blocked' : 'User unblocked',
+          superAdminTitle: log.action === 'USER_BLOCKED' ? 'User blocked' : 'User unblocked',
+          actorMessage: `${String(meta.targetEmail ?? 'User')} was ${log.action === 'USER_BLOCKED' ? 'blocked' : 'unblocked'}`,
+          superAdminMessage: `${actorName} ${log.action === 'USER_BLOCKED' ? 'blocked' : 'unblocked'} ${String(meta.targetEmail ?? 'a user')}`,
+          actorActionUrl: '/admin/users',
+          superAdminActionUrl: '/admin/users',
+          actorActionLabel: 'View users',
+          superAdminActionLabel: 'View users',
+          priority: 'high' as const,
+        };
+      case 'USER_DELETED':
+        return {
+          ...basePayload,
+          actorTitle: 'User deleted',
+          superAdminTitle: 'User deleted',
+          actorMessage: `${String(meta.targetEmail ?? 'User')} was deleted successfully`,
+          superAdminMessage: `${actorName} deleted ${String(meta.targetEmail ?? 'a user')}`,
+          actorActionUrl: '/admin/users',
+          superAdminActionUrl: '/admin/users',
+          actorActionLabel: 'View users',
+          superAdminActionLabel: 'View users',
+          priority: 'high' as const,
+        };
+      case 'PASSWORD_CHANGED':
+        return {
+          ...basePayload,
+          actorTitle: 'Password changed',
+          superAdminTitle: 'Password changed',
+          actorMessage: 'Your account password was changed successfully.',
+          superAdminMessage: `${actorName} changed account password`,
+          actorActionUrl: this.actorSettingsPath(actor),
+          actorActionLabel: 'Open settings',
+          priority: 'high' as const,
+        };
+      case 'BATCH_CREATE':
+        return {
+          ...basePayload,
+          actorTitle: 'Batch created',
+          superAdminTitle: 'Batch created',
+          actorMessage: `Batch "${String(meta.batchName ?? 'Untitled')}" was created`,
+          superAdminMessage: `${actorName} created batch "${String(meta.batchName ?? 'Untitled')}"`,
+          actorActionUrl: actor?.roles?.includes(SystemRole.DB_ADMIN) ? '/db-admin/batches' : '/admin/batches',
+          superAdminActionUrl: '/admin/batches',
+          actorActionLabel: 'View batches',
+          superAdminActionLabel: 'View batches',
+          priority: 'medium' as const,
+        };
+      case 'BATCH_SHARE':
+        return {
+          ...basePayload,
+          actorTitle: 'Batch shared',
+          superAdminTitle: 'Batch shared',
+          actorMessage: `Batch "${String(meta.batchName ?? 'Untitled')}" was shared`,
+          superAdminMessage: `${actorName} shared batch "${String(meta.batchName ?? 'Untitled')}"`,
+          actorActionUrl: '/admin/batches',
+          superAdminActionUrl: '/admin/batches',
+          actorActionLabel: 'View batches',
+          superAdminActionLabel: 'View batches',
+          priority: 'medium' as const,
+        };
+      case 'BATCH_DELETE':
+        return {
+          ...basePayload,
+          actorTitle: 'Batch deleted',
+          superAdminTitle: 'Batch deleted',
+          actorMessage: `Batch "${String(meta.batchName ?? 'Untitled')}" was deleted`,
+          superAdminMessage: `${actorName} deleted batch "${String(meta.batchName ?? 'Untitled')}"`,
+          actorActionUrl: '/admin/batches',
+          superAdminActionUrl: '/admin/batches',
+          actorActionLabel: 'View batches',
+          superAdminActionLabel: 'View batches',
+          priority: 'high' as const,
+        };
+      case 'MASTER_DATA_UPLOAD':
+      case 'MASTER_DATA_CLEAR':
+      case 'MASTER_DATA_SHARE_DBA':
+        return {
+          ...basePayload,
+          actorTitle: 'Master data updated',
+          superAdminTitle: 'Master data updated',
+          actorMessage: `${log.action.replaceAll('_', ' ').toLowerCase()} completed`,
+          superAdminMessage: `${actorName} performed ${log.action.replaceAll('_', ' ').toLowerCase()}`,
+          actorActionUrl: '/admin/master-data-upload',
+          superAdminActionUrl: '/admin/master-data-upload',
+          actorActionLabel: 'Open master data',
+          superAdminActionLabel: 'Open master data',
+          priority: 'high' as const,
+        };
+      case 'MASTER_DATA_UPLOAD_REQUEST':
+        return {
+          ...basePayload,
+          actorTitle: 'Upload request submitted',
+          superAdminTitle: 'Upload request pending',
+          actorMessage: `${String(meta.pendingRows ?? 0)} row(s) sent for Super Admin review`,
+          superAdminMessage: `${actorName} submitted a master data upload request`,
+          actorActionUrl: '/db-admin/master-data',
+          superAdminActionUrl: '/admin/master-data-upload/requests',
+          actorActionLabel: 'View request',
+          superAdminActionLabel: 'Review request',
+          priority: 'high' as const,
+          notifySuperAdmins: false,
+        };
+      case 'MASTER_DATA_UPLOAD_REQUEST_APPROVE':
+      case 'MASTER_DATA_UPLOAD_REQUEST_REJECT':
+      case 'MASTER_DATA_UPLOAD_REQUEST_DELETE':
+        return {
+          ...basePayload,
+          actorTitle: 'Upload request reviewed',
+          superAdminTitle: 'Upload request reviewed',
+          actorMessage: `${log.action.replace('MASTER_DATA_UPLOAD_REQUEST_', '').toLowerCase()} completed`,
+          superAdminMessage: `${actorName} ${log.action.replace('MASTER_DATA_UPLOAD_REQUEST_', '').toLowerCase()} a DB Admin upload request`,
+          actorActionUrl: '/admin/master-data-upload/requests',
+          superAdminActionUrl: '/admin/master-data-upload/requests',
+          actorActionLabel: 'Open requests',
+          superAdminActionLabel: 'Open requests',
+          priority: 'high' as const,
+        };
+      default:
+        if (log.action === 'LEAD_UPDATE') {
+          return null;
+        }
+        return {
+          ...basePayload,
+          actorTitle: 'Action completed',
+          superAdminTitle: 'New system activity',
+          actorMessage: `${log.action.replaceAll('_', ' ').toLowerCase()} completed successfully`,
+          superAdminMessage: `${actorName} performed ${log.action.replaceAll('_', ' ').toLowerCase()}`,
+          priority: 'medium' as const,
+        };
+    }
+  }
+
+  private async notifyFromActivityLog(log: ActivityLog, actor: ActivityActor | null) {
+    const payload = this.buildNotificationPayload(log, actor);
+    if (!payload) return;
+
+    if (payload.notifyActor && actor?.id) {
+      await this.notifications.notifyUser(actor.id, {
+        type: 'activity_alert',
+        title: payload.actorTitle,
+        message: payload.actorMessage,
+        priority: payload.priority,
+        actionUrl: payload.actorActionUrl,
+        actionLabel: payload.actorActionLabel,
+        metadata: {
+          action: log.action,
+          resource: log.resource,
+          resourceId: log.resourceId,
+        },
+      });
+    }
+
+    if (payload.notifySuperAdmins) {
+      await this.notifications.notifySuperAdmins(
+        {
+          type: 'activity_alert',
+          title: payload.superAdminTitle,
+          message: payload.superAdminMessage,
+          priority: payload.priority,
+          actionUrl: payload.superAdminActionUrl,
+          actionLabel: payload.superAdminActionLabel,
+          metadata: {
+            action: log.action,
+            resource: log.resource,
+            resourceId: log.resourceId,
+          },
+        },
+        actor?.id ? [actor.id] : [],
+      );
+    }
   }
 
   private async resolveActor(actor: ActivityActor | null): Promise<ActivityActor | null> {

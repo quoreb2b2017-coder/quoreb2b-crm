@@ -1,11 +1,12 @@
 'use client';
 
-import { Suspense, useEffect } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { AttendancePanelProvider } from '@/components/attendance/AttendancePanelContext';
 import { CompanyProductPicker } from '@/components/admin/CompanyProductPicker';
 import { getAdminNavItems } from '@/components/admin/admin-nav';
+import { masterDataService } from '@/lib/api/master-data.service';
 import {
   getCompanyProduct,
   getProductIdForPath,
@@ -20,13 +21,26 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const pickerOpen = useAdminProductStore((s) => s.pickerOpen);
   const selectedProductId = useAdminProductStore((s) => s.selectedProductId);
   const setSelectedFromPath = useAdminProductStore((s) => s.syncFromPath);
+  const [pendingUploadRequests, setPendingUploadRequests] = useState(0);
 
   const isWorkspaceHub = pathname === WORKSPACE_PATH;
   const showPicker = isWorkspaceHub || pickerOpen;
   const pathProductId = getProductIdForPath(pathname);
   const activeProductId = selectedProductId ?? pathProductId;
   const product = getCompanyProduct(activeProductId);
-  const navItems = showPicker ? [] : getAdminNavItems(activeProductId);
+  const baseNavItems = useMemo(
+    () => (showPicker ? [] : getAdminNavItems(activeProductId)),
+    [activeProductId, showPicker],
+  );
+  const navItems = useMemo(
+    () =>
+      baseNavItems.map((item) =>
+        item.href === '/admin/master-data-upload/requests'
+          ? { ...item, badgeCount: pendingUploadRequests }
+          : item,
+      ),
+    [baseNavItems, pendingUploadRequests],
+  );
   const layoutTitle = product?.name ?? 'Admin';
 
   useEffect(() => {
@@ -51,6 +65,40 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       router.replace(WORKSPACE_PATH);
     }
   }, [isWorkspaceHub, pickerOpen, activeProductId, pathname, router]);
+
+  useEffect(() => {
+    if (showPicker || activeProductId !== 'quoreb2b-crm') {
+      setPendingUploadRequests(0);
+      return;
+    }
+
+    let cancelled = false;
+    const loadPendingRequests = async () => {
+      try {
+        const requests = await masterDataService.getUploadRequests('pending');
+        if (!cancelled) {
+          setPendingUploadRequests(requests.length);
+        }
+      } catch {
+        if (!cancelled) {
+          setPendingUploadRequests(0);
+        }
+      }
+    };
+
+    loadPendingRequests();
+    const intervalId = window.setInterval(loadPendingRequests, 30000);
+    const onMasterDataUpdated = () => {
+      loadPendingRequests();
+    };
+    window.addEventListener('master-data-updated', onMasterDataUpdated);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      window.removeEventListener('master-data-updated', onMasterDataUpdated);
+    };
+  }, [activeProductId, showPicker]);
 
   if (isWorkspaceHub) {
     return (

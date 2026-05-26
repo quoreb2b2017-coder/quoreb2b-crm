@@ -19,6 +19,7 @@ import {
   ActivityActor,
   actorFromUserDoc,
 } from '../activity-logs/activity-user.util';
+import { NotificationTriggerService } from '../notifications/notification-trigger.service';
 
 @Injectable()
 export class UsersService {
@@ -26,6 +27,7 @@ export class UsersService {
     private repository: UsersRepository,
     @InjectModel(RefreshToken.name) private refreshTokenModel: Model<RefreshToken>,
     private activityLogs: ActivityLogsService,
+    private notifications: NotificationTriggerService,
   ) {}
   async findById(id: string) {
     const user = await this.repository.findById(id);
@@ -97,6 +99,22 @@ export class UsersService {
           employeeId: safe.employeeId,
         },
       });
+    }
+    try {
+      await this.notifications.notifyUser(safe.id, {
+        type: 'success',
+        title: 'Account created',
+        message: 'Your account has been created and is ready to use.',
+        priority: 'high',
+        actionUrl: safe.roles?.includes(SystemRole.DB_ADMIN)
+          ? '/db-admin/dashboard'
+          : safe.roles?.includes(SystemRole.EMPLOYEE)
+            ? '/employee/dashboard'
+            : '/admin/dashboard',
+        actionLabel: 'Open dashboard',
+      });
+    } catch {
+      /* notification should not block user creation */
     }
     return safe;
   }
@@ -179,6 +197,20 @@ export class UsersService {
         },
       });
     }
+    try {
+      await this.notifications.notifyUser(id, {
+        type: isActive ? 'success' : 'warning',
+        title: isActive ? 'Account unblocked' : 'Account blocked',
+        message: isActive
+          ? 'Your account has been activated again.'
+          : 'Your account has been blocked by admin.',
+        priority: 'high',
+        actionUrl: '/',
+        actionLabel: isActive ? 'Sign in' : 'Open login',
+      });
+    } catch {
+      /* notification should not block status change */
+    }
     return updated;
   }
 
@@ -187,6 +219,18 @@ export class UsersService {
     if (!user) throw new NotFoundException('User not found');
     this.assertManageable(user);
 
+    if (actor) {
+      await this.activityLogs.logWithActor(actor, {
+        action: 'USER_DELETED',
+        resource: 'users',
+        resourceId: id,
+        metadata: {
+          targetEmail: user.email,
+          targetName: `${user.firstName} ${user.lastName}`,
+          targetRole: user.roles?.[0],
+        },
+      });
+    }
     await this.revokeAllSessions(id);
     await this.repository.delete(id);
     return { message: 'User deleted successfully' };

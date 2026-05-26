@@ -13,6 +13,24 @@ export class NotificationTriggerService {
     @InjectModel(Notification.name) private notificationModel: Model<Notification>,
   ) {}
 
+  private async notifyUsers(
+    userIds: string[],
+    data: {
+      title: string;
+      message: string;
+      type: string;
+      priority?: 'low' | 'medium' | 'high' | 'critical';
+      actionUrl?: string;
+      actionLabel?: string;
+      metadata?: Record<string, unknown>;
+    },
+  ) {
+    const uniqueUserIds = [...new Set(userIds.filter(Boolean))];
+    for (const userId of uniqueUserIds) {
+      await this.notifyUser(userId, data);
+    }
+  }
+
   /**
    * Send notification to specific user
    */
@@ -68,13 +86,15 @@ export class NotificationTriggerService {
     actionUrl?: string;
     actionLabel?: string;
     metadata?: Record<string, unknown>;
-  }) {
+  }, excludeUserIds: string[] = []) {
     try {
       const superAdmins = await this.userModel.find({ roles: 'super_admin' });
-      
-      for (const admin of superAdmins) {
-        await this.notifyUser(admin._id.toString(), data);
-      }
+      await this.notifyUsers(
+        superAdmins
+          .map((admin) => admin._id.toString())
+          .filter((userId) => !excludeUserIds.includes(userId)),
+        data,
+      );
     } catch (error) {
       console.error('Error notifying super admins:', error);
     }
@@ -94,10 +114,10 @@ export class NotificationTriggerService {
   }) {
     try {
       const dbAdmins = await this.userModel.find({ roles: 'db_admin' });
-      
-      for (const admin of dbAdmins) {
-        await this.notifyUser(admin._id.toString(), data);
-      }
+      await this.notifyUsers(
+        dbAdmins.map((admin) => admin._id.toString()),
+        data,
+      );
     } catch (error) {
       console.error('Error notifying DB admins:', error);
     }
@@ -117,10 +137,10 @@ export class NotificationTriggerService {
   }) {
     try {
       const employees = await this.userModel.find({ roles: 'employee' });
-      
-      for (const employee of employees) {
-        await this.notifyUser(employee._id.toString(), data);
-      }
+      await this.notifyUsers(
+        employees.map((employee) => employee._id.toString()),
+        data,
+      );
     } catch (error) {
       console.error('Error notifying employees:', error);
     }
@@ -140,10 +160,10 @@ export class NotificationTriggerService {
   }) {
     try {
       const users = await this.userModel.find();
-      
-      for (const user of users) {
-        await this.notifyUser(user._id.toString(), data);
-      }
+      await this.notifyUsers(
+        users.map((user) => user._id.toString()),
+        data,
+      );
     } catch (error) {
       console.error('Error notifying all users:', error);
     }
@@ -429,8 +449,8 @@ export class NotificationTriggerService {
       title: '📤 Data Uploaded',
       message: `${rowCount.toLocaleString()} rows uploaded successfully by ${uploadedBy}`,
       priority: 'medium',
-      actionUrl: '/admin/master-data-upload',
-      actionLabel: 'View Upload',
+      actionUrl: '/admin/master-data-upload/requests',
+      actionLabel: 'Review request',
       metadata: { rowCount, uploadedBy },
     });
 

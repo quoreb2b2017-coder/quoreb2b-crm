@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useState, useCallback, useEffect, memo } from 'react';
 import { cn } from '@/lib/utils/cn';
 import { useAuthStore } from '@/store/auth.store';
+import { useAdminProductStore } from '@/store/admin-product.store';
 import { useIdleLogout } from '@/hooks/useIdleLogout';
 import { activityLogsService } from '@/lib/api/activity-logs.service';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
@@ -109,6 +110,7 @@ interface NavItem {
   label: string;
   href: string;
   icon?: React.ReactNode;
+  badgeCount?: number;
   children?: { label: string; href: string; external?: boolean }[];
 }
 
@@ -230,7 +232,9 @@ const iconMap: Record<string, React.ReactNode> = {
   'database health':    Icons.health,
   'indexes':            Icons.indexes,
   'backups':            Icons.backups,
+  'master data':        Icons.upload,
   'master data upload': Icons.upload,
+  'db admin upload requests': Icons.upload,
   'batches':            Icons.logs,
   'my batches':         Icons.logs,
   'attendance':         Icons.attendance,
@@ -734,6 +738,16 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
                   {!isCollapsed && (
                     <>
                       <span className="flex-1 truncate">{item.label}</span>
+                      {!!item.badgeCount && item.badgeCount > 0 && (
+                        <span
+                          className={cn(
+                            'inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white',
+                            t.badgeBg,
+                          )}
+                        >
+                          {item.badgeCount > 99 ? '99+' : item.badgeCount}
+                        </span>
+                      )}
                       {active && <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', t.activeDot)} />}
                     </>
                   )}

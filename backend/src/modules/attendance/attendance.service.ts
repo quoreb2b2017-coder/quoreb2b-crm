@@ -3,6 +3,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Attendance } from './schemas/attendance.schema';
 import { MarkAttendanceDto, AttendanceQueryDto, AttendanceAnalyticsDto } from './dto/attendance.dto';
+import { User } from '../users/schemas/user.schema';
+import { NotificationTriggerService } from '../notifications/notification-trigger.service';
 import {
   combineDateAndTime,
   monthRangeUtc,
@@ -13,7 +15,11 @@ import {
 
 @Injectable()
 export class AttendanceService {
-  constructor(@InjectModel(Attendance.name) private attendanceModel: Model<Attendance>) {}
+  constructor(
+    @InjectModel(Attendance.name) private attendanceModel: Model<Attendance>,
+    @InjectModel(User.name) private userModel: Model<User>,
+    private notifications: NotificationTriggerService,
+  ) {}
 
   async markAttendance(dto: MarkAttendanceDto) {
     const normalizedDate = parseDateOnly(dto.date);
@@ -43,7 +49,7 @@ export class AttendanceService {
         ? Math.max(0, (checkOutTime.getTime() - checkInTime.getTime()) / 3600000)
         : 0);
 
-    return this.attendanceModel.findOneAndUpdate(
+    const record = await this.attendanceModel.findOneAndUpdate(
       {
         userId: new Types.ObjectId(dto.userId),
         date: normalizedDate,
@@ -60,6 +66,19 @@ export class AttendanceService {
       },
       { upsert: true, new: true },
     );
+    const user = await this.userModel.findById(dto.userId).lean().exec();
+    const userName = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() || user?.email || 'Employee';
+    try {
+      await this.notifications.notifyAttendanceMarked(
+        dto.userId,
+        userName,
+        dto.date,
+        status,
+      );
+    } catch {
+      /* notification should not block attendance marking */
+    }
+    return record;
   }
 
   async getAttendanceRecords(dto: AttendanceQueryDto) {

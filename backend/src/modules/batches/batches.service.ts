@@ -20,6 +20,7 @@ import {
   buildMasterBatchCoverage,
   type MasterBatchCoverageResult,
 } from './master-batch-coverage.util';
+import { NotificationTriggerService } from '../notifications/notification-trigger.service';
 
 const MAX_LEAD_LOGS_PER_SAVE = 200;
 
@@ -31,6 +32,7 @@ export class BatchesService {
     @InjectModel(Batch.name) private model: Model<Batch>,
     private usersRepository: UsersRepository,
     private activityLogs: ActivityLogsService,
+    private notifications: NotificationTriggerService,
   ) {}
 
   async create(
@@ -275,6 +277,27 @@ export class BatchesService {
       } catch {
         /* non-blocking */
       }
+      try {
+        await Promise.all(
+          recipientUsers.map((recipient) => {
+            const o = recipient.toObject ? recipient.toObject() : recipient;
+            const recipientRoles = ((o as { roles?: string[] }).roles ?? []) as string[];
+            return this.notifications.notifyUser(String((o as { _id: Types.ObjectId })._id), {
+              type: 'info',
+              title: 'Batch shared with you',
+              message: `Batch "${batch.name}" was shared with you`,
+              priority: 'medium',
+              actionUrl: recipientRoles.includes(SystemRole.EMPLOYEE)
+                ? '/employee/batches'
+                : '/db-admin/batches',
+              actionLabel: 'Open batch library',
+              metadata: { batchId, batchName: batch.name },
+            });
+          }),
+        );
+      } catch {
+        /* notification should not block batch share */
+      }
     }
 
     return this.toResponse(batch);
@@ -384,6 +407,29 @@ export class BatchesService {
     const batch = await this.model.findById(batchId).exec();
     if (!batch) throw new NotFoundException('Batch not found');
     if (batch.createdBy?.toString() !== actorId) throw new ForbiddenException('Only creator can delete');
+    const actorUser = await this.usersRepository.findById(actorId);
+    if (actorUser) {
+      await this.activityLogs.logWithActor(
+        {
+          id: actorId,
+          email: actorUser.email,
+          firstName: actorUser.firstName,
+          lastName: actorUser.lastName,
+          roles: actorUser.roles,
+        },
+        {
+          action: 'BATCH_DELETE',
+          resource: 'batch',
+          resourceId: batchId,
+          path: `/batch-view?id=${batchId}`,
+          metadata: {
+            batchId,
+            batchName: batch.name,
+            rowCount: batch.rowCount,
+          },
+        },
+      );
+    }
     await batch.deleteOne();
     return { deleted: true };
   }

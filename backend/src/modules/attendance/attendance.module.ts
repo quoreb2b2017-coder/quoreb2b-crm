@@ -5,11 +5,17 @@ import { Attendance, AttendanceSchema } from './schemas/attendance.schema';
 import { AttendanceService } from './attendance.service';
 import { AttendanceSchedulerService } from './attendance-scheduler.service';
 import { AttendanceController } from './attendance.controller';
+import { User, UserSchema } from '../users/schemas/user.schema';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
     ScheduleModule.forRoot(),
-    MongooseModule.forFeature([{ name: Attendance.name, schema: AttendanceSchema }]),
+    NotificationsModule,
+    MongooseModule.forFeature([
+      { name: Attendance.name, schema: AttendanceSchema },
+      { name: User.name, schema: UserSchema },
+    ]),
   ],
   providers: [AttendanceService, AttendanceSchedulerService],
   controllers: [AttendanceController],

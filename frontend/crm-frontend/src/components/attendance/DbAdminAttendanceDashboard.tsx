@@ -61,11 +61,11 @@ export function DbAdminAttendanceDashboard() {
     setLoading(true);
     try {
       const [usersRes, myData] = await Promise.all([
-        usersService.list({ limit: 500 }),
+        usersService.listTeamMembers(),
         attendanceService.getMonthlyAnalytics(user.id, selectedMonth, selectedYear),
       ]);
       setMyMonthly(myData);
-      const raw = parseUserList(usersRes.data);
+      const raw = Array.isArray(usersRes) ? usersRes : [];
       const members: TeamMember[] = raw
         .filter((u) => {
           const roles = Array.isArray(u.roles) ? (u.roles as string[]) : [];

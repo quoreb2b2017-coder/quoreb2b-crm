@@ -21,7 +21,15 @@ export class NotificationsService {
     return this.model.find({ userId }).sort({ createdAt: -1 }).limit(50).exec();
   }
 
+  async getUnreadCount(userId: string) {
+    return this.model.countDocuments({ userId, isRead: false });
+  }
+
   async markAsRead(id: string, userId: string) {
     return this.model.findOneAndUpdate({ _id: id, userId }, { isRead: true }, { new: true });
+  }
+
+  async markAllAsRead(userId: string) {
+    return this.model.updateMany({ userId, isRead: false }, { isRead: true });
   }
 }

@@ -171,6 +171,20 @@ export function DbAdminDashboard() {
         />
       )}
 
+      <div className="border border-slate-300 bg-white">
+        <div className="border-b border-slate-300 bg-[#f3f3f3] px-3 py-1.5 text-[10px] font-semibold uppercase text-slate-600">
+          Attendance
+        </div>
+        <div className="p-4">
+          <Link
+            href="/db-admin/attendance"
+            className="inline-flex items-center gap-2 rounded border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            View Attendance Dashboard →
+          </Link>
+        </div>
+      </div>
+
       <div className="grid gap-0 border border-slate-300 lg:grid-cols-2">
         <div className="border-b border-slate-300 bg-white p-4 lg:border-b-0 lg:border-r">
           <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-700">

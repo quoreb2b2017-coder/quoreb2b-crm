@@ -10,7 +10,8 @@ export type NotificationType =
   | 'user_added'
   | 'data_uploaded'
   | 'system_alert'
-  | 'activity_alert';
+  | 'activity_alert'
+  | 'bulk_email_verification';
 
 export interface Notification {
   id: string;
@@ -70,6 +71,11 @@ export const NOTIFICATION_COLORS: Record<NotificationType, { bg: string; border:
   data_uploaded: { bg: 'bg-indigo-50', border: 'border-indigo-200', icon: '📤' },
   system_alert: { bg: 'bg-red-50', border: 'border-red-200', icon: '🔔' },
   activity_alert: { bg: 'bg-amber-50', border: 'border-amber-200', icon: '📊' },
+  bulk_email_verification: {
+    bg: 'bg-emerald-50',
+    border: 'border-emerald-200',
+    icon: '✉',
+  },
 };
 
 // Priority colors

@@ -12,6 +12,7 @@ import {
   getProductIdForPath,
 } from '@/lib/constants/company-products';
 import { useAdminProductStore } from '@/store/admin-product.store';
+import { useAuthStore } from '@/store/auth.store';
 
 const WORKSPACE_PATH = '/admin';
 
@@ -28,10 +29,13 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathProductId = getProductIdForPath(pathname);
   const activeProductId = selectedProductId ?? pathProductId;
   const product = getCompanyProduct(activeProductId);
-  const baseNavItems = useMemo(
-    () => (showPicker ? [] : getAdminNavItems(activeProductId)),
-    [activeProductId, showPicker],
-  );
+  const userRoles = useAuthStore((s) => s.user?.roles ?? []);
+  const baseNavItems = useMemo(() => {
+    if (showPicker) return [];
+    const items = getAdminNavItems(activeProductId);
+    if (userRoles.includes('super_admin')) return items;
+    return items.filter((item) => item.href !== '/admin/bulk-email-verification');
+  }, [activeProductId, showPicker, userRoles]);
   const navItems = useMemo(
     () =>
       baseNavItems.map((item) =>

@@ -15,6 +15,8 @@ import { toast } from '@/stores/toast.store';
 import { AttendanceFullBleed } from '@/components/attendance/AttendanceFullBleed';
 import { ExcelSheetShell } from '@/components/attendance/ExcelSheetShell';
 import { MasterDataDuplicatePreviewModal } from '@/components/master-data/MasterDataDuplicatePreviewModal';
+import { SpreadsheetPreviewModal } from '@/components/spreadsheet/SpreadsheetPreviewModal';
+import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
 import { MasterDataUploadRequestList } from '@/components/master-data/MasterDataUploadRequestList';
 import { cn } from '@/lib/utils/cn';
 
@@ -76,6 +78,14 @@ export function DbAdminMasterDataUploadPanel() {
     headers: string[];
     rows: string[][];
   } | null>(null);
+  const [pendingUpload, setPendingUpload] = useState<SpreadsheetData | null>(null);
+  const [filePreview, setFilePreview] = useState<{
+    title: string;
+    headers: string[];
+    rows: string[][];
+    totalRows: number;
+  } | null>(null);
+  const [viewFileLoadingId, setViewFileLoadingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -179,10 +189,9 @@ export function DbAdminMasterDataUploadPanel() {
     }
   };
 
-  const processFile = useCallback(async (file: File) => {
+  const processFile = useCallback(async (parsed: SpreadsheetData) => {
     setUploading(true);
     try {
-      const parsed = await parseSpreadsheetFile(file);
       const result = await masterDataService.createUploadRequest(parsed);
       await load();
 
@@ -217,8 +226,42 @@ export function DbAdminMasterDataUploadPanel() {
 
   const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) await processFile(file);
+    if (file) {
+      try {
+        const parsed = await parseSpreadsheetFile(file);
+        if (!parsed.rows.length) {
+          throw new Error('The file has no data rows.');
+        }
+        setPendingUpload(parsed);
+      } catch (err) {
+        toast.error('Could not read file', extractApiError(err, 'Invalid file'));
+      }
+    }
     e.target.value = '';
+  };
+
+  const confirmPendingUpload = async () => {
+    if (!pendingUpload) return;
+    const payload = pendingUpload;
+    setPendingUpload(null);
+    await processFile(payload);
+  };
+
+  const viewRequestFile = async (request: MasterDataUploadRequest) => {
+    setViewFileLoadingId(request.id);
+    try {
+      const detail = await masterDataService.getUploadRequest(request.id);
+      setFilePreview({
+        title: `${detail.fileName} — submitted file`,
+        headers: detail.headers,
+        rows: detail.rows,
+        totalRows: detail.rowCount,
+      });
+    } catch (err) {
+      toast.error('Could not load file', extractApiError(err, 'Load failed'));
+    } finally {
+      setViewFileLoadingId(null);
+    }
   };
 
   return (
@@ -523,6 +566,47 @@ export function DbAdminMasterDataUploadPanel() {
             rows: request.duplicatePreviewRows,
           })
         }
+        onViewFile={(request) => void viewRequestFile(request)}
+        viewFileLoadingId={viewFileLoadingId}
+      />
+
+      <SpreadsheetPreviewModal
+        isOpen={Boolean(pendingUpload)}
+        onClose={() => !uploading && setPendingUpload(null)}
+        title={pendingUpload ? `${pendingUpload.fileName} — review before upload` : 'Preview'}
+        headers={pendingUpload?.headers ?? []}
+        rows={pendingUpload?.rows ?? []}
+        totalRows={pendingUpload?.rows.length}
+        note="Missing fields will be filled with “-” when sent to Super Admin."
+        actions={
+          pendingUpload
+            ? [
+                {
+                  label: 'Cancel',
+                  onClick: () => setPendingUpload(null),
+                  disabled: uploading,
+                  variant: 'secondary',
+                },
+                {
+                  label: `Send ${pendingUpload.rows.length} row(s) for approval`,
+                  onClick: confirmPendingUpload,
+                  loading: uploading,
+                  disabled: uploading,
+                  variant: 'primary',
+                },
+              ]
+            : undefined
+        }
+      />
+
+      <SpreadsheetPreviewModal
+        isOpen={Boolean(filePreview)}
+        onClose={() => setFilePreview(null)}
+        title={filePreview?.title ?? 'Uploaded file'}
+        headers={filePreview?.headers ?? []}
+        rows={filePreview?.rows ?? []}
+        totalRows={filePreview?.totalRows}
+        actions={[{ label: 'Close', onClick: () => setFilePreview(null), variant: 'secondary' }]}
       />
 
       <MasterDataDuplicatePreviewModal

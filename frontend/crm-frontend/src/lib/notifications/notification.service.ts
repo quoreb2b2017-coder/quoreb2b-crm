@@ -75,12 +75,23 @@ export class NotificationService {
   subscribe() {
     if (!this.socket) return;
 
-    // Listen for new notifications
-    this.socket.on(NOTIFICATION_EVENTS.RECEIVE, (payload: NotificationPayload & { targetRole?: string }) => {
-      if (this.shouldReceiveNotification(payload.type, payload.targetRole)) {
-        useNotificationStore.getState().addNotification(payload);
-      }
-    });
+    // Listen for new notifications — refresh bell list (no bottom toast popups)
+    this.socket.on(
+      NOTIFICATION_EVENTS.RECEIVE,
+      async (payload: NotificationPayload & { targetRole?: string }) => {
+        if (!this.shouldReceiveNotification(payload.type, payload.targetRole)) return;
+        try {
+          const [notifs, count] = await Promise.all([
+            this.fetchNotifications(),
+            this.getUnreadCount(),
+          ]);
+          useNotificationStore.getState().updateNotifications(notifs);
+          useNotificationStore.getState().setUnreadCount(count);
+        } catch {
+          useNotificationStore.getState().addNotification(payload);
+        }
+      },
+    );
 
     // Listen for batch created
     this.socket.on(NOTIFICATION_EVENTS.BATCH_CREATED, (data: any) => {

@@ -78,6 +78,19 @@ export class MasterDataController {
     return this.masterDataService.listMyUploadRequests(user.id, query);
   }
 
+  @Get('upload-requests/:requestId')
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
+  getUploadRequest(
+    @Param('requestId') requestId: string,
+    @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
+  ) {
+    return this.masterDataService.getUploadRequest(
+      requestId,
+      user.id,
+      user.roles ?? [],
+    );
+  }
+
   @Post('upload-requests/:requestId/review')
   @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
   reviewUploadRequest(

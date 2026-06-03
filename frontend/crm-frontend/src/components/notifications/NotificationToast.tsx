@@ -30,13 +30,15 @@ export function NotificationToast({
     }
   }, [notification.id, notification.priority, onClose]);
 
-  const colors = NOTIFICATION_COLORS[notification.type];
-  const priorityColor = PRIORITY_COLORS[notification.priority];
+  const colors =
+    NOTIFICATION_COLORS[notification.type] ?? NOTIFICATION_COLORS.info;
+  const priorityColor = PRIORITY_COLORS[notification.priority] ?? PRIORITY_COLORS.medium;
 
   const getIcon = () => {
     switch (notification.type) {
       case 'success':
       case 'batch_completed':
+      case 'bulk_email_verification':
         return <CheckCircle className="w-5 h-5 text-emerald-600" />;
       case 'error':
       case 'system_alert':

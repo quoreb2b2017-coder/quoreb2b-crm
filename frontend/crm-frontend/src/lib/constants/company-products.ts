@@ -77,6 +77,7 @@ export function getCompanyProduct(id: CompanyProductId | null | undefined) {
 export function getProductIdForPath(pathname: string): CompanyProductId | null {
   if (pathname.startsWith('/admin/dashboard') || pathname.startsWith('/admin/users') ||
       pathname.startsWith('/admin/master-data-upload') ||
+      pathname.startsWith('/admin/bulk-email-verification') ||
       pathname.startsWith('/admin/batches') ||
       pathname.startsWith('/admin/leads') || pathname.startsWith('/admin/campaigns') ||
       pathname.startsWith('/admin/activity-logs') ||

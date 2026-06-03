@@ -9,6 +9,7 @@ import {
   CheckCheck,
   CheckCircle2,
   Info,
+  Mail,
   Package,
   RefreshCw,
   Trash2,
@@ -121,12 +122,28 @@ const NOTIFICATION_META: Record<
     iconClass: 'bg-amber-50 text-amber-600',
     chipClass: 'bg-amber-50 text-amber-700',
   },
+  bulk_email_verification: {
+    label: 'Email verification',
+    category: 'batches',
+    icon: Mail,
+    iconClass: 'bg-emerald-50 text-emerald-600',
+    chipClass: 'bg-emerald-50 text-emerald-700',
+  },
 };
+
+const DEFAULT_NOTIFICATION_META = NOTIFICATION_META.info;
+
+function getNotificationMeta(type: string | undefined) {
+  if (!type) return DEFAULT_NOTIFICATION_META;
+  return (
+    NOTIFICATION_META[type as NotificationType] ?? DEFAULT_NOTIFICATION_META
+  );
+}
 
 function matchesFilter(notification: Notification, filter: NotificationFilter) {
   if (filter === 'all') return true;
   if (filter === 'unread') return !notification.read;
-  return NOTIFICATION_META[notification.type].category === filter;
+  return getNotificationMeta(notification.type).category === filter;
 }
 
 export function NotificationBell() {
@@ -303,7 +320,7 @@ function NotificationItem({
   onMarkRead,
   onDelete,
 }: NotificationItemProps) {
-  const meta = NOTIFICATION_META[notification.type];
+  const meta = getNotificationMeta(notification.type);
   const Icon = meta.icon;
   const priorityColor = PRIORITY_COLORS[notification.priority];
   const timeAgo = getTimeAgo(notification.timestamp);

@@ -290,6 +290,25 @@ export class MasterDataService {
     return docs.map((doc) => this.toUploadRequestResponse(doc));
   }
 
+  async getUploadRequest(
+    requestId: string,
+    actorId: string,
+    roles: string[],
+  ) {
+    const request = await this.uploadRequestModel.findById(requestId).exec();
+    if (!request) {
+      throw new NotFoundException('Upload request not found');
+    }
+
+    const isAdmin =
+      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
+    if (!isAdmin && request.submittedBy.toString() !== actorId) {
+      throw new NotFoundException('Upload request not found');
+    }
+
+    return this.toUploadRequestDetailResponse(request);
+  }
+
   async listMyUploadRequests(actorId: string, query: ListMasterDataUploadRequestsDto) {
     const filter: Record<string, unknown> = {
       submittedBy: new Types.ObjectId(actorId),
@@ -594,6 +613,13 @@ export class MasterDataService {
       mergedTotalRows: doc.mergedTotalRows,
       createdAt: (doc as MasterDataUploadRequest & { createdAt?: Date }).createdAt,
       updatedAt: (doc as MasterDataUploadRequest & { updatedAt?: Date }).updatedAt,
+    };
+  }
+
+  private toUploadRequestDetailResponse(doc: MasterDataUploadRequest) {
+    return {
+      ...this.toUploadRequestResponse(doc),
+      rows: doc.rows ?? [],
     };
   }
 }

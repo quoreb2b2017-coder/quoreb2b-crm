@@ -31,6 +31,8 @@ interface MasterDataUploadRequestListProps {
   canReview?: boolean;
   actionLoadingId?: string | null;
   onViewDuplicates?: (request: MasterDataUploadRequest) => void;
+  onViewFile?: (request: MasterDataUploadRequest) => void;
+  viewFileLoadingId?: string | null;
   onApprove?: (request: MasterDataUploadRequest) => void;
   onReject?: (request: MasterDataUploadRequest) => void;
   onDelete?: (request: MasterDataUploadRequest) => void;
@@ -46,6 +48,8 @@ export function MasterDataUploadRequestList({
   canReview,
   actionLoadingId,
   onViewDuplicates,
+  onViewFile,
+  viewFileLoadingId,
   onApprove,
   onReject,
   onDelete,
@@ -146,6 +150,16 @@ export function MasterDataUploadRequestList({
                     </td>
                     <td className="border border-[#e0e0e0] px-3 py-2">
                       <div className="flex flex-wrap gap-2">
+                        {onViewFile && (
+                          <button
+                            type="button"
+                            disabled={viewFileLoadingId === request.id}
+                            onClick={() => onViewFile(request)}
+                            className="rounded-lg border border-[#217346]/40 bg-[#e2efda]/40 px-3 py-1.5 text-xs font-semibold text-[#217346] hover:bg-[#e2efda] disabled:opacity-50"
+                          >
+                            {viewFileLoadingId === request.id ? 'Loading…' : 'View file'}
+                          </button>
+                        )}
                         {request.duplicateCount > 0 && onViewDuplicates && (
                           <button
                             type="button"

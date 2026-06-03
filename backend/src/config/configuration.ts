@@ -37,4 +37,40 @@ export default () => ({
   SENTRY_TRACES_SAMPLE_RATE: parseFloat(process.env.SENTRY_TRACES_SAMPLE_RATE || '0.1'),
   LOG_LEVEL: process.env.LOG_LEVEL || 'debug',
   SOCKET_CORS_ORIGINS: process.env.SOCKET_CORS_ORIGINS,
+  BULK_EMAIL_SMTP_FROM: process.env.BULK_EMAIL_SMTP_FROM,
+  BULK_EMAIL_DOMAIN_CACHE_TTL_MS: parseInt(
+    process.env.BULK_EMAIL_DOMAIN_CACHE_TTL_MS || '3600000',
+    10,
+  ),
+  BULK_EMAIL_DNS_NEGATIVE_CACHE_TTL_MS: parseInt(
+    process.env.BULK_EMAIL_DNS_NEGATIVE_CACHE_TTL_MS || '300000',
+    10,
+  ),
+  BULK_EMAIL_MAX_ROWS_PER_BATCH: parseInt(
+    process.env.BULK_EMAIL_MAX_ROWS_PER_BATCH || '100000',
+    10,
+  ),
+  BULK_EMAIL_SYNC_MAX_ROWS: parseInt(process.env.BULK_EMAIL_SYNC_MAX_ROWS || '200', 10),
+  BULK_EMAIL_SMTP_TIMEOUT_MS: parseInt(
+    process.env.BULK_EMAIL_SMTP_TIMEOUT_MS || '5000',
+    10,
+  ),
+  BULK_EMAIL_STOP_ON_VALID: process.env.BULK_EMAIL_STOP_ON_VALID !== 'false',
+  BULK_EMAIL_QUEUE_CONCURRENCY: parseInt(
+    process.env.BULK_EMAIL_QUEUE_CONCURRENCY || '4',
+    10,
+  ),
+  BULK_EMAIL_PROSPECT_CONCURRENCY: parseInt(
+    process.env.BULK_EMAIL_PROSPECT_CONCURRENCY || '4',
+    10,
+  ),
+  BULK_EMAIL_MAX_PATTERNS: parseInt(process.env.BULK_EMAIL_MAX_PATTERNS || '12', 10),
+  BULK_EMAIL_SKIP_CATCH_ALL_PROBE: process.env.BULK_EMAIL_SKIP_CATCH_ALL_PROBE !== 'false',
+  BULK_EMAIL_DISPOSABLE_DOMAINS_PATH: process.env.BULK_EMAIL_DISPOSABLE_DOMAINS_PATH,
+  BULK_EMAIL_MX_ONLY_FALLBACK: process.env.BULK_EMAIL_MX_ONLY_FALLBACK !== 'false',
+  BULK_EMAIL_STRICT_MAILBOX_REJECT: process.env.BULK_EMAIL_STRICT_MAILBOX_REJECT === 'true',
+  /** In-house only — no third-party verification API */
+  BULK_EMAIL_VERIFICATION_PROVIDER: 'internal',
+  /** false = RCPT TO mailbox check (matches ZeroBounce mailbox layer) */
+  BULK_EMAIL_SKIP_SMTP_PROBE: process.env.BULK_EMAIL_SKIP_SMTP_PROBE === 'true',
 });

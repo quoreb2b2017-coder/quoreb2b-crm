@@ -132,6 +132,13 @@ export const masterDataService = {
     return unwrap<MasterDataUploadRequest[]>({ data });
   },
 
+  getUploadRequest: async (
+    requestId: string,
+  ): Promise<MasterDataUploadRequest & { rows: string[][] }> => {
+    const { data } = await apiClient.get(`/master-data/upload-requests/${requestId}`);
+    return unwrap<MasterDataUploadRequest & { rows: string[][] }>({ data });
+  },
+
   reviewUploadRequest: async (
     requestId: string,
     status: MasterDataUploadRequestStatus,

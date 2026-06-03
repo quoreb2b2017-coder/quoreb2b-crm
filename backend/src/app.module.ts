@@ -35,6 +35,7 @@ import { AwsModule } from './aws/aws.module';
 import { BatchesModule } from './modules/batches/batches.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { LeaveModule } from './modules/leave/leave.module';
+import { BulkEmailVerificationModule } from './modules/bulk-email-verification/bulk-email-verification.module';
 
 @Module({})
 export class AppModule {
@@ -101,6 +102,7 @@ export class AppModule {
         BatchesModule,
         AttendanceModule,
         LeaveModule,
+        BulkEmailVerificationModule.register(),
         EventsModule,
         HealthModule,
       ],

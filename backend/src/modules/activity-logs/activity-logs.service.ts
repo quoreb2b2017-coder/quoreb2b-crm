@@ -296,6 +296,32 @@ export class ActivityLogsService {
           superAdminActionLabel: 'Open requests',
           priority: 'high' as const,
         };
+      case 'BULK_EMAIL_VERIFICATION_UPLOAD':
+        return {
+          ...basePayload,
+          actorTitle: 'Bulk email verification started',
+          superAdminTitle: 'Bulk email verification queued',
+          actorMessage: `${String(meta.totalProspects ?? 0)} prospect(s) queued from "${String(meta.fileName ?? 'upload')}"`,
+          superAdminMessage: `${actorName} started bulk email verification for ${String(meta.totalProspects ?? 0)} prospect(s)`,
+          actorActionUrl: '/db-admin/bulk-email-verification',
+          superAdminActionUrl: '/db-admin/bulk-email-verification',
+          actorActionLabel: 'View verification',
+          superAdminActionLabel: 'View verification',
+          priority: 'high' as const,
+        };
+      case 'BULK_EMAIL_VERIFICATION_COMPLETE':
+        return {
+          ...basePayload,
+          actorTitle: 'Email verification complete',
+          superAdminTitle: 'DB Admin verification complete',
+          actorMessage: `${String(meta.verifiedCount ?? 0)} verified email(s) from "${String(meta.fileName ?? 'batch')}"`,
+          superAdminMessage: `${actorName} completed email verification with ${String(meta.verifiedCount ?? 0)} verified result(s)`,
+          actorActionUrl: '/db-admin/bulk-email-verification',
+          superAdminActionUrl: '/db-admin/bulk-email-verification',
+          actorActionLabel: 'View results',
+          superAdminActionLabel: 'View results',
+          priority: 'high' as const,
+        };
       default:
         if (log.action === 'LEAD_UPDATE') {
           return null;

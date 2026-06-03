@@ -11,6 +11,7 @@ import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
 import { MasterDataDuplicatePreviewModal } from '@/components/master-data/MasterDataDuplicatePreviewModal';
 import { MasterDataUploadRequestList } from '@/components/master-data/MasterDataUploadRequestList';
+import { SpreadsheetPreviewModal } from '@/components/spreadsheet/SpreadsheetPreviewModal';
 
 const FILTERS: Array<MasterDataUploadRequestStatus | 'all'> = [
   'pending',
@@ -27,6 +28,13 @@ export function MasterDataRequestInbox() {
   const [duplicateRequest, setDuplicateRequest] = useState<MasterDataUploadRequest | null>(null);
   const [rejectTarget, setRejectTarget] = useState<MasterDataUploadRequest | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [filePreview, setFilePreview] = useState<{
+    title: string;
+    headers: string[];
+    rows: string[][];
+    totalRows: number;
+  } | null>(null);
+  const [viewFileLoadingId, setViewFileLoadingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -81,6 +89,23 @@ export function MasterDataRequestInbox() {
       toast.error('Reject failed', extractApiError(err, 'Could not reject request'));
     } finally {
       setActionLoadingId(null);
+    }
+  };
+
+  const viewRequestFile = async (request: MasterDataUploadRequest) => {
+    setViewFileLoadingId(request.id);
+    try {
+      const detail = await masterDataService.getUploadRequest(request.id);
+      setFilePreview({
+        title: `${detail.fileName} — submitted file`,
+        headers: detail.headers,
+        rows: detail.rows,
+        totalRows: detail.rowCount,
+      });
+    } catch (err) {
+      toast.error('Could not load file', extractApiError(err, 'Load failed'));
+    } finally {
+      setViewFileLoadingId(null);
     }
   };
 
@@ -147,12 +172,25 @@ export function MasterDataRequestInbox() {
         canReview
         actionLoadingId={actionLoadingId}
         onViewDuplicates={(request) => setDuplicateRequest(request)}
+        onViewFile={(request) => void viewRequestFile(request)}
+        viewFileLoadingId={viewFileLoadingId}
         onApprove={approve}
         onReject={(request) => {
           setRejectTarget(request);
           setRejectReason('');
         }}
         onDelete={remove}
+      />
+
+      <SpreadsheetPreviewModal
+        isOpen={Boolean(filePreview)}
+        onClose={() => setFilePreview(null)}
+        title={filePreview?.title ?? 'Uploaded file'}
+        headers={filePreview?.headers ?? []}
+        rows={filePreview?.rows ?? []}
+        totalRows={filePreview?.totalRows}
+        note="Full file submitted by DB Admin for master data approval."
+        actions={[{ label: 'Close', onClick: () => setFilePreview(null), variant: 'secondary' }]}
       />
 
       <MasterDataDuplicatePreviewModal

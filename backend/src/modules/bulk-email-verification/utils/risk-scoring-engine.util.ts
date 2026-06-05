@@ -1,5 +1,8 @@
 import { EmailVerificationStatus } from '../bulk-email-verification.constants';
-import { isDefinitiveMailboxReject } from './smtp-response-classifier.util';
+import {
+  isDefinitiveMailboxReject,
+  isSmtpIpBlocked,
+} from './smtp-response-classifier.util';
 
 export interface VerificationSignals {
   syntaxValid: boolean;
@@ -45,6 +48,7 @@ function isMxOnlyWithoutMailboxCheck(signals: VerificationSignals): boolean {
 /** True when we ran (or tried) RCPT TO and mailbox looks bad — ZeroBounce "Mailbox: invalid". */
 function mailboxCheckFailed(signals: VerificationSignals): boolean {
   if (isMxOnlyWithoutMailboxCheck(signals)) return false;
+  if (isSmtpIpBlocked(signals.smtpResponse)) return false;
 
   if (isHardSmtpReject(signals)) return true;
 
@@ -96,6 +100,16 @@ export function computeRiskScore(signals: VerificationSignals): RiskScoreResult 
     };
   }
 
+  if (signals.mxValid && isSmtpIpBlocked(signals.smtpResponse)) {
+    reasons.push('smtp_ip_blocked_mx_pattern');
+    return {
+      status: EmailVerificationStatus.VALID,
+      score: 90,
+      label: confidenceLabel(90),
+      reasons,
+    };
+  }
+
   if (!signals.mxValid) {
     if (signals.smtpResponse.includes('dns_error')) {
       reasons.push('dns_error');
@@ -125,6 +139,19 @@ export function computeRiskScore(signals: VerificationSignals): RiskScoreResult 
   }
 
   if (mailboxCheckFailed(signals)) {
+    const softMailboxFail =
+      signals.smtpResponse.includes('connection_failed') ||
+      signals.smtpResponse.includes('connection_timeout') ||
+      signals.smtpResponse.includes('all_mx_failed');
+    if (softMailboxFail && !isHardSmtpReject(signals)) {
+      reasons.push('mailbox_unreachable');
+      return {
+        status: EmailVerificationStatus.LIKELY_VALID,
+        score: 78,
+        label: confidenceLabel(78),
+        reasons,
+      };
+    }
     reasons.push('mailbox_check_failed');
     return {
       status: EmailVerificationStatus.INVALID,

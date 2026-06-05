@@ -15,6 +15,8 @@ export interface ProspectRow {
   lastName: string;
   companyName?: string;
   domain: string;
+  /** When upload has Email instead of domain — verified first. */
+  email?: string;
 }
 
 export interface EmailVerificationBatch {
@@ -97,6 +99,8 @@ export interface ListRecordsParams {
   minScore?: number;
   domain?: string;
   validOnly?: boolean;
+  /** corrected | best — narrow rows for email-specific exports */
+  emailKind?: 'corrected' | 'best';
 }
 
 function unwrap<T>(data: unknown): T {
@@ -149,6 +153,7 @@ export const bulkEmailVerificationService = {
     if (params.domain) query.domain = params.domain;
     if (params.minScore != null) query.minScore = params.minScore;
     if (params.validOnly === true) query.validOnly = true;
+    if (params.emailKind) query.emailKind = params.emailKind;
 
     const res = await apiClient.get(
       `/bulk-email-verification/batches/${batchId}/records`,
@@ -219,6 +224,7 @@ export const bulkEmailVerificationService = {
     if (params.domain) query.domain = params.domain;
     if (params.minScore != null) query.minScore = params.minScore;
     if (params.validOnly === true) query.validOnly = true;
+    if (params.emailKind) query.emailKind = params.emailKind;
 
     const res = await apiClient.get(
       `/bulk-email-verification/batches/${batchId}/export`,

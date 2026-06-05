@@ -57,11 +57,15 @@ export default () => ({
   ),
   BULK_EMAIL_STOP_ON_VALID: process.env.BULK_EMAIL_STOP_ON_VALID !== 'false',
   BULK_EMAIL_QUEUE_CONCURRENCY: parseInt(
-    process.env.BULK_EMAIL_QUEUE_CONCURRENCY || '4',
+    process.env.BULK_EMAIL_QUEUE_CONCURRENCY || '8',
     10,
   ),
   BULK_EMAIL_PROSPECT_CONCURRENCY: parseInt(
-    process.env.BULK_EMAIL_PROSPECT_CONCURRENCY || '4',
+    process.env.BULK_EMAIL_PROSPECT_CONCURRENCY || '8',
+    10,
+  ),
+  BULK_EMAIL_PATTERN_CONCURRENCY: parseInt(
+    process.env.BULK_EMAIL_PATTERN_CONCURRENCY || '6',
     10,
   ),
   BULK_EMAIL_MAX_PATTERNS: parseInt(process.env.BULK_EMAIL_MAX_PATTERNS || '12', 10),

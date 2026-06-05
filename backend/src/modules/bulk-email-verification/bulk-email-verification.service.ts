@@ -27,6 +27,7 @@ import { SystemRole } from '../../common/constants/roles.constant';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { NotificationTriggerService } from '../notifications/notification-trigger.service';
 import { isValidDomainFormat, normalizeDomain } from './utils/email-patterns.util';
+import { validateEmailSyntax } from './utils/syntax-validation.util';
 import { getOutboundSmtpPortStatus } from './utils/smtp-connectivity.util';
 
 @Injectable()
@@ -47,12 +48,69 @@ export class BulkEmailVerificationService {
   ) {}
 
   async createBatch(dto: CreateEmailVerificationBatchDto, actor: ActivityActor) {
-    const normalizedRows = dto.rows.map((row) => ({
-      firstName: row.firstName.trim(),
-      lastName: row.lastName.trim(),
-      companyName: (row.companyName ?? '').trim(),
-      domain: normalizeDomain(row.domain),
-    }));
+    const normalizedRows: Array<{
+      firstName: string;
+      lastName: string;
+      companyName: string;
+      domain: string;
+      providedEmail?: string;
+    }> = [];
+    let invalidEmailCount = 0;
+    let missingDomainOrEmail = 0;
+
+    for (const row of dto.rows) {
+      const firstName = row.firstName.trim();
+      const lastName = row.lastName.trim();
+      const companyName = (row.companyName ?? '').trim();
+      const rawDomain = (row.domain ?? '').trim();
+      const rawEmail = (row.email ?? '').trim();
+
+      let domain = rawDomain ? normalizeDomain(rawDomain) : '';
+      let providedEmail: string | undefined;
+
+      if (rawEmail) {
+        const syntax = validateEmailSyntax(rawEmail);
+        if (!syntax.valid) {
+          invalidEmailCount += 1;
+          continue;
+        }
+        providedEmail = syntax.normalizedEmail;
+        domain = syntax.domain;
+      } else if (domain) {
+        domain = normalizeDomain(domain);
+      }
+
+      if (!firstName || !lastName || !domain) {
+        missingDomainOrEmail += 1;
+        continue;
+      }
+
+      normalizedRows.push({
+        firstName,
+        lastName,
+        companyName,
+        domain,
+        providedEmail,
+      });
+    }
+
+    if (!normalizedRows.length) {
+      throw new BadRequestException(
+        'No valid rows. Each row needs First Name, Last Name, and Company Domain or Email.',
+      );
+    }
+
+    if (invalidEmailCount > 0) {
+      throw new BadRequestException(
+        `Invalid email format on ${invalidEmailCount} row(s).`,
+      );
+    }
+
+    if (missingDomainOrEmail > 0) {
+      throw new BadRequestException(
+        `${missingDomainOrEmail} row(s) missing domain or email (with first and last name).`,
+      );
+    }
 
     const invalidDomains = normalizedRows.filter((r) => !isValidDomainFormat(r.domain));
     if (invalidDomains.length > 0) {
@@ -63,7 +121,7 @@ export class BulkEmailVerificationService {
 
     const seen = new Set<string>();
     const uniqueRows = normalizedRows.filter((row) => {
-      const key = `${row.firstName.toLowerCase()}|${row.lastName.toLowerCase()}|${row.domain}`;
+      const key = `${row.firstName.toLowerCase()}|${row.lastName.toLowerCase()}|${row.domain}|${row.providedEmail ?? ''}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -943,6 +1001,18 @@ export class BulkEmailVerificationService {
     if (query.validOnly) {
       filter.verificationStatus = EmailVerificationStatus.VALID;
       filter.smtpResponse = { $not: { $regex: /^fast_mode/i } };
+    }
+
+    if (query.emailKind === 'corrected') {
+      filter.correctedEmail = { $exists: true, $nin: [null, ''] };
+      filter.$expr = {
+        $ne: [{ $toLower: '$correctedEmail' }, { $toLower: '$generatedEmail' }],
+      };
+    } else if (query.emailKind === 'best') {
+      filter.recommendedEmail = { $exists: true, $nin: [null, ''] };
+      filter.$expr = {
+        $ne: [{ $toLower: '$recommendedEmail' }, { $toLower: '$generatedEmail' }],
+      };
     }
   }
 

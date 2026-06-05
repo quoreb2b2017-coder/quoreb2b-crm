@@ -71,32 +71,34 @@ export function generateEmailPatterns(
     candidates.push({ email, patternType });
   };
 
-  add(`${first}.${last}`, 'firstname.lastname');
-  add(`${f}.${last}`, 'f.lastname');
-  add(`${first}${last}`, 'firstnamelastname');
+  add(first, 'firstname');
   add(`${f}${last}`, 'flastname');
+  add(`${f}.${last}`, 'f.lastname');
+  add(`${first}-${last}`, 'first-last');
+  add(`${first}${last[0] ?? ''}`, 'firstl');
+  add(`${first}${last}`, 'firstnamelastname');
+  add(`${first}.${last}`, 'firstname.lastname');
   add(`${first}_${last}`, 'firstname_lastname');
   add(`${last}.${first}`, 'lastname.firstname');
   add(`${last}${f}`, 'lastnamef');
-  add(`${first}${last[0] ?? ''}`, 'firstl');
   add(`${last}`, 'lastname');
-  add(first, 'firstname');
 
   return candidates;
 }
 
-/** Most common B2B formats first — try all when hunting corrected addresses. */
+/** Try flast / combined / dotted before bare first@ (ZB: mwein, kirakingsley, sarah.paro). */
 const PATTERN_PRIORITY: string[] = [
-  'firstname.lastname',
-  'f.lastname',
-  'firstnamelastname',
   'flastname',
+  'firstnamelastname',
+  'f.lastname',
+  'firstname.lastname',
+  'firstl',
+  'first-last',
+  'firstname',
   'firstname_lastname',
   'lastname.firstname',
   'lastnamef',
-  'firstl',
   'lastname',
-  'firstname',
 ];
 
 export function sortPatternsByPriority(

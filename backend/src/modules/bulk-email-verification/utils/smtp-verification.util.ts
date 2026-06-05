@@ -168,7 +168,7 @@ export async function verifyEmailSmtp(
 
   let lastUnknown: SmtpVerifyResult | null = null;
 
-  for (const host of mxHosts.slice(0, 4)) {
+  for (const host of mxHosts.slice(0, 3)) {
     const result = await verifyOnHost(host, email, fromEmail, timeout);
     if (
       result.status === EmailVerificationStatus.VALID ||

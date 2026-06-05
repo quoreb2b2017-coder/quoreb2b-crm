@@ -156,3 +156,17 @@ export function pickCorrectedEmail(
 
   return undefined;
 }
+
+/** When best differs from first guess but is clearly better — always surface for UI/export. */
+export function pickRecommendedEmail(
+  primaryEmail: string,
+  bestEmail: string,
+  bestStatusRank: number,
+): string {
+  const primary = primaryEmail.trim().toLowerCase();
+  const best = bestEmail.trim().toLowerCase();
+  if (!best) return primaryEmail;
+  if (best === primary) return bestEmail;
+  if (bestStatusRank >= 30) return bestEmail;
+  return primaryEmail;
+}

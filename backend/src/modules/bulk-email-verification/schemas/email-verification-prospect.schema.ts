@@ -21,6 +21,10 @@ export class EmailVerificationProspect extends Document {
   @Prop({ required: true, trim: true, lowercase: true })
   domain!: string;
 
+  /** When upload includes Email column — verify this address first. */
+  @Prop({ trim: true, lowercase: true })
+  providedEmail?: string;
+
   @Prop({ default: false, index: true })
   processed!: boolean;
 }

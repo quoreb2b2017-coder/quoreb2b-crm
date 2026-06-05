@@ -56,4 +56,9 @@ export class ListEmailVerificationRecordsDto {
   @Transform(({ value }) => queryBoolean(value))
   @IsBoolean()
   validOnly?: boolean;
+
+  /** corrected = rows with correctedEmail ≠ generatedEmail; best = rows with recommended ≠ generated */
+  @IsOptional()
+  @IsString()
+  emailKind?: 'corrected' | 'best';
 }

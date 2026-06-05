@@ -26,10 +26,15 @@ export class ProspectRowDto {
   @MaxLength(200)
   companyName?: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(253)
-  domain!: string;
+  domain?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(320)
+  email?: string;
 }
 
 export class CreateEmailVerificationBatchDto {

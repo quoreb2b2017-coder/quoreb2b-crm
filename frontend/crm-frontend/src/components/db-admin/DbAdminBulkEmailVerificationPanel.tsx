@@ -43,6 +43,7 @@ const PROSPECT_HEADERS = [
   'Last Name',
   'Company Name',
   'Company Domain',
+  'Email',
 ] as const;
 
 type PendingUpload = {
@@ -118,6 +119,12 @@ function normalizeHeader(h: string) {
   return h.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+function domainFromEmailAddress(email: string): string {
+  const at = email.lastIndexOf('@');
+  if (at < 1 || at >= email.length - 1) return '';
+  return email.slice(at + 1).trim().toLowerCase();
+}
+
 function mapRowsToProspects(headers: string[], rows: string[][]): ProspectRow[] {
   const idx = {
     firstName: headers.findIndex((h) =>
@@ -134,22 +141,49 @@ function mapRowsToProspects(headers: string[], rows: string[][]): ProspectRow[] 
         normalizeHeader(h),
       ),
     ),
+    email: headers.findIndex((h) =>
+      ['email', 'emailaddress', 'emailid', 'workemail', 'businessemail', 'e-mail'].includes(
+        normalizeHeader(h),
+      ),
+    ),
   };
 
-  if (idx.firstName < 0 || idx.lastName < 0 || idx.domain < 0) {
+  if (idx.firstName < 0 || idx.lastName < 0) {
+    throw new Error('Required columns: First Name and Last Name');
+  }
+  if (idx.domain < 0 && idx.email < 0) {
     throw new Error(
-      'Required columns: First Name, Last Name, Company Domain (optional: Company Name)',
+      'Add Company Domain or Email — need First Name, Last Name, and one of those (Company Name optional)',
     );
   }
 
   return rows
-    .map((row) => ({
-      firstName: (row[idx.firstName] ?? '').trim(),
-      lastName: (row[idx.lastName] ?? '').trim(),
-      companyName: idx.companyName >= 0 ? (row[idx.companyName] ?? '').trim() : '',
-      domain: (row[idx.domain] ?? '').trim(),
-    }))
-    .filter((r) => r.firstName && r.lastName && r.domain);
+    .map((row) => {
+      const firstName = (row[idx.firstName] ?? '').trim();
+      const lastName = (row[idx.lastName] ?? '').trim();
+      const companyName = idx.companyName >= 0 ? (row[idx.companyName] ?? '').trim() : '';
+      const emailRaw = idx.email >= 0 ? (row[idx.email] ?? '').trim().toLowerCase() : '';
+      let domain = idx.domain >= 0 ? (row[idx.domain] ?? '').trim() : '';
+      if (emailRaw) {
+        const fromEmail = domainFromEmailAddress(emailRaw);
+        if (!domain) domain = fromEmail;
+      }
+      const prospect: ProspectRow = {
+        firstName,
+        lastName,
+        companyName,
+        domain,
+      };
+      if (emailRaw) prospect.email = emailRaw;
+      return prospect;
+    })
+    .filter((r) => {
+      if (!r.firstName || !r.lastName) return false;
+      if (r.email && !r.domain) {
+        r.domain = domainFromEmailAddress(r.email);
+      }
+      return Boolean(r.domain);
+    });
 }
 
 function batchPeriod(batch: EmailVerificationBatch) {
@@ -290,14 +324,8 @@ function VerificationStatusFilter({
             );
           })}
         </ul>
-        <div className="border-t border-[#e8e8e8] px-2 py-1.5">
-          <button
-            type="button"
-            className="text-[10px] font-semibold text-slate-600 hover:underline"
-            onClick={() => onChange([])}
-          >
-            Show all statuses
-          </button>
+        <div className="border-t border-[#e8e8e8] px-2 py-1.5 text-[10px] text-slate-500">
+          Download includes only checked statuses.
         </div>
       </div>
     </div>
@@ -497,7 +525,13 @@ export function DbAdminBulkEmailVerificationPanel() {
   }, [batches, refreshBatch]);
 
   const prospectsToPreviewRows = (prospects: ProspectRow[]) =>
-    prospects.map((p) => [p.firstName, p.lastName, p.companyName ?? '', p.domain]);
+    prospects.map((p) => [
+      p.firstName,
+      p.lastName,
+      p.companyName ?? '',
+      p.domain,
+      p.email ?? '',
+    ]);
 
   const onFileSelected = async (file: File) => {
     try {
@@ -621,74 +655,121 @@ export function DbAdminBulkEmailVerificationPanel() {
     }
   };
 
-  const exportHeaders = [
-    'First Name',
-    'Last Name',
-    'Company Name',
-    'Company Domain',
-    'Best Email (use this)',
-    'Generated Email',
-    'Corrected Email',
-    'Pattern',
-    'Verification Status',
-    'Check Details',
-    'Confidence Score',
-    'Confidence Label',
-    'MX Valid',
-    'Provider',
-  ];
+  type ExportKind = 'status' | 'corrected' | 'best';
 
-  const recordToRow = (r: EmailVerificationRecord) => [
-    r.firstName,
-    r.lastName,
-    r.companyName ?? '',
-    r.domain,
-    r.recommendedEmail || r.correctedEmail || r.generatedEmail,
-    r.generatedEmail,
-    r.correctedEmail ?? '',
-    r.patternType ?? '',
-    r.verificationStatus,
-    r.zerobounceStatus ?? '',
-    String(r.confidenceScore),
-    r.confidenceLabel,
-    r.mxValid ? 'yes' : 'no',
-    r.verificationProvider ?? '',
-  ];
+  const exportHeadersByKind: Record<ExportKind, string[]> = {
+    status: [
+      'First Name',
+      'Last Name',
+      'Company Name',
+      'Company Domain',
+      'Best Email (use this)',
+      'Generated Email',
+      'Corrected Email',
+      'Pattern',
+      'Verification Status',
+      'Check Details',
+      'Confidence Score',
+      'Confidence Label',
+      'MX Valid',
+      'Provider',
+    ],
+    corrected: ['Email'],
+    best: ['Email'],
+  };
 
-  const handleExportXlsx = async () => {
+  const recordToExportRow = (r: EmailVerificationRecord, kind: ExportKind) => {
+    if (kind === 'corrected') {
+      return [r.correctedEmail ?? ''];
+    }
+    if (kind === 'best') {
+      return [r.recommendedEmail || r.generatedEmail];
+    }
+    return [
+      r.firstName,
+      r.lastName,
+      r.companyName ?? '',
+      r.domain,
+      r.recommendedEmail || r.correctedEmail || r.generatedEmail,
+      r.generatedEmail,
+      r.correctedEmail ?? '',
+      r.patternType ?? '',
+      r.verificationStatus,
+      r.zerobounceStatus ?? '',
+      String(r.confidenceScore),
+      r.confidenceLabel,
+      r.mxValid ? 'yes' : 'no',
+      r.verificationProvider ?? '',
+    ];
+  };
+
+  const hasCorrectedEmail = (r: EmailVerificationRecord) =>
+    Boolean(
+      r.correctedEmail &&
+        r.correctedEmail.toLowerCase() !== r.generatedEmail.toLowerCase(),
+    );
+
+  const handleExportXlsx = async (kind: ExportKind) => {
     if (!selectedBatchId) return;
+    if (!statusFilters.length) {
+      toast.error('Select statuses', 'Choose at least one status in the filter before download.');
+      return;
+    }
     setExporting(true);
     try {
+      const statusesParam = statusFilters.join(',');
       const exportFilters = {
-        statuses: statusFilters.length ? statusFilters.join(',') : undefined,
+        statuses: statusesParam,
         minScore: minScore === '' ? undefined : Number(minScore),
+        emailKind: kind === 'corrected' ? ('corrected' as const) : undefined,
       };
-      const items = await bulkEmailVerificationService.listAllRecords(
+      const allowed = new Set(statusFilters);
+      const fetched = await bulkEmailVerificationService.listAllRecords(
         selectedBatchId,
         exportFilters,
       );
+      let items = fetched.filter((r) => allowed.has(r.verificationStatus));
+      if (kind === 'corrected') {
+        items = items.filter(hasCorrectedEmail);
+      }
       if (!items.length) {
+        const statusLabel = statusFilters.map((s) => formatStatus(s)).join(', ');
+        if (kind === 'corrected') {
+          throw new Error(
+            `No corrected-email rows for status: ${statusLabel}. Try other statuses or Re-run verify.`,
+          );
+        }
         throw new Error(
-          statusFilters.length
-            ? 'No rows match the selected statuses. Adjust filters or run Verify first.'
-            : 'No verification rows to export. Run Verify on this job first.',
+          `No rows with status: ${statusLabel}. Change filter or run Verify again.`,
         );
       }
+      const statusSlug = statusFilters.map((s) => s.replace(/_/g, '-')).join('-');
+      const statusLabel = statusFilters.map((s) => formatStatus(s)).join(', ');
+      const kindSlug =
+        kind === 'corrected' ? 'corrected-email' : kind === 'best' ? 'best-email' : statusSlug;
       const sheetName =
-        statusFilters.length === 0
-          ? 'All emails'
-          : statusFilters.map((s) => formatStatus(s)).join(', ');
+        kind === 'status'
+          ? statusLabel
+          : kind === 'corrected'
+            ? `Corrected — ${statusLabel}`
+            : `Best email — ${statusLabel}`;
       const baseName = selectedBatch?.sourceFileName?.replace(/\.[^.]+$/, '') ?? 'emails';
       await downloadSpreadsheetXlsx(
         {
-          fileName: `${baseName}-verified.xlsx`,
+          fileName: `${baseName}-${kindSlug}.xlsx`,
           sheetName: sheetName.slice(0, 31),
-          headers: exportHeaders,
-          rows: items.map(recordToRow),
+          headers: exportHeadersByKind[kind],
+          rows: items.map((r) => recordToExportRow(r, kind)),
         },
-        `email-verification-${baseName}.xlsx`,
+        `email-verification-${baseName}-${kindSlug}.xlsx`,
       );
-      toast.success('Export ready', `${items.length} row(s) downloaded as Excel.`);
+      const kindNote =
+        kind === 'corrected'
+          ? 'corrected email only'
+          : kind === 'best'
+            ? 'best email only'
+            : statusLabel;
+      toast.success('Export ready', `${items.length} row(s) — ${kindNote}.`);
     } catch (err) {
       toast.error('Export failed', extractApiError(err));
     } finally {
@@ -702,10 +783,16 @@ export function DbAdminBulkEmailVerificationPanel() {
         {
           fileName: 'email-verification-template.xlsx',
           sheetName: 'Prospects',
-          headers: ['First Name', 'Last Name', 'Company Name', 'Company Domain'],
+          headers: [
+            'First Name',
+            'Last Name',
+            'Company Name',
+            'Company Domain',
+            'Email',
+          ],
           rows: [
-            ['Jane', 'Doe', 'Acme Corp', 'acme.com'],
-            ['John', 'Smith', 'Globex', 'globex.io'],
+            ['Jane', 'Doe', 'Acme Corp', 'acme.com', ''],
+            ['John', 'Smith', 'Globex', '', 'john.smith@globex.io'],
           ],
         },
         'email-verification-template.xlsx',
@@ -715,12 +802,22 @@ export function DbAdminBulkEmailVerificationPanel() {
     }
   };
 
-  const metrics = [
-    { label: 'Prospects', value: analytics?.totalRecordsUploaded ?? 0 },
-    { label: 'SMTP confirmed', value: analytics?.verifiedEmails ?? 0 },
-    { label: 'Likely valid', value: analytics?.likelyValidEmails ?? 0 },
-    { label: 'Match rate', value: `${analytics?.successRate ?? 0}%` },
-  ];
+  const metrics = useMemo(() => {
+    if (!selectedBatch) {
+      return [
+        { label: 'Prospects', value: '—' },
+        { label: 'SMTP confirmed', value: '—' },
+        { label: 'Likely valid', value: '—' },
+        { label: 'Match rate', value: '—' },
+      ];
+    }
+    return [
+      { label: 'Prospects', value: selectedBatch.totalProspects },
+      { label: 'SMTP confirmed', value: selectedBatch.verifiedCount },
+      { label: 'Likely valid', value: selectedBatch.likelyValidCount ?? 0 },
+      { label: 'Match rate', value: `${selectedBatch.successRate}%` },
+    ];
+  }, [selectedBatch]);
 
   return (
     <AttendanceFullBleed className="gap-4 px-4 py-4 sm:px-5">
@@ -739,7 +836,7 @@ export function DbAdminBulkEmailVerificationPanel() {
       <ExcelSheetShell
         title="Email Finder & Verification"
         loading={loading}
-        hint="Upload CSV/Excel — First Name, Last Name, Company Domain"
+        hint="Domain = verify emails · Email column = format scan only (all Valid)"
         toolbar={
           <div className="flex w-full flex-wrap items-center gap-2">
             <span className="font-medium text-slate-700">
@@ -785,6 +882,19 @@ export function DbAdminBulkEmailVerificationPanel() {
         ) : null}
 
         <div className="overflow-x-auto bg-white">
+          {selectedBatch ? (
+            <p className="border-b border-[#e0e0e0] bg-[#fafafa] px-3 py-1.5 text-[11px] text-slate-600">
+              Stats for:{' '}
+              <span className="font-semibold text-slate-800">{selectedBatch.sourceFileName}</span>
+              {selectedBatch.status === 'processing' ? (
+                <span className="ml-2 text-sky-700">(updating…)</span>
+              ) : null}
+            </p>
+          ) : (
+            <p className="border-b border-[#e0e0e0] bg-[#fafafa] px-3 py-1.5 text-[11px] text-slate-500">
+              Select a file in the month folder below to see its stats.
+            </p>
+          )}
           <table className="w-full min-w-full border-collapse text-[13px]">
             <thead>
               <tr>
@@ -968,6 +1078,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                           onClick={() => {
                             setSelectedBatchId(batch.id);
                             setRecordPage(1);
+                            void refreshBatch(batch.id);
                           }}
                           className={cn(
                             'cursor-pointer even:bg-[#fafafa]',
@@ -1184,22 +1295,53 @@ export function DbAdminBulkEmailVerificationPanel() {
               <option value="95">Score 95+</option>
             </select>
             {canDownload && selectedBatch?.status === 'completed' ? (
-              <button
-                type="button"
-                disabled={!selectedBatchId || exporting}
-                onClick={() => void handleExportXlsx()}
-                className={shellBtn(
-                  'border-[#217346] bg-[#217346] text-white hover:bg-[#1a5c38]',
-                )}
-                title="Download filtered rows as Excel (.xlsx)"
-              >
-                {exporting ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
+              <>
+                <button
+                  type="button"
+                  disabled={!selectedBatchId || exporting || statusFilters.length === 0}
+                  onClick={() => void handleExportXlsx('status')}
+                  className={shellBtn(
+                    'border-[#217346] bg-[#217346] text-white hover:bg-[#1a5c38]',
+                  )}
+                  title={
+                    statusFilters.length
+                      ? `Full export — statuses: ${statusFilters.map((s) => formatStatus(s)).join(', ')}`
+                      : 'Select at least one status to download'
+                  }
+                >
+                  {exporting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Download className="h-3.5 w-3.5" />
+                  )}
+                  Download
+                  {statusFilters.length > 0 ? (
+                    <span className="font-normal opacity-90">
+                      ({statusFilterLabel(statusFilters)})
+                    </span>
+                  ) : null}
+                </button>
+                <button
+                  type="button"
+                  disabled={!selectedBatchId || exporting || statusFilters.length === 0}
+                  onClick={() => void handleExportXlsx('corrected')}
+                  className={shellBtn()}
+                  title="Only corrected emails — one Email column per row"
+                >
                   <Download className="h-3.5 w-3.5" />
-                )}
-                Download Excel
-              </button>
+                  Corrected email
+                </button>
+                <button
+                  type="button"
+                  disabled={!selectedBatchId || exporting || statusFilters.length === 0}
+                  onClick={() => void handleExportXlsx('best')}
+                  className={shellBtn()}
+                  title="Same status filter — one Email column (best/recommended) per row"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Best email
+                </button>
+              </>
             ) : null}
           </div>
         }
@@ -1382,7 +1524,7 @@ export function DbAdminBulkEmailVerificationPanel() {
         headers={pendingUpload?.headers ?? [...PROSPECT_HEADERS]}
         rows={pendingUpload?.rows ?? []}
         totalRows={pendingUpload?.rows.length}
-        note="Check names and domains. Only valid rows are shown."
+        note="Email column → format check only (marked Valid). Company Domain → full SMTP/pattern verify. Valid rows only."
         actions={
           pendingUpload
             ? [

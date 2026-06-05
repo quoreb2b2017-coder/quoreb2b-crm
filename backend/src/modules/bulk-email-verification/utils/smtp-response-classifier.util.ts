@@ -30,3 +30,18 @@ export function isDefinitiveMailboxReject(response: string, code?: number): bool
     r,
   );
 }
+
+/** Our IP is blocklisted — not proof the mailbox is bad (ZeroBounce uses clean egress). */
+export function isSmtpIpBlocked(response: string): boolean {
+  const r = response.toLowerCase();
+  const policyBlock =
+    /\b(5\.7\.1|554)\b/.test(r) &&
+    /\bblocked\b/.test(r) &&
+    (/\bservice unavailable\b/.test(r) || /\baccess denied\b/.test(r));
+  return (
+    /\bspamhaus\b/.test(r) ||
+    /\bzen\.spamhaus\b/.test(r) ||
+    policyBlock ||
+    (/\bclient host\b/.test(r) && /\bblocked\b/.test(r))
+  );
+}

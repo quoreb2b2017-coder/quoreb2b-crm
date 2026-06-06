@@ -22,6 +22,7 @@ import {
   EmailVerificationProspect,
   EmailVerificationProspectSchema,
 } from './schemas/email-verification-prospect.schema';
+import { DomainMxCacheService } from './domain-mx-cache.service';
 import { ActivityLogsModule } from '../activity-logs/activity-logs.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 
@@ -35,6 +36,7 @@ const coreProviders = [
   BulkEmailVerificationService,
   BulkEmailVerificationProcessorService,
   EmailVerificationEngineService,
+  DomainMxCacheService,
 ];
 
 @Module({})

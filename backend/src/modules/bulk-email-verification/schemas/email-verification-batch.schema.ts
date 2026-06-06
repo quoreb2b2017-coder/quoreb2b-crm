@@ -66,3 +66,5 @@ export const EmailVerificationBatchSchema =
 
 EmailVerificationBatchSchema.index({ createdBy: 1, createdAt: -1 });
 EmailVerificationBatchSchema.index({ status: 1, createdAt: -1 });
+EmailVerificationBatchSchema.index({ createdBy: 1, status: 1, createdAt: -1 });
+EmailVerificationBatchSchema.index({ status: 1, progress: 1 });

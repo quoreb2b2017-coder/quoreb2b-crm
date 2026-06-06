@@ -25,4 +25,15 @@ export class RedisService {
   async del(key: string): Promise<void> {
     await this.redis.del(key);
   }
+
+  async delByPattern(fullPattern: string): Promise<void> {
+    let cursor = '0';
+    do {
+      const [next, keys] = await this.redis.scan(cursor, 'MATCH', fullPattern, 'COUNT', 100);
+      cursor = next;
+      if (keys.length) {
+        await this.redis.del(...keys);
+      }
+    } while (cursor !== '0');
+  }
 }

@@ -29,6 +29,8 @@ import { NotificationTriggerService } from '../notifications/notification-trigge
 import { isValidDomainFormat, normalizeDomain } from './utils/email-patterns.util';
 import { validateEmailSyntax } from './utils/syntax-validation.util';
 import { getOutboundSmtpPortStatus } from './utils/smtp-connectivity.util';
+import { AppCacheService } from '../../redis/app-cache.service';
+import { cacheTtlSeconds } from '../../redis/cache.util';
 
 @Injectable()
 export class BulkEmailVerificationService {
@@ -45,6 +47,7 @@ export class BulkEmailVerificationService {
     private activityLogs: ActivityLogsService,
     private notifications: NotificationTriggerService,
     private config: ConfigService,
+    private cache: AppCacheService,
   ) {}
 
   async createBatch(dto: CreateEmailVerificationBatchDto, actor: ActivityActor) {
@@ -223,7 +226,7 @@ export class BulkEmailVerificationService {
       }
     }
 
-    await this.syncProgressFromProspects(batch._id);
+    await this.syncProgressFromProspects(batch._id, false);
 
     await this.batchModel.updateOne(
       { _id: batch._id },
@@ -296,9 +299,14 @@ export class BulkEmailVerificationService {
     };
   }
 
-  private async syncProgressFromProspects(batchId: Types.ObjectId): Promise<void> {
+  private async syncProgressFromProspects(
+    batchId: Types.ObjectId,
+    syncRecordCounts = true,
+  ): Promise<void> {
     const snapshot = await this.getResumeSnapshot(batchId);
-    await this.syncBatchCountsFromRecords(batchId);
+    if (syncRecordCounts) {
+      await this.syncBatchCountsFromRecords(batchId);
+    }
     await this.batchModel.updateOne(
       { _id: batchId },
       {
@@ -466,6 +474,15 @@ export class BulkEmailVerificationService {
   }
 
   async listBatches(actor: ActivityActor) {
+    const scope = this.isSuperAdmin(actor) ? 'super' : actor.id;
+    return this.cache.wrap(
+      `ev:batches:${scope}`,
+      cacheTtlSeconds(this.config, 'short'),
+      () => this.loadBatchList(actor),
+    );
+  }
+
+  private async loadBatchList(actor: ActivityActor) {
     const filter = this.isSuperAdmin(actor)
       ? {}
       : { createdBy: new Types.ObjectId(actor.id) };
@@ -479,7 +496,23 @@ export class BulkEmailVerificationService {
   }
 
   async getBatch(id: string, actor: ActivityActor) {
+    const ttlKind =
+      (await this.batchModel.findById(id).select('status').lean().exec())?.status ===
+      BatchStatus.PROCESSING
+        ? 'live'
+        : 'medium';
+    return this.cache.wrap(
+      `ev:batch:${id}:${actor.id}`,
+      cacheTtlSeconds(this.config, ttlKind),
+      () => this.loadBatchDetail(id, actor),
+    );
+  }
+
+  private async loadBatchDetail(id: string, actor: ActivityActor) {
     const batch = await this.findOwnedBatch(id, actor);
+    if (batch.status === BatchStatus.PROCESSING) {
+      return this.serializeBatch(batch);
+    }
     if (batch.status === BatchStatus.COMPLETED || batch.status === BatchStatus.FAILED) {
       const actual = await this.recordModel.countDocuments({
         batchId: new Types.ObjectId(id),
@@ -507,10 +540,7 @@ export class BulkEmailVerificationService {
       disposableDomainsLoaded: disposableDomainCount(),
       mxOnlyFallback: this.config.get<boolean>('BULK_EMAIL_MX_ONLY_FALLBACK', true),
       port25Reachable: port25.reachable,
-      smtpFrom:
-        this.config.get<string>('BULK_EMAIL_SMTP_FROM') ||
-        this.config.get<string>('AWS_SES_FROM_EMAIL') ||
-        null,
+      smtpFrom: this.config.get<string>('BULK_EMAIL_SMTP_FROM') || null,
       port25,
       usesPassword: false,
       note:
@@ -519,6 +549,14 @@ export class BulkEmailVerificationService {
   }
 
   async getBatchDiagnostics(batchId: string, actor: ActivityActor) {
+    return this.cache.wrap(
+      `ev:diagnostics:${batchId}:${actor.id}`,
+      cacheTtlSeconds(this.config, 'medium'),
+      () => this.loadBatchDiagnostics(batchId, actor),
+    );
+  }
+
+  private async loadBatchDiagnostics(batchId: string, actor: ActivityActor) {
     const batch = await this.findOwnedBatch(batchId, actor);
     const batchOid = this.toObjectId(batchId, 'batch id');
 
@@ -688,6 +726,15 @@ export class BulkEmailVerificationService {
   }
 
   async getAnalytics(actor: ActivityActor) {
+    const scope = this.isSuperAdmin(actor) ? 'super' : actor.id;
+    return this.cache.wrap(
+      `ev:analytics:${scope}`,
+      cacheTtlSeconds(this.config, 'medium'),
+      () => this.loadAnalytics(actor),
+    );
+  }
+
+  private async loadAnalytics(actor: ActivityActor) {
     const ownershipMatch = this.isSuperAdmin(actor)
       ? {}
       : { createdBy: new Types.ObjectId(actor.id) };

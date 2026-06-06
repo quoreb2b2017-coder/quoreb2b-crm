@@ -1,9 +1,22 @@
 'use client';
 
 import { useNotifications } from '@/hooks/useNotifications';
+import { useNotificationStore } from '@/store/notification.store';
+import { NotificationContainer } from '@/components/notifications/NotificationToast';
 
-/** Notifications appear in the bell panel only — no bottom toast popups. */
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
-  useNotifications();
-  return <>{children}</>;
+  const { markAsRead } = useNotifications();
+  const toastQueue = useNotificationStore((s) => s.toastQueue);
+  const dismissToast = useNotificationStore((s) => s.dismissToast);
+
+  return (
+    <>
+      {children}
+      <NotificationContainer
+        notifications={toastQueue}
+        onClose={dismissToast}
+        onMarkRead={markAsRead}
+      />
+    </>
+  );
 }

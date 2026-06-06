@@ -1,43 +1,73 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 
-export function LoadingProvider({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const [isLoading, setIsLoading] = useState(false);
-  const [showSpinner, setShowSpinner] = useState(false);
+interface NavigationContextValue {
+  pendingHref: string | null;
+  isNavigating: boolean;
+  startNavigation: (href: string) => void;
+}
 
-  useEffect(() => {
-    setIsLoading(true);
-    // Only show spinner if loading takes more than 100ms
-    const spinnerTimer = setTimeout(() => setShowSpinner(true), 100);
-    const hideTimer = setTimeout(() => {
-      setIsLoading(false);
-      setShowSpinner(false);
-    }, 400);
-    
-    return () => {
-      clearTimeout(spinnerTimer);
-      clearTimeout(hideTimer);
-    };
-  }, [pathname, searchParams]);
+const NavigationContext = createContext<NavigationContextValue>({
+  pendingHref: null,
+  isNavigating: false,
+  startNavigation: () => {},
+});
+
+export function useNavigation() {
+  return useContext(NavigationContext);
+}
+
+function NavProgressBar({ active }: { active: boolean }) {
+  if (!active) return null;
 
   return (
-    <>
+    <div
+      className="pointer-events-none fixed inset-x-0 top-0 z-[9999] h-[3px] overflow-hidden bg-slate-200/40"
+      aria-hidden
+    >
+      <div className="h-full w-2/5 animate-nav-progress bg-gradient-to-r from-indigo-500 via-violet-500 to-emerald-500" />
+    </div>
+  );
+}
+
+export function LoadingProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname() ?? '';
+  const searchParams = useSearchParams();
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  const [isNavigating, setIsNavigating] = useState(false);
+
+  const startNavigation = useCallback(
+    (href: string) => {
+      if (href === pathname) return;
+      setPendingHref(href);
+      setIsNavigating(true);
+    },
+    [pathname],
+  );
+
+  useEffect(() => {
+    setPendingHref(null);
+    setIsNavigating(false);
+  }, [pathname, searchParams]);
+
+  const value = useMemo(
+    () => ({ pendingHref, isNavigating, startNavigation }),
+    [pendingHref, isNavigating, startNavigation],
+  );
+
+  return (
+    <NavigationContext.Provider value={value}>
+      <NavProgressBar active={isNavigating} />
       {children}
-      {showSpinner && isLoading && (
-        <div className="fixed inset-0 pointer-events-none z-[9999]">
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 mt-4">
-            <div className="flex items-center justify-center">
-              <div className="relative w-8 h-8">
-                <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-indigo-500 border-r-indigo-500 animate-spin" />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+    </NavigationContext.Provider>
   );
 }

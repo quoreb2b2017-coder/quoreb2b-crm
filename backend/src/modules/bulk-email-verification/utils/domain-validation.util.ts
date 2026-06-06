@@ -10,6 +10,11 @@ export interface DomainMxResult {
   error?: string;
 }
 
+export interface DomainMxCacheStore {
+  get(domain: string): Promise<DomainMxResult | null>;
+  set(domain: string, result: DomainMxResult, ttlMs: number): Promise<void>;
+}
+
 interface CacheEntry {
   expiresAt: number;
   result: DomainMxResult;
@@ -141,6 +146,7 @@ export async function validateDomainMx(
   domain: string,
   cacheTtlMs: number,
   negativeCacheTtlMs?: number,
+  cacheStore?: DomainMxCacheStore,
 ): Promise<DomainMxResult> {
   const normalized = normalizeDomain(domain);
   const positiveTtl = resolvePositiveInt(cacheTtlMs, 3_600_000);
@@ -150,22 +156,44 @@ export async function validateDomainMx(
     return buildMxResult(normalized, [], 'invalid_format');
   }
 
+  if (cacheStore) {
+    const shared = await cacheStore.get(normalized);
+    if (shared) return shared;
+  }
+
   const cached = mxCache.get(normalized);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.result;
   }
 
   const { hosts, source } = await lookupMxHosts(normalized);
+  let result: DomainMxResult;
   if (hosts.length > 0) {
-    return cacheResult(normalized, buildMxResult(normalized, hosts, source), positiveTtl, negativeTtl);
+    result = cacheResult(
+      normalized,
+      buildMxResult(normalized, hosts, source),
+      positiveTtl,
+      negativeTtl,
+    );
+  } else {
+    result = cacheResult(
+      normalized,
+      buildMxResult(normalized, [], 'no_mx'),
+      positiveTtl,
+      negativeTtl,
+    );
   }
 
-  return cacheResult(
-    normalized,
-    buildMxResult(normalized, [], 'no_mx'),
-    positiveTtl,
-    negativeTtl,
-  );
+  if (cacheStore) {
+    const ttl = result.valid
+      ? positiveTtl
+      : result.error === 'no_mx' || result.error === 'null_mx'
+        ? negativeTtl
+        : 45_000;
+    await cacheStore.set(normalized, result, ttl);
+  }
+
+  return result;
 }
 
 export function clearDomainMxCache(): void {

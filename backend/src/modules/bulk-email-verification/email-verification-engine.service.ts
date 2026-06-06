@@ -18,6 +18,7 @@ import {
 } from './utils/risk-scoring-engine.util';
 import { disposableDomainCount } from './utils/disposable-email.util';
 import { getOutboundSmtpPortStatus } from './utils/smtp-connectivity.util';
+import { DomainMxCacheService } from './domain-mx-cache.service';
 import { resolvePositiveInt } from './utils/config-numbers.util';
 
 export interface EmailVerificationEngineResult {
@@ -49,7 +50,10 @@ export class EmailVerificationEngineService implements OnModuleInit {
   private port25Reachable = true;
   private mxOnlyFallbackEnabled = true;
 
-  constructor(private config: ConfigService) {}
+  constructor(
+    private config: ConfigService,
+    private readonly domainMxCache: DomainMxCacheService,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     clearDomainMxCache();
@@ -72,11 +76,7 @@ export class EmailVerificationEngineService implements OnModuleInit {
   }
 
   getSmtpFrom(): string {
-    return (
-      this.config.get<string>('BULK_EMAIL_SMTP_FROM') ||
-      this.config.get<string>('AWS_SES_FROM_EMAIL') ||
-      'verify@quoreb2b.com'
-    );
+    return this.config.get<string>('BULK_EMAIL_SMTP_FROM') || 'verify@quoreb2b.com';
   }
 
   getSmtpTimeoutMs(): number {
@@ -102,6 +102,7 @@ export class EmailVerificationEngineService implements OnModuleInit {
       domain,
       this.getDomainCacheTtlMs(),
       this.getDnsNegativeCacheTtlMs(),
+      this.domainMxCache,
     );
     let isCatchAllDomain = false;
 

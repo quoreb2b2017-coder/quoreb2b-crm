@@ -33,7 +33,13 @@ export const EmailVerificationProspectSchema =
   SchemaFactory.createForClass(EmailVerificationProspect);
 
 EmailVerificationProspectSchema.index({ batchId: 1, processed: 1 });
+EmailVerificationProspectSchema.index({ batchId: 1, firstName: 1, lastName: 1 });
 EmailVerificationProspectSchema.index(
   { batchId: 1, firstName: 1, lastName: 1, domain: 1 },
   { unique: true },
+);
+// Worker queue: unprocessed prospects per batch
+EmailVerificationProspectSchema.index(
+  { batchId: 1, _id: 1 },
+  { partialFilterExpression: { processed: false } },
 );

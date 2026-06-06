@@ -8,6 +8,9 @@ import { ActivityLog } from '../activity-logs/schemas/activity-log.schema';
 import { ElasticsearchService } from '../../elasticsearch/elasticsearch.service';
 import { HealthService } from '../../health/health.service';
 import { BatchesService } from '../batches/batches.service';
+import { AppCacheService } from '../../redis/app-cache.service';
+import { cacheTtlSeconds, stableHash } from '../../redis/cache.util';
+import { ConfigService } from '@nestjs/config';
 import {
   buildLeadActivityReport,
   type BatchLeadSnapshot,
@@ -98,12 +101,22 @@ export class AnalyticsService {
     private elasticsearch: ElasticsearchService,
     private healthService: HealthService,
     private batchesService: BatchesService,
+    private cache: AppCacheService,
+    private config: ConfigService,
   ) {}
 
   /** Live CRM data for DB Administrator home */
   async getDbAdminDashboard(actorId: string) {
+    return this.cache.wrap(
+      `dashboard:db-admin:${actorId}`,
+      cacheTtlSeconds(this.config, 'short'),
+      () => this.buildDbAdminDashboard(actorId),
+    );
+  }
+
+  private async buildDbAdminDashboard(actorId: string) {
     if (!Types.ObjectId.isValid(actorId)) {
-      return this.emptyDbAdminDashboard();
+      return await this.emptyDbAdminDashboard();
     }
     const oid = new Types.ObjectId(actorId);
 
@@ -121,7 +134,7 @@ export class AnalyticsService {
         .limit(10)
         .lean()
         .exec(),
-      Promise.resolve(this.healthService.getStatus()),
+      this.healthService.getStatus(),
     ]);
 
     const owned = batches.filter((b) => b.createdBy?.toString() === actorId);
@@ -185,7 +198,7 @@ export class AnalyticsService {
         status: health.status,
         mongo: mongoLabel,
         mongoState: dbCheck.state,
-        redis: health.checks.redis.enabled ? health.checks.redis.status : 'disabled',
+        redis: health.checks.redis.status,
         elasticsearch: health.checks.elasticsearch.enabled
           ? health.checks.elasticsearch.status
           : 'disabled',
@@ -229,6 +242,16 @@ export class AnalyticsService {
 
   /** Live CRM data for Employee home (assigned batches + their activity) */
   async getEmployeeDashboard(actorId: string) {
+    const now = new Date();
+    const dayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    return this.cache.wrap(
+      `dashboard:employee:${actorId}:${dayKey}`,
+      cacheTtlSeconds(this.config, 'short'),
+      () => this.buildEmployeeDashboard(actorId),
+    );
+  }
+
+  private async buildEmployeeDashboard(actorId: string) {
     if (!Types.ObjectId.isValid(actorId)) {
       return this.emptyEmployeeDashboard();
     }
@@ -383,14 +406,14 @@ export class AnalyticsService {
     };
   }
 
-  private emptyDbAdminDashboard() {
-    const health = this.healthService.getStatus();
+  private async emptyDbAdminDashboard() {
+    const health = await this.healthService.getStatus();
     return {
       health: {
         status: health.status,
         mongo: 'Unknown',
         mongoState: health.checks.database.state,
-        redis: health.checks.redis.enabled ? health.checks.redis.status : 'disabled',
+        redis: health.checks.redis.status,
         elasticsearch: health.checks.elasticsearch.enabled
           ? health.checks.elasticsearch.status
           : 'disabled',
@@ -411,6 +434,14 @@ export class AnalyticsService {
   }
 
   async getDashboardStats() {
+    return this.cache.wrap(
+      'analytics:stats:global',
+      cacheTtlSeconds(this.config, 'long'),
+      () => this.loadDashboardStats(),
+    );
+  }
+
+  private async loadDashboardStats() {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
@@ -463,6 +494,14 @@ export class AnalyticsService {
   }
 
   async getChartData() {
+    return this.cache.wrap(
+      'analytics:chart:status-breakdown',
+      cacheTtlSeconds(this.config, 'long'),
+      () => this.loadChartData(),
+    );
+  }
+
+  private async loadChartData() {
     const [masterData, batches] = await Promise.all([
       this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).select('headers rows').lean().exec(),
       this.batchModel.find().select('headers rows').lean().exec(),
@@ -509,8 +548,18 @@ export class AnalyticsService {
   }
 
   async searchLeads(query: string) {
-    return this.elasticsearch.search('leads', {
-      query: { multi_match: { query, fields: ['firstName', 'lastName', 'email'] } },
-    });
+    if (!query?.trim()) return [];
+
+    if (this.elasticsearch.isEnabled) {
+      const hits = await this.elasticsearch.search<{ firstName?: string; lastName?: string; email?: string }>(
+        'leads',
+        {
+          query: { multi_match: { query, fields: ['firstName', 'lastName', 'email'] } },
+        },
+      );
+      if (hits.length) return hits;
+    }
+
+    return [];
   }
 }

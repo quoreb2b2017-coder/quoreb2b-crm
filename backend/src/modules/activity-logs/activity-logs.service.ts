@@ -17,6 +17,9 @@ import {
 } from './employee-report.util';
 import type { BatchLeadSnapshot } from './lead-activity-report.util';
 import { SystemRole } from '../../common/constants/roles.constant';
+import { AppCacheService } from '../../redis/app-cache.service';
+import { ConfigService } from '@nestjs/config';
+import { cacheTtlSeconds, stableHash } from '../../redis/cache.util';
 import {
   ActivityActor,
   actorFields,
@@ -49,6 +52,8 @@ export class ActivityLogsService {
     @InjectModel(Batch.name) private batchModel: Model<Batch>,
     private usersRepository: UsersRepository,
     private notifications: NotificationTriggerService,
+    private cache: AppCacheService,
+    private config: ConfigService,
   ) {}
 
   private userSnapshot(user: User): SanitizedUserSnapshot {
@@ -141,27 +146,10 @@ export class ActivityLogsService {
 
     switch (log.action) {
       case 'LOGIN':
-        return {
-          ...basePayload,
-          actorTitle: 'Login successful',
-          superAdminTitle: 'User login',
-          actorMessage: 'You signed in successfully.',
-          superAdminMessage: `${actorName} signed in to the system`,
-          actorActionLabel: 'Open dashboard',
-          superAdminActionLabel: 'View activity',
-          priority: 'low' as const,
-        };
+        return null;
       case 'LOGOUT':
       case 'IDLE_LOGOUT':
-        return {
-          ...basePayload,
-          actorTitle: 'Logged out',
-          superAdminTitle: 'User logged out',
-          actorMessage: 'You signed out successfully.',
-          superAdminMessage: `${actorName} signed out of the system`,
-          notifyActor: false,
-          priority: 'low' as const,
-        };
+        return null;
       case 'USER_CREATED':
         return {
           ...basePayload,
@@ -489,6 +477,14 @@ export class ActivityLogsService {
   }
 
   async getActivityStats(dto: ActivityLogsQueryDto) {
+    return this.cache.wrap(
+      `act:stats:${stableHash(dto)}`,
+      cacheTtlSeconds(this.config, 'short'),
+      () => this.loadActivityStats(dto),
+    );
+  }
+
+  private async loadActivityStats(dto: ActivityLogsQueryDto) {
     const filter = this.buildListFilter(dto);
     if (!filter) {
       return { total: 0, byAction: [], timeline: [], byUser: [] };
@@ -757,55 +753,76 @@ export class ActivityLogsService {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
       throw new BadRequestException('date must be YYYY-MM-DD');
     }
-    const { start, end, label } = dayBounds(dateStr);
-    const [logs, leadBatches, employee] = await Promise.all([
-      this.findInRange(userId, start, end),
-      this.loadEmployeeLeadBatches(userId),
-      this.resolveReportEmployee(userId),
-    ]);
-    return buildEmployeeReport(logs as unknown as ActivityLogRow[], {
-      type: 'daily',
-      label,
-      start,
-      end,
-      leadBatches,
-      employee,
-    });
+    const today = new Date().toISOString().slice(0, 10);
+    const ttlKind = dateStr === today ? 'live' : 'long';
+    return this.cache.wrap(
+      `act:report:daily:${userId}:${dateStr}`,
+      cacheTtlSeconds(this.config, ttlKind),
+      async () => {
+        const { start, end, label } = dayBounds(dateStr);
+        const [logs, leadBatches, employee] = await Promise.all([
+          this.findInRange(userId, start, end),
+          this.loadEmployeeLeadBatches(userId),
+          this.resolveReportEmployee(userId),
+        ]);
+        return buildEmployeeReport(logs as unknown as ActivityLogRow[], {
+          type: 'daily',
+          label,
+          start,
+          end,
+          leadBatches,
+          employee,
+        });
+      },
+    );
   }
 
   async getMonthlyReport(userId: string, year: number, month: number) {
-    const { start, end, label } = monthBounds(year, month);
-    const [logs, leadBatches, employee] = await Promise.all([
-      this.findInRange(userId, start, end),
-      this.loadEmployeeLeadBatches(userId),
-      this.resolveReportEmployee(userId),
-    ]);
-    return buildEmployeeReport(logs as unknown as ActivityLogRow[], {
-      type: 'monthly',
-      label,
-      start,
-      end,
-      leadBatches,
-      employee,
-    });
+    const now = new Date();
+    const isCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
+    return this.cache.wrap(
+      `act:report:monthly:${userId}:${year}-${month}`,
+      cacheTtlSeconds(this.config, isCurrentMonth ? 'short' : 'long'),
+      async () => {
+        const { start, end, label } = monthBounds(year, month);
+        const [logs, leadBatches, employee] = await Promise.all([
+          this.findInRange(userId, start, end),
+          this.loadEmployeeLeadBatches(userId),
+          this.resolveReportEmployee(userId),
+        ]);
+        return buildEmployeeReport(logs as unknown as ActivityLogRow[], {
+          type: 'monthly',
+          label,
+          start,
+          end,
+          leadBatches,
+          employee,
+        });
+      },
+    );
   }
 
-  /** Live session timer + monthly logged-in hours (from LOGIN → LOGOUT / now). */
   async getMyWorkTime(userId: string, sessionId?: string) {
     const now = new Date();
     const year = now.getFullYear();
     const month = now.getMonth() + 1;
-    const { start, end, label } = monthBounds(year, month);
-    const logs = await this.findInRange(userId, start, end);
-    const snapshot = buildWorkTimeSnapshot(logs as unknown as ActivityLogRow[], {
-      sessionId,
-      periodEnd: now,
-    });
-    return {
-      period: { year, month, label },
-      ...snapshot,
-      isTimerRunning: Boolean(snapshot.currentSession?.isActive),
-    };
+    return this.cache.wrap(
+      `act:worktime:${userId}:${year}-${month}:${sessionId ?? 'default'}`,
+      cacheTtlSeconds(this.config, 'live'),
+      async () => {
+        const { start, end, label } = monthBounds(year, month);
+        const logs = await this.findInRange(userId, start, end);
+        const snapshot = buildWorkTimeSnapshot(logs as unknown as ActivityLogRow[], {
+          sessionId,
+          periodEnd: now,
+        });
+        return {
+          period: { year, month, label },
+          ...snapshot,
+          isTimerRunning: Boolean(snapshot.currentSession?.isActive),
+        };
+      },
+    );
   }
 
   /** Bulk monthly work time for attendance / admin views. */
@@ -813,6 +830,15 @@ export class ActivityLogsService {
     if (!year || !month) {
       throw new BadRequestException('year and month are required');
     }
+    const sorted = [...userIds].sort();
+    return this.cache.wrap(
+      `act:team-worktime:${year}-${month}:${stableHash(sorted)}`,
+      cacheTtlSeconds(this.config, 'short'),
+      () => this.loadTeamWorkTime(sorted, year, month),
+    );
+  }
+
+  private async loadTeamWorkTime(userIds: string[], year: number, month: number) {
     const { start, end, label } = monthBounds(year, month);
     const now = new Date();
     const periodEnd = now > end ? end : now;

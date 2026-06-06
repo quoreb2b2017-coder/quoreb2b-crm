@@ -32,3 +32,5 @@ export class MasterDataRecord extends Document {
 }
 
 export const MasterDataSchema = SchemaFactory.createForClass(MasterDataRecord);
+MasterDataSchema.index({ sharedWithDbAdmins: 1 });
+MasterDataSchema.index({ updatedAt: -1 });

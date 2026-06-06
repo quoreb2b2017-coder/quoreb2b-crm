@@ -47,3 +47,5 @@ LeadSchema.index({ email: 1 });
 LeadSchema.index({ status: 1 });
 LeadSchema.index({ clientId: 1 });
 LeadSchema.index({ assignedTo: 1 });
+LeadSchema.index({ assignedTo: 1, status: 1, updatedAt: -1 });
+LeadSchema.index({ firstName: 1, lastName: 1, email: 1 });

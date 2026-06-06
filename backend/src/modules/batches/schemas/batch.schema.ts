@@ -58,6 +58,10 @@ export class Batch extends Document {
 
 export const BatchSchema = SchemaFactory.createForClass(Batch);
 BatchSchema.index({ createdBy: 1, createdAt: -1 });
+BatchSchema.index({ createdBy: 1, updatedAt: -1 });
 BatchSchema.index({ sharedWith: 1 });
+BatchSchema.index({ sharedWith: 1, updatedAt: -1 });
 BatchSchema.index({ batchYear: -1, batchMonth: -1 });
 BatchSchema.index({ sourceBatchId: 1 });
+BatchSchema.index({ updatedAt: -1 });
+BatchSchema.index({ createdBy: 1, batchYear: -1, batchMonth: -1 });

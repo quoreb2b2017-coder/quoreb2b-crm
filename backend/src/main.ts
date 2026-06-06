@@ -9,8 +9,12 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { initSentry } from './config/sentry.config';
+import { isRedisEnabled } from './config/env';
+import { ensureRedisOrDisable, readRedisEnv, MIN_REDIS_VERSION } from './redis/redis.factory';
 
 async function bootstrap() {
+  await ensureRedisOrDisable();
+
   const app = await NestFactory.create(AppModule.register());
   const config = app.get(ConfigService);
 
@@ -47,10 +51,15 @@ async function bootstrap() {
 
   const port = config.get<number>('PORT', 4000);
   await app.listen(port);
-  const redisOn = config.get<boolean>('REDIS_ENABLED', true);
   console.log(`API running on port ${port}`);
-  if (!redisOn) {
-    console.warn('REDIS_ENABLED=false — BullMQ queues disabled (email/whatsapp/automation log only)');
+  if (isRedisEnabled()) {
+    const { host, port: redisPort } = readRedisEnv();
+    console.log(`Redis OK (${host}:${redisPort}) — BullMQ queues enabled`);
+  } else {
+    console.warn(
+      'REDIS_ENABLED=false — BullMQ disabled (bulk email verify runs in-process). ' +
+        `Need Redis ${MIN_REDIS_VERSION}+ for background queues.`,
+    );
   }
 }
 

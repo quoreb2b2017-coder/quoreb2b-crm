@@ -8,8 +8,10 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { BullModule } from '@nestjs/bullmq';
 import configuration from './config/configuration';
-import { isRedisEnabled } from './config/env';
+import { isRedisConfigured, isRedisEnabled } from './config/env';
+import { createRedisClient } from './redis/redis.factory';
 import { DatabaseModule } from './database/database.module';
+import { CacheModule } from './redis/cache.module';
 import { RedisModule } from './redis/redis.module';
 import { ElasticsearchModule } from './elasticsearch/elasticsearch.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -31,7 +33,6 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { MasterDataModule } from './modules/master-data/master-data.module';
 import { EventsModule } from './events/events.module';
 import { HealthModule } from './health/health.module';
-import { AwsModule } from './aws/aws.module';
 import { BatchesModule } from './modules/batches/batches.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { LeaveModule } from './modules/leave/leave.module';
@@ -41,6 +42,7 @@ import { BulkEmailVerificationModule } from './modules/bulk-email-verification/b
 export class AppModule {
   static register(): DynamicModule {
     const redisEnabled = isRedisEnabled();
+    const redisConfigured = isRedisConfigured();
 
     return {
       module: AppModule,
@@ -67,21 +69,16 @@ export class AppModule {
               BullModule.forRootAsync({
                 inject: [ConfigService],
                 useFactory: (config: ConfigService) => ({
-                  connection: {
-                    host: config.get<string>('REDIS_HOST', 'localhost'),
-                    port: config.get<number>('REDIS_PORT', 6379),
-                    password: config.get<string>('REDIS_PASSWORD') || undefined,
-                    db: config.get<number>('REDIS_DB', 0),
-                  },
+                  connection: createRedisClient(config, 'BullMQ'),
                   prefix: config.get<string>('BULLMQ_PREFIX', 'quoreb2b'),
                 }),
               }),
-              RedisModule,
             ]
           : []),
+        ...(redisConfigured ? [RedisModule] : []),
+        CacheModule,
         DatabaseModule,
-        ElasticsearchModule,
-        AwsModule,
+        ElasticsearchModule.register(),
         AuthModule,
         UsersModule,
         RolesModule,

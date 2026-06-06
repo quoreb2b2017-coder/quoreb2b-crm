@@ -8,7 +8,7 @@ export class HealthController {
 
   @Public()
   @Get()
-  check() {
+  async check() {
     return this.healthService.getStatus();
   }
 }

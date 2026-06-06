@@ -17,6 +17,7 @@ export function EmployeeAttendanceSummaryCard() {
   const [loading, setLoading] = useState(true);
   const [present, setPresent] = useState(0);
   const [absent, setAbsent] = useState(0);
+  const [late, setLate] = useState(0);
   const [pct, setPct] = useState(0);
   const [yearPresent, setYearPresent] = useState(0);
 
@@ -35,11 +36,13 @@ export function EmployeeAttendanceSummaryCard() {
       ]);
       setPresent(monthly.presentDays);
       setAbsent(monthly.absentDays);
+      setLate(monthly.lateDays ?? 0);
       setPct(monthly.attendancePercentage);
       setYearPresent(yearly.reduce((s, m) => s + m.presentDays, 0));
     } catch {
       setPresent(0);
       setAbsent(0);
+      setLate(0);
       setPct(0);
       setYearPresent(0);
     } finally {
@@ -73,7 +76,7 @@ export function EmployeeAttendanceSummaryCard() {
         {loading ? (
           <p className="mt-2 text-sm text-slate-400">Loading…</p>
         ) : (
-          <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+          <div className="mt-2 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
             <div>
               <p className="text-lg font-bold text-[#217346]">{present}</p>
               <p className="text-[10px] text-slate-500">Present</p>
@@ -87,6 +90,10 @@ export function EmployeeAttendanceSummaryCard() {
             <div>
               <p className="text-lg font-bold text-[#c00000]">{absent}</p>
               <p className="text-[10px] text-slate-500">Absent</p>
+            </div>
+            <div>
+              <p className="text-lg font-bold text-amber-700">{late}</p>
+              <p className="text-[10px] text-slate-500">Late</p>
             </div>
             <div>
               <p className="text-lg font-bold text-slate-900">{pct}%</p>

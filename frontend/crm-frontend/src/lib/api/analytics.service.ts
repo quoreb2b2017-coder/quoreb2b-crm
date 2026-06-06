@@ -78,6 +78,7 @@ export interface DbAdminDashboardData {
 }
 
 export async function fetchDbAdminDashboard(): Promise<DbAdminDashboardData> {
+  clearCache('analytics:db-admin-dashboard');
   return deduplicatedFetch('analytics:db-admin-dashboard', async () => {
     const { data } = await apiClient.get('/analytics/db-admin-dashboard');
     return (data?.data ?? data) as DbAdminDashboardData;

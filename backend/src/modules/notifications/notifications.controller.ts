@@ -1,7 +1,8 @@
-import { Controller, Delete, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import { Controller, Delete, Get, Param, Patch, Body, UseGuards } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 
 @Controller({ path: 'notifications', version: '1' })
 @UseGuards(JwtAuthGuard)
@@ -14,8 +15,22 @@ export class NotificationsController {
   }
 
   @Get('unread-count')
-  getUnreadCount(@CurrentUser('id') userId: string) {
-    return this.notificationsService.getUnreadCount(userId);
+  async getUnreadCount(@CurrentUser('id') userId: string) {
+    const count = await this.notificationsService.getUnreadCount(userId);
+    return { count };
+  }
+
+  @Get('preferences')
+  getPreferences(@CurrentUser('id') userId: string) {
+    return this.notificationsService.getPreferences(userId);
+  }
+
+  @Patch('preferences')
+  updatePreferences(
+    @CurrentUser('id') userId: string,
+    @Body() dto: UpdateNotificationPreferencesDto,
+  ) {
+    return this.notificationsService.updatePreferences(userId, dto);
   }
 
   @Patch(':id/read')

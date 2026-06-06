@@ -18,6 +18,12 @@ import {
   DEFAULT_SHIFT_CHECK_OUT,
   SHIFT_LABEL,
 } from '@/lib/attendance/shift-hours';
+import {
+  ATTENDANCE_ON_TIME_CUTOFF,
+  ATTENDANCE_ON_TIME_LABEL,
+  formatTime12h,
+  isLateCheckIn,
+} from '@/lib/attendance/late-attendance';
 
 interface MarkAttendanceModalProps {
   isOpen: boolean;
@@ -56,6 +62,8 @@ export function MarkAttendanceModal({
   }, [date]);
 
   const calculateHours = () => calculateShiftHours(checkInTime, checkOutTime);
+  const isLateEntry =
+    (status === 'present' || status === 'half-day') && isLateCheckIn(checkInTime, ATTENDANCE_ON_TIME_CUTOFF);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -158,12 +166,13 @@ export function MarkAttendanceModal({
         {status === 'present' && (
           <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm space-y-3">
             <p className="text-xs text-slate-500">
+              On-time cutoff: <span className="font-semibold text-slate-700">{ATTENDANCE_ON_TIME_LABEL}</span>
+              {' · '}
               Standard shift: <span className="font-semibold text-slate-700">{SHIFT_LABEL}</span>
-              <span className="text-slate-400"> (check-out next day)</span>
             </p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <label className="mb-2 block text-xs font-semibold text-slate-500">Check-in (7 PM)</label>
+                <label className="mb-2 block text-xs font-semibold text-slate-500">Check-in time</label>
                 <input
                   type="time"
                   value={checkInTime}
@@ -181,9 +190,17 @@ export function MarkAttendanceModal({
                 />
               </div>
             </div>
-            <div className="rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2 text-sm text-emerald-800">
-              <span className="font-medium">{calculateHours().toFixed(2)} hrs</span> worked
-            </div>
+            {isLateEntry ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                Late attendance — check-in at{' '}
+                <span className="font-semibold">{formatTime12h(checkInTime)}</span> is after{' '}
+                {ATTENDANCE_ON_TIME_LABEL}.
+              </div>
+            ) : (
+              <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                <span className="font-medium">{calculateHours().toFixed(2)} hrs</span> worked · on time
+              </div>
+            )}
           </div>
         )}
 

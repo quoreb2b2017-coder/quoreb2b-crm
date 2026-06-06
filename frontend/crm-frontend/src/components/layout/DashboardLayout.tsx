@@ -9,6 +9,7 @@ import { useAdminProductStore } from '@/store/admin-product.store';
 import { useIdleLogout } from '@/hooks/useIdleLogout';
 import { activityLogsService } from '@/lib/api/activity-logs.service';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
+import { useNavigation } from '@/components/providers/LoadingProvider';
 import {
   quickActionIcons,
   useAttendancePanelOptional,
@@ -288,6 +289,21 @@ const roleLabel: Record<DashboardVariant, string> = {
   employee: 'Employee',
 };
 
+function isNavItemActive(pathname: string, href: string) {
+  if (pathname === href) return true;
+  if (/\/dashboard$/.test(href)) return false;
+  return href.length > 7 && pathname.startsWith(href);
+}
+
+function navSpinnerClass(variant: DashboardVariant) {
+  return cn(
+    'h-3.5 w-3.5 flex-shrink-0 rounded-full border-2 border-white/20 animate-spin',
+    variant === 'admin' && 'border-t-indigo-300',
+    variant === 'db_admin' && 'border-t-violet-300',
+    variant === 'employee' && 'border-t-emerald-300',
+  );
+}
+
 // ─── Avatar ───────────────────────────────────────────────────────────────────
 function Avatar({ name, collapsed, variant }: { name: string; collapsed: boolean; variant: DashboardVariant }) {
   const t = themes[variant];
@@ -522,6 +538,7 @@ function SidebarInner({
 
 export function DashboardLayout({ children, title, variant, navItems }: DashboardLayoutProps) {
   const pathname = usePathname() ?? '';
+  const { pendingHref, isNavigating, startNavigation } = useNavigation();
   const batchExcelView = isBatchExcelViewPath(pathname);
   const attendancePage = isAttendancePath(pathname);
   const edgeToEdge = isAdminEdgeToEdgePath(pathname) || attendancePage;
@@ -568,6 +585,19 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
   const displayName = user?.firstName && user?.lastName
     ? `${user.firstName} ${user.lastName}`
     : user?.email ?? 'User';
+
+  const currentNavLabel =
+    navItems.find((n) => n.href === pendingHref)?.label ??
+    navItems.find((n) => isNavItemActive(pathname, n.href))?.label ??
+    'Overview';
+
+  const handleNavClick = useCallback(
+    (href: string) => {
+      startNavigation(href);
+      setMobileOpen(false);
+    },
+    [startNavigation],
+  );
 
   // ── Sidebar content ──────────────────────────────────────────────────────
   const SidebarContent = memo(({ isMobile = false }: { isMobile?: boolean }) => {
@@ -640,8 +670,9 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
         {/* ── Nav items ── */}
         <nav className={cn('flex-1 overflow-y-auto overflow-x-hidden py-2', isCollapsed ? 'px-2' : 'px-3')}>
           {navItems.map((item) => {
-            const active = pathname === item.href;
-            const childActive = item.children?.some(c => pathname === c.href);
+            const active = isNavItemActive(pathname, item.href);
+            const pending = pendingHref === item.href && !active;
+            const childActive = item.children?.some((c) => pathname === c.href || pendingHref === c.href);
             const [open, setOpen] = useState(() => !!childActive);
 
             if (item.children?.length) {
@@ -684,22 +715,29 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
                     <div className="ml-4 mt-0.5 pl-3 border-l border-white/[0.07] space-y-0.5">
                       {item.children.map(child => {
                         const cActive = pathname === child.href;
+                        const cPending = pendingHref === child.href && !cActive;
                         const Tag = child.external ? 'a' : Link;
                         const extraProps = child.external
                           ? { href: child.href }
-                          : { href: child.href };
+                          : { href: child.href, onClick: () => handleNavClick(child.href) };
                         return (
                           <Tag
                             key={child.href}
                             {...extraProps}
                             className={cn(
-                              'flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-150',
+                              'tap-smooth flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200',
                               cActive
                                 ? cn(t.activeBg, t.activeText)
-                                : 'text-slate-500 hover:text-white hover:bg-white/[0.06]',
+                                : cPending
+                                  ? cn(t.activeBg, 'text-white/90')
+                                  : 'text-slate-500 hover:text-white hover:bg-white/[0.06]',
                             )}
                           >
-                            <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', cActive ? t.activeDot : 'bg-slate-600')} />
+                            {cPending ? (
+                              <span className={navSpinnerClass(variant)} aria-hidden />
+                            ) : (
+                              <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', cActive ? t.activeDot : 'bg-slate-600')} />
+                            )}
                             {child.label}
                             {child.external && (
                               <svg className="w-3 h-3 ml-auto opacity-40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -721,17 +759,22 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
                 <Link
                   href={item.href}
                   prefetch={true}
+                  onClick={() => handleNavClick(item.href)}
+                  aria-current={active ? 'page' : undefined}
+                  aria-busy={pending || undefined}
                   className={cn(
-                    'flex items-center gap-3 rounded-xl text-sm font-medium transition-colors duration-100 group mb-0.5 cursor-pointer select-none',
-                    isCollapsed ? 'justify-center w-11 h-11 mx-auto' : 'px-3 py-3',
+                    'tap-smooth flex items-center gap-3 rounded-xl text-sm font-medium transition-all duration-200 group mb-0.5 cursor-pointer select-none',
+                    isCollapsed ? 'relative justify-center w-11 h-11 mx-auto' : 'px-3 py-3',
                     active
                       ? cn(t.activeBg, t.activeText, !isCollapsed && `border-l-2 ${t.activeBorder} pl-[10px]`)
-                      : 'text-slate-400 hover:text-white hover:bg-white/[0.08] active:bg-white/[0.12]',
+                      : pending
+                        ? cn(t.activeBg, 'text-white/90 ring-1 ring-white/10')
+                        : 'text-slate-400 hover:text-white hover:bg-white/[0.08] active:bg-white/[0.12]',
                   )}
                 >
                   <span className={cn(
-                    'flex-shrink-0 w-5 h-5 transition-colors duration-100',
-                    active ? t.activeText : 'text-slate-500 group-hover:text-slate-200',
+                    'flex-shrink-0 w-5 h-5 transition-colors duration-200',
+                    active || pending ? t.activeText : 'text-slate-500 group-hover:text-slate-200',
                   )}>
                     {item.icon ?? getIcon(item.label)}
                   </span>
@@ -748,9 +791,11 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
                           {item.badgeCount > 99 ? '99+' : item.badgeCount}
                         </span>
                       )}
-                      {active && <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', t.activeDot)} />}
+                      {pending && <span className={navSpinnerClass(variant)} aria-hidden />}
+                      {active && !pending && <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', t.activeDot)} />}
                     </>
                   )}
+                  {isCollapsed && pending && <span className={cn('absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full animate-pulse', t.activeDot)} />}
                 </Link>
               </Tip>
             );
@@ -846,8 +891,15 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
               <span className={cn('w-2 h-2 rounded-full flex-shrink-0', t.headerDot)} />
               <h1 className="text-[15px] font-semibold text-slate-800">{title}</h1>
               <span className="text-slate-300 text-sm hidden sm:block">/</span>
-              <span className="text-sm text-slate-400 hidden sm:block capitalize">
-                {navItems.find(n => n.href === pathname)?.label ?? 'Overview'}
+              <span className="text-sm text-slate-400 hidden sm:block capitalize transition-opacity duration-200">
+                {isNavigating && pendingHref ? (
+                  <span className="inline-flex items-center gap-1.5 text-slate-500">
+                    <span className={cn('h-1.5 w-1.5 rounded-full animate-pulse', t.headerDot)} />
+                    {currentNavLabel}
+                  </span>
+                ) : (
+                  currentNavLabel
+                )}
               </span>
             </div>
           </div>
@@ -891,14 +943,16 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
         {/* ── Page content ── */}
         <div
           className={cn(
-            'flex-1 min-h-0 min-w-0 w-full',
+            'flex-1 min-h-0 min-w-0 w-full transition-opacity duration-200',
             edgeToEdge ? 'p-0' : 'overflow-auto p-4 sm:p-6',
             contentLocked ? 'flex flex-col overflow-hidden' : 'overflow-auto',
+            isNavigating && 'opacity-80',
           )}
         >
           <div
+            key={pathname}
             className={cn(
-              'min-h-0 min-w-0 w-full max-w-none flex-1',
+              'min-h-0 min-w-0 w-full max-w-none flex-1 animate-page-enter',
               edgeToEdge ? 'flex flex-col self-stretch' : '',
               attendancePage && 'attendance-full-bleed',
             )}

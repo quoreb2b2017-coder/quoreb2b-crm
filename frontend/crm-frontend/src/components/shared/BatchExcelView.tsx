@@ -131,7 +131,8 @@ export function BatchExcelView({
     }
   };
 
-  const openCreateModal = useCallback((rows: string[][], headers: string[]) => {
+  const openCreateModal = useCallback(
+    (payload: { rows: string[][]; headers: string[]; sourceRowIndices: number[] }) => {
     const now = new Date().toLocaleDateString('en-IN', {
       day: '2-digit',
       month: 'short',
@@ -139,8 +140,10 @@ export function BatchExcelView({
     });
     setBatchName(`Batch ${now}`);
     setBatchDesc('');
-    setBatchModal({ rows, headers });
-  }, []);
+    setBatchModal({ rows: payload.rows, headers: payload.headers });
+  },
+  [],
+  );
 
   const handleCreateSubBatch = async () => {
     if (!batchModal || !batchName.trim() || !sourceBatchId) return;
@@ -265,16 +268,34 @@ export function BatchExcelView({
           <div
             className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm"
             onClick={() => setBatchModal(null)}
+            aria-hidden
           />
-          <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="pointer-events-auto w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
-              <div className="border-b border-slate-100 px-6 py-4">
-                <p className="font-semibold text-slate-900">Create batch from admin data</p>
-                <p className="mt-0.5 text-xs text-slate-400">
-                  {batchModal.rows.length} rows · {batchModal.headers.length} columns
-                </p>
+          <div className="pointer-events-none fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
+            <div className="pointer-events-auto flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-2xl">
+              <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-6">
+                <div className="min-w-0">
+                  <p className="font-semibold text-slate-900">Create batch from admin data</p>
+                  <div className="mt-1.5 flex flex-wrap gap-2">
+                    <span className="inline-flex items-center rounded-full bg-violet-50 px-2.5 py-0.5 text-[11px] font-semibold text-violet-700">
+                      {batchModal.rows.length.toLocaleString('en-IN')} rows
+                    </span>
+                    <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">
+                      {batchModal.headers.length} columns
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setBatchModal(null)}
+                  className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                  aria-label="Close"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
-              <div className="space-y-4 px-6 py-5">
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">
                     Batch name <span className="text-red-500">*</span>
@@ -288,7 +309,7 @@ export function BatchExcelView({
                 </div>
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Description <span className="text-slate-400 font-normal">(optional)</span>
+                    Description <span className="font-normal text-slate-400">(optional)</span>
                   </label>
                   <textarea
                     value={batchDesc}
@@ -297,23 +318,43 @@ export function BatchExcelView({
                     className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-violet-500"
                   />
                 </div>
+                <div>
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Columns ({batchModal.headers.length})
+                  </p>
+                  <div className="max-h-28 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2 sm:max-h-32">
+                    <div className="flex flex-wrap gap-1.5">
+                      {batchModal.headers.map((header) => (
+                        <span
+                          key={header}
+                          className="inline-block max-w-full truncate rounded-md bg-white px-2 py-1 text-[11px] font-medium text-slate-700"
+                          title={header}
+                        >
+                          {header}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="flex gap-3 px-6 pb-5">
-                <button
-                  type="button"
-                  onClick={() => setBatchModal(null)}
-                  className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCreateSubBatch}
-                  disabled={savingBatch || !batchName.trim()}
-                  className="flex-1 rounded-xl bg-violet-600 py-2.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
-                >
-                  {savingBatch ? 'Creating…' : 'Create batch'}
-                </button>
+              <div className="shrink-0 border-t border-slate-100 px-4 py-4 sm:px-6">
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setBatchModal(null)}
+                    className="w-full rounded-xl border border-slate-200 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 sm:flex-1"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCreateSubBatch}
+                    disabled={savingBatch || !batchName.trim()}
+                    className="w-full rounded-xl bg-violet-600 py-2.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50 sm:flex-1"
+                  >
+                    {savingBatch ? 'Creating…' : 'Create batch'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

@@ -1,7 +1,7 @@
 import * as dns from 'dns/promises';
 import { Resolver } from 'dns/promises';
 import { isValidDomainFormat, normalizeDomain } from './email-patterns.util';
-import { DomainMxResult, validateDomainMx } from './domain-validation.util';
+import { validateDomainMx, DomainMxCacheStore, DomainMxResult } from './domain-validation.util';
 import { resolvePositiveInt } from './config-numbers.util';
 
 export interface DomainDnsResult extends DomainMxResult {
@@ -48,6 +48,7 @@ export async function validateDomainDns(
   domain: string,
   cacheTtlMs: number,
   negativeCacheTtlMs?: number,
+  cacheStore?: DomainMxCacheStore,
 ): Promise<DomainDnsResult> {
   const normalized = normalizeDomain(domain);
   const negativeTtl = resolvePositiveInt(
@@ -66,7 +67,7 @@ export async function validateDomainDns(
     };
   }
 
-  const mx = await validateDomainMx(normalized, cacheTtlMs, negativeTtl);
+  const mx = await validateDomainMx(normalized, cacheTtlMs, negativeTtl, cacheStore);
   if (mx.valid) {
     return {
       ...mx,

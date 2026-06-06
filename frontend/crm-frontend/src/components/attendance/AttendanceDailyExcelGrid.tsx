@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils/cn';
 import { useExcelTableNavigation } from '@/hooks/useExcelTableNavigation';
 import { ExcelSheetShell } from '@/components/attendance/ExcelSheetShell';
 
-const COLUMNS = ['#', 'Date', 'Day', 'Status', 'Hours'] as const;
+const COLUMNS = ['#', 'Date', 'Day', 'Status', 'Check-in', 'Hours'] as const;
 const COL_COUNT = COLUMNS.length;
 
 const STATUS_STYLES: Record<string, string> = {
@@ -12,12 +12,15 @@ const STATUS_STYLES: Record<string, string> = {
   absent: 'bg-[#fce4d6] text-[#c00000] font-semibold',
   leave: 'bg-[#ddebf7] text-[#2e75b6] font-semibold',
   'half-day': 'bg-[#fff2cc] text-[#bf8f00] font-semibold',
+  late: 'bg-[#fce4d6] text-[#c00000] font-semibold',
 };
 
 interface DailyRow {
   date: string;
   status: string;
   hoursWorked: number;
+  isLate?: boolean;
+  checkInTime?: string;
 }
 
 interface AttendanceDailyExcelGridProps {
@@ -132,12 +135,15 @@ export function AttendanceDailyExcelGrid({
                 const d = new Date(day.date);
                 const dayName = d.toLocaleDateString('en-IN', { weekday: 'short' });
                 const dateStr = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-                const statusKey = day.status?.toLowerCase() ?? '';
+                const statusKey = day.isLate ? 'late' : (day.status?.toLowerCase() ?? '');
                 const statusClass = STATUS_STYLES[statusKey] ?? 'bg-slate-100 text-slate-700';
+                const statusLabel = day.isLate
+                  ? `Late${day.checkInTime ? ` (${day.checkInTime})` : ''}`
+                  : day.status;
 
                 return (
                   <tr key={day.date + rowIdx} className="even:bg-[#fafafa]">
-                    {[0, 1, 2, 3, 4].map((col) => {
+                    {[0, 1, 2, 3, 4, 5].map((col) => {
                       const active = activeCell.row === rowIdx && activeCell.col === col;
                       const onActivate = () => setCell({ row: rowIdx, col });
 
@@ -173,7 +179,14 @@ export function AttendanceDailyExcelGrid({
                             className={statusClass}
                             onActivate={onActivate}
                           >
-                            {day.status}
+                            {statusLabel}
+                          </GridCell>
+                        );
+                      }
+                      if (col === 4) {
+                        return (
+                          <GridCell key={col} row={rowIdx} col={col} active={active} align="center" onActivate={onActivate}>
+                            {day.checkInTime ?? '—'}
                           </GridCell>
                         );
                       }

@@ -1,65 +1,76 @@
 'use client';
 
-import { useEffect, useCallback } from 'react';
-import { connectSocket } from '@/lib/socket/socket.client';
+import { useEffect, useCallback, useRef } from 'react';
+import { connectSocket, disconnectSocket } from '@/lib/socket/socket.client';
 import { useAuthStore } from '@/store/auth.store';
 import { useNotificationStore } from '@/store/notification.store';
 import { notificationService } from '@/lib/notifications/notification.service';
+import { useNotificationPreferencesStore } from '@/store/notification-preferences.store';
 
 export function useNotifications() {
   const accessToken = useAuthStore((s) => s.accessToken);
-  const user = useAuthStore((s) => s.user);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const notifications = useNotificationStore((s) => s.notifications);
   const unreadCount = useNotificationStore((s) => s.unreadCount);
-  const addNotification = useNotificationStore((s) => s.addNotification);
   const markAsRead = useNotificationStore((s) => s.markAsRead);
   const markAllAsRead = useNotificationStore((s) => s.markAllAsRead);
   const removeNotification = useNotificationStore((s) => s.removeNotification);
+  const clearAll = useNotificationStore((s) => s.clearAll);
+  const initializedRef = useRef(false);
 
-  // Initialize socket connection and subscribe to notifications
   useEffect(() => {
-    if (!accessToken) return;
+    if (!accessToken || !isAuthenticated) {
+      notificationService.unsubscribe();
+      disconnectSocket();
+      clearAll();
+      initializedRef.current = false;
+      return;
+    }
 
     const socket = connectSocket(accessToken);
     notificationService.setSocket(socket);
-
-    // Subscribe to notification events
     notificationService.subscribe();
 
-    // Fetch initial notifications
-    notificationService.fetchNotifications().then((notifs) => {
-      useNotificationStore.getState().updateNotifications(notifs);
-    });
-
-    // Fetch unread count
-    notificationService.getUnreadCount().then((count) => {
-      useNotificationStore.getState().setUnreadCount(count);
-    });
+    if (!initializedRef.current) {
+      initializedRef.current = true;
+      void (async () => {
+        const [notifs, count] = await Promise.all([
+          notificationService.fetchNotifications(),
+          notificationService.getUnreadCount(),
+        ]);
+        useNotificationStore.getState().updateNotifications(notifs);
+        useNotificationStore.getState().setUnreadCount(count);
+        try {
+          await useNotificationPreferencesStore.getState().load();
+        } catch {
+          /* preferences optional on first load */
+        }
+      })();
+    }
 
     return () => {
       notificationService.unsubscribe();
     };
-  }, [accessToken, user]);
+  }, [accessToken, isAuthenticated, clearAll]);
 
   const handleMarkAsRead = useCallback((id: string) => {
     markAsRead(id);
-    notificationService.markAsRead(id);
+    void notificationService.markAsRead(id);
   }, [markAsRead]);
 
   const handleMarkAllAsRead = useCallback(() => {
     markAllAsRead();
-    notificationService.markAllAsRead();
+    void notificationService.markAllAsRead();
   }, [markAllAsRead]);
 
   const handleDelete = useCallback((id: string) => {
     removeNotification(id);
-    notificationService.deleteNotification(id);
+    void notificationService.deleteNotification(id);
   }, [removeNotification]);
 
   return {
     notifications,
     unreadCount,
-    addNotification,
     markAsRead: handleMarkAsRead,
     markAllAsRead: handleMarkAllAsRead,
     deleteNotification: handleDelete,

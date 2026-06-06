@@ -1,6 +1,10 @@
 export const BULK_EMAIL_VERIFICATION_QUEUE = 'bulk-email-verification';
 
-export const PROSPECT_CHUNK_SIZE = 50;
+/** Prospects per BullMQ job — larger = fewer Redis jobs, faster queue start. */
+export const PROSPECT_CHUNK_SIZE = parseInt(
+  process.env.BULK_EMAIL_PROSPECT_CHUNK_SIZE || '100',
+  10,
+);
 
 export const SMTP_VERIFY_TIMEOUT_MS = 5_000;
 

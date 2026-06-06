@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Batch } from './schemas/batch.schema';
@@ -21,6 +22,8 @@ import {
   type MasterBatchCoverageResult,
 } from './master-batch-coverage.util';
 import { NotificationTriggerService } from '../notifications/notification-trigger.service';
+import { AppCacheService } from '../../redis/app-cache.service';
+import { cacheTtlSeconds } from '../../redis/cache.util';
 
 const MAX_LEAD_LOGS_PER_SAVE = 200;
 
@@ -33,6 +36,8 @@ export class BatchesService {
     private usersRepository: UsersRepository,
     private activityLogs: ActivityLogsService,
     private notifications: NotificationTriggerService,
+    private cache: AppCacheService,
+    private config: ConfigService,
   ) {}
 
   async create(
@@ -104,6 +109,7 @@ export class BatchesService {
       /* non-blocking */
     }
 
+    void this.bustBatchCaches(actor.id, batch._id.toString());
     return this.toResponse(batch);
   }
 
@@ -149,16 +155,27 @@ export class BatchesService {
     masterHeaders: string[],
     masterRows: string[][],
   ): Promise<MasterBatchCoverageResult> {
-    const batches = await this.model
-      .find({ $or: [{ sourceBatchId: { $exists: false } }, { sourceBatchId: null }] })
-      .select('name headers rows sourceBatchId masterSourceRowIndices')
-      .lean()
-      .exec();
-    return buildMasterBatchCoverage(masterHeaders, masterRows, batches);
+    const cacheKey = `master:coverage:${masterRows.length}:${masterHeaders.length}`;
+    return this.cache.wrap(cacheKey, cacheTtlSeconds(this.config, 'long'), async () => {
+      const batches = await this.model
+        .find({ $or: [{ sourceBatchId: { $exists: false } }, { sourceBatchId: null }] })
+        .select('name headers rows sourceBatchId masterSourceRowIndices')
+        .lean()
+        .exec();
+      return buildMasterBatchCoverage(masterHeaders, masterRows, batches);
+    });
   }
 
   async findAll(actorId: string) {
     if (!Types.ObjectId.isValid(actorId)) return [];
+    return this.cache.wrap(
+      `batch:list:${actorId}`,
+      cacheTtlSeconds(this.config, 'short'),
+      () => this.loadAllBatches(actorId),
+    );
+  }
+
+  private async loadAllBatches(actorId: string) {
     const id = new Types.ObjectId(actorId);
     const batches = await this.model
       .find({ $or: [{ createdBy: id }, { sharedWith: id }] })
@@ -167,7 +184,7 @@ export class BatchesService {
       .lean()
       .exec();
     await this.backfillBatchPeriods(batches);
-    return batches.map(b => this.toResponseSummary(b as unknown as Batch));
+    return batches.map((b) => this.toResponseSummary(b as unknown as Batch));
   }
 
   /** One-time fill for legacy batches missing batchMonth/batchYear */
@@ -200,11 +217,19 @@ export class BatchesService {
   }
 
   async findOne(batchId: string, actorId: string) {
+    return this.cache.wrap(
+      `batch:full:${batchId}:${actorId}`,
+      cacheTtlSeconds(this.config, 'medium'),
+      () => this.loadOneBatch(batchId, actorId),
+    );
+  }
+
+  private async loadOneBatch(batchId: string, actorId: string) {
     const batch = await this.model.findById(batchId).lean().exec();
     if (!batch) throw new NotFoundException('Batch not found');
     const id = actorId;
     const isOwner = batch.createdBy?.toString() === id;
-    const isShared = (batch.sharedWith as Types.ObjectId[])?.some(u => u.toString() === id);
+    const isShared = (batch.sharedWith as Types.ObjectId[])?.some((u) => u.toString() === id);
     if (!isOwner && !isShared) throw new ForbiddenException('Access denied');
     return this.toResponse(batch as unknown as Batch);
   }
@@ -300,6 +325,7 @@ export class BatchesService {
       }
     }
 
+    void this.bustBatchCaches(actorId, batchId);
     return this.toResponse(batch);
   }
 
@@ -349,6 +375,7 @@ export class BatchesService {
     }
 
     await batch.save();
+    void this.bustBatchCaches(actorId, batchId);
     return this.toResponse(batch);
   }
 
@@ -431,6 +458,7 @@ export class BatchesService {
       );
     }
     await batch.deleteOne();
+    void this.bustBatchCaches(actorId, batchId);
     return { deleted: true };
   }
 
@@ -439,6 +467,7 @@ export class BatchesService {
     const result = await this.model.deleteMany({}).exec();
     const collection = this.model.collection.name;
     const native = await this.model.db.collection(collection).deleteMany({});
+    void this.bustBatchCaches();
     return Math.max(result.deletedCount ?? 0, native.deletedCount ?? 0);
   }
 
@@ -500,5 +529,13 @@ export class BatchesService {
       updatedAt: doc.updatedAt,
       ...period,
     };
+  }
+
+  private bustBatchCaches(_actorId?: string, _batchId?: string): void {
+    void this.cache.delByPrefix('batch:');
+    void this.cache.delByPrefix('master:coverage:');
+    void this.cache.delByPrefix('dashboard:');
+    void this.cache.delByPrefix('analytics:');
+    void this.cache.delByPrefix('master:');
   }
 }

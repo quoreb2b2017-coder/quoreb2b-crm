@@ -126,8 +126,22 @@ export function DbAdminDashboard() {
             },
             {
               label: 'Redis / queues',
-              value: data.health.redis === 'disabled' ? 'Off' : data.health.redis,
-              note: data.health.redis === 'disabled' ? 'Not configured' : 'Background jobs',
+              value:
+                data.health.redis === 'disabled'
+                  ? 'Off'
+                  : data.health.redis === 'up'
+                    ? 'On'
+                    : data.health.redis === 'down'
+                      ? 'Down'
+                      : data.health.redis,
+              note:
+                data.health.redis === 'disabled'
+                  ? 'REDIS_ENABLED=false in .env'
+                  : data.health.redis === 'up'
+                    ? 'Memurai / BullMQ active'
+                    : data.health.redis === 'down'
+                      ? 'Start Memurai on port 6379'
+                      : 'Background jobs',
             },
             {
               label: 'Elasticsearch',

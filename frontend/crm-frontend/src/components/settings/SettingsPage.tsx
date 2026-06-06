@@ -15,6 +15,7 @@ import { ChangePasswordModal } from './ChangePasswordModal';
 import { SystemHealthPanel } from './SystemHealthPanel';
 import { AccountSettingsPanel } from './AccountSettingsPanel';
 import { SecuritySettingsPanel } from './SecuritySettingsPanel';
+import { NotificationSettingsPanel } from './NotificationSettingsPanel';
 
 const SETTINGS_SECTIONS = [
   { id: 'account', label: 'My Account', icon: User, description: 'Profile & role details' },
@@ -42,8 +43,8 @@ export function SettingsPage() {
   };
 
   return (
-    <div className="flex flex-col border border-slate-300 bg-[#e8e8e8]">
-      <div className={cn('border-b border-slate-300 px-4 py-2.5 text-white', accent)}>
+    <div className="flex min-h-0 flex-col border border-slate-300 bg-[#e8e8e8]">
+      <div className={cn('border-b border-slate-300 px-3 py-2.5 text-white sm:px-4', accent)}>
         <div className="flex items-center gap-2">
           <Settings className="h-4 w-4 opacity-90" />
           <div>
@@ -55,7 +56,7 @@ export function SettingsPage() {
 
       <div className="flex flex-col lg:flex-row lg:items-stretch">
         <nav
-          className="flex gap-0 overflow-x-auto border-b border-slate-300 bg-[#f3f3f3] lg:w-52 lg:shrink-0 lg:flex-col lg:border-b-0 lg:border-r"
+          className="flex gap-0 overflow-x-auto border-b border-slate-300 bg-[#f3f3f3] lg:w-56 lg:shrink-0 lg:flex-col lg:overflow-x-visible lg:border-b-0 lg:border-r"
           aria-label="Settings sections"
         >
           {SETTINGS_SECTIONS.map((section) => {
@@ -67,7 +68,7 @@ export function SettingsPage() {
                 type="button"
                 onClick={() => handleSectionChange(section.id)}
                 className={cn(
-                  'flex min-w-[140px] items-start gap-2 border-b border-r border-slate-200 px-3 py-2.5 text-left text-xs transition-colors lg:min-w-0 lg:border-r-0',
+                  'flex min-w-[128px] shrink-0 items-start gap-2 border-b border-r border-slate-200 px-3 py-2.5 text-left text-xs transition-colors sm:min-w-[140px] lg:min-w-0 lg:shrink lg:border-r-0',
                   isActive
                     ? 'bg-white font-semibold text-[#217346] ring-1 ring-inset ring-[#217346]/30'
                     : 'text-slate-600 hover:bg-white/80',
@@ -85,19 +86,11 @@ export function SettingsPage() {
           })}
         </nav>
 
-        <div className="min-w-0 flex-1 bg-white p-4 sm:p-6">
+        <div className="min-w-0 flex-1 bg-white p-3 sm:p-6">
           {activeSection === 'account' && <AccountSettingsPanel />}
           {activeSection === 'system-health' && <SystemHealthPanel />}
           {activeSection === 'security' && <SecuritySettingsPanel />}
-          {activeSection === 'notifications' && (
-            <div>
-              <h2 className="text-sm font-bold uppercase tracking-wide text-slate-800">Notifications</h2>
-              <p className="mt-1 text-xs text-slate-500">Email and in-app alert preferences</p>
-              <div className="mt-4 border border-dashed border-slate-300 bg-[#f9f9f9] px-4 py-8 text-center text-xs text-slate-500">
-                Notification settings will be available in a future update.
-              </div>
-            </div>
-          )}
+          {activeSection === 'notifications' && <NotificationSettingsPanel />}
           {activeSection === 'change-password' && (
             <div>
               <h2 className="text-sm font-bold uppercase tracking-wide text-slate-800">Change password</h2>

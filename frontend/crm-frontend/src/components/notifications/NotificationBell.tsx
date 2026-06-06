@@ -24,131 +24,48 @@ import { useNotifications } from '@/hooks/useNotifications';
 import { Notification, type NotificationType, PRIORITY_COLORS } from '@/types/notifications';
 import { cn } from '@/lib/utils/cn';
 
-type NotificationFilter = 'all' | 'unread' | 'actions' | 'batches' | 'users' | 'system';
-
-const FILTERS: Array<{ id: NotificationFilter; label: string }> = [
-  { id: 'all', label: 'All' },
-  { id: 'unread', label: 'Unread' },
-  { id: 'actions', label: 'Actions' },
-  { id: 'batches', label: 'Batches' },
-  { id: 'users', label: 'Users' },
-  { id: 'system', label: 'System' },
-];
+type NotificationFilter = 'all' | 'unread';
 
 const NOTIFICATION_META: Record<
   NotificationType,
-  {
-    label: string;
-    category: Exclude<NotificationFilter, 'all' | 'unread'>;
-    icon: LucideIcon;
-    iconClass: string;
-    chipClass: string;
-  }
+  { label: string; icon: LucideIcon; accent: string; bg: string }
 > = {
-  success: {
-    label: 'Success',
-    category: 'actions',
-    icon: CheckCircle2,
-    iconClass: 'bg-emerald-50 text-emerald-600',
-    chipClass: 'bg-emerald-50 text-emerald-700',
-  },
-  error: {
-    label: 'Error',
-    category: 'system',
-    icon: XCircle,
-    iconClass: 'bg-red-50 text-red-600',
-    chipClass: 'bg-red-50 text-red-700',
-  },
-  warning: {
-    label: 'Warning',
-    category: 'actions',
-    icon: TriangleAlert,
-    iconClass: 'bg-amber-50 text-amber-600',
-    chipClass: 'bg-amber-50 text-amber-700',
-  },
-  info: {
-    label: 'Info',
-    category: 'actions',
-    icon: Info,
-    iconClass: 'bg-blue-50 text-blue-600',
-    chipClass: 'bg-blue-50 text-blue-700',
-  },
-  batch_created: {
-    label: 'Batch Created',
-    category: 'batches',
-    icon: Package,
-    iconClass: 'bg-indigo-50 text-indigo-600',
-    chipClass: 'bg-indigo-50 text-indigo-700',
-  },
-  batch_updated: {
-    label: 'Batch Updated',
-    category: 'batches',
-    icon: RefreshCw,
-    iconClass: 'bg-violet-50 text-violet-600',
-    chipClass: 'bg-violet-50 text-violet-700',
-  },
-  batch_completed: {
-    label: 'Batch Completed',
-    category: 'batches',
-    icon: CheckCircle2,
-    iconClass: 'bg-emerald-50 text-emerald-600',
-    chipClass: 'bg-emerald-50 text-emerald-700',
-  },
-  user_added: {
-    label: 'User Added',
-    category: 'users',
-    icon: UserPlus,
-    iconClass: 'bg-sky-50 text-sky-600',
-    chipClass: 'bg-sky-50 text-sky-700',
-  },
-  data_uploaded: {
-    label: 'Upload',
-    category: 'actions',
-    icon: Upload,
-    iconClass: 'bg-indigo-50 text-indigo-600',
-    chipClass: 'bg-indigo-50 text-indigo-700',
-  },
-  system_alert: {
-    label: 'System Alert',
-    category: 'system',
-    icon: BellRing,
-    iconClass: 'bg-rose-50 text-rose-600',
-    chipClass: 'bg-rose-50 text-rose-700',
-  },
-  activity_alert: {
-    label: 'Activity',
-    category: 'actions',
-    icon: Activity,
-    iconClass: 'bg-amber-50 text-amber-600',
-    chipClass: 'bg-amber-50 text-amber-700',
-  },
-  bulk_email_verification: {
-    label: 'Email verification',
-    category: 'batches',
-    icon: Mail,
-    iconClass: 'bg-emerald-50 text-emerald-600',
-    chipClass: 'bg-emerald-50 text-emerald-700',
-  },
+  success: { label: 'Success', icon: CheckCircle2, accent: 'border-emerald-400', bg: 'bg-emerald-50 text-emerald-700' },
+  error: { label: 'Error', icon: XCircle, accent: 'border-red-400', bg: 'bg-red-50 text-red-700' },
+  warning: { label: 'Warning', icon: TriangleAlert, accent: 'border-amber-400', bg: 'bg-amber-50 text-amber-700' },
+  info: { label: 'Info', icon: Info, accent: 'border-blue-400', bg: 'bg-blue-50 text-blue-700' },
+  batch_created: { label: 'Batch', icon: Package, accent: 'border-indigo-400', bg: 'bg-indigo-50 text-indigo-700' },
+  batch_updated: { label: 'Batch', icon: RefreshCw, accent: 'border-violet-400', bg: 'bg-violet-50 text-violet-700' },
+  batch_completed: { label: 'Batch', icon: CheckCircle2, accent: 'border-emerald-400', bg: 'bg-emerald-50 text-emerald-700' },
+  user_added: { label: 'User', icon: UserPlus, accent: 'border-sky-400', bg: 'bg-sky-50 text-sky-700' },
+  data_uploaded: { label: 'Upload', icon: Upload, accent: 'border-indigo-400', bg: 'bg-indigo-50 text-indigo-700' },
+  system_alert: { label: 'System', icon: BellRing, accent: 'border-rose-400', bg: 'bg-rose-50 text-rose-700' },
+  activity_alert: { label: 'Activity', icon: Activity, accent: 'border-amber-400', bg: 'bg-amber-50 text-amber-700' },
+  bulk_email_verification: { label: 'Email', icon: Mail, accent: 'border-teal-400', bg: 'bg-teal-50 text-teal-700' },
 };
 
-const DEFAULT_NOTIFICATION_META = NOTIFICATION_META.info;
+const DEFAULT_META = NOTIFICATION_META.info;
 
-function getNotificationMeta(type: string | undefined) {
-  if (!type) return DEFAULT_NOTIFICATION_META;
-  return (
-    NOTIFICATION_META[type as NotificationType] ?? DEFAULT_NOTIFICATION_META
-  );
+function getMeta(type: string | undefined) {
+  if (!type) return DEFAULT_META;
+  return NOTIFICATION_META[type as NotificationType] ?? DEFAULT_META;
 }
 
-function matchesFilter(notification: Notification, filter: NotificationFilter) {
-  if (filter === 'all') return true;
-  if (filter === 'unread') return !notification.read;
-  return getNotificationMeta(notification.type).category === filter;
+function getTimeAgo(timestamp: number): string {
+  const diff = Date.now() - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  if (days < 7) return `${days}d ago`;
+  return new Date(timestamp).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
 export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedFilter, setSelectedFilter] = useState<NotificationFilter>('all');
+  const [filter, setFilter] = useState<NotificationFilter>('all');
   const panelRef = useRef<HTMLDivElement>(null);
   const {
     notifications,
@@ -158,254 +75,230 @@ export function NotificationBell() {
     deleteNotification,
   } = useNotifications();
 
-  // Close panel when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (panelRef.current && !panelRef.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
     }
-
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
   }, [isOpen]);
 
-  const filteredNotifications = useMemo(
-    () => notifications.filter((notification) => matchesFilter(notification, selectedFilter)),
-    [notifications, selectedFilter],
-  );
-
-  const filterCounts = useMemo(
+  const filtered = useMemo(
     () =>
-      FILTERS.reduce<Record<NotificationFilter, number>>((acc, filter) => {
-        acc[filter.id] = notifications.filter((notification) =>
-          matchesFilter(notification, filter.id),
-        ).length;
-        return acc;
-      }, { all: 0, unread: 0, actions: 0, batches: 0, users: 0, system: 0 }),
-    [notifications],
+      notifications.filter((n) => (filter === 'unread' ? !n.read : true)),
+    [notifications, filter],
   );
 
   return (
     <div className="relative">
-      {/* Bell button */}
       <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="relative p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+        type="button"
+        onClick={() => setIsOpen((open) => !open)}
+        className={cn(
+          'relative rounded-xl p-2.5 transition-all',
+          isOpen
+            ? 'bg-slate-900 text-white shadow-md'
+            : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700',
+        )}
         title="Notifications"
+        aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ''}`}
+        aria-expanded={isOpen}
       >
-        <Bell className="w-5 h-5" />
+        <Bell className="h-5 w-5" />
         {unreadCount > 0 && (
-          <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-600 rounded-full">
+          <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white ring-2 ring-white">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
       </button>
 
-      {/* Notification panel */}
       {isOpen && (
         <div
           ref={panelRef}
-          className="absolute right-0 mt-2 flex w-[28rem] max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl z-50"
+          className="absolute right-0 z-50 mt-2 flex w-[22rem] max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_20px_50px_-12px_rgba(15,23,42,0.25)] sm:w-[26rem]"
         >
-          {/* Header */}
-          <div className="border-b border-slate-200 p-4">
-            <div className="flex items-center justify-between gap-3">
+          <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white px-4 py-3.5">
+            <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="font-semibold text-slate-900">Notifications</h3>
+                <h3 className="text-sm font-semibold text-slate-900">Notifications</h3>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  {unreadCount} unread of {notifications.length} total
+                  {unreadCount > 0
+                    ? `${unreadCount} unread · ${notifications.length} total`
+                    : notifications.length > 0
+                      ? 'All caught up'
+                      : 'Nothing new yet'}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
                 {unreadCount > 0 && (
                   <button
-                    onClick={() => {
-                      markAllAsRead();
-                    }}
-                    className="p-1 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors"
+                    type="button"
+                    onClick={() => markAllAsRead()}
+                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-blue-600 hover:bg-blue-50"
                     title="Mark all as read"
                   >
-                    <CheckCheck className="w-4 h-4" />
+                    <CheckCheck className="h-3.5 w-3.5" />
+                    Read all
                   </button>
                 )}
                 <button
+                  type="button"
                   onClick={() => setIsOpen(false)}
-                  className="p-1 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-colors"
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="h-4 w-4" />
                 </button>
               </div>
             </div>
 
-            <div className="mt-3 flex flex-wrap gap-2">
-              {FILTERS.map((filter) => (
+            <div className="mt-3 inline-flex rounded-lg bg-slate-100 p-0.5">
+              {(['all', 'unread'] as const).map((tab) => (
                 <button
-                  key={filter.id}
+                  key={tab}
                   type="button"
-                  onClick={() => setSelectedFilter(filter.id)}
+                  onClick={() => setFilter(tab)}
                   className={cn(
-                    'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold transition-colors',
-                    selectedFilter === filter.id
-                      ? 'border-slate-900 bg-slate-900 text-white'
-                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
+                    'rounded-md px-3 py-1 text-[11px] font-semibold capitalize transition-colors',
+                    filter === tab
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700',
                   )}
                 >
-                  <span>{filter.label}</span>
-                  <span
-                    className={cn(
-                      'inline-flex min-w-[1.1rem] items-center justify-center rounded-full px-1 py-0.5 text-[10px]',
-                      selectedFilter === filter.id ? 'bg-white/15 text-white' : 'bg-slate-100 text-slate-600',
-                    )}
-                  >
-                    {filterCounts[filter.id]}
-                  </span>
+                  {tab}
+                  {tab === 'unread' && unreadCount > 0 ? ` (${unreadCount})` : ''}
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Notifications list */}
-          <div className="max-h-[28rem] flex-1 overflow-y-auto">
-            {notifications.length === 0 ? (
-              <div className="flex h-32 items-center justify-center text-slate-500">
-                <p className="text-sm">No notifications yet</p>
-              </div>
-            ) : filteredNotifications.length === 0 ? (
-              <div className="flex h-32 flex-col items-center justify-center gap-1 text-slate-500">
-                <p className="text-sm font-medium">No notifications in this filter</p>
-                <button
-                  type="button"
-                  onClick={() => setSelectedFilter('all')}
-                  className="text-xs font-semibold text-blue-600 hover:text-blue-700"
-                >
-                  Show all
-                </button>
+          <div className="max-h-[24rem] overflow-y-auto overscroll-contain">
+            {filtered.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-2 px-6 py-12 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                  <Bell className="h-5 w-5" />
+                </div>
+                <p className="text-sm font-medium text-slate-700">
+                  {filter === 'unread' ? 'No unread notifications' : 'No notifications yet'}
+                </p>
+                <p className="text-xs text-slate-500">
+                  Updates for batches, leave, uploads and alerts will appear here.
+                </p>
               </div>
             ) : (
-              <div className="divide-y divide-slate-100">
-                {filteredNotifications.map((notification) => (
+              <ul className="divide-y divide-slate-100">
+                {filtered.map((notification) => (
                   <NotificationItem
                     key={notification.id}
                     notification={notification}
                     onMarkRead={markAsRead}
                     onDelete={deleteNotification}
+                    onNavigate={() => setIsOpen(false)}
                   />
                 ))}
-              </div>
+              </ul>
             )}
           </div>
-
-          {notifications.length > 0 && (
-            <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-[11px] text-slate-500">
-              Showing {filteredNotifications.length} of {notifications.length} notifications
-            </div>
-          )}
         </div>
       )}
     </div>
   );
-}
-
-interface NotificationItemProps {
-  notification: Notification;
-  onMarkRead: (id: string) => void;
-  onDelete: (id: string) => void;
 }
 
 function NotificationItem({
   notification,
   onMarkRead,
   onDelete,
-}: NotificationItemProps) {
-  const meta = getNotificationMeta(notification.type);
+  onNavigate,
+}: {
+  notification: Notification;
+  onMarkRead: (id: string) => void;
+  onDelete: (id: string) => void;
+  onNavigate: () => void;
+}) {
+  const meta = getMeta(notification.type);
   const Icon = meta.icon;
-  const priorityColor = PRIORITY_COLORS[notification.priority];
-  const timeAgo = getTimeAgo(notification.timestamp);
+  const priorityClass = PRIORITY_COLORS[notification.priority] ?? PRIORITY_COLORS.medium;
+
+  const handleClick = () => {
+    if (!notification.read) onMarkRead(notification.id);
+  };
 
   return (
-    <div
-      className={cn(
-        'p-3 hover:bg-slate-50 transition-colors cursor-pointer',
-        !notification.read && 'bg-blue-50/50',
-      )}
-    >
-      <div className="flex items-start gap-3">
-        <div
-          className={cn(
-            'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl',
-            meta.iconClass,
-          )}
-        >
+    <li>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={handleClick}
+        onKeyDown={(e) => e.key === 'Enter' && handleClick()}
+        className={cn(
+          'group relative flex gap-3 px-4 py-3 transition-colors hover:bg-slate-50',
+          !notification.read && 'bg-blue-50/40',
+        )}
+      >
+        {!notification.read && (
+          <span className="absolute left-0 top-0 h-full w-1 rounded-r bg-blue-500" />
+        )}
+
+        <div className={cn('mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl', meta.bg)}>
           <Icon className="h-4 w-4" />
         </div>
 
-        {/* Content */}
-        <div className="flex-1 min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold', meta.chipClass)}>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                   {meta.label}
                 </span>
-                <span className={cn('rounded-full px-2 py-0.5 text-[10px] font-semibold text-slate-700', priorityColor)}>
-                  {notification.priority}
-                </span>
+                {notification.priority !== 'medium' && (
+                  <span className={cn('rounded px-1.5 py-0.5 text-[9px] font-bold uppercase', priorityClass)}>
+                    {notification.priority}
+                  </span>
+                )}
               </div>
-              <h4 className="mt-1 font-semibold text-sm text-slate-900">
+              <p className="mt-0.5 text-sm font-semibold leading-snug text-slate-900">
                 {notification.title}
-              </h4>
-              <p className="text-xs text-slate-600 mt-0.5 line-clamp-2">
+              </p>
+              <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-600">
                 {notification.message}
               </p>
             </div>
-            {!notification.read && (
-              <div className="w-2 h-2 rounded-full bg-blue-600 flex-shrink-0 mt-1" />
-            )}
-          </div>
 
-          {/* Action button */}
-          {notification.actionUrl && notification.actionLabel && (
-            <Link
-              href={notification.actionUrl}
-              onClick={() => onMarkRead(notification.id)}
-              className="inline-block mt-2 text-xs font-semibold text-blue-600 hover:text-blue-700"
-            >
-              {notification.actionLabel} →
-            </Link>
-          )}
-
-          {/* Time and delete */}
-          <div className="flex items-center justify-between mt-2">
-            <span className="text-xs text-slate-400">{timeAgo}</span>
             <button
-              onClick={() => onDelete(notification.id)}
-              className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-colors"
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(notification.id);
+              }}
+              className="rounded-md p-1 text-slate-300 opacity-0 transition-all hover:bg-slate-200 hover:text-slate-600 group-hover:opacity-100"
               title="Delete"
             >
-              <Trash2 className="w-3 h-3" />
+              <Trash2 className="h-3.5 w-3.5" />
             </button>
+          </div>
+
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <span className="text-[11px] text-slate-400">{getTimeAgo(notification.timestamp)}</span>
+            {notification.actionUrl && notification.actionLabel && (
+              <Link
+                href={notification.actionUrl}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!notification.read) onMarkRead(notification.id);
+                  onNavigate();
+                }}
+                className="text-[11px] font-semibold text-blue-600 hover:text-blue-700"
+              >
+                {notification.actionLabel} →
+              </Link>
+            )}
           </div>
         </div>
       </div>
-    </div>
+    </li>
   );
-}
-
-function getTimeAgo(timestamp: number): string {
-  const now = Date.now();
-  const diff = now - timestamp;
-  const seconds = Math.floor(diff / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-
-  if (seconds < 60) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  if (hours < 24) return `${hours}h ago`;
-  if (days < 7) return `${days}d ago`;
-  
-  return new Date(timestamp).toLocaleDateString();
 }

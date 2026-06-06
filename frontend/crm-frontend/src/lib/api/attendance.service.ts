@@ -22,6 +22,7 @@ export interface AttendanceAnalytics {
   paidLeaveDays: number;
   halfDays: number;
   weekendDays: number;
+  lateDays: number;
   attendancePercentage: number;
   totalHoursWorked: number;
   dailyBreakdown: Array<{
@@ -29,6 +30,8 @@ export interface AttendanceAnalytics {
     status: string;
     hoursWorked: number;
     isPaidLeave?: boolean;
+    isLate?: boolean;
+    checkInTime?: string;
   }>;
 }
 

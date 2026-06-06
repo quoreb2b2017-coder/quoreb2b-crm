@@ -42,8 +42,35 @@ export class User extends Document {
 
   @Prop({ select: false })
   plainPassword?: string;
+
+  @Prop({
+    type: {
+      enabled: { type: Boolean, default: true },
+      toastEnabled: { type: Boolean, default: true },
+      emailAlerts: { type: Boolean, default: false },
+      batchAlerts: { type: Boolean, default: true },
+      leaveAlerts: { type: Boolean, default: true },
+      attendanceAlerts: { type: Boolean, default: true },
+      systemAlerts: { type: Boolean, default: true },
+      activityAlerts: { type: Boolean, default: true },
+    },
+    default: () => ({
+      enabled: true,
+      toastEnabled: true,
+      emailAlerts: false,
+      batchAlerts: true,
+      leaveAlerts: true,
+      attendanceAlerts: true,
+      systemAlerts: true,
+      activityAlerts: true,
+    }),
+  })
+  notificationPreferences?: Record<string, boolean>;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
 UserSchema.index({ roles: 1 });
 UserSchema.index({ companyId: 1 });
+UserSchema.index({ isActive: 1, roles: 1, firstName: 1, lastName: 1 });
+UserSchema.index({ isActive: 1, createdAt: -1 });
+UserSchema.index({ firstName: 1, lastName: 1 });

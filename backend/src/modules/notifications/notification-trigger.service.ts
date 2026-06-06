@@ -1,9 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { EventsGateway } from '../../events/events.gateway';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { User } from '../users/schemas/user.schema';
 import { Notification } from './schemas/notification.schema';
+import { SystemRole } from '../../common/constants/roles.constant';
+import {
+  mergeNotificationPreferences,
+  notificationTypeToCategory,
+  type NotificationPreferences,
+} from './notification-preferences.util';
+import { serializeNotification } from './notification.util';
 
 @Injectable()
 export class NotificationTriggerService {
@@ -12,6 +19,41 @@ export class NotificationTriggerService {
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(Notification.name) private notificationModel: Model<Notification>,
   ) {}
+
+  private userObjectId(userId: string) {
+    return Types.ObjectId.isValid(userId) ? new Types.ObjectId(userId) : userId;
+  }
+
+  private async emitUnreadCount(userId: string) {
+    const count = await this.notificationModel.countDocuments({
+      userId: this.userObjectId(userId),
+      isRead: false,
+    });
+    this.eventsGateway.emitToUser(userId, 'notification:unread-count', { count });
+    return count;
+  }
+
+  private async emitNotification(userId: string, notification: Notification) {
+    const dto = serializeNotification(notification);
+    this.eventsGateway.emitToUser(userId, 'notification:receive', dto);
+    await this.emitUnreadCount(userId);
+    return dto;
+  }
+
+  private async shouldNotifyUser(
+    userId: string,
+    type: string,
+    category?: keyof NotificationPreferences,
+  ): Promise<boolean> {
+    const user = await this.userModel.findById(userId).select('notificationPreferences').lean().exec();
+    if (!user) return false;
+    const prefs = mergeNotificationPreferences(
+      user.notificationPreferences as Partial<NotificationPreferences>,
+    );
+    if (!prefs.enabled) return false;
+    const key = category ?? notificationTypeToCategory(type);
+    return Boolean(prefs[key]);
+  }
 
   private async notifyUsers(
     userIds: string[],
@@ -23,6 +65,7 @@ export class NotificationTriggerService {
       actionUrl?: string;
       actionLabel?: string;
       metadata?: Record<string, unknown>;
+      category?: keyof NotificationPreferences;
     },
   ) {
     const uniqueUserIds = [...new Set(userIds.filter(Boolean))];
@@ -42,11 +85,15 @@ export class NotificationTriggerService {
     actionUrl?: string;
     actionLabel?: string;
     metadata?: Record<string, unknown>;
+    category?: keyof NotificationPreferences;
   }) {
     try {
-      // Save to database
+      if (!(await this.shouldNotifyUser(userId, data.type, data.category))) {
+        return null;
+      }
+
       const notification = await this.notificationModel.create({
-        userId,
+        userId: this.userObjectId(userId),
         title: data.title,
         message: data.message,
         type: data.type,
@@ -58,16 +105,7 @@ export class NotificationTriggerService {
         },
       });
 
-      // Emit via socket
-      this.eventsGateway.emitToUser(userId, 'notification:receive', {
-        type: data.type,
-        title: data.title,
-        message: data.message,
-        priority: data.priority || 'medium',
-        actionUrl: data.actionUrl,
-        actionLabel: data.actionLabel,
-        metadata: data.metadata,
-      });
+      await this.emitNotification(userId, notification);
 
       return notification;
     } catch (error) {
@@ -86,9 +124,13 @@ export class NotificationTriggerService {
     actionUrl?: string;
     actionLabel?: string;
     metadata?: Record<string, unknown>;
+    category?: keyof NotificationPreferences;
   }, excludeUserIds: string[] = []) {
     try {
-      const superAdmins = await this.userModel.find({ roles: 'super_admin' });
+      const superAdmins = await this.userModel.find({
+        roles: { $in: [SystemRole.SUPER_ADMIN, SystemRole.ADMIN] },
+        isActive: { $ne: false },
+      });
       await this.notifyUsers(
         superAdmins
           .map((admin) => admin._id.toString())
@@ -111,9 +153,13 @@ export class NotificationTriggerService {
     actionUrl?: string;
     actionLabel?: string;
     metadata?: Record<string, unknown>;
+    category?: keyof NotificationPreferences;
   }) {
     try {
-      const dbAdmins = await this.userModel.find({ roles: 'db_admin' });
+      const dbAdmins = await this.userModel.find({
+        roles: SystemRole.DB_ADMIN,
+        isActive: { $ne: false },
+      });
       await this.notifyUsers(
         dbAdmins.map((admin) => admin._id.toString()),
         data,
@@ -184,38 +230,44 @@ export class NotificationTriggerService {
   /**
    * Notify on attendance marked
    */
-  async notifyAttendanceMarked(userId: string, userName: string, date: string, status: string) {
-    // Notify the employee
+  async notifyAttendanceMarked(
+    userId: string,
+    userName: string,
+    date: string,
+    status: string,
+    checkInTime?: string,
+    isLate?: boolean,
+  ) {
+    const timeLabel = checkInTime ? ` at ${checkInTime}` : '';
+    const lateNote = isLate ? ' (late attendance)' : '';
+
     await this.notifyUser(userId, {
-      type: 'success',
-      title: '✓ Attendance Marked',
-      message: `Your attendance for ${date} has been marked as ${status}`,
-      priority: 'medium',
+      type: isLate ? 'warning' : 'success',
+      category: 'attendanceAlerts',
+      title: isLate ? 'Late attendance marked' : 'Attendance marked',
+      message: isLate
+        ? `Your attendance for ${date} was recorded late${timeLabel}. On-time cutoff is 6:30 PM.`
+        : `Your attendance for ${date} is recorded as ${status.replace(/-/g, ' ')}${timeLabel}`,
+      priority: isLate ? 'high' : 'medium',
       actionUrl: '/employee/attendance',
-      actionLabel: 'View Attendance',
+      actionLabel: 'View attendance',
+      metadata: { checkInTime, isLate, date, status },
     });
 
-    // Notify DB admins
-    await this.notifyDbAdmins({
-      type: 'info',
-      title: '📋 Attendance Marked',
-      message: `${userName} marked attendance as ${status} on ${date}`,
-      priority: 'low',
-      actionUrl: '/db-admin/attendance',
-      actionLabel: 'View Attendance',
-      metadata: { userId, date, status },
-    });
-
-    // Notify super admins
-    await this.notifySuperAdmins({
-      type: 'info',
-      title: '📋 Attendance Marked',
-      message: `${userName} marked attendance as ${status} on ${date}`,
-      priority: 'low',
-      actionUrl: '/admin/attendance',
-      actionLabel: 'View Attendance',
-      metadata: { userId, date, status },
-    });
+    if (status === 'leave' || status === 'absent' || isLate) {
+      await this.notifyDbAdmins({
+        type: 'activity_alert',
+        category: 'attendanceAlerts',
+        title: isLate ? 'Late attendance' : 'Attendance update',
+        message: isLate
+          ? `${userName} marked late attendance on ${date}${timeLabel}`
+          : `${userName} marked ${status} on ${date}`,
+        priority: isLate ? 'high' : 'medium',
+        actionUrl: '/db-admin/attendance',
+        actionLabel: 'Review attendance',
+        metadata: { userId, date, status, checkInTime, isLate },
+      });
+    }
   }
 
   /**
@@ -225,7 +277,8 @@ export class NotificationTriggerService {
     // Notify the employee
     await this.notifyUser(userId, {
       type: 'info',
-      title: '📝 Leave Application Submitted',
+      category: 'leaveAlerts',
+      title: 'Leave application submitted',
       message: `Your ${leaveType} leave request from ${startDate} to ${endDate} has been submitted`,
       priority: 'medium',
       actionUrl: '/employee/leave',
@@ -235,7 +288,8 @@ export class NotificationTriggerService {
     // Notify DB admins
     await this.notifyDbAdmins({
       type: 'warning',
-      title: '⏳ Leave Application Pending',
+      category: 'leaveAlerts',
+      title: 'Leave application pending',
       message: `${userName} applied for ${leaveType} leave from ${startDate} to ${endDate}`,
       priority: 'high',
       actionUrl: '/db-admin/leave-management',
@@ -246,7 +300,8 @@ export class NotificationTriggerService {
     // Notify super admins
     await this.notifySuperAdmins({
       type: 'warning',
-      title: '⏳ Leave Application Pending',
+      category: 'leaveAlerts',
+      title: 'Leave application pending',
       message: `${userName} applied for ${leaveType} leave from ${startDate} to ${endDate}`,
       priority: 'high',
       actionUrl: '/admin/leave-management',

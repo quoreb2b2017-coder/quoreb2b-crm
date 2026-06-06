@@ -401,41 +401,47 @@ export function MasterDataUploadPanel() {
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
       {/* ── Toolbar ── */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-[#d4d4d4] bg-[#f3f3f3] px-4 py-2 text-sm">
-        <span className="font-semibold text-slate-800">Master Data Upload</span>
-        <span className="hidden sm:inline text-slate-400">|</span>
-        {data ? (
-          <>
-            <span className="text-xs text-slate-600 truncate max-w-[200px]">{data.fileName}</span>
-            <span className="text-xs font-medium text-slate-700">{totalRows} rows in DB</span>
-            {coverage && coverage.summary.totalRows > 0 && (
-              <>
-                <span className="text-xs text-amber-800">
-                  {coverage.summary.batchedRows.toLocaleString('en-IN')} in batch
-                </span>
-                <span className="text-xs font-medium text-[#217346]">
-                  {coverage.summary.availableRows.toLocaleString('en-IN')} available for new batch
-                </span>
-              </>
-            )}
-          </>
-        ) : (
-          <span className="text-xs text-slate-500">No data in master database yet</span>
-        )}
-        {savedAt && (
-          <span className="inline-flex items-center gap-1 text-xs text-[#217346]">
-            <Cloud className="h-3 w-3" />
-            Saved {new Date(savedAt).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}
-          </span>
-        )}
-        <AutoSaveHint status={autoSaveStatus} />
-        {(savingDb || loadingDb) && (
-          <span className="inline-flex items-center gap-1 text-xs text-slate-500">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            {loadingDb ? 'Loading…' : 'Saving…'}
-          </span>
-        )}
-        <div className="flex flex-wrap items-center gap-2 ml-auto">
+      <div className="flex flex-col gap-2 border-b border-[#d4d4d4] bg-[#f3f3f3] px-3 py-2 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2 sm:px-4">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="font-semibold text-slate-800">Master Data Upload</span>
+          {data ? (
+            <>
+              <span className="hidden text-slate-400 sm:inline">|</span>
+              <span className="max-w-[140px] truncate text-xs text-slate-600 sm:max-w-[200px]" title={data.fileName}>
+                {data.fileName}
+              </span>
+              <span className="text-xs font-medium text-slate-700">{totalRows} rows in DB</span>
+              {coverage && coverage.summary.totalRows > 0 && (
+                <>
+                  <span className="text-xs text-amber-800">
+                    {coverage.summary.batchedRows.toLocaleString('en-IN')} in batch
+                  </span>
+                  <span className="text-xs font-medium text-[#217346]">
+                    {coverage.summary.availableRows.toLocaleString('en-IN')} available
+                  </span>
+                </>
+              )}
+            </>
+          ) : (
+            <span className="text-xs text-slate-500">No data in master database yet</span>
+          )}
+          {savedAt && (
+            <span className="inline-flex items-center gap-1 text-xs text-[#217346]">
+              <Cloud className="h-3 w-3 shrink-0" />
+              <span className="truncate">
+                Saved {new Date(savedAt).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}
+              </span>
+            </span>
+          )}
+          <AutoSaveHint status={autoSaveStatus} />
+          {(savingDb || loadingDb) && (
+            <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              {loadingDb ? 'Loading…' : 'Saving…'}
+            </span>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
           <button type="button" onClick={() => inputRef.current?.click()} disabled={busy}
             className="inline-flex items-center gap-1.5 border border-[#ababab] bg-white px-3 py-1 text-xs hover:bg-[#fafafa] disabled:opacity-50">
             <Upload className="h-3.5 w-3.5" />{data ? 'Open file' : 'Upload'}
@@ -517,69 +523,140 @@ export function MasterDataUploadPanel() {
       {/* ── Create Batch Modal ── */}
       {batchModal && (
         <>
-          <div onClick={() => setBatchModal(null)} className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md pointer-events-auto overflow-hidden">
+          <div
+            onClick={() => setBatchModal(null)}
+            className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm"
+            aria-hidden
+          />
+          <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4 pointer-events-none">
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="create-batch-title"
+              className="pointer-events-auto flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-2xl"
+            >
               {/* Header */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-                <div>
-                  <p className="font-semibold text-slate-900">Create New Batch</p>
-                  <p className="text-xs text-slate-400 mt-0.5">{batchModal.rows.length} rows · {batchModal.headers.length} columns</p>
+              <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-6">
+                <div className="min-w-0">
+                  <p id="create-batch-title" className="font-semibold text-slate-900">
+                    Create New Batch
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap gap-2">
+                    <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-700">
+                      {batchModal.rows.length.toLocaleString('en-IN')} rows
+                    </span>
+                    <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">
+                      {batchModal.headers.length} columns
+                    </span>
+                  </div>
                 </div>
-                <button onClick={() => setBatchModal(null)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <button
+                  type="button"
+                  onClick={() => setBatchModal(null)}
+                  className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                  aria-label="Close"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
 
               {/* Body */}
-              <div className="px-6 py-5 space-y-4">
+              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Batch Name <span className="text-red-500">*</span></label>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Batch Name <span className="text-red-500">*</span>
+                  </label>
                   <input
                     type="text"
                     value={batchName}
-                    onChange={e => setBatchName(e.target.value)}
+                    onChange={(e) => setBatchName(e.target.value)}
                     placeholder="e.g. IT Companies - May 2025"
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">Description <span className="text-slate-400 font-normal">(optional)</span></label>
+                  <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                    Description <span className="font-normal text-slate-400">(optional)</span>
+                  </label>
                   <textarea
                     value={batchDesc}
-                    onChange={e => setBatchDesc(e.target.value)}
+                    onChange={(e) => setBatchDesc(e.target.value)}
                     placeholder="What is this batch for?"
                     rows={2}
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
+                    className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
-                <div className="bg-slate-50 rounded-xl px-4 py-3 text-xs text-slate-500 space-y-1">
-                  <p><span className="font-medium text-slate-700">Rows in this batch:</span> {batchModal.rows.length}</p>
-                  <p className="text-[#217346]">
-                    Master data is unchanged — batched rows stay in the database and show as
-                    &quot;In batch&quot; (yellow) so you can pick only new rows next time.
-                  </p>
-                  <p><span className="font-medium text-slate-700">Columns:</span> {batchModal.headers.join(', ')}</p>
-                  {data?.fileName && <p><span className="font-medium text-slate-700">Source:</span> {data.fileName}</p>}
+
+                <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-slate-700">Batch summary</p>
+                    <p className="text-xs text-slate-500">
+                      <span className="font-medium text-slate-700">{batchModal.rows.length.toLocaleString('en-IN')}</span> rows selected
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+                    <p className="text-xs leading-relaxed text-emerald-800">
+                      Master data stays unchanged. Batched rows remain in the database and show as{' '}
+                      <span className="font-semibold text-amber-700">&quot;In batch&quot;</span> (yellow) so
+                      you can pick only new rows next time.
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      Columns ({batchModal.headers.length})
+                    </p>
+                    <div className="max-h-28 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 sm:max-h-32">
+                      <div className="flex flex-wrap gap-1.5">
+                        {batchModal.headers.map((header) => (
+                          <span
+                            key={header}
+                            className="inline-block max-w-full truncate rounded-md bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700"
+                            title={header}
+                          >
+                            {header}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {data?.fileName && (
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                        Source
+                      </p>
+                      <p className="mt-1 break-words text-xs text-slate-600" title={data.fileName}>
+                        {data.fileName}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 
               {/* Footer */}
-              <div className="px-6 pb-5 flex gap-3">
-                <button onClick={() => setBatchModal(null)}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition-colors">
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveBatch}
-                  disabled={savingBatch || !batchName.trim()}
-                  className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-medium transition-colors flex items-center justify-center gap-2"
-                >
-                  {savingBatch && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {savingBatch ? 'Creating...' : 'Create Batch'}
-                </button>
+              <div className="shrink-0 border-t border-slate-100 bg-white px-4 py-4 sm:px-6">
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setBatchModal(null)}
+                    className="w-full rounded-xl border border-slate-200 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 sm:flex-1"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveBatch}
+                    disabled={savingBatch || !batchName.trim()}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:opacity-60 sm:flex-1"
+                  >
+                    {savingBatch && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {savingBatch ? 'Creating...' : 'Create Batch'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

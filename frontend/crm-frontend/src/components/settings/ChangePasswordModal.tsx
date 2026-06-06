@@ -65,13 +65,13 @@ export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
         onClick={onClose}
         aria-hidden
       />
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+      <div className="pointer-events-none fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
         <div
-          className="pointer-events-auto w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
+          className="pointer-events-auto flex max-h-[92dvh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-h-none sm:rounded-2xl"
           role="dialog"
           aria-labelledby="change-password-title"
         >
-          <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-4 sm:px-6">
             <div className="flex items-center gap-3">
               <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
                 <Lock className="h-5 w-5" />
@@ -93,7 +93,7 @@ export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto px-4 py-5 sm:px-6">
             <Input
               label="Current password"
               type="password"
@@ -135,15 +135,15 @@ export function ChangePasswordModal({ onClose }: ChangePasswordModalProps) {
               </p>
             )}
 
-            <div className="flex gap-3 pt-2">
+            <div className="flex flex-col-reverse gap-3 pt-2 sm:flex-row">
               <button
                 type="button"
                 onClick={onClose}
-                className="flex-1 rounded-lg border border-slate-200 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                className="w-full rounded-lg border border-slate-200 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 sm:flex-1"
               >
                 Cancel
               </button>
-              <Button type="submit" disabled={loading} className="flex-1">
+              <Button type="submit" disabled={loading} className="w-full sm:flex-1">
                 {loading ? 'Updating...' : 'Update password'}
               </Button>
             </div>

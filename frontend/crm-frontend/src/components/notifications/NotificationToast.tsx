@@ -20,58 +20,60 @@ export function NotificationToast({
   const [isVisible, setIsVisible] = useState(true);
 
   useEffect(() => {
-    // Auto-dismiss after 6 seconds for low/medium priority
-    if (notification.priority === 'low' || notification.priority === 'medium') {
-      const timer = setTimeout(() => {
-        setIsVisible(false);
-        setTimeout(() => onClose(notification.id), 300);
-      }, 6000);
-      return () => clearTimeout(timer);
-    }
+    const duration =
+      notification.priority === 'critical' || notification.priority === 'high' ? 8000 : 5000;
+    const timer = setTimeout(() => {
+      setIsVisible(false);
+      setTimeout(() => onClose(notification.id), 250);
+    }, duration);
+    return () => clearTimeout(timer);
   }, [notification.id, notification.priority, onClose]);
 
-  const colors =
-    NOTIFICATION_COLORS[notification.type] ?? NOTIFICATION_COLORS.info;
-  const priorityColor = PRIORITY_COLORS[notification.priority] ?? PRIORITY_COLORS.medium;
+  const colors = NOTIFICATION_COLORS[notification.type] ?? NOTIFICATION_COLORS.info;
 
   const getIcon = () => {
     switch (notification.type) {
       case 'success':
       case 'batch_completed':
       case 'bulk_email_verification':
-        return <CheckCircle className="w-5 h-5 text-emerald-600" />;
+        return <CheckCircle className="h-5 w-5 text-emerald-600" />;
       case 'error':
       case 'system_alert':
-        return <AlertCircle className="w-5 h-5 text-red-600" />;
+        return <AlertCircle className="h-5 w-5 text-red-600" />;
       case 'warning':
-        return <AlertTriangle className="w-5 h-5 text-amber-600" />;
+        return <AlertTriangle className="h-5 w-5 text-amber-600" />;
       default:
-        return <Info className="w-5 h-5 text-blue-600" />;
+        return <Info className="h-5 w-5 text-blue-600" />;
     }
   };
 
   return (
     <div
       className={cn(
-        'fixed bottom-4 right-4 max-w-sm rounded-lg border shadow-lg transition-all duration-300 z-50',
+        'w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border shadow-xl transition-all duration-300',
         colors.bg,
         colors.border,
-        isVisible ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0',
+        isVisible ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0',
       )}
     >
-      <div className={cn('absolute top-0 left-0 h-1 w-full rounded-t-lg', priorityColor)} />
+      <div
+        className={cn(
+          'h-1 w-full',
+          notification.priority === 'critical' && 'bg-red-500',
+          notification.priority === 'high' && 'bg-amber-500',
+          notification.priority === 'medium' && 'bg-blue-400',
+          notification.priority === 'low' && 'bg-slate-300',
+        )}
+      />
 
       <div className="p-4">
         <div className="flex items-start gap-3">
-          {/* Icon */}
-          <div className="flex-shrink-0 mt-0.5">{getIcon()}</div>
+          <div className="mt-0.5 flex-shrink-0">{getIcon()}</div>
 
-          {/* Content */}
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-sm text-slate-900">{notification.title}</h3>
-            <p className="text-sm text-slate-600 mt-1">{notification.message}</p>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-slate-900">{notification.title}</p>
+            <p className="mt-1 text-sm leading-snug text-slate-600">{notification.message}</p>
 
-            {/* Action button */}
             {notification.actionUrl && notification.actionLabel && (
               <Link
                 href={notification.actionUrl}
@@ -79,22 +81,22 @@ export function NotificationToast({
                   onMarkRead?.(notification.id);
                   onClose(notification.id);
                 }}
-                className="inline-block mt-2 text-xs font-semibold text-blue-600 hover:text-blue-700 underline"
+                className="mt-2 inline-block text-xs font-semibold text-blue-600 hover:text-blue-700"
               >
                 {notification.actionLabel} →
               </Link>
             )}
           </div>
 
-          {/* Close button */}
           <button
+            type="button"
             onClick={() => {
               setIsVisible(false);
-              setTimeout(() => onClose(notification.id), 300);
+              setTimeout(() => onClose(notification.id), 250);
             }}
-            className="flex-shrink-0 text-slate-400 hover:text-slate-600 transition-colors"
+            className="flex-shrink-0 rounded-md p-1 text-slate-400 hover:bg-white/60 hover:text-slate-600"
           >
-            <X className="w-4 h-4" />
+            <X className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -113,12 +115,11 @@ export function NotificationContainer({
   onClose,
   onMarkRead,
 }: NotificationContainerProps) {
-  // Show only last 3 notifications
-  const visibleNotifications = notifications.slice(0, 3);
+  if (!notifications.length) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 space-y-2 pointer-events-none z-50">
-      {visibleNotifications.map((notification) => (
+    <div className="pointer-events-none fixed bottom-4 right-4 z-[100] flex flex-col gap-2">
+      {notifications.map((notification) => (
         <div key={notification.id} className="pointer-events-auto">
           <NotificationToast
             notification={notification}

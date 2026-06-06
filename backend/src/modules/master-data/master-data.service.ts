@@ -26,6 +26,9 @@ import { BatchesService } from '../batches/batches.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { ActivityActor } from '../activity-logs/activity-user.util';
 import { NotificationTriggerService } from '../notifications/notification-trigger.service';
+import { AppCacheService } from '../../redis/app-cache.service';
+import { ConfigService } from '@nestjs/config';
+import { cacheTtlSeconds } from '../../redis/cache.util';
 
 const MAX_TOTAL_ROWS = 50000;
 const DUPLICATE_PREVIEW_LIMIT = 100;
@@ -42,6 +45,8 @@ export class MasterDataService {
     private batchesService: BatchesService,
     private activityLogs: ActivityLogsService,
     private notifications: NotificationTriggerService,
+    private cache: AppCacheService,
+    private config: ConfigService,
   ) {}
 
   private rowKey(row: string[]) {
@@ -154,6 +159,7 @@ export class MasterDataService {
       );
     }
 
+    void this.bustMasterCaches();
     return {
       ...this.toResponse(doc),
       addedRows,
@@ -163,11 +169,17 @@ export class MasterDataService {
   }
 
   async getCurrent() {
-    const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
-    if (!doc) {
-      throw new NotFoundException('No master data uploaded yet');
-    }
-    return this.toResponse(doc);
+    return this.cache.wrap(
+      'master:current',
+      cacheTtlSeconds(this.config, 'long'),
+      async () => {
+        const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+        if (!doc) {
+          throw new NotFoundException('No master data uploaded yet');
+        }
+        return this.toResponse(doc);
+      },
+    );
   }
 
   async createUploadRequest(
@@ -462,19 +474,25 @@ export class MasterDataService {
   }
 
   async getBatchCoverage() {
-    const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
-    if (!doc) {
-      return {
-        summary: {
-          totalRows: 0,
-          batchedRows: 0,
-          availableRows: 0,
-          batchesFromMaster: 0,
-        },
-        batchedByRow: {},
-      };
-    }
-    return this.batchesService.getMasterBatchCoverage(doc.headers, doc.rows);
+    return this.cache.wrap(
+      'master:coverage:summary',
+      cacheTtlSeconds(this.config, 'long'),
+      async () => {
+        const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+        if (!doc) {
+          return {
+            summary: {
+              totalRows: 0,
+              batchedRows: 0,
+              availableRows: 0,
+              batchesFromMaster: 0,
+            },
+            batchedByRow: {},
+          };
+        }
+        return this.batchesService.getMasterBatchCoverage(doc.headers, doc.rows);
+      },
+    );
   }
 
   async getCurrentForUser(actorId: string, roles: string[] = []) {
@@ -484,16 +502,22 @@ export class MasterDataService {
       return this.getCurrent();
     }
     if (roles.includes(SystemRole.DB_ADMIN)) {
-      const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
-      if (!doc) {
-        throw new NotFoundException('No master data uploaded yet');
-      }
-      if (!this.hasDbAdminAccess(doc, actorId)) {
-        throw new ForbiddenException(
-          'Admin has not granted you access to master data for batch creation',
-        );
-      }
-      return this.toResponse(doc);
+      return this.cache.wrap(
+        `master:current:dba:${actorId}`,
+        cacheTtlSeconds(this.config, 'medium'),
+        async () => {
+          const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+          if (!doc) {
+            throw new NotFoundException('No master data uploaded yet');
+          }
+          if (!this.hasDbAdminAccess(doc, actorId)) {
+            throw new ForbiddenException(
+              'Admin has not granted you access to master data for batch creation',
+            );
+          }
+          return this.toResponse(doc);
+        },
+      );
     }
     throw new ForbiddenException('Access denied');
   }
@@ -621,5 +645,11 @@ export class MasterDataService {
       ...this.toUploadRequestResponse(doc),
       rows: doc.rows ?? [],
     };
+  }
+
+  private bustMasterCaches(): void {
+    void this.cache.delByPrefix('master:');
+    void this.cache.delByPrefix('analytics:');
+    void this.cache.delByPrefix('dashboard:');
   }
 }

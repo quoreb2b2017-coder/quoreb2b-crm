@@ -20,6 +20,9 @@ import {
   actorFromUserDoc,
 } from '../activity-logs/activity-user.util';
 import { NotificationTriggerService } from '../notifications/notification-trigger.service';
+import { AppCacheService } from '../../redis/app-cache.service';
+import { ConfigService } from '@nestjs/config';
+import { cacheTtlSeconds, stableHash } from '../../redis/cache.util';
 
 @Injectable()
 export class UsersService {
@@ -28,6 +31,8 @@ export class UsersService {
     @InjectModel(RefreshToken.name) private refreshTokenModel: Model<RefreshToken>,
     private activityLogs: ActivityLogsService,
     private notifications: NotificationTriggerService,
+    private cache: AppCacheService,
+    private config: ConfigService,
   ) {}
   async findById(id: string) {
     const user = await this.repository.findById(id);
@@ -121,6 +126,15 @@ export class UsersService {
 
   /** Employees (and db_admins for admin) for batch sharing — includes db_admin callers */
   async listTeamMembers(callerRoles: string[] = []) {
+    const roleKey = [...callerRoles].sort().join(',') || 'default';
+    return this.cache.wrap(
+      `users:team:${roleKey}`,
+      cacheTtlSeconds(this.config, 'long'),
+      () => this.loadTeamMembers(callerRoles),
+    );
+  }
+
+  private async loadTeamMembers(callerRoles: string[] = []) {
     const isDbAdminOnly =
       callerRoles.includes(SystemRole.DB_ADMIN) &&
       !callerRoles.includes(SystemRole.ADMIN) &&
@@ -137,6 +151,14 @@ export class UsersService {
   }
 
   async findAll(dto: PaginationDto) {
+    return this.cache.wrap(
+      `users:list:${stableHash({ ...dto })}`,
+      cacheTtlSeconds(this.config, 'short'),
+      () => this.loadAllUsers(dto),
+    );
+  }
+
+  private async loadAllUsers(dto: PaginationDto) {
     const filter: Record<string, unknown> = {};
     if (dto.search) {
       filter.$or = [

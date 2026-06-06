@@ -95,7 +95,20 @@ EmailVerificationRecordSchema.index(
   { batchId: 1, generatedEmail: 1 },
   { unique: true },
 );
+// List + filter + sort (paginated records UI)
+EmailVerificationRecordSchema.index({
+  batchId: 1,
+  verificationStatus: 1,
+  confidenceScore: -1,
+  createdAt: -1,
+});
 EmailVerificationRecordSchema.index({ batchId: 1, verificationStatus: 1 });
 EmailVerificationRecordSchema.index({ batchId: 1, confidenceScore: -1 });
+EmailVerificationRecordSchema.index({ batchId: 1, createdAt: -1 });
+EmailVerificationRecordSchema.index({ batchId: 1, domain: 1 });
+EmailVerificationRecordSchema.index({ batchId: 1, verificationDate: -1 });
+// Analytics aggregates (per owner, 10M scale)
+EmailVerificationRecordSchema.index({ createdBy: 1, verificationStatus: 1 });
 EmailVerificationRecordSchema.index({ createdBy: 1, createdAt: -1 });
+EmailVerificationRecordSchema.index({ createdBy: 1, verificationDate: -1 });
 EmailVerificationRecordSchema.index({ domain: 1, verificationDate: -1 });

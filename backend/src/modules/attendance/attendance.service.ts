@@ -5,6 +5,9 @@ import { Attendance } from './schemas/attendance.schema';
 import { MarkAttendanceDto, AttendanceQueryDto, AttendanceAnalyticsDto } from './dto/attendance.dto';
 import { User } from '../users/schemas/user.schema';
 import { NotificationTriggerService } from '../notifications/notification-trigger.service';
+import { AppCacheService } from '../../redis/app-cache.service';
+import { ConfigService } from '@nestjs/config';
+import { cacheTtlSeconds, stableHash } from '../../redis/cache.util';
 import {
   combineDateAndTime,
   monthRangeUtc,
@@ -12,6 +15,13 @@ import {
   toDateKey,
   isWeekend,
 } from './attendance-date.util';
+import {
+  currentTimeHHmm,
+  formatStoredTime,
+  formatTime12h,
+  isLateCheckIn,
+  isTodayDateKey,
+} from './attendance-late.util';
 
 @Injectable()
 export class AttendanceService {
@@ -19,6 +29,8 @@ export class AttendanceService {
     @InjectModel(Attendance.name) private attendanceModel: Model<Attendance>,
     @InjectModel(User.name) private userModel: Model<User>,
     private notifications: NotificationTriggerService,
+    private cache: AppCacheService,
+    private config: ConfigService,
   ) {}
 
   async markAttendance(dto: MarkAttendanceDto) {
@@ -33,9 +45,25 @@ export class AttendanceService {
 
     let checkInTime: Date | undefined;
     let checkOutTime: Date | undefined;
+    let resolvedCheckInHHmm: string | undefined;
+    let isLate = false;
+
     if (dto.checkInTime) {
+      resolvedCheckInHHmm = dto.checkInTime;
       checkInTime = combineDateAndTime(dto.date, dto.checkInTime);
+    } else if (
+      (status === 'present' || status === 'half-day') &&
+      !isWeekend(dayOfWeek) &&
+      isTodayDateKey(dto.date)
+    ) {
+      resolvedCheckInHHmm = currentTimeHHmm();
+      checkInTime = combineDateAndTime(dto.date, resolvedCheckInHHmm);
     }
+
+    if (resolvedCheckInHHmm && (status === 'present' || status === 'half-day')) {
+      isLate = isLateCheckIn(resolvedCheckInHHmm);
+    }
+
     if (dto.checkOutTime) {
       checkOutTime = combineDateAndTime(dto.date, dto.checkOutTime);
       if (checkOutTime <= (checkInTime ?? checkOutTime)) {
@@ -62,6 +90,7 @@ export class AttendanceService {
           hoursWorked: Math.round(hoursWorked * 100) / 100,
           notes: dto.notes,
           isPaidLeave: status === 'leave' ? (dto.isPaidLeave ?? false) : false,
+          isLate,
         },
       },
       { upsert: true, new: true },
@@ -74,6 +103,8 @@ export class AttendanceService {
         userName,
         dto.date,
         status,
+        resolvedCheckInHHmm ? formatTime12h(resolvedCheckInHHmm) : undefined,
+        isLate,
       );
     } catch {
       /* notification should not block attendance marking */
@@ -131,6 +162,14 @@ export class AttendanceService {
   }
 
   async getAttendanceAnalytics(dto: AttendanceAnalyticsDto) {
+    return this.cache.wrap(
+      `att:analytics:${stableHash(dto)}`,
+      cacheTtlSeconds(this.config, 'medium'),
+      () => this.loadAttendanceAnalytics(dto),
+    );
+  }
+
+  private async loadAttendanceAnalytics(dto: AttendanceAnalyticsDto) {
     const year = dto.year || new Date().getFullYear();
     const month = dto.month || new Date().getMonth() + 1;
 
@@ -158,6 +197,7 @@ export class AttendanceService {
       paidLeaveDays: 0,
       halfDays: 0,
       weekendDays: 0,
+      lateDays: 0,
       attendancePercentage: 0,
       totalHoursWorked: 0,
       dailyBreakdown: [] as Array<{
@@ -165,6 +205,8 @@ export class AttendanceService {
         status: string;
         hoursWorked: number;
         isPaidLeave?: boolean;
+        isLate?: boolean;
+        checkInTime?: string;
       }>,
     };
 
@@ -182,6 +224,10 @@ export class AttendanceService {
         status: dayRecord?.status || (isWeekend(dayOfWeek) ? 'weekend' : 'absent'),
         hoursWorked: dayRecord?.hoursWorked ?? 0,
         isPaidLeave: dayRecord?.isPaidLeave,
+        isLate: dayRecord?.isLate ?? false,
+        checkInTime: dayRecord?.checkInTime
+          ? formatTime12h(formatStoredTime(new Date(dayRecord.checkInTime)))
+          : undefined,
       };
 
       analytics.dailyBreakdown.push(dayData);
@@ -192,8 +238,10 @@ export class AttendanceService {
         else if (dayRecord.status === 'leave') {
           analytics.leaveDays++;
           if (dayRecord.isPaidLeave) analytics.paidLeaveDays++;
-        } else if (dayRecord.status === 'half-day') analytics.halfDays++;
+        }         else if (dayRecord.status === 'half-day') analytics.halfDays++;
         else if (dayRecord.status === 'weekend') analytics.weekendDays++;
+
+        if (dayRecord.isLate) analytics.lateDays++;
 
         analytics.totalHoursWorked += dayRecord.hoursWorked || 0;
       } else {
@@ -217,7 +265,19 @@ export class AttendanceService {
   async getUsersAttendanceAnalytics(userIds: string[], month?: number, year?: number) {
     const currentYear = year || new Date().getFullYear();
     const currentMonth = month || new Date().getMonth() + 1;
+    const sorted = [...userIds].sort();
+    return this.cache.wrap(
+      `att:team:${currentYear}-${currentMonth}:${stableHash(sorted)}`,
+      cacheTtlSeconds(this.config, 'short'),
+      () => this.loadUsersAttendanceAnalytics(sorted, currentMonth, currentYear),
+    );
+  }
 
+  private async loadUsersAttendanceAnalytics(
+    userIds: string[],
+    currentMonth: number,
+    currentYear: number,
+  ) {
     const { start: startDate, end: endDate } = monthRangeUtc(currentYear, currentMonth);
 
     const records = await this.attendanceModel
@@ -237,6 +297,7 @@ export class AttendanceService {
         paidLeaveDays: 0,
         halfDays: 0,
         weekendDays: 0,
+        lateDays: 0,
         attendancePercentage: 0,
       });
     });
@@ -250,8 +311,9 @@ export class AttendanceService {
       else if (record.status === 'leave') {
         analytics.leaveDays++;
         if (record.isPaidLeave) analytics.paidLeaveDays++;
-      } else if (record.status === 'half-day') analytics.halfDays++;
+      }       else if (record.status === 'half-day') analytics.halfDays++;
       else if (record.status === 'weekend') analytics.weekendDays++;
+      if (record.isLate) analytics.lateDays++;
     });
 
     const daysInMonth = new Date(Date.UTC(currentYear, currentMonth, 0)).getUTCDate();

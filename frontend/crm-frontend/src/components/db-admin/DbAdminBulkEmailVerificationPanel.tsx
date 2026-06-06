@@ -347,6 +347,7 @@ export function DbAdminBulkEmailVerificationPanel() {
   const [recordPage, setRecordPage] = useState(1);
   const [recordTotal, setRecordTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [recordsLoading, setRecordsLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
@@ -449,12 +450,28 @@ export function DbAdminBulkEmailVerificationPanel() {
     }
   }, []);
 
+  const batchesRef = useRef(batches);
+  batchesRef.current = batches;
+
+  const patchBatch = useCallback(
+    (id: string, patch: Partial<EmailVerificationBatch>) => {
+      setBatches((prev) => prev.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+    },
+    [],
+  );
+
+  const mergeBatch = useCallback((next: EmailVerificationBatch) => {
+    setBatches((prev) => prev.map((b) => (b.id === next.id ? next : b)));
+  }, []);
+
   const loadRecords = useCallback(async () => {
     if (!selectedBatchId) {
       setRecords([]);
       setRecordTotal(0);
+      setRecordsLoading(false);
       return;
     }
+    setRecordsLoading(true);
     try {
       const res = await bulkEmailVerificationService.listRecords(selectedBatchId, {
         page: recordPage,
@@ -466,24 +483,29 @@ export function DbAdminBulkEmailVerificationPanel() {
       setRecordTotal(res.pagination.total);
     } catch (err) {
       toast.error('Records load failed', extractApiError(err));
+    } finally {
+      setRecordsLoading(false);
     }
   }, [selectedBatchId, recordPage, statusFilters, minScore]);
 
   const refreshBatch = useCallback(async (id: string) => {
     try {
       const batch = await bulkEmailVerificationService.getBatch(id);
-      setBatches((prev) => prev.map((b) => (b.id === id ? batch : b)));
+      mergeBatch(batch);
     } catch {
       /* polling */
     }
-  }, []);
+  }, [mergeBatch]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   useEffect(() => {
-    loadRecords();
+    const timer = window.setTimeout(() => {
+      void loadRecords();
+    }, 150);
+    return () => window.clearTimeout(timer);
   }, [loadRecords]);
 
   const selectedBatchStatus = useMemo(
@@ -516,13 +538,13 @@ export function DbAdminBulkEmailVerificationPanel() {
   }, [selectedBatchId, selectedBatchStatus]);
 
   useEffect(() => {
-    const processing = batches.filter((b) => b.status === 'processing');
-    if (!processing.length) return;
     const timer = setInterval(() => {
-      processing.forEach((b) => refreshBatch(b.id));
-    }, 2000);
+      const processing = batchesRef.current.filter((b) => b.status === 'processing');
+      if (!processing.length) return;
+      void Promise.all(processing.map((b) => refreshBatch(b.id)));
+    }, 2500);
     return () => clearInterval(timer);
-  }, [batches, refreshBatch]);
+  }, [refreshBatch]);
 
   const prospectsToPreviewRows = (prospects: ProspectRow[]) =>
     prospects.map((p) => [
@@ -594,14 +616,19 @@ export function DbAdminBulkEmailVerificationPanel() {
 
   const resumeVerification = async (batchId: string) => {
     setVerifyingId(batchId);
+    setSelectedBatchId(batchId);
+    patchBatch(batchId, { status: 'processing' });
     try {
       const result = await bulkEmailVerificationService.startVerification(batchId);
-      setSelectedBatchId(batchId);
-      await load();
+      mergeBatch(result);
+      void refreshBatch(batchId);
       if (result.message?.toLowerCase().includes('resuming')) {
         toast.success('Resumed', result.message);
+      } else if (result.message) {
+        toast.success('Started', result.message);
       }
     } catch (err) {
+      patchBatch(batchId, { status: 'failed' });
       toast.error('Could not resume', extractApiError(err));
     } finally {
       setVerifyingId(null);
@@ -610,11 +637,15 @@ export function DbAdminBulkEmailVerificationPanel() {
 
   const startVerification = async (batchId: string) => {
     setVerifyingId(batchId);
+    setSelectedBatchId(batchId);
+    patchBatch(batchId, { status: 'processing', progress: 0, processedProspects: 0 });
     try {
-      await bulkEmailVerificationService.startVerification(batchId);
-      setSelectedBatchId(batchId);
-      await load();
+      const result = await bulkEmailVerificationService.startVerification(batchId);
+      mergeBatch(result);
+      void refreshBatch(batchId);
+      toast.success('Verification started', result.message ?? 'Running in background.');
     } catch (err) {
+      patchBatch(batchId, { status: 'uploaded' });
       toast.error('Could not start', extractApiError(err));
     } finally {
       setVerifyingId(null);
@@ -643,12 +674,16 @@ export function DbAdminBulkEmailVerificationPanel() {
 
   const rerunBatch = async (batchId: string) => {
     setVerifyingId(batchId);
+    setSelectedBatchId(batchId);
+    patchBatch(batchId, { status: 'processing', progress: 0, processedProspects: 0 });
     try {
       await bulkEmailVerificationService.resetBatch(batchId);
-      await bulkEmailVerificationService.startVerification(batchId);
-      setSelectedBatchId(batchId);
-      await load();
+      const result = await bulkEmailVerificationService.startVerification(batchId);
+      mergeBatch(result);
+      void refreshBatch(batchId);
+      toast.success('Re-run started', result.message ?? 'Verification running.');
     } catch (err) {
+      patchBatch(batchId, { status: 'uploaded' });
       toast.error('Re-run failed', extractApiError(err));
     } finally {
       setVerifyingId(null);
@@ -1414,6 +1449,16 @@ export function DbAdminBulkEmailVerificationPanel() {
                   >
                     <Mail className="mx-auto mb-2 h-6 w-6 text-slate-300" />
                     Select a job from the {selectedMonthLabel} folder to view email results.
+                  </td>
+                </tr>
+              ) : recordsLoading && records.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={8}
+                    className="border border-[#e0e0e0] px-4 py-10 text-center text-slate-500"
+                  >
+                    <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-[#217346]" />
+                    Loading results…
                   </td>
                 </tr>
               ) : records.length === 0 ? (

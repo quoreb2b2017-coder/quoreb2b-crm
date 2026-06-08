@@ -29,12 +29,17 @@ docker rm "$CONTAINER_NAME" 2>/dev/null || true
 docker run -d \
   --name "$CONTAINER_NAME" \
   --restart unless-stopped \
+  --add-host=host.docker.internal:host-gateway \
   --env-file "$ENV_FILE" \
   -p 127.0.0.1:4000:4000 \
   "$IMAGE_NAME"
 
 echo "==> Waiting for API..."
-sleep 3
-curl -sf http://127.0.0.1:4000/api/v1/health | head -c 500 || true
+sleep 8
+curl -sf http://127.0.0.1:4000/api/v1/health | head -c 500 || {
+  echo "Health check failed — recent logs:"
+  docker logs "$CONTAINER_NAME" 2>&1 | tail -20
+  exit 1
+}
 echo ""
 echo "Deploy done. Logs: docker logs -f $CONTAINER_NAME"

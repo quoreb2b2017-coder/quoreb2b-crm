@@ -122,13 +122,23 @@ export class BulkEmailVerificationService {
       );
     }
 
-    const seen = new Set<string>();
-    const uniqueRows = normalizedRows.filter((row) => {
-      const key = `${row.firstName.toLowerCase()}|${row.lastName.toLowerCase()}|${row.domain}|${row.providedEmail ?? ''}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    const uniqueByProspect = new Map<
+      string,
+      (typeof normalizedRows)[number]
+    >();
+    for (const row of normalizedRows) {
+      const key = `${row.firstName.toLowerCase()}|${row.lastName.toLowerCase()}|${row.domain.toLowerCase()}`;
+      const existing = uniqueByProspect.get(key);
+      if (!existing) {
+        uniqueByProspect.set(key, row);
+        continue;
+      }
+      if (!existing.providedEmail && row.providedEmail) {
+        uniqueByProspect.set(key, row);
+      }
+    }
+    const uniqueRows = Array.from(uniqueByProspect.values());
+    const duplicatesSkipped = normalizedRows.length - uniqueRows.length;
 
     const batch = await this.batchModel.create({
       sourceFileName: dto.fileName.trim(),
@@ -145,7 +155,22 @@ export class BulkEmailVerificationService {
       processed: false,
     }));
 
-    await this.prospectModel.insertMany(prospectDocs, { ordered: false });
+    try {
+      await this.prospectModel.insertMany(prospectDocs, { ordered: false });
+    } catch (err) {
+      await this.batchModel.deleteOne({ _id: batch._id });
+      const dup =
+        err &&
+        typeof err === 'object' &&
+        'code' in err &&
+        (err as { code?: number }).code === 11000;
+      if (dup) {
+        throw new BadRequestException(
+          'Duplicate prospects in file (same first name, last name, and domain). Remove duplicates and upload again.',
+        );
+      }
+      throw err;
+    }
 
     await this.activityLogs.logWithActor(actor, {
       action: 'BULK_EMAIL_VERIFICATION_UPLOAD',
@@ -154,7 +179,7 @@ export class BulkEmailVerificationService {
       metadata: {
         fileName: dto.fileName,
         totalProspects: uniqueRows.length,
-        duplicatesSkipped: normalizedRows.length - uniqueRows.length,
+        duplicatesSkipped,
       },
     });
 

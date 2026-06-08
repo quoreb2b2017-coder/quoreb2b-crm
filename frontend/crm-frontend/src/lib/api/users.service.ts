@@ -9,6 +9,14 @@ export interface CreateUserPayload {
   roles: string[];
 }
 
+export interface TeamMember {
+  id: string;
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  roles?: string[];
+}
+
 function unwrapList<T>(response: { data: unknown }): T[] {
   const body = response.data as { data?: T | T[] };
   const inner = body?.data ?? body;
@@ -25,9 +33,9 @@ export const usersService = {
     apiClient.get('/users', { params }),
 
   /** Employees (or employees + db_admins for admin) — for batch share modal */
-  listTeamMembers: async () => {
+  listTeamMembers: async (): Promise<TeamMember[]> => {
     const res = await apiClient.get('/users/team-members');
-    const body = res.data as { data?: unknown[] };
+    const body = res.data as { data?: TeamMember[] };
     return body.data ?? [];
   },
 

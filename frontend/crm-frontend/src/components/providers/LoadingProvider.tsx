@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  Suspense,
   useCallback,
   useContext,
   useEffect,
@@ -40,6 +41,14 @@ function NavProgressBar({ active }: { active: boolean }) {
 }
 
 export function LoadingProvider({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={null}>
+      <LoadingProviderInner>{children}</LoadingProviderInner>
+    </Suspense>
+  );
+}
+
+function LoadingProviderInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? '';
   const searchParams = useSearchParams();
   const [pendingHref, setPendingHref] = useState<string | null>(null);

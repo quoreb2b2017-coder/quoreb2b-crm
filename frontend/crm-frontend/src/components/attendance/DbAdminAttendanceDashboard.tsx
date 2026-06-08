@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { attendanceService, type AttendanceAnalytics, type YearlyAnalytics } from '@/lib/api/attendance.service';
-import { usersService } from '@/lib/api/users.service';
+import { usersService, type TeamMember as ApiTeamMember } from '@/lib/api/users.service';
 import { useAuth } from '@/hooks/useAuth';
 import { AttendanceDailyExcelGrid } from '@/components/attendance/AttendanceDailyExcelGrid';
 import { TeamAttendanceExcelTable, type TeamAttendanceRow } from '@/components/attendance/TeamAttendanceExcelTable';
@@ -65,20 +65,13 @@ export function DbAdminAttendanceDashboard() {
         attendanceService.getMonthlyAnalytics(user.id, selectedMonth, selectedYear),
       ]);
       setMyMonthly(myData);
-      const raw: Record<string, unknown>[] = Array.isArray(usersRes)
-        ? (usersRes as Record<string, unknown>[])
-        : [];
-      const members: TeamMember[] = raw
-        .filter((u) => {
-          const roles = Array.isArray(u.roles) ? (u.roles as string[]) : [];
-          return roles.includes('employee');
-        })
+      const members: TeamMember[] = usersRes
+        .filter((u: ApiTeamMember) => u.roles?.includes('employee'))
         .map((u) => ({
-          id: String(u.id ?? u._id ?? ''),
-          firstName: String(u.firstName ?? ''),
-          lastName: String(u.lastName ?? ''),
-          email: String(u.email ?? ''),
-          employeeId: u.employeeId ? String(u.employeeId) : undefined,
+          id: u.id,
+          firstName: u.firstName ?? '',
+          lastName: u.lastName ?? '',
+          email: u.email,
         }));
       setTeamMembers(members);
       if (members.length > 0) {

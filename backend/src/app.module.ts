@@ -9,7 +9,7 @@ import { RolesGuard } from './common/guards/roles.guard';
 import { BullModule } from '@nestjs/bullmq';
 import configuration from './config/configuration';
 import { isRedisConfigured, isRedisEnabled } from './config/env';
-import { createRedisClient } from './redis/redis.factory';
+import { buildRedisOptions } from './redis/redis.factory';
 import { DatabaseModule } from './database/database.module';
 import { CacheModule } from './redis/cache.module';
 import { RedisModule } from './redis/redis.module';
@@ -25,7 +25,6 @@ import { EmailModule } from './modules/email/email.module';
 import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
 import { AutomationModule } from './modules/automation/automation.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
-import { UploadsModule } from './modules/uploads/uploads.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AiModule } from './modules/ai/ai.module';
 import { ActivityLogsModule } from './modules/activity-logs/activity-logs.module';
@@ -69,7 +68,7 @@ export class AppModule {
               BullModule.forRootAsync({
                 inject: [ConfigService],
                 useFactory: (config: ConfigService) => ({
-                  connection: createRedisClient(config, 'BullMQ'),
+                  connection: buildRedisOptions(config),
                   prefix: config.get<string>('BULLMQ_PREFIX', 'quoreb2b'),
                 }),
               }),
@@ -90,7 +89,6 @@ export class AppModule {
         WhatsappModule.register(),
         AutomationModule.register(),
         AnalyticsModule,
-        UploadsModule,
         NotificationsModule,
         AiModule,
         ActivityLogsModule,

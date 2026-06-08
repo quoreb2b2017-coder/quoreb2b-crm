@@ -29,9 +29,8 @@ docker rm "$CONTAINER_NAME" 2>/dev/null || true
 docker run -d \
   --name "$CONTAINER_NAME" \
   --restart unless-stopped \
-  --add-host=host.docker.internal:host-gateway \
+  --network host \
   --env-file "$ENV_FILE" \
-  -p 127.0.0.1:4000:4000 \
   "$IMAGE_NAME"
 
 echo "==> Waiting for API..."

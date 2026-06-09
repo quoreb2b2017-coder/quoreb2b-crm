@@ -6,10 +6,12 @@ export interface HealthCheckItem {
   label: string;
   state?: string;
   enabled?: boolean;
+  error?: string;
 }
 
 export interface SystemHealthResponse {
   status: string;
+  issues?: string[];
   timestamp: string;
   service: string;
   version?: string;

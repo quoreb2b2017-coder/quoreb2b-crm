@@ -56,6 +56,8 @@ function healthLabel(status: string) {
   if (status === 'up' || status === 'ok') return 'OK';
   if (status === 'connecting') return 'Connecting';
   if (status === 'disabled') return 'Off';
+  if (status === 'degraded') return 'Degraded';
+  if (status === 'down') return 'Down';
   return status;
 }
 
@@ -175,9 +177,17 @@ export function SuperAdminCrmDashboard() {
               <div className="flex justify-between border border-slate-200 bg-[#f9fff9] px-2 py-1.5">
                 <span className="font-medium text-slate-800">API</span>
                 <span className="font-mono font-semibold uppercase text-[#217346]">
-                  {healthLabel(health.status)}
+                  {healthLabel(health.checks.api.status)}
                 </span>
               </div>
+              {health.status !== 'ok' && (
+                <div className="flex justify-between border border-amber-200 bg-amber-50 px-2 py-1.5">
+                  <span className="font-medium text-amber-900">Overall</span>
+                  <span className="font-mono font-semibold uppercase text-amber-800">
+                    {healthLabel(health.status)}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between border border-slate-200 px-2 py-1.5">
                 <span className="text-slate-700">MongoDB</span>
                 <span className="font-mono font-semibold text-slate-900">

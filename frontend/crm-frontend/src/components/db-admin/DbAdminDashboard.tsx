@@ -121,8 +121,11 @@ export function DbAdminDashboard() {
             },
             {
               label: 'API',
-              value: data.health.status === 'ok' ? 'OK' : 'Degraded',
-              note: 'CRM backend',
+              value: 'OK',
+              note:
+                data.health.status === 'ok'
+                  ? 'All services healthy'
+                  : 'Core API running — see Redis / Elasticsearch below',
             },
             {
               label: 'Redis / queues',

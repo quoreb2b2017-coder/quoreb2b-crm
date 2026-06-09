@@ -103,11 +103,18 @@ export function SystemHealthPanel() {
           >
             <Activity className="h-4 w-4 shrink-0" />
             <div>
-              <p className="text-sm font-semibold">Overall: {health.status}</p>
+              <p className="text-sm font-semibold capitalize">Overall: {health.status}</p>
               <p className="text-[10px] opacity-80">
                 {health.service} · v{health.version ?? '1.0'} ·{' '}
                 {new Date(health.timestamp).toLocaleString('en-IN')}
               </p>
+              {health.status === 'degraded' && health.issues && health.issues.length > 0 && (
+                <ul className="mt-1.5 list-inside list-disc text-[10px] opacity-90">
+                  {health.issues.map((issue) => (
+                    <li key={issue}>{issue}</li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
 
@@ -123,13 +130,20 @@ export function SystemHealthPanel() {
               icon={Zap}
               label={health.checks.redis.label}
               status={health.checks.redis.status}
-              detail={health.checks.redis.enabled ? 'BullMQ queues' : 'Not enabled'}
+              detail={
+                health.checks.redis.error ??
+                (health.checks.redis.status === 'disabled' ? 'Not enabled' : 'BullMQ queues')
+              }
             />
             <CheckRow
               icon={Search}
               label={health.checks.elasticsearch.label}
               status={health.checks.elasticsearch.status}
-              detail={health.checks.elasticsearch.enabled ? 'Search index' : 'Not enabled'}
+              detail={
+                health.checks.elasticsearch.status === 'disabled'
+                  ? 'Not configured (optional)'
+                  : 'Leads search index'
+              }
             />
           </div>
         </div>

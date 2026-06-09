@@ -199,9 +199,10 @@ export class AnalyticsService {
         mongo: mongoLabel,
         mongoState: dbCheck.state,
         redis: health.checks.redis.status,
-        elasticsearch: health.checks.elasticsearch.enabled
-          ? health.checks.elasticsearch.status
-          : 'disabled',
+        elasticsearch:
+          health.checks.elasticsearch.status === 'disabled'
+            ? 'disabled'
+            : health.checks.elasticsearch.status,
       },
       batches: {
         total: batches.length,
@@ -414,9 +415,10 @@ export class AnalyticsService {
         mongo: 'Unknown',
         mongoState: health.checks.database.state,
         redis: health.checks.redis.status,
-        elasticsearch: health.checks.elasticsearch.enabled
-          ? health.checks.elasticsearch.status
-          : 'disabled',
+        elasticsearch:
+          health.checks.elasticsearch.status === 'disabled'
+            ? 'disabled'
+            : health.checks.elasticsearch.status,
       },
       batches: {
         total: 0,

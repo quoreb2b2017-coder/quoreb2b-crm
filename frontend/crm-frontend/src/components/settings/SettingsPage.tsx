@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { useAuthStore } from '@/store/auth.store';
-import { ChangePasswordModal } from './ChangePasswordModal';
+import { ChangePasswordForm } from './ChangePasswordForm';
 import { SystemHealthPanel } from './SystemHealthPanel';
 import { AccountSettingsPanel } from './AccountSettingsPanel';
 import { SecuritySettingsPanel } from './SecuritySettingsPanel';
@@ -36,9 +36,6 @@ export function SettingsPage() {
     panel === 'db_admin' ? 'bg-violet-600' : panel === 'employee' ? 'bg-emerald-600' : 'bg-[#217346]';
 
   const handleSectionChange = (id: SectionId) => {
-    if (id === 'change-password') {
-      setPasswordModalOpen(true);
-    }
     setActiveSection(id);
   };
 
@@ -68,7 +65,7 @@ export function SettingsPage() {
                 type="button"
                 onClick={() => handleSectionChange(section.id)}
                 className={cn(
-                  'flex min-w-[128px] shrink-0 items-start gap-2 border-b border-r border-slate-200 px-3 py-2.5 text-left text-xs transition-colors sm:min-w-[140px] lg:min-w-0 lg:shrink lg:border-r-0',
+                  'flex min-w-[120px] shrink-0 items-start gap-2 border-b border-r border-slate-200 px-3 py-2.5 text-left text-xs transition-colors sm:min-w-[140px] lg:min-w-0 lg:shrink lg:border-r-0',
                   isActive
                     ? 'bg-white font-semibold text-[#217346] ring-1 ring-inset ring-[#217346]/30'
                     : 'text-slate-600 hover:bg-white/80',
@@ -86,37 +83,14 @@ export function SettingsPage() {
           })}
         </nav>
 
-        <div className="min-w-0 flex-1 bg-white p-3 sm:p-6">
+        <div className="min-w-0 flex-1 overflow-x-hidden bg-white p-3 sm:p-4 md:p-6">
           {activeSection === 'account' && <AccountSettingsPanel />}
           {activeSection === 'system-health' && <SystemHealthPanel />}
           {activeSection === 'security' && <SecuritySettingsPanel />}
           {activeSection === 'notifications' && <NotificationSettingsPanel />}
-          {activeSection === 'change-password' && (
-            <div>
-              <h2 className="text-sm font-bold uppercase tracking-wide text-slate-800">Change password</h2>
-              <p className="mt-1 text-xs text-slate-500">
-                Update your password securely. All sessions will be signed out.
-              </p>
-              <button
-                type="button"
-                onClick={() => setPasswordModalOpen(true)}
-                className="mt-4 inline-flex items-center gap-2 border border-[#217346] bg-[#217346] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1a5c38]"
-              >
-                <KeyRound className="h-4 w-4" />
-                Open change password form
-              </button>
-            </div>
-          )}
+          {activeSection === 'change-password' && <ChangePasswordForm variant="inline" />}
         </div>
       </div>
-
-      {passwordModalOpen && (
-        <ChangePasswordModal
-          onClose={() => {
-            setPasswordModalOpen(false);
-          }}
-        />
-      )}
     </div>
   );
 }

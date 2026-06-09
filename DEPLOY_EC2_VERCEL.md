@@ -109,6 +109,10 @@ One-time setup — GitHub repo → **Settings → Secrets and variables → Acti
 | `EC2_USER` | `ubuntu` |
 | `EC2_SSH_PRIVATE_KEY` | Full contents of `crm-key.pem` (including `-----BEGIN` / `-----END` lines) |
 
+**If deploy fails in ~4 seconds:** secrets missing/wrong, or AWS Security Group must allow **SSH port 22** from `0.0.0.0/0` (GitHub Actions uses dynamic IPs).
+
+**If CI fails on Backend Lint & Test:** fixed in workflow — backend has no `package-lock.json`; CI uses `npm install` now.
+
 Manual deploy from EC2:
 
 ```bash

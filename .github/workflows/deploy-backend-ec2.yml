@@ -19,14 +19,36 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      - name: Validate GitHub secrets
+        run: |
+          missing=0
+          if [ -z "${{ secrets.EC2_HOST }}" ]; then
+            echo "::error::Missing repository secret EC2_HOST (e.g. 13.232.248.18)"
+            missing=1
+          fi
+          if [ -z "${{ secrets.EC2_USER }}" ]; then
+            echo "::error::Missing repository secret EC2_USER (e.g. ubuntu)"
+            missing=1
+          fi
+          if [ -z "${{ secrets.EC2_SSH_PRIVATE_KEY }}" ]; then
+            echo "::error::Missing repository secret EC2_SSH_PRIVATE_KEY (full crm-key.pem contents)"
+            missing=1
+          fi
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          echo "Secrets present. Deploying to ${{ secrets.EC2_HOST }}..."
+
       - name: Deploy on EC2
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          port: 22
           command_timeout: 25m
           script: |
             set -euo pipefail
             cd ~/quoreb2b-crm
+            git pull origin main
             bash deploy/ec2/deploy-backend.sh

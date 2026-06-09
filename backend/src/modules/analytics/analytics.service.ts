@@ -490,7 +490,22 @@ export class AnalyticsService {
       }
     }
 
-    return { totalUsers, newUsersThisMonth, totalLeads, activeLeads, statusLeads };
+    const batchCount = batches.length;
+    const activeRate =
+      totalLeads > 0 ? Math.round((activeLeads / totalLeads) * 1000) / 10 : 0;
+    const wonRate =
+      totalLeads > 0 ? Math.round((statusLeads / totalLeads) * 1000) / 10 : 0;
+
+    return {
+      totalUsers,
+      newUsersThisMonth,
+      totalLeads,
+      activeLeads,
+      statusLeads,
+      batchCount,
+      activeRate,
+      wonRate,
+    };
   }
 
   async getChartData() {
@@ -544,7 +559,18 @@ export class AnalyticsService {
       }))
       .sort((a, b) => b.count - a.count);
 
-    return { statusBreakdown, totalLeads };
+    const topStatus = statusBreakdown[0]?.label ?? null;
+    const topStatusPct = statusBreakdown[0]?.pct ?? 0;
+
+    return {
+      statusBreakdown,
+      totalLeads,
+      trackedRows: breakdownTotal,
+      uniqueStatuses: statusBreakdown.length,
+      batchCount: batches.length,
+      topStatus,
+      topStatusPct,
+    };
   }
 
   async searchLeads(query: string) {

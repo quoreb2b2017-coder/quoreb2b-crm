@@ -15,6 +15,11 @@ import { cn } from '@/lib/utils/cn';
 import { IDLE_TIMEOUT_MINUTES } from '@/lib/constants/session';
 import { XlMetricCardSection, type MetricItem } from '@/components/admin/XlMetricCards';
 import { XlToolbarSelect } from '@/components/admin/XlToolbarSelect';
+import {
+  AnalyticsPanel,
+  FunnelChart,
+  MiniTrendBars,
+} from '@/components/analytics/AnalyticsCharts';
 
 function formatDateTime(iso: string) {
   return new Date(iso).toLocaleString('en-IN', {
@@ -318,6 +323,72 @@ export function EmployeeAnalyticsPanel({
             <XlMetricCardSection title="Session & system" rows={sessionRows} columns={2} />
           </div>
           <XlMetricCardSection title="Lead activity · this period" rows={periodRows} columns={3} />
+
+          <div className="grid gap-0 border-t border-slate-300 lg:grid-cols-2">
+            <AnalyticsPanel
+              title="Lead work funnel"
+              subtitle="How assigned leads were worked in this period"
+              className="rounded-none border-0 border-r border-slate-300 shadow-none"
+            >
+              <FunnelChart
+                items={[
+                  { label: 'Total assigned', value: la.totalLeads, color: '#6366f1' },
+                  { label: 'Worked', value: la.periodWorkedLeads, color: '#10b981' },
+                  { label: 'Updated', value: la.updated, color: '#8b5cf6' },
+                  { label: 'Not touched', value: la.notTouched, color: '#f59e0b' },
+                ]}
+              />
+              {la.totalLeads > 0 && (
+                <p className="mt-4 text-center text-xs text-slate-500">
+                  Work rate:{' '}
+                  <span className="font-semibold text-emerald-700">
+                    {Math.round((la.periodWorkedLeads / la.totalLeads) * 100)}%
+                  </span>
+                  {' · '}
+                  Update rate:{' '}
+                  <span className="font-semibold text-violet-700">
+                    {Math.round((la.updated / la.totalLeads) * 100)}%
+                  </span>
+                </p>
+              )}
+            </AnalyticsPanel>
+
+            {tab === 'monthly' && report.dailyBreakdown && report.dailyBreakdown.length > 0 ? (
+              <AnalyticsPanel
+                title="Daily active time"
+                subtitle="Minutes logged per day this month"
+                className="rounded-none border-0 shadow-none"
+              >
+                <MiniTrendBars
+                  data={report.dailyBreakdown.map((d) => ({
+                    label: d.date.slice(-2),
+                    minutes: d.totalActiveMinutes,
+                  }))}
+                  labelKey="label"
+                  valueKey="minutes"
+                  color="#217346"
+                  formatValue={(v) => `${v} min`}
+                />
+                <p className="mt-2 text-center text-[10px] text-slate-400">
+                  Click a day row below for full daily detail
+                </p>
+              </AnalyticsPanel>
+            ) : (
+              <AnalyticsPanel
+                title="Pipeline snapshot"
+                subtitle="Assigned batch breakdown"
+                className="rounded-none border-0 shadow-none"
+              >
+                <FunnelChart
+                  items={[
+                    { label: 'Batches', value: la.batchCount, color: '#06b6d4' },
+                    { label: 'Active leads', value: la.activeLeads, color: '#10b981' },
+                    { label: 'Won leads', value: la.wonLeads, color: '#8b5cf6' },
+                  ]}
+                />
+              </AnalyticsPanel>
+            )}
+          </div>
 
           <div className="border-t border-slate-300 bg-white">
             <div className="flex items-center gap-2 border-b border-slate-300 bg-[#f3f3f3] px-3 py-1.5">

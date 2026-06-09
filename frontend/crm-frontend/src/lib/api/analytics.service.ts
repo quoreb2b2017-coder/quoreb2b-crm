@@ -7,6 +7,9 @@ export interface CrmDashboardStats {
   totalLeads: number;
   activeLeads: number;
   statusLeads: number;
+  batchCount?: number;
+  activeRate?: number;
+  wonRate?: number;
 }
 
 export interface StatusBreakdownItem {
@@ -18,6 +21,11 @@ export interface StatusBreakdownItem {
 export interface ChartData {
   statusBreakdown: StatusBreakdownItem[];
   totalLeads: number;
+  trackedRows?: number;
+  uniqueStatuses?: number;
+  batchCount?: number;
+  topStatus?: string | null;
+  topStatusPct?: number;
 }
 
 export async function fetchCrmDashboardStats(): Promise<CrmDashboardStats> {

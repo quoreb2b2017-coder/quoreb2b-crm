@@ -85,13 +85,3 @@ jobs:
           push: false
           tags: quoreb2b/client-frontend:latest
 
-  deploy:
-    name: Deploy (Production)
-    runs-on: ubuntu-latest
-    needs: [docker-build]
-    if: github.ref == 'refs/heads/main'
-    environment: production
-    steps:
-      - uses: actions/checkout@v4
-      - name: Deploy placeholder
-        run: echo "Configure deployment to your cloud provider (ECS, K8s, etc.)"

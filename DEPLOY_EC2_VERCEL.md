@@ -99,6 +99,18 @@ curl https://api.quoreb2b.com/api/v1/health
 
 ### A8. Update deploy (after code changes)
 
+**Automatic (recommended):** push to `main` with changes under `backend/` or `deploy/ec2/` — GitHub Actions runs `deploy-backend-ec2.yml`.
+
+One-time setup — GitHub repo → **Settings → Secrets and variables → Actions → New repository secret**:
+
+| Secret | Value |
+|--------|--------|
+| `EC2_HOST` | `13.232.248.18` |
+| `EC2_USER` | `ubuntu` |
+| `EC2_SSH_PRIVATE_KEY` | Full contents of `crm-key.pem` (including `-----BEGIN` / `-----END` lines) |
+
+Manual deploy from EC2:
+
 ```bash
 bash ~/quoreb2b-crm/deploy/ec2/deploy-backend.sh
 ```

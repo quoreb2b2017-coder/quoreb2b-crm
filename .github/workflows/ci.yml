@@ -70,15 +70,3 @@ jobs:
           context: ./backend
           push: false
           tags: quoreb2b/api:latest
-      - name: Build CRM Frontend image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./frontend/crm-frontend
-          push: false
-          tags: quoreb2b/crm-frontend:latest
-      - name: Build Client Frontend image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./frontend/client-frontend
-          push: false
-          tags: quoreb2b/client-frontend:latest

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build and run QuoreB2B backend on EC2
+# Build and run QuoreB2B backend on EC2 (also triggered by GitHub Actions on push to main).
 # Run: bash deploy/ec2/deploy-backend.sh
 set -euo pipefail
 

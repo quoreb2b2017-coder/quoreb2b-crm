@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Bell, BellOff, Loader2, Mail, Package, Shield, Activity, CalendarCheck } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
+import { Switch } from '@/components/ui/Switch';
 import { toast } from '@/stores/toast.store';
 import type { NotificationPreferences } from '@/lib/api/notification-preferences.service';
 import { useNotificationPreferencesStore } from '@/store/notification-preferences.store';
@@ -79,6 +80,7 @@ function ToggleRow({
   icon: Icon,
   checked,
   disabled,
+  loading,
   onChange,
 }: {
   label: string;
@@ -86,37 +88,53 @@ function ToggleRow({
   icon: typeof Bell;
   checked: boolean;
   disabled?: boolean;
+  loading?: boolean;
   onChange: (next: boolean) => void;
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-white px-3 py-3 last:border-b-0 sm:px-4">
-      <div className="flex min-w-0 gap-3">
-        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-[#f3f3f3] text-[#217346]">
-          <Icon className="h-3.5 w-3.5" />
+    <div
+      className={cn(
+        'flex items-center justify-between gap-4 border-b border-slate-100 bg-white px-3 py-3.5 transition-colors duration-200 last:border-b-0 sm:px-5 sm:py-4',
+        !disabled && 'hover:bg-slate-50/90',
+        disabled && !loading && 'opacity-60',
+      )}
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
+        <span
+          className={cn(
+            'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-all duration-300',
+            checked
+              ? 'border-emerald-200 bg-gradient-to-br from-emerald-50 to-white text-[#217346] shadow-sm shadow-emerald-100/80'
+              : 'border-slate-200 bg-slate-50 text-slate-400',
+          )}
+        >
+          <Icon className="h-4 w-4" />
         </span>
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate-900">{label}</p>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-slate-900">{label}</p>
+            <span
+              className={cn(
+                'rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide transition-colors duration-300',
+                checked
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : 'bg-slate-100 text-slate-500',
+              )}
+            >
+              {checked ? 'On' : 'Off'}
+            </span>
+          </div>
           <p className="mt-0.5 text-xs leading-relaxed text-slate-500">{description}</p>
         </div>
       </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
+      <Switch
+        checked={checked}
+        onChange={onChange}
         disabled={disabled}
-        onClick={() => onChange(!checked)}
-        className={cn(
-          'relative mt-1 h-6 w-11 shrink-0 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-[#217346]/40 disabled:cursor-not-allowed disabled:opacity-50',
-          checked ? 'bg-[#217346]' : 'bg-slate-300',
-        )}
-      >
-        <span
-          className={cn(
-            'absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform',
-            checked ? 'translate-x-5' : 'translate-x-0.5',
-          )}
-        />
-      </button>
+        loading={loading}
+        aria-label={`${label} — ${checked ? 'on' : 'off'}`}
+        className="mt-0.5"
+      />
     </div>
   );
 }
@@ -154,7 +172,7 @@ export function NotificationSettingsPanel() {
       <h2 className="text-sm font-bold uppercase tracking-wide text-slate-800">Notifications</h2>
       <p className="mt-1 text-xs text-slate-500">Control in-app alerts and popup toasts</p>
 
-      <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs text-emerald-800 sm:px-4">
+      <div className="mt-3 rounded-xl border border-emerald-200/80 bg-gradient-to-r from-emerald-50 to-white px-3 py-2.5 text-xs text-emerald-800 sm:px-4">
         Attendance is counted <strong>late after 6:30 PM</strong>. Late entries include check-in time in
         notifications when enabled below.
       </div>
@@ -165,7 +183,7 @@ export function NotificationSettingsPanel() {
           Loading preferences…
         </div>
       ) : (
-        <div className="mt-4 overflow-hidden rounded-lg border border-slate-300">
+        <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           {TOGGLES.map((item) => (
             <ToggleRow
               key={item.key}
@@ -173,6 +191,7 @@ export function NotificationSettingsPanel() {
               description={item.description}
               icon={item.icon}
               checked={preferences?.[item.key] ?? false}
+              loading={savingKey === item.key}
               disabled={Boolean(item.requiresMaster && !masterOn && item.key !== 'enabled') || savingKey === item.key}
               onChange={(next) => void handleToggle(item.key, next)}
             />

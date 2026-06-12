@@ -75,6 +75,47 @@ export class NotificationTriggerService {
     }
   }
 
+  /** Remove inbox alerts tied to a master/employee upload request. */
+  async deleteByUploadRequestId(requestId: string) {
+    try {
+      const docs = await this.notificationModel
+        .find({ 'metadata.requestId': requestId })
+        .select('userId')
+        .lean()
+        .exec();
+      if (!docs.length) return 0;
+      const userIds = [...new Set(docs.map((doc) => String(doc.userId)))];
+      const result = await this.notificationModel
+        .deleteMany({ 'metadata.requestId': requestId })
+        .exec();
+      await Promise.all(userIds.map((userId) => this.emitUnreadCount(userId)));
+      return result.deletedCount ?? 0;
+    } catch (error) {
+      console.error('Error deleting upload request notifications:', error);
+      return 0;
+    }
+  }
+
+  async deleteByUploadRequestIds(requestIds: string[]) {
+    if (!requestIds.length) return 0;
+    try {
+      const docs = await this.notificationModel
+        .find({ 'metadata.requestId': { $in: requestIds } })
+        .select('userId')
+        .lean()
+        .exec();
+      const userIds = [...new Set(docs.map((doc) => String(doc.userId)))];
+      const result = await this.notificationModel
+        .deleteMany({ 'metadata.requestId': { $in: requestIds } })
+        .exec();
+      await Promise.all(userIds.map((userId) => this.emitUnreadCount(userId)));
+      return result.deletedCount ?? 0;
+    } catch (error) {
+      console.error('Error deleting upload request notifications:', error);
+      return 0;
+    }
+  }
+
   /**
    * Send notification to specific user
    */
@@ -158,7 +199,7 @@ export class NotificationTriggerService {
   }) {
     try {
       const dbAdmins = await this.userModel.find({
-        roles: SystemRole.DB_ADMIN,
+        roles: { $in: [SystemRole.DB_ADMIN] },
         isActive: { $ne: false },
       });
       await this.notifyUsers(

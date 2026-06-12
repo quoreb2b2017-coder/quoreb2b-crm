@@ -15,6 +15,7 @@ import { SpreadsheetPreviewModal } from '@/components/spreadsheet/SpreadsheetPre
 
 const FILTERS: Array<MasterDataUploadRequestStatus | 'all'> = [
   'pending',
+  'pending_admin',
   'all',
   'approved',
   'rejected',
@@ -53,7 +54,10 @@ export function MasterDataRequestInbox() {
   }, [load]);
 
   const pendingCount = useMemo(
-    () => requests.filter((request) => request.status === 'pending').length,
+    () =>
+      requests.filter(
+        (request) => request.status === 'pending' || request.status === 'pending_admin',
+      ).length,
     [requests],
   );
 
@@ -96,11 +100,15 @@ export function MasterDataRequestInbox() {
     setViewFileLoadingId(request.id);
     try {
       const detail = await masterDataService.getUploadRequest(request.id);
+      const rows =
+        detail.sourceRole === 'employee' && detail.workRows?.length
+          ? detail.workRows
+          : detail.rows;
       setFilePreview({
-        title: `${detail.fileName} — submitted file`,
+        title: `${detail.fileName} — ${detail.sourceRole === 'employee' ? 'employee' : 'DB Admin'} file`,
         headers: detail.headers,
-        rows: detail.rows,
-        totalRows: detail.rowCount,
+        rows,
+        totalRows: rows.length,
       });
     } catch (err) {
       toast.error('Could not load file', extractApiError(err, 'Load failed'));
@@ -110,18 +118,27 @@ export function MasterDataRequestInbox() {
   };
 
   const remove = async (request: MasterDataUploadRequest) => {
-    const ok = window.confirm(
+    const who =
+      request.sourceRole === 'employee'
+        ? `employee (${request.submittedByEmail ?? 'unknown'})`
+        : 'DB Admin';
+    const approvedNote =
       request.status === 'approved'
-        ? 'Approved requests cannot be deleted.'
-        : `Delete request "${request.fileName}"? DB Admin will lose this request from history.`,
+        ? ' Merged rows will also be removed from the master file.'
+        : '';
+    const ok = window.confirm(
+      `Delete "${request.fileName}" from ${who}? This removes it from Admin, DB Admin, and Employee views everywhere.${approvedNote}`,
     );
-    if (!ok || request.status === 'approved') return;
+    if (!ok) return;
 
     setActionLoadingId(request.id);
     try {
-      await masterDataService.deleteUploadRequest(request.id);
-      toast.success('Request deleted', 'DB Admin upload request removed');
-      window.dispatchEvent(new CustomEvent('master-data-updated'));
+      const result = await masterDataService.deleteUploadRequest(request.id);
+      const masterNote =
+        result.removedFromMaster && result.removedFromMaster > 0
+          ? ` ${result.removedFromMaster} row(s) removed from master file.`
+          : '';
+      toast.success('Request deleted', `Removed from all panels.${masterNote}`);
       await load();
     } catch (err) {
       toast.error('Delete failed', extractApiError(err, 'Could not delete request'));
@@ -133,7 +150,7 @@ export function MasterDataRequestInbox() {
   return (
     <>
       <MasterDataUploadRequestList
-        title="DB Admin upload requests"
+        title="Data upload requests"
         requests={requests}
         loading={loading}
         emptyMessage="No upload requests found"
@@ -170,6 +187,7 @@ export function MasterDataRequestInbox() {
           </div>
         }
         canReview
+        reviewableStatuses={['pending', 'pending_admin']}
         actionLoadingId={actionLoadingId}
         onViewDuplicates={(request) => setDuplicateRequest(request)}
         onViewFile={(request) => void viewRequestFile(request)}
@@ -180,6 +198,7 @@ export function MasterDataRequestInbox() {
           setRejectReason('');
         }}
         onDelete={remove}
+        allowDeleteApproved
       />
 
       <SpreadsheetPreviewModal

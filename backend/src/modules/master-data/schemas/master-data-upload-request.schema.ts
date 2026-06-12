@@ -27,8 +27,36 @@ export class MasterDataUploadRequest extends Document {
   @Prop({ required: true, default: 0 })
   missingValueCount: number;
 
-  @Prop({ enum: ['pending', 'approved', 'rejected'], default: 'pending' })
+  /** pending = DB admin → admin; pending_db_admin | active | pending_admin = employee workflow */
+  @Prop({ default: 'pending' })
   status: string;
+
+  @Prop({ enum: ['db_admin', 'employee'], default: 'db_admin' })
+  sourceRole: string;
+
+  @Prop({ type: [[String]], default: [] })
+  workRows: string[][];
+
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  dbAdminReviewedBy?: Types.ObjectId;
+
+  @Prop()
+  dbAdminReviewedByEmail?: string;
+
+  @Prop()
+  dbAdminReviewedAt?: Date;
+
+  @Prop()
+  dbAdminReason?: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  forwardedBy?: Types.ObjectId;
+
+  @Prop()
+  forwardedByEmail?: string;
+
+  @Prop()
+  forwardedAt?: Date;
 
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   submittedBy: Types.ObjectId;

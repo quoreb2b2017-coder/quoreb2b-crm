@@ -20,7 +20,10 @@ export type DashboardVariant = 'admin' | 'db_admin' | 'employee';
 
 /** Batch spreadsheet view (not list / team) */
 export function isBatchExcelViewPath(pathname: string) {
-  return /\/batches\/[^/]+$/.test(pathname) && !pathname.endsWith('/team');
+  return (
+    (/\/batches\/[^/]+$/.test(pathname) && !pathname.endsWith('/team')) ||
+    /^\/employee\/my-data\/[^/]+$/.test(pathname)
+  );
 }
 
 /** Batches library (month folders list) */
@@ -245,6 +248,8 @@ const iconMap: Record<string, React.ReactNode> = {
   'db admin data':      Icons.upload,
   'master file':        Icons.upload,
   'my data':            Icons.upload,
+  'employee data':      Icons.upload,
+  'email verification': Icons.upload,
   'db admin data requests': Icons.upload,
   'db admin upload requests': Icons.upload,
   'batches':            Icons.logs,

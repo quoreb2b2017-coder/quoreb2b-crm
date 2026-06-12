@@ -29,7 +29,15 @@ export interface MasterDataRecord {
   mode?: MasterDataSaveMode;
 }
 
-export type MasterDataUploadRequestStatus = 'pending' | 'approved' | 'rejected';
+export type MasterDataUploadRequestStatus =
+  | 'pending'
+  | 'pending_db_admin'
+  | 'active'
+  | 'pending_admin'
+  | 'approved'
+  | 'rejected';
+
+export type MasterDataUploadSourceRole = 'db_admin' | 'employee';
 
 export interface MasterDataUploadRequest {
   id: string;
@@ -41,10 +49,16 @@ export interface MasterDataUploadRequest {
   duplicatePreviewRows: string[][];
   missingValueCount: number;
   status: MasterDataUploadRequestStatus;
+  sourceRole?: MasterDataUploadSourceRole;
   submittedByEmail?: string;
   reason?: string;
   reviewedByEmail?: string;
   reviewedAt?: string;
+  dbAdminReviewedByEmail?: string;
+  dbAdminReviewedAt?: string;
+  dbAdminReason?: string;
+  forwardedByEmail?: string;
+  forwardedAt?: string;
   mergedAddedRows?: number;
   mergedTotalRows?: number;
   createdAt?: string;
@@ -63,6 +77,10 @@ export interface MasterDataUploadRequestSubmitResult {
 function unwrap<T>(response: { data: unknown }): T {
   const body = response.data as { data?: T };
   return (body?.data ?? body) as T;
+}
+
+function statusQuery(status?: MasterDataUploadRequestStatus | 'all') {
+  return status && status !== 'all' ? `?status=${status}` : '';
 }
 
 export const masterDataService = {
@@ -116,32 +134,51 @@ export const masterDataService = {
     return unwrap<MasterDataUploadRequestSubmitResult>({ data });
   },
 
+  createEmployeeUploadRequest: async (
+    payload: SpreadsheetData,
+  ): Promise<MasterDataUploadRequestSubmitResult> => {
+    const { data } = await apiClient.post('/master-data/upload-requests/employee', {
+      fileName: payload.fileName,
+      sheetName: payload.sheetName,
+      headers: payload.headers,
+      rows: payload.rows,
+    });
+    return unwrap<MasterDataUploadRequestSubmitResult>({ data });
+  },
+
   getUploadRequests: async (
     status?: MasterDataUploadRequestStatus | 'all',
   ): Promise<MasterDataUploadRequest[]> => {
-    const params = status && status !== 'all' ? `?status=${status}` : '';
-    const { data } = await apiClient.get(`/master-data/upload-requests${params}`);
+    const { data } = await apiClient.get(`/master-data/upload-requests${statusQuery(status)}`);
+    return unwrap<MasterDataUploadRequest[]>({ data });
+  },
+
+  getEmployeeUploadRequestsForDbAdmin: async (
+    status?: MasterDataUploadRequestStatus | 'all',
+  ): Promise<MasterDataUploadRequest[]> => {
+    const { data } = await apiClient.get(
+      `/master-data/upload-requests/employee/inbox${statusQuery(status)}`,
+    );
     return unwrap<MasterDataUploadRequest[]>({ data });
   },
 
   getMyUploadRequests: async (
     status?: MasterDataUploadRequestStatus | 'all',
   ): Promise<MasterDataUploadRequest[]> => {
-    const params = status && status !== 'all' ? `?status=${status}` : '';
-    const { data } = await apiClient.get(`/master-data/upload-requests/my${params}`);
+    const { data } = await apiClient.get(`/master-data/upload-requests/my${statusQuery(status)}`);
     return unwrap<MasterDataUploadRequest[]>({ data });
   },
 
   getUploadRequest: async (
     requestId: string,
-  ): Promise<MasterDataUploadRequest & { rows: string[][] }> => {
+  ): Promise<MasterDataUploadRequest & { rows: string[][]; workRows?: string[][] }> => {
     const { data } = await apiClient.get(`/master-data/upload-requests/${requestId}`);
-    return unwrap<MasterDataUploadRequest & { rows: string[][] }>({ data });
+    return unwrap<MasterDataUploadRequest & { rows: string[][]; workRows?: string[][] }>({ data });
   },
 
   reviewUploadRequest: async (
     requestId: string,
-    status: MasterDataUploadRequestStatus,
+    status: 'approved' | 'rejected',
     reason?: string,
   ): Promise<MasterDataUploadRequest> => {
     const { data } = await apiClient.post(
@@ -151,19 +188,62 @@ export const masterDataService = {
     return unwrap<MasterDataUploadRequest>({ data });
   },
 
+  reviewEmployeeUploadByDbAdmin: async (
+    requestId: string,
+    status: 'approved' | 'rejected',
+    reason?: string,
+  ): Promise<MasterDataUploadRequest> => {
+    const { data } = await apiClient.post(
+      `/master-data/upload-requests/${requestId}/db-review`,
+      { status, reason },
+    );
+    return unwrap<MasterDataUploadRequest>({ data });
+  },
+
+  updateEmployeeWorkData: async (
+    requestId: string,
+    rows: string[][],
+  ): Promise<MasterDataUploadRequest & { rows: string[][]; workRows?: string[][] }> => {
+    const { data } = await apiClient.post(`/master-data/upload-requests/${requestId}/work`, {
+      rows,
+    });
+    return unwrap<MasterDataUploadRequest & { rows: string[][]; workRows?: string[][] }>({
+      data,
+    });
+  },
+
+  forwardEmployeeRequestToAdmin: async (
+    requestId: string,
+  ): Promise<MasterDataUploadRequest> => {
+    const { data } = await apiClient.post(`/master-data/upload-requests/${requestId}/forward`);
+    return unwrap<MasterDataUploadRequest>({ data });
+  },
+
   deleteUploadRequest: async (
     requestId: string,
-  ): Promise<{ deleted: boolean; id: string }> => {
+  ): Promise<{ deleted: boolean; id: string; removedFromMaster?: number }> => {
     const { data } = await apiClient.delete(`/master-data/upload-requests/${requestId}`);
-    return unwrap<{ deleted: boolean; id: string }>({ data });
+    const result = unwrap<{ deleted: boolean; id: string; removedFromMaster?: number }>({ data });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('master-data-updated'));
+      window.dispatchEvent(
+        new CustomEvent('upload-request-deleted', { detail: { id: requestId } }),
+      );
+    }
+    return result;
   },
 
   clear: async () => {
     const { data } = await apiClient.delete('/master-data/current');
-    const result = unwrap<{ cleared: boolean; deletedBatches?: number }>({ data });
+    const result = unwrap<{
+      cleared: boolean;
+      deletedBatches?: number;
+      deletedUploadRequests?: number;
+    }>({ data });
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('master-data-updated'));
       window.dispatchEvent(new CustomEvent('crm-data-cleared'));
+      window.dispatchEvent(new CustomEvent('upload-request-deleted', { detail: { id: 'all' } }));
     }
     return result;
   },

@@ -12,8 +12,10 @@ import { SaveMasterDataDto } from './dto/save-master-data.dto';
 import { ShareMasterDataDto } from './dto/share-master-data.dto';
 import {
   CreateMasterDataUploadRequestDto,
+  DbReviewEmployeeUploadDto,
   ListMasterDataUploadRequestsDto,
   ReviewMasterDataUploadRequestDto,
+  UpdateEmployeeWorkDataDto,
 } from './dto/master-data-upload-request.dto';
 import { SystemRole } from '../../common/constants/roles.constant';
 import { mergeAppendSheets } from './master-data-merge.util';
@@ -63,6 +65,48 @@ export class MasterDataService {
       const value = idx >= 0 ? String(row[idx] ?? '').trim() : '';
       return value || '-';
     });
+  }
+
+  private async prepareUploadRows(dto: CreateMasterDataUploadRequestDto, alignToMaster: boolean) {
+    const masterDoc = alignToMaster
+      ? await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec()
+      : null;
+    const headers = masterDoc
+      ? masterDoc.headers
+      : dto.headers.map((h) => h.trim()).filter(Boolean);
+    if (!headers.length) {
+      throw new BadRequestException('At least one column header is required');
+    }
+
+    const existingKeys = new Set(
+      masterDoc
+        ? masterDoc.rows.map((row) =>
+            this.rowKey(this.normalizeRowToHeaders(row, masterDoc.headers, headers)),
+          )
+        : [],
+    );
+    const incomingSeen = new Set<string>();
+    const rows: string[][] = [];
+    const duplicatePreviewRows: string[][] = [];
+    let duplicateCount = 0;
+    let missingValueCount = 0;
+
+    for (const rawRow of dto.rows) {
+      const normalized = this.normalizeRowToHeaders(rawRow, dto.headers, headers);
+      missingValueCount += normalized.filter((cell) => cell === '-').length;
+      const key = this.rowKey(normalized);
+      if (existingKeys.has(key) || incomingSeen.has(key)) {
+        duplicateCount += 1;
+        if (duplicatePreviewRows.length < DUPLICATE_PREVIEW_LIMIT) {
+          duplicatePreviewRows.push(normalized);
+        }
+        continue;
+      }
+      incomingSeen.add(key);
+      rows.push(normalized);
+    }
+
+    return { headers, rows, duplicateCount, duplicatePreviewRows, missingValueCount };
   }
 
   async save(dto: SaveMasterDataDto, actor: ActivityActor) {
@@ -198,41 +242,8 @@ export class MasterDataService {
       throw new ForbiddenException('Only DB Admin can submit upload requests');
     }
 
-    const masterDoc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
-    const headers = masterDoc
-      ? masterDoc.headers
-      : dto.headers.map((h) => h.trim()).filter(Boolean);
-    if (!headers.length) {
-      throw new BadRequestException('At least one column header is required');
-    }
-
-    const existingKeys = new Set(
-      masterDoc
-        ? masterDoc.rows.map((row) =>
-            this.rowKey(this.normalizeRowToHeaders(row, masterDoc.headers, headers)),
-          )
-        : [],
-    );
-    const incomingSeen = new Set<string>();
-    const rows: string[][] = [];
-    const duplicatePreviewRows: string[][] = [];
-    let duplicateCount = 0;
-    let missingValueCount = 0;
-
-    for (const rawRow of dto.rows) {
-      const normalized = this.normalizeRowToHeaders(rawRow, dto.headers, headers);
-      missingValueCount += normalized.filter((cell) => cell === '-').length;
-      const key = this.rowKey(normalized);
-      if (existingKeys.has(key) || incomingSeen.has(key)) {
-        duplicateCount += 1;
-        if (duplicatePreviewRows.length < DUPLICATE_PREVIEW_LIMIT) {
-          duplicatePreviewRows.push(normalized);
-        }
-        continue;
-      }
-      incomingSeen.add(key);
-      rows.push(normalized);
-    }
+    const { headers, rows, duplicateCount, duplicatePreviewRows, missingValueCount } =
+      await this.prepareUploadRows(dto, true);
 
     let request: MasterDataUploadRequest | null = null;
     if (rows.length > 0) {
@@ -247,6 +258,7 @@ export class MasterDataService {
         missingValueCount,
         submittedBy: new Types.ObjectId(actor.id),
         submittedByEmail: actor.email,
+        sourceRole: 'db_admin',
         status: 'pending',
       });
 
@@ -301,8 +313,118 @@ export class MasterDataService {
     };
   }
 
+  async createEmployeeUploadRequest(
+    dto: CreateMasterDataUploadRequestDto,
+    actor: ActivityActor,
+    roles: string[] = [],
+  ) {
+    if (!dto.headers.length) {
+      throw new BadRequestException('At least one column header is required');
+    }
+    if (!dto.rows.length) {
+      throw new BadRequestException('No data rows to submit');
+    }
+    if (!roles.includes(SystemRole.EMPLOYEE)) {
+      throw new ForbiddenException('Only employees can submit data upload requests');
+    }
+
+    const { headers, rows, duplicateCount, duplicatePreviewRows, missingValueCount } =
+      await this.prepareUploadRows(dto, false);
+
+    let request: MasterDataUploadRequest | null = null;
+    if (rows.length > 0) {
+      request = await this.uploadRequestModel.create({
+        fileName: dto.fileName,
+        sheetName: dto.sheetName,
+        headers,
+        rows,
+        workRows: rows,
+        rowCount: rows.length,
+        duplicateCount,
+        duplicatePreviewRows,
+        missingValueCount,
+        submittedBy: new Types.ObjectId(actor.id),
+        submittedByEmail: actor.email,
+        sourceRole: 'employee',
+        status: 'pending_db_admin',
+      });
+
+      try {
+        await this.notifications.notifyDbAdmins({
+          type: 'data_uploaded',
+          title: 'Employee data upload pending',
+          message: `${actor.email} submitted ${rows.length} row(s) for your review`,
+          priority: 'high',
+          actionUrl: '/db-admin/master-data?tab=employee',
+          actionLabel: 'Review request',
+          metadata: {
+            requestId: request._id.toString(),
+            fileName: dto.fileName,
+            submittedByEmail: actor.email,
+            rowCount: rows.length,
+          },
+        });
+      } catch {
+        /* notification should not block */
+      }
+    }
+
+    try {
+      await this.activityLogs.logWithActor(actor, {
+        action: 'EMPLOYEE_DATA_UPLOAD_REQUEST',
+        resource: 'master-data',
+        path: '/employee/my-data',
+        metadata: {
+          fileName: dto.fileName,
+          submittedRows: dto.rows.length,
+          pendingRows: rows.length,
+          duplicateCount,
+          requestCreated: Boolean(request),
+        },
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to log employee upload request: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+
+    return {
+      request: request ? this.toUploadRequestResponse(request) : null,
+      duplicateCount,
+      duplicatePreviewRows,
+      pendingRows: rows.length,
+      missingValueCount,
+      templateHeaders: headers,
+    };
+  }
+
   async listUploadRequests(query: ListMasterDataUploadRequestsDto) {
-    const filter = query.status ? { status: query.status } : {};
+    const filter: Record<string, unknown> = {};
+    if (query.status) {
+      filter.status = query.status;
+    } else {
+      filter.status = { $in: ['pending', 'pending_admin'] };
+    }
+    if (query.sourceRole) {
+      filter.sourceRole = query.sourceRole;
+    }
+    const docs = await this.uploadRequestModel.find(filter).sort({ createdAt: -1 }).exec();
+    return docs.map((doc) => this.toUploadRequestResponse(doc));
+  }
+
+  async listEmployeeUploadRequestsForDbAdmin(query: ListMasterDataUploadRequestsDto) {
+    const filter: Record<string, unknown> = {
+      $or: [
+        { sourceRole: 'employee' },
+        {
+          sourceRole: { $exists: false },
+          status: { $in: ['pending_db_admin', 'active', 'pending_admin'] },
+        },
+      ],
+    };
+    if (query.status) {
+      filter.status = query.status;
+    }
     const docs = await this.uploadRequestModel.find(filter).sort({ createdAt: -1 }).exec();
     return docs.map((doc) => this.toUploadRequestResponse(doc));
   }
@@ -319,11 +441,157 @@ export class MasterDataService {
 
     const isAdmin =
       roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
-    if (!isAdmin && request.submittedBy.toString() !== actorId) {
+    const isDbAdmin = roles.includes(SystemRole.DB_ADMIN);
+    const isOwner = request.submittedBy.toString() === actorId;
+    const isEmployeeRequest = request.sourceRole === 'employee';
+
+    if (!isAdmin && !(isDbAdmin && isEmployeeRequest) && !isOwner) {
       throw new NotFoundException('Upload request not found');
     }
 
     return this.toUploadRequestDetailResponse(request);
+  }
+
+  async reviewEmployeeUploadByDbAdmin(
+    requestId: string,
+    dto: DbReviewEmployeeUploadDto,
+    actor: ActivityActor,
+  ) {
+    const request = await this.uploadRequestModel.findById(requestId).exec();
+    if (!request || request.sourceRole !== 'employee') {
+      throw new NotFoundException('Employee upload request not found');
+    }
+    if (request.status !== 'pending_db_admin') {
+      throw new BadRequestException('Only pending DB Admin review requests can be updated');
+    }
+    if (dto.status === 'rejected' && !dto.reason?.trim()) {
+      throw new BadRequestException('Reject reason is required');
+    }
+
+    request.dbAdminReviewedBy = new Types.ObjectId(actor.id);
+    request.dbAdminReviewedByEmail = actor.email;
+    request.dbAdminReviewedAt = new Date();
+
+    if (dto.status === 'approved') {
+      request.status = 'active';
+      request.workRows = request.rows.map((row) => [...row]);
+      request.dbAdminReason = undefined;
+    } else {
+      request.status = 'rejected';
+      request.dbAdminReason = dto.reason?.trim();
+      request.reason = dto.reason?.trim();
+    }
+
+    await request.save();
+
+    try {
+      await this.notifications.notifyUser(request.submittedBy.toString(), {
+        type: dto.status === 'approved' ? 'success' : 'warning',
+        title:
+          dto.status === 'approved'
+            ? 'Data approved — you can work on it now'
+            : 'Data upload rejected by DB Admin',
+        message:
+          dto.status === 'approved'
+            ? `${request.fileName} is ready. Open My Data to edit and prepare for admin review.`
+            : `${request.fileName} was rejected${request.dbAdminReason ? `: ${request.dbAdminReason}` : ''}`,
+        priority: dto.status === 'approved' ? 'high' : 'medium',
+        actionUrl: '/employee/my-data',
+        actionLabel: 'Open My Data',
+        metadata: { requestId, status: request.status },
+      });
+    } catch {
+      /* notification should not block */
+    }
+
+    return this.toUploadRequestResponse(request);
+  }
+
+  async updateEmployeeWorkData(
+    requestId: string,
+    dto: UpdateEmployeeWorkDataDto,
+    actor: ActivityActor,
+  ) {
+    const request = await this.uploadRequestModel.findById(requestId).exec();
+    if (!request || request.sourceRole !== 'employee') {
+      throw new NotFoundException('Employee upload request not found');
+    }
+    if (request.submittedBy.toString() !== actor.id) {
+      throw new ForbiddenException('You can only edit your own upload requests');
+    }
+    if (request.status !== 'active') {
+      throw new BadRequestException('Data can only be edited after DB Admin approval');
+    }
+    if (!dto.rows.length) {
+      throw new BadRequestException('At least one data row is required');
+    }
+
+    const normalized = dto.rows.map((row) =>
+      this.normalizeRowToHeaders(row, request.headers, request.headers),
+    );
+    request.workRows = normalized;
+    request.rowCount = normalized.length;
+    await request.save();
+
+    return this.toUploadRequestDetailResponse(request);
+  }
+
+  async forwardEmployeeRequestToAdmin(requestId: string, actor: ActivityActor) {
+    const request = await this.uploadRequestModel.findById(requestId).exec();
+    if (!request || request.sourceRole !== 'employee') {
+      throw new NotFoundException('Employee upload request not found');
+    }
+    if (request.status !== 'active') {
+      throw new BadRequestException('Only active employee data can be forwarded to Admin');
+    }
+
+    const workRows = request.workRows?.length ? request.workRows : request.rows;
+    if (!workRows.length) {
+      throw new BadRequestException('No rows to forward');
+    }
+
+    request.rows = workRows.map((row) => [...row]);
+    request.rowCount = workRows.length;
+    request.status = 'pending_admin';
+    request.forwardedBy = new Types.ObjectId(actor.id);
+    request.forwardedByEmail = actor.email;
+    request.forwardedAt = new Date();
+    await request.save();
+
+    try {
+      await this.notifications.notifySuperAdmins({
+        type: 'data_uploaded',
+        title: 'Employee data ready for master file',
+        message: `${actor.email} forwarded ${workRows.length} row(s) from ${request.submittedByEmail} for master merge`,
+        priority: 'high',
+        actionUrl: '/admin/master-data-upload/requests',
+        actionLabel: 'Review request',
+        metadata: {
+          requestId,
+          fileName: request.fileName,
+          forwardedByEmail: actor.email,
+          rowCount: workRows.length,
+        },
+      });
+    } catch {
+      /* notification should not block */
+    }
+
+    try {
+      await this.notifications.notifyUser(request.submittedBy.toString(), {
+        type: 'info',
+        title: 'Sent to Super Admin',
+        message: `Your work on ${request.fileName} was forwarded for master file review.`,
+        priority: 'medium',
+        actionUrl: '/employee/my-data',
+        actionLabel: 'View status',
+        metadata: { requestId, status: 'pending_admin' },
+      });
+    } catch {
+      /* notification should not block */
+    }
+
+    return this.toUploadRequestResponse(request);
   }
 
   async listMyUploadRequests(actorId: string, query: ListMasterDataUploadRequestsDto) {
@@ -346,8 +614,8 @@ export class MasterDataService {
     if (!request) {
       throw new NotFoundException('Upload request not found');
     }
-    if (request.status !== 'pending') {
-      throw new BadRequestException('Only pending requests can be reviewed');
+    if (request.status !== 'pending' && request.status !== 'pending_admin') {
+      throw new BadRequestException('Only pending admin review requests can be reviewed');
     }
     if (dto.status === 'rejected' && !dto.reason?.trim()) {
       throw new BadRequestException('Reject reason is required');
@@ -360,12 +628,16 @@ export class MasterDataService {
     request.reason = dto.status === 'rejected' ? dto.reason?.trim() : undefined;
 
     if (dto.status === 'approved') {
+      const rowsToMerge =
+        request.workRows?.length && request.sourceRole === 'employee'
+          ? request.workRows
+          : request.rows;
       const merged = await this.save(
         {
           fileName: request.fileName,
           sheetName: request.sheetName,
           headers: request.headers,
-          rows: request.rows,
+          rows: rowsToMerge,
           mode: 'append',
         },
         actor,
@@ -389,7 +661,8 @@ export class MasterDataService {
             ? `${request.fileName} was approved and merged into master data`
             : `${request.fileName} was rejected${request.reason ? `: ${request.reason}` : ''}`,
         priority: dto.status === 'approved' ? 'high' : 'medium',
-        actionUrl: '/db-admin/master-data',
+        actionUrl:
+          request.sourceRole === 'employee' ? '/employee/my-data' : '/db-admin/master-data',
         actionLabel: 'View request',
         metadata: {
           requestId,
@@ -426,34 +699,91 @@ export class MasterDataService {
     return this.toUploadRequestResponse(request);
   }
 
+  private async removeMergedRowsFromMaster(request: MasterDataUploadRequest) {
+    const masterDoc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+    if (!masterDoc?.rows?.length) return 0;
+
+    const rowsToRemove =
+      request.workRows?.length && request.sourceRole === 'employee'
+        ? request.workRows
+        : request.rows;
+    if (!rowsToRemove.length) return 0;
+
+    const keysToRemove = new Set(
+      rowsToRemove.map((row) =>
+        this.rowKey(this.normalizeRowToHeaders(row, request.headers, masterDoc.headers)),
+      ),
+    );
+
+    const nextRows = masterDoc.rows.filter((row) => {
+      const key = this.rowKey(
+        this.normalizeRowToHeaders(row, masterDoc.headers, masterDoc.headers),
+      );
+      return !keysToRemove.has(key);
+    });
+
+    const removed = masterDoc.rows.length - nextRows.length;
+    if (removed <= 0) return 0;
+
+    await this.masterDataModel.updateOne(
+      { key: MASTER_DATA_KEY },
+      { rows: nextRows },
+    );
+    void this.bustMasterCaches();
+    return removed;
+  }
+
   async deleteUploadRequest(requestId: string, actor: ActivityActor) {
     const request = await this.uploadRequestModel.findById(requestId).exec();
     if (!request) {
       throw new NotFoundException('Upload request not found');
     }
+
+    let removedFromMaster = 0;
     if (request.status === 'approved') {
-      throw new BadRequestException(
-        'Approved requests cannot be deleted because the data is already merged',
-      );
+      removedFromMaster = await this.removeMergedRowsFromMaster(request);
     }
 
     await this.uploadRequestModel.deleteOne({ _id: request._id }).exec();
+    await this.notifications.deleteByUploadRequestId(requestId);
+
+    const isEmployeeRequest = request.sourceRole === 'employee';
+    const submitterActionUrl = isEmployeeRequest ? '/employee/my-data' : '/db-admin/master-data';
 
     try {
       await this.notifications.notifyUser(request.submittedBy.toString(), {
         type: 'warning',
-        title: 'Master data request deleted',
-        message: `${request.fileName} was deleted by Super Admin`,
+        title: isEmployeeRequest ? 'Your data file was deleted' : 'Master data request deleted',
+        message: `${request.fileName} was removed by Admin${
+          removedFromMaster > 0 ? ` (${removedFromMaster} row(s) removed from master file)` : ''
+        }`,
         priority: 'medium',
-        actionUrl: '/db-admin/master-data',
-        actionLabel: 'View history',
+        actionUrl: submitterActionUrl,
+        actionLabel: 'Open My Data',
         metadata: {
           requestId,
           status: request.status,
+          deleted: true,
         },
       });
     } catch {
       /* notification should not block request delete */
+    }
+
+    if (isEmployeeRequest) {
+      try {
+        await this.notifications.notifyDbAdmins({
+          type: 'warning',
+          title: 'Employee upload removed',
+          message: `Admin deleted ${request.fileName} from ${request.submittedByEmail ?? 'employee'}`,
+          priority: 'medium',
+          actionUrl: '/db-admin/master-data?tab=employee',
+          actionLabel: 'Employee requests',
+          metadata: { requestId, deleted: true },
+        });
+      } catch {
+        /* notification should not block request delete */
+      }
     }
 
     try {
@@ -467,6 +797,8 @@ export class MasterDataService {
           fileName: request.fileName,
           rowCount: request.rowCount,
           status: request.status,
+          sourceRole: request.sourceRole ?? 'db_admin',
+          removedFromMaster,
         },
       });
     } catch (err) {
@@ -475,7 +807,12 @@ export class MasterDataService {
       );
     }
 
-    return { deleted: true, id: requestId };
+    return {
+      deleted: true,
+      id: requestId,
+      sourceRole: request.sourceRole ?? 'db_admin',
+      removedFromMaster,
+    };
   }
 
   async getBatchCoverage() {
@@ -571,6 +908,11 @@ export class MasterDataService {
   }
 
   async clear(user?: ActivityActor) {
+    const pendingRequests = await this.uploadRequestModel.find({}, { _id: 1 }).lean().exec();
+    const requestIds = pendingRequests.map((doc) => doc._id.toString());
+    const deletedRequests = await this.uploadRequestModel.deleteMany({}).exec();
+    await this.notifications.deleteByUploadRequestIds(requestIds);
+
     const deletedBatches = await this.batchesService.purgeAll();
     const masterDelete = await this.masterDataModel.deleteMany({}).exec();
     const nativeMaster = await this.masterDataModel.db
@@ -588,16 +930,24 @@ export class MasterDataService {
         metadata: {
           clearedAt: new Date().toISOString(),
           deletedBatches,
+          deletedUploadRequests: deletedRequests.deletedCount ?? 0,
           hadMasterData,
         },
       });
     }
 
+    void this.bustMasterCaches();
+
     this.logger.log(
-      `Master data cleared: master=${hadMasterData}, batches removed=${deletedBatches}`,
+      `Master data cleared: master=${hadMasterData}, batches=${deletedBatches}, uploadRequests=${deletedRequests.deletedCount ?? 0}`,
     );
 
-    return { cleared: true, deletedBatches, hadMasterData };
+    return {
+      cleared: true,
+      deletedBatches,
+      deletedUploadRequests: deletedRequests.deletedCount ?? 0,
+      hadMasterData,
+    };
   }
 
   private toResponse(doc: MasterDataRecord) {
@@ -629,10 +979,16 @@ export class MasterDataService {
       duplicatePreviewRows: doc.duplicatePreviewRows ?? [],
       missingValueCount: doc.missingValueCount ?? 0,
       status: doc.status,
+      sourceRole: doc.sourceRole ?? 'db_admin',
       submittedByEmail: doc.submittedByEmail,
       reason: doc.reason,
       reviewedByEmail: doc.reviewedByEmail,
       reviewedAt: doc.reviewedAt,
+      dbAdminReviewedByEmail: doc.dbAdminReviewedByEmail,
+      dbAdminReviewedAt: doc.dbAdminReviewedAt,
+      dbAdminReason: doc.dbAdminReason,
+      forwardedByEmail: doc.forwardedByEmail,
+      forwardedAt: doc.forwardedAt,
       mergedAddedRows: doc.mergedAddedRows,
       mergedTotalRows: doc.mergedTotalRows,
       createdAt: (doc as MasterDataUploadRequest & { createdAt?: Date }).createdAt,
@@ -641,9 +997,11 @@ export class MasterDataService {
   }
 
   private toUploadRequestDetailResponse(doc: MasterDataUploadRequest) {
+    const workRows = doc.workRows?.length ? doc.workRows : doc.rows ?? [];
     return {
       ...this.toUploadRequestResponse(doc),
       rows: doc.rows ?? [],
+      workRows,
     };
   }
 

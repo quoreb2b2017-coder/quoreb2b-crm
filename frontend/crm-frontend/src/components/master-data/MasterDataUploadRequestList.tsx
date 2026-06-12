@@ -10,8 +10,20 @@ import type {
 
 const STATUS_STYLES: Record<MasterDataUploadRequestStatus, string> = {
   pending: 'bg-amber-100 text-amber-800',
+  pending_db_admin: 'bg-amber-100 text-amber-800',
+  active: 'bg-sky-100 text-sky-800',
+  pending_admin: 'bg-violet-100 text-violet-800',
   approved: 'bg-emerald-100 text-emerald-800',
   rejected: 'bg-red-100 text-red-800',
+};
+
+const STATUS_LABELS: Record<MasterDataUploadRequestStatus, string> = {
+  pending: 'Pending admin',
+  pending_db_admin: 'Pending DB Admin',
+  active: 'Active — employee working',
+  pending_admin: 'Pending admin merge',
+  approved: 'Approved',
+  rejected: 'Rejected',
 };
 
 function formatWhen(value?: string) {
@@ -30,13 +42,16 @@ interface MasterDataUploadRequestListProps {
   toolbar?: React.ReactNode;
   viewportClassName?: string;
   canReview?: boolean;
+  reviewableStatuses?: MasterDataUploadRequestStatus[];
   actionLoadingId?: string | null;
   onViewDuplicates?: (request: MasterDataUploadRequest) => void;
   onViewFile?: (request: MasterDataUploadRequest) => void;
   viewFileLoadingId?: string | null;
   onApprove?: (request: MasterDataUploadRequest) => void;
   onReject?: (request: MasterDataUploadRequest) => void;
+  onForward?: (request: MasterDataUploadRequest) => void;
   onDelete?: (request: MasterDataUploadRequest) => void;
+  allowDeleteApproved?: boolean;
 }
 
 export function MasterDataUploadRequestList({
@@ -47,13 +62,16 @@ export function MasterDataUploadRequestList({
   toolbar,
   viewportClassName,
   canReview,
+  reviewableStatuses = ['pending'],
   actionLoadingId,
   onViewDuplicates,
   onViewFile,
   viewFileLoadingId,
   onApprove,
   onReject,
+  onForward,
   onDelete,
+  allowDeleteApproved = false,
 }: MasterDataUploadRequestListProps) {
   return (
     <ExcelSheetShell
@@ -132,7 +150,7 @@ export function MasterDataUploadRequestList({
                           STATUS_STYLES[request.status],
                         )}
                       >
-                        {request.status}
+                        {STATUS_LABELS[request.status] ?? request.status}
                       </span>
                     </td>
                     <td className="border border-[#e0e0e0] px-3 py-2 text-slate-700">{request.submittedByEmail ?? '—'}</td>
@@ -158,7 +176,7 @@ export function MasterDataUploadRequestList({
                             onClick={() => onViewFile(request)}
                             className="rounded-lg border border-[#217346]/40 bg-[#e2efda]/40 px-3 py-1.5 text-xs font-semibold text-[#217346] hover:bg-[#e2efda] disabled:opacity-50"
                           >
-                            {viewFileLoadingId === request.id ? 'Loading…' : 'View file'}
+                            {viewFileLoadingId === request.id ? 'Opening…' : 'Open'}
                           </button>
                         )}
                         {request.duplicateCount > 0 && onViewDuplicates && (
@@ -170,7 +188,7 @@ export function MasterDataUploadRequestList({
                             View duplicates
                           </button>
                         )}
-                        {canReview && request.status === 'pending' && (
+                        {canReview && reviewableStatuses.includes(request.status) && (
                           <>
                             <button
                               type="button"
@@ -190,7 +208,17 @@ export function MasterDataUploadRequestList({
                             </button>
                           </>
                         )}
-                        {onDelete && request.status !== 'approved' && (
+                        {onForward && request.status === 'active' && (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => onForward(request)}
+                            className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-800 hover:bg-violet-100 disabled:opacity-50"
+                          >
+                            Send to Admin
+                          </button>
+                        )}
+                        {onDelete && (allowDeleteApproved || request.status !== 'approved') && (
                           <button
                             type="button"
                             disabled={busy}

@@ -1,0 +1,156 @@
+'use client';
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Loader2, Save } from 'lucide-react';
+import { ExcelPreviewGrid } from '@/components/admin/ExcelPreviewGrid';
+import { masterDataService, type MasterDataUploadRequestStatus } from '@/lib/api/master-data.service';
+import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
+import { useDebouncedAutoSave } from '@/hooks/useDebouncedAutoSave';
+import { extractApiError } from '@/lib/api/errors';
+import { toast } from '@/stores/toast.store';
+
+const STATUS_HINT: Partial<Record<MasterDataUploadRequestStatus, string>> = {
+  pending_db_admin: 'Waiting for DB Admin approval — view only',
+  active: 'Click cells to edit · changes auto-save',
+  pending_admin: 'Sent to Super Admin — view only',
+  approved: 'Merged into master file — view only',
+  rejected: 'Rejected — view only',
+};
+
+export interface EmployeeMyDataExcelViewProps {
+  requestId: string;
+  fileName: string;
+  sheetName: string;
+  status: MasterDataUploadRequestStatus;
+  data: SpreadsheetData;
+  editable?: boolean;
+  onDataChange?: (data: SpreadsheetData) => void;
+  onClose?: () => void;
+  closeLabel?: string;
+}
+
+export function EmployeeMyDataExcelView({
+  requestId,
+  fileName,
+  sheetName,
+  status,
+  data,
+  editable = false,
+  onDataChange,
+  onClose,
+  closeLabel = 'Back to My Data',
+}: EmployeeMyDataExcelViewProps) {
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const dataRef = useRef(data);
+
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
+
+  const persistWork = useCallback(async () => {
+    const payload = dataRef.current;
+    if (!payload) return;
+    await masterDataService.updateEmployeeWorkData(requestId, payload.rows);
+    setDirty(false);
+    onDataChange?.(payload);
+  }, [requestId, onDataChange]);
+
+  const { status: autoSaveStatus, markDirty: markAutoSave } = useDebouncedAutoSave(
+    editable,
+    data,
+    persistWork,
+    1200,
+  );
+
+  const handleDataChange = useCallback(
+    (next: { headers: string[]; rows: string[][] }) => {
+      if (!editable) return;
+      setDirty(true);
+      markAutoSave();
+      onDataChange?.({
+        fileName,
+        sheetName,
+        headers: next.headers,
+        rows: next.rows,
+      });
+    },
+    [editable, fileName, sheetName, onDataChange, markAutoSave],
+  );
+
+  const saveNow = async () => {
+    setSaving(true);
+    try {
+      await persistWork();
+      toast.success('Work saved', 'DB Admin can review when you are done');
+    } catch (err) {
+      toast.error('Save failed', extractApiError(err, 'Could not save work'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const statusHint = STATUS_HINT[status] ?? 'View only';
+
+  return (
+    <div className="flex h-full min-h-0 w-full flex-col bg-[#e6e6e6]">
+      <div className="flex flex-shrink-0 items-center justify-between bg-[#217346] px-4 py-2 text-white">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded bg-white/20">
+            <span className="text-[10px] font-bold">XL</span>
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold leading-tight">{fileName}</p>
+            <p className="truncate text-[11px] text-white/70">
+              {sheetName}
+              {` · ${data.rows.length} rows · ${data.headers.length} columns`}
+              {editable && autoSaveStatus === 'pending' && ' · Editing…'}
+              {editable && autoSaveStatus === 'saving' && ' · Auto-saving…'}
+              {editable && autoSaveStatus === 'saved' && ' · Saved'}
+              {editable && autoSaveStatus === 'error' && ' · Save failed'}
+              {dirty && editable && autoSaveStatus === 'idle' && ' · Unsaved changes'}
+              {!editable && ` · ${statusHint}`}
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-shrink-0 items-center gap-2">
+          {editable && (
+            <button
+              type="button"
+              onClick={saveNow}
+              disabled={saving || (!dirty && autoSaveStatus !== 'error')}
+              className="inline-flex items-center gap-1.5 rounded bg-white/20 px-3 py-1 text-xs font-medium hover:bg-white/30 disabled:opacity-40"
+            >
+              {saving ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Save className="h-3.5 w-3.5" />
+              )}
+              Save now
+            </button>
+          )}
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded px-2 py-1 text-xs font-medium text-white/90 transition-colors hover:bg-white/20"
+              title={closeLabel}
+            >
+              {closeLabel}
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <ExcelPreviewGrid
+          data={data}
+          dataResetKey={`employee-my-data-${requestId}`}
+          editable={editable}
+          fillHeight
+          onDataChange={editable ? handleDataChange : undefined}
+        />
+      </div>
+    </div>
+  );
+}

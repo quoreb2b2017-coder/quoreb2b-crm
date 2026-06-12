@@ -1,3 +1,5 @@
+import { WORKSPACE_TIMEZONE } from '../../common/constants/workspace-timezone.constant';
+
 /** Resolve a reliable timestamp from a stored activity log document */
 export function resolveActivityTimestamp(row: Record<string, unknown>): Date | null {
   const meta = (row.metadata as Record<string, unknown>) ?? {};
@@ -36,10 +38,10 @@ export function formatActivityDateTime(row: Record<string, unknown>): {
   }
   return {
     createdAt: date.toISOString(),
-    dateFormatted: date.toLocaleString('en-IN', {
+    dateFormatted: date.toLocaleString('en-US', {
       dateStyle: 'medium',
       timeStyle: 'short',
-      timeZone: 'Asia/Kolkata',
+      timeZone: WORKSPACE_TIMEZONE,
     }),
   };
 }

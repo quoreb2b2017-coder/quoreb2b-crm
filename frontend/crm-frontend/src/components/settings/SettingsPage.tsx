@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   KeyRound,
   Activity,
@@ -18,19 +18,24 @@ import { SecuritySettingsPanel } from './SecuritySettingsPanel';
 import { NotificationSettingsPanel } from './NotificationSettingsPanel';
 
 const SETTINGS_SECTIONS = [
-  { id: 'account', label: 'My Account', icon: User, description: 'Profile & role details' },
-  { id: 'change-password', label: 'Change Password', icon: KeyRound, description: 'Update your password' },
-  { id: 'system-health', label: 'System Health', icon: Activity, description: 'API & services status' },
-  { id: 'security', label: 'Security', icon: Shield, description: 'Session & idle policy' },
-  { id: 'notifications', label: 'Notifications', icon: Bell, description: 'Alerts preferences' },
+  { id: 'account', label: 'My Account', icon: User, description: 'Profile & role details', adminOnly: false },
+  { id: 'change-password', label: 'Change Password', icon: KeyRound, description: 'Update your password', adminOnly: false },
+  { id: 'system-health', label: 'System Health', icon: Activity, description: 'API & services status', adminOnly: true },
+  { id: 'security', label: 'Security', icon: Shield, description: 'Session & idle policy', adminOnly: true },
+  { id: 'notifications', label: 'Notifications', icon: Bell, description: 'Alerts preferences', adminOnly: false },
 ] as const;
 
 type SectionId = (typeof SETTINGS_SECTIONS)[number]['id'];
 
 export function SettingsPage() {
   const panel = useAuthStore((s) => s.panel);
+  const isAdmin = panel === 'admin';
   const [activeSection, setActiveSection] = useState<SectionId>('account');
-  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+
+  const visibleSections = useMemo(
+    () => SETTINGS_SECTIONS.filter((section) => isAdmin || !section.adminOnly),
+    [isAdmin],
+  );
 
   const accent =
     panel === 'db_admin' ? 'bg-violet-600' : panel === 'employee' ? 'bg-emerald-600' : 'bg-[#217346]';
@@ -38,6 +43,9 @@ export function SettingsPage() {
   const handleSectionChange = (id: SectionId) => {
     setActiveSection(id);
   };
+
+  const showAdminAttendance =
+    isAdmin && (activeSection === 'system-health' || activeSection === 'security');
 
   return (
     <div className="flex min-h-0 flex-col border border-slate-300 bg-[#e8e8e8]">
@@ -56,7 +64,7 @@ export function SettingsPage() {
           className="flex gap-0 overflow-x-auto border-b border-slate-300 bg-[#f3f3f3] lg:w-56 lg:shrink-0 lg:flex-col lg:overflow-x-visible lg:border-b-0 lg:border-r"
           aria-label="Settings sections"
         >
-          {SETTINGS_SECTIONS.map((section) => {
+          {visibleSections.map((section) => {
             const Icon = section.icon;
             const isActive = activeSection === section.id;
             return (
@@ -85,10 +93,11 @@ export function SettingsPage() {
 
         <div className="min-w-0 flex-1 overflow-x-hidden bg-white p-3 sm:p-4 md:p-6">
           {activeSection === 'account' && <AccountSettingsPanel />}
-          {activeSection === 'system-health' && <SystemHealthPanel />}
-          {activeSection === 'security' && <SecuritySettingsPanel />}
+          {activeSection === 'system-health' && isAdmin && <SystemHealthPanel />}
+          {activeSection === 'security' && isAdmin && <SecuritySettingsPanel />}
           {activeSection === 'notifications' && <NotificationSettingsPanel />}
           {activeSection === 'change-password' && <ChangePasswordForm variant="inline" />}
+
         </div>
       </div>
     </div>

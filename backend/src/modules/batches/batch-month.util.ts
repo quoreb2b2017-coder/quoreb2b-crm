@@ -19,7 +19,7 @@ export function monthLabel(month: number): string {
 }
 
 /** CRM filing uses India calendar (matches en-IN UI) */
-export const BATCH_CALENDAR_TIMEZONE = 'Asia/Kolkata';
+export const BATCH_CALENDAR_TIMEZONE = 'America/New_York';
 
 export function periodFromDate(date: Date = new Date()): { batchMonth: number; batchYear: number } {
   const parts = new Intl.DateTimeFormat('en-IN', {

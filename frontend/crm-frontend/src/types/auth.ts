@@ -33,9 +33,25 @@ export interface AuthResponse {
   };
 }
 
+export interface AttendancePunchOnLogin {
+  punchedIn: boolean;
+  alreadyCheckedIn?: boolean;
+  /** True when today's attendance already has checkout (EOD) — wait until next day */
+  dayClosed?: boolean;
+  isLate?: boolean;
+  checkInTime?: string;
+  checkOutTime?: string;
+  /** ISO timestamp — work timer starts from this moment */
+  checkInAt?: string;
+  checkOutAt?: string;
+}
+
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
   user: User;
   sessionId?: string;
+  attendancePunch?: AttendancePunchOnLogin;
+  /** Gross work minutes already logged today (all prior sessions). */
+  workTimeTodayGrossMinutes?: number;
 }

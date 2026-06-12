@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { RefreshCw, Layers, ClipboardList } from 'lucide-react';
+import { RefreshCw, Layers } from 'lucide-react';
 import { WelcomeBanner } from '@/components/dashboard/WelcomeBanner';
 import { XlMetricCardSection } from '@/components/admin/XlMetricCards';
 import {
@@ -13,7 +13,15 @@ import { formatActivityAction } from '@/lib/constants/activity-labels';
 import { extractApiError } from '@/lib/api/errors';
 import { cn } from '@/lib/utils/cn';
 import { useWorkTimer } from '@/hooks/useWorkTimer';
-import { EmployeeAttendanceSummaryCard } from '@/components/attendance/EmployeeAttendanceSummaryCard';
+import { AttendanceSummaryCard } from '@/components/attendance/EmployeeAttendanceSummaryCard';
+import {
+  dashboardCard,
+  dashboardCardHeader,
+  dashboardContextPill,
+  dashboardContextStrip,
+  dashboardRefreshBtn,
+  dashboardSectionTitle,
+} from '@/components/dashboard/dashboard-ui';
 
 function formatWhen(iso: string) {
   if (!iso) return '—';
@@ -33,8 +41,8 @@ function BarRow({ label, count, total, color }: { label: string; count: number; 
           {count.toLocaleString('en-IN')} ({pct}%)
         </span>
       </div>
-      <div className="h-2 border border-slate-200 bg-slate-50">
-        <div className={cn('h-full', color)} style={{ width: `${pct}%` }} />
+      <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+        <div className={cn('h-full rounded-full transition-all', color)} style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
@@ -95,147 +103,120 @@ export function EmployeeDashboard() {
   const w = data.workThisMonth;
   const t = data.today;
   const assignedTotal = Math.max(b.totalLeads, 1);
-  const workTotal = Math.max(w.touched + w.notTouched, 1);
 
   return (
-    <div className="w-full min-w-0 space-y-4">
-      <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-stretch">
-        <div className="min-w-0 flex-1">
-          <WelcomeBanner variant="employee" />
-        </div>
-        <button
-          type="button"
-          onClick={load}
-          disabled={loading}
-          className="inline-flex shrink-0 items-center justify-center gap-1.5 border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 sm:self-center"
-        >
-          <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
-          Refresh
-        </button>
+    <div className="w-full min-w-0 space-y-5 px-3 py-4 sm:px-4 sm:py-5">
+      <WelcomeBanner
+        variant="employee"
+        toolbar={
+          <button
+            type="button"
+            onClick={load}
+            disabled={loading}
+            className={cn(
+              dashboardRefreshBtn,
+              'border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white',
+            )}
+          >
+            <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+            Refresh
+          </button>
+        }
+      />
+
+      <div className={dashboardContextStrip}>
+        <span className="font-semibold text-slate-800">{data.user.name}</span>
+        {data.user.employeeId && (
+          <span className={dashboardContextPill('emerald')}>{data.user.employeeId}</span>
+        )}
+        <span className={dashboardContextPill('emerald')}>{data.period.monthLabel}</span>
+        <span className="ml-auto text-slate-500">
+          Today: <span className="font-medium text-slate-700">{data.period.todayLabel}</span>
+        </span>
       </div>
 
-      <p className="text-xs text-slate-500">
-        {data.user.name}
-        {data.user.employeeId ? ` · ${data.user.employeeId}` : ''}
-        {' · '}
-        {data.period.monthLabel} · Today: {data.period.todayLabel}
-      </p>
-
-      <div className="grid gap-0 border border-slate-300 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         <XlMetricCardSection
-          title="Assigned batches (from database)"
+          title="My assigned leads"
           headerVariant="green"
           columns={2}
           rows={[
-            { label: 'Batches shared with you', value: b.total, note: 'Admin-assigned work' },
-            { label: 'Rows in batches', value: b.totalRows, note: 'All leads you can work' },
-            { label: 'Total leads', value: b.totalLeads, note: 'Non-empty rows' },
-            { label: 'Active (sheet status)', value: b.activeLeads, note: 'Status = Active' },
-            { label: 'Won / Lead status', value: b.wonLeads, note: 'From batch row data' },
-            { label: 'Not touched this month', value: w.notTouched, note: 'Assigned but no touch yet' },
+            { label: 'Batches', value: b.total },
+            { label: 'Total leads', value: b.totalLeads },
+            { label: 'Pending', value: w.notTouched, note: 'Not touched this month' },
           ]}
         />
         <XlMetricCardSection
-          title={`Your work — ${data.period.monthLabel}`}
+          title={`This month — ${data.period.monthLabel}`}
           columns={2}
           rows={[
             {
-              label: 'Logged-in time (month)',
+              label: 'Work hours',
               value: workTimer.monthlyFormatted,
-              note: workTimer.isRunning
-                ? `Live session: ${workTimer.liveFormatted}`
-                : 'Timer pauses when you sign out',
+              note: workTimer.isRunning ? `Live: ${workTimer.liveFormatted}` : undefined,
             },
-            { label: 'Leads touched', value: w.touched, note: 'Unique leads this month' },
-            { label: 'Leads updated', value: w.updated, note: 'Field changes saved' },
-            { label: 'Touched only', value: w.touchedOnly, note: 'No field update' },
-            { label: 'Worked in period', value: w.periodWorkedLeads, note: 'Touched/updated leads' },
-            { label: 'Lead actions (logs)', value: w.leadActions, note: 'Touch, update, view' },
-            {
-              label: 'Today — leads worked',
-              value: t.leadsWorked,
-              note: `${t.leadActions} lead actions · ${t.actions} total logs`,
-            },
+            { label: 'Leads touched', value: w.touched },
+            { label: 'Leads updated', value: w.updated },
+            { label: 'Today worked', value: t.leadsWorked },
           ]}
         />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <EmployeeAttendanceSummaryCard />
-      </div>
+      <AttendanceSummaryCard basePath="/employee/attendance" variant="dashboard" />
 
-      <div className="grid gap-0 border border-slate-300 lg:grid-cols-2">
-        <div className="border-b border-slate-300 bg-white p-4 lg:border-b-0 lg:border-r">
-          <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-700">
-            <ClipboardList className="h-3.5 w-3.5 text-emerald-600" />
-            Lead progress this month
-          </h3>
-          <div className="space-y-3">
-            <BarRow label="Touched" count={w.touched} total={workTotal} color="bg-emerald-600" />
-            <BarRow label="Not touched yet" count={w.notTouched} total={workTotal} color="bg-slate-400" />
+      <div className={cn(dashboardCard, 'p-4 sm:p-5')}>
+        <h3 className={dashboardSectionTitle()}>
+          <Layers className="h-4 w-4 text-emerald-600" />
+          Lead status breakdown
+        </h3>
+        {data.statusBreakdown.length === 0 ? (
+          <p className="text-xs text-slate-500">No status data in your batches yet.</p>
+        ) : (
+          <div className="max-h-40 space-y-2 overflow-auto">
+            {data.statusBreakdown.map((item) => (
+              <BarRow
+                key={item.label}
+                label={item.label}
+                count={item.count}
+                total={assignedTotal}
+                color="bg-emerald-500"
+              />
+            ))}
           </div>
-          <Link
-            href="/employee/activity-logs"
-            className="mt-4 inline-block text-xs font-semibold text-emerald-700 hover:underline"
-          >
+        )}
+        <div className="mt-4 flex flex-wrap gap-4">
+          <Link href="/employee/batches" className="text-xs font-semibold text-emerald-700 hover:underline">
+            Open batches →
+          </Link>
+          <Link href="/employee/activity-logs" className="text-xs font-semibold text-emerald-700 hover:underline">
             Activity logs →
           </Link>
         </div>
-
-        <div className="bg-white p-4">
-          <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-700">
-            <Layers className="h-3.5 w-3.5 text-emerald-600" />
-            Status breakdown (assigned data)
-          </h3>
-          {data.statusBreakdown.length === 0 ? (
-            <p className="text-xs text-slate-500">No status column data in your batches yet.</p>
-          ) : (
-            <div className="max-h-40 space-y-2 overflow-auto">
-              {data.statusBreakdown.map((item) => (
-                <BarRow
-                  key={item.label}
-                  label={item.label}
-                  count={item.count}
-                  total={assignedTotal}
-                  color="bg-emerald-500"
-                />
-              ))}
-            </div>
-          )}
-          <Link
-            href="/employee/batches"
-            className="mt-4 inline-block text-xs font-semibold text-emerald-700 hover:underline"
-          >
-            Open Batches →
-          </Link>
-        </div>
       </div>
 
-      <div className="grid gap-0 border border-slate-300 lg:grid-cols-2">
-        <div className="border-b border-slate-300 bg-white lg:border-b-0 lg:border-r">
-          <div className="border-b border-slate-300 bg-[#f3f3f3] px-3 py-1.5 text-[10px] font-semibold uppercase text-slate-600">
-            Recent batches
-          </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className={dashboardCard}>
+          <div className={dashboardCardHeader}>Recent batches</div>
           <div className="max-h-64 overflow-auto">
-            <table className="w-full border-collapse text-xs">
-              <thead className="sticky top-0 bg-[#f3f3f3] text-[10px] uppercase text-slate-600">
-                <tr>
-                  <th className="border border-slate-200 px-2 py-1 text-left font-semibold">Name</th>
-                  <th className="border border-slate-200 px-2 py-1 text-right font-semibold">Rows</th>
-                  <th className="border border-slate-200 px-2 py-1 text-right font-semibold">Updated</th>
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+                <tr className="border-b border-slate-100">
+                  <th className="px-3 py-2 text-left font-semibold">Name</th>
+                  <th className="px-3 py-2 text-right font-semibold">Rows</th>
+                  <th className="px-3 py-2 text-right font-semibold">Updated</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-100">
                 {data.recentBatches.length === 0 ? (
                   <tr>
-                    <td colSpan={3} className="border border-slate-200 px-3 py-6 text-center text-slate-400">
-                      No batches assigned yet — ask admin to share a batch with you
+                    <td colSpan={3} className="px-3 py-8 text-center text-slate-400">
+                      No batches assigned yet
                     </td>
                   </tr>
                 ) : (
                   data.recentBatches.map((batch) => (
-                    <tr key={batch.id} className="hover:bg-emerald-50/50">
-                      <td className="border border-slate-200 px-2 py-1">
+                    <tr key={batch.id} className="hover:bg-emerald-50/40">
+                      <td className="px-3 py-2">
                         <Link
                           href={`/employee/batches/${batch.id}`}
                           className="font-medium text-emerald-700 hover:underline"
@@ -243,10 +224,10 @@ export function EmployeeDashboard() {
                           {batch.name}
                         </Link>
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right font-mono">
+                      <td className="px-3 py-2 text-right font-mono text-slate-700">
                         {batch.rowCount.toLocaleString('en-IN')}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right text-slate-500">
+                      <td className="px-3 py-2 text-right text-slate-500">
                         {formatWhen(batch.updatedAt)}
                       </td>
                     </tr>
@@ -257,36 +238,34 @@ export function EmployeeDashboard() {
           </div>
         </div>
 
-        <div className="bg-white">
-          <div className="border-b border-slate-300 bg-[#f3f3f3] px-3 py-1.5 text-[10px] font-semibold uppercase text-slate-600">
-            Your recent activity
-          </div>
+        <div className={dashboardCard}>
+          <div className={dashboardCardHeader}>Your recent activity</div>
           <div className="max-h-64 overflow-auto">
-            <table className="w-full border-collapse text-xs">
-              <thead className="sticky top-0 bg-[#f3f3f3] text-[10px] uppercase text-slate-600">
-                <tr>
-                  <th className="border border-slate-200 px-2 py-1 text-left font-semibold">Action</th>
-                  <th className="border border-slate-200 px-2 py-1 text-left font-semibold">Detail</th>
-                  <th className="border border-slate-200 px-2 py-1 text-right font-semibold">When</th>
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+                <tr className="border-b border-slate-100">
+                  <th className="px-3 py-2 text-left font-semibold">Action</th>
+                  <th className="px-3 py-2 text-left font-semibold">Detail</th>
+                  <th className="px-3 py-2 text-right font-semibold">When</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-100">
                 {data.recentActivity.length === 0 ? (
                   <tr>
-                    <td colSpan={3} className="border border-slate-200 px-3 py-6 text-center text-slate-400">
-                      No activity logged yet — open a batch and work leads
+                    <td colSpan={3} className="px-3 py-8 text-center text-slate-400">
+                      No activity logged yet
                     </td>
                   </tr>
                 ) : (
                   data.recentActivity.map((a) => (
-                    <tr key={a.id} className="hover:bg-emerald-50/50">
-                      <td className="border border-slate-200 px-2 py-1 font-medium text-slate-800">
+                    <tr key={a.id} className="hover:bg-emerald-50/40">
+                      <td className="px-3 py-2 font-medium text-slate-800">
                         {formatActivityAction(a.action)}
                       </td>
-                      <td className="max-w-[180px] truncate border border-slate-200 px-2 py-1 text-slate-500">
+                      <td className="max-w-[180px] truncate px-3 py-2 text-slate-500">
                         {a.batchName ?? a.path ?? a.resource}
                       </td>
-                      <td className="whitespace-nowrap border border-slate-200 px-2 py-1 text-right text-slate-500">
+                      <td className="whitespace-nowrap px-3 py-2 text-right text-slate-500">
                         {formatWhen(a.occurredAt)}
                       </td>
                     </tr>
@@ -295,7 +274,7 @@ export function EmployeeDashboard() {
               </tbody>
             </table>
           </div>
-          <div className="border-t border-slate-200 px-3 py-2">
+          <div className="border-t border-slate-100 px-4 py-2.5">
             <Link
               href="/employee/activity-logs"
               className="text-xs font-semibold text-emerald-700 hover:underline"

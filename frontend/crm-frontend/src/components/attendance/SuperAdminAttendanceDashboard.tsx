@@ -7,6 +7,8 @@ import { usersService } from '@/lib/api/users.service';
 import { workTimeService } from '@/lib/api/work-time.service';
 import { TeamAttendanceExcelTable, type TeamAttendanceRow } from '@/components/attendance/TeamAttendanceExcelTable';
 import { AttendancePageChrome } from '@/components/attendance/AttendancePageChrome';
+import { AttendanceMonthYearNav } from '@/components/attendance/AttendanceMonthYearNav';
+import { formatMonthYearLabel } from '@/lib/attendance/month-year';
 
 interface OrgUser {
   id: string;
@@ -25,11 +27,6 @@ interface TeamAnalytics {
   halfDays: number;
   attendancePercentage: number;
 }
-
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
 
 function parseUserList(data: unknown): Record<string, unknown>[] {
   const outer = (data as { data?: unknown })?.data;
@@ -50,8 +47,12 @@ export function SuperAdminAttendanceDashboard() {
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [workTimeByUser, setWorkTimeByUser] = useState<Record<string, string>>({});
 
-  const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
-  const monthLabel = `${MONTHS[selectedMonth - 1]} ${selectedYear}`;
+  const monthLabel = formatMonthYearLabel(selectedMonth, selectedYear);
+
+  const handleMonthYearChange = (month: number, year: number) => {
+    setSelectedMonth(month);
+    setSelectedYear(year);
+  };
 
   const fetchAllUsers = useCallback(async () => {
     setLoading(true);
@@ -147,29 +148,13 @@ export function SuperAdminAttendanceDashboard() {
       : 0;
 
   const monthControl = (
-    <>
-      <label className="text-sm font-medium text-slate-600">Month</label>
-      <select
-        value={selectedMonth}
-        onChange={(e) => setSelectedMonth(Number(e.target.value))}
-        className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#217346]/40"
-      >
-        {MONTHS.map((m, i) => (
-          <option key={m} value={i + 1}>{m}</option>
-        ))}
-      </select>
-      <label className="text-sm font-medium text-slate-600">Year</label>
-      <select
-        value={selectedYear}
-        onChange={(e) => setSelectedYear(Number(e.target.value))}
-        className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#217346]/40"
-      >
-        {years.map((y) => (
-          <option key={y} value={y}>{y}</option>
-        ))}
-      </select>
-      <span className="ml-auto text-xs font-medium text-slate-400">{monthLabel}</span>
-    </>
+    <AttendanceMonthYearNav
+      month={selectedMonth}
+      year={selectedYear}
+      onChange={handleMonthYearChange}
+      accent="admin"
+      className="flex-1"
+    />
   );
 
   const filterBar = (
@@ -233,6 +218,8 @@ export function SuperAdminAttendanceDashboard() {
         loading={loading}
         layout="org"
         monthLabel={monthLabel}
+        periodMonth={selectedMonth}
+        periodYear={selectedYear}
         detailsPath="/admin/attendance/details"
       />
     </AttendancePageChrome>

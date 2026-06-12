@@ -7,6 +7,7 @@ import { Switch } from '@/components/ui/Switch';
 import { toast } from '@/stores/toast.store';
 import type { NotificationPreferences } from '@/lib/api/notification-preferences.service';
 import { useNotificationPreferencesStore } from '@/store/notification-preferences.store';
+import { ATTENDANCE_ON_TIME_LABEL } from '@/lib/attendance/late-attendance';
 
 type ToggleKey = keyof NotificationPreferences;
 
@@ -173,7 +174,7 @@ export function NotificationSettingsPanel() {
       <p className="mt-1 text-xs text-slate-500">Control in-app alerts and popup toasts</p>
 
       <div className="mt-3 rounded-xl border border-emerald-200/80 bg-gradient-to-r from-emerald-50 to-white px-3 py-2.5 text-xs text-emerald-800 sm:px-4">
-        Attendance is counted <strong>late after 6:30 PM</strong>. Late entries include check-in time in
+        Attendance is counted <strong>late after {ATTENDANCE_ON_TIME_LABEL}</strong> Eastern. Late entries include check-in time in
         notifications when enabled below.
       </div>
 

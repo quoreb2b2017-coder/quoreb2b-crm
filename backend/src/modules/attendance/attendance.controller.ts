@@ -6,7 +6,10 @@ import { AttendanceSchedulerService } from './attendance-scheduler.service';
 import { Attendance } from './schemas/attendance.schema';
 import { MarkAttendanceDto, AttendanceQueryDto, AttendanceAnalyticsDto } from './dto/attendance.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { WORKSPACE_TIMEZONE, WORKSPACE_TIMEZONE_LABEL } from '../../common/constants/workspace-timezone.constant';
+import { calendarDateKey } from '../../common/utils/timezone.util';
 import { parseDateOnly, toDateKey } from './attendance-date.util';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('attendance')
 @UseGuards(JwtAuthGuard)
@@ -18,7 +21,11 @@ export class AttendanceController {
   ) {}
 
   @Post('mark')
-  async markAttendance(@Body() dto: MarkAttendanceDto) {
+  async markAttendance(
+    @Body() dto: MarkAttendanceDto,
+    @CurrentUser() user: { id: string; roles?: string[] },
+  ) {
+    this.attendanceService.assertCanMarkForUser(user.id, user.roles ?? [], dto.userId);
     return this.attendanceService.markAttendance(dto);
   }
 
@@ -33,8 +40,13 @@ export class AttendanceController {
   }
 
   @Get('analytics/yearly')
-  async getYearlyAnalytics(@Query('userId') userId: string, @Query('year') year?: number) {
-    return this.attendanceService.getYearlyAttendanceAnalytics(userId, year);
+  async getYearlyAnalytics(
+    @Query('userId') userId: string,
+    @Query('year') year?: number,
+    @Query('refresh') _refresh?: string,
+  ) {
+    const targetYear = year != null && !Number.isNaN(Number(year)) ? Number(year) : undefined;
+    return this.attendanceService.getYearlyAttendanceAnalytics(userId, targetYear, !!_refresh);
   }
 
   @Get('analytics/team')
@@ -131,9 +143,21 @@ export class AttendanceController {
   @Get('debug/status')
   async debugStatus() {
     try {
-      const istTime = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
-      const istDate = new Date(istTime);
-      const dayOfWeek = istDate.getDay();
+      const easternTime = new Date().toLocaleString('en-US', { timeZone: WORKSPACE_TIMEZONE });
+      const dayShort = new Intl.DateTimeFormat('en-US', {
+        timeZone: WORKSPACE_TIMEZONE,
+        weekday: 'short',
+      }).format(new Date());
+      const dayMap: Record<string, number> = {
+        Sun: 0,
+        Mon: 1,
+        Tue: 2,
+        Wed: 3,
+        Thu: 4,
+        Fri: 5,
+        Sat: 6,
+      };
+      const dayOfWeek = dayMap[dayShort] ?? new Date().getDay();
       const dayName = dayOfWeek === 0 ? 'Sunday' : dayOfWeek === 6 ? 'Saturday' : 'Weekday';
 
       const users = await this.getUserIds();
@@ -145,17 +169,17 @@ export class AttendanceController {
         .collection('users')
         .countDocuments({ isActive: true });
 
+      const todayKey = calendarDateKey(new Date());
+      const todayDate = parseDateOnly(todayKey);
       const todayRecords = await this.attendanceModel.countDocuments({
-        date: {
-          $gte: new Date(istTime.split(' ')[0] + 'T00:00:00Z'),
-          $lte: new Date(istTime.split(' ')[0] + 'T23:59:59Z'),
-        },
+        date: todayDate,
       });
 
       return {
         success: true,
         debug: {
-          istTime,
+          easternTime,
+          timezone: WORKSPACE_TIMEZONE_LABEL,
           dayOfWeek,
           dayName,
           isWeekend: dayOfWeek === 0 || dayOfWeek === 6,

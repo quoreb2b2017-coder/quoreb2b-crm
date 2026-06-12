@@ -4,6 +4,8 @@ import { cn } from '@/lib/utils/cn';
 import { useExcelTableNavigation } from '@/hooks/useExcelTableNavigation';
 import { ExcelSheetShell } from '@/components/attendance/ExcelSheetShell';
 import type { YearlyAnalytics } from '@/lib/api/attendance.service';
+import { MONTHS_SHORT } from '@/lib/attendance/month-year';
+import { ALL_MONTH_INDICES, normalizeYearlyRows, sumYearlyByMonths } from '@/lib/attendance/yearly-analytics';
 
 const COLUMNS = ['Month', 'Present', 'Absent', 'Leave', 'Half', 'Attendance %'] as const;
 const COL_COUNT = COLUMNS.length;
@@ -24,6 +26,10 @@ interface AttendanceYearlyExcelGridProps {
   loading?: boolean;
   year: number;
   sheetTitle?: string;
+  /** 1–12 indices included in totals / highlighted (default: all 12) */
+  highlightMonths?: number[];
+  totalsLabel?: string;
+  viewMode?: 'yearly' | 'custom';
   onSelectMonth?: (monthIndex: number) => void;
 }
 
@@ -74,41 +80,51 @@ export function AttendanceYearlyExcelGrid({
   loading,
   year,
   sheetTitle,
+  highlightMonths = ALL_MONTH_INDICES,
+  totalsLabel = 'Year total',
+  viewMode = 'yearly',
   onSelectMonth,
 }: AttendanceYearlyExcelGridProps) {
+  const monthRows = normalizeYearlyRows(rows);
+  const selectedSet = new Set(highlightMonths);
+  const partialSelection = highlightMonths.length > 0 && highlightMonths.length < 12;
+
+  console.log('📈 AttendanceYearlyExcelGrid:', {
+    inputRowsLength: rows.length,
+    normalizedRowsLength: monthRows.length,
+    loading,
+    monthRows: monthRows.slice(0, 2),
+  });
+
   const { containerRef, setCell, activeCell } = useExcelTableNavigation({
-    rowCount: rows.length,
+    rowCount: monthRows.length,
     colCount: COL_COUNT,
-    enabled: !loading && rows.length > 0,
+    enabled: !loading && monthRows.length > 0,
     onEnter: (pos) => onSelectMonth?.(pos.row + 1),
   });
 
-  const totals = rows.reduce(
-    (acc, m) => ({
-      present: acc.present + m.presentDays,
-      absent: acc.absent + m.absentDays,
-      leave: acc.leave + m.leaveDays,
-      half: acc.half + m.halfDays,
-    }),
-    { present: 0, absent: 0, leave: 0, half: 0 },
-  );
-  const avgPct =
-    rows.length > 0
-      ? Math.round(rows.reduce((s, m) => s + m.attendancePercentage, 0) / rows.length)
-      : 0;
+  const totals = sumYearlyByMonths(monthRows, highlightMonths);
 
   const title = sheetTitle ?? `Yearly Attendance — ${year}`;
 
   return (
     <ExcelSheetShell
       title={title}
-      rowCount={rows.length}
+      rowCount={12}
       loading={loading}
-      hint={onSelectMonth ? 'Enter on a month → open that month (daily sheet)' : 'Yearly rollup by month'}
+      hint={
+        onSelectMonth
+          ? viewMode === 'yearly'
+            ? 'All 12 months — click a month name to open daily log'
+            : 'Highlighted months count toward totals — click a month to open daily log'
+          : viewMode === 'yearly'
+            ? 'Yearly rollup by month'
+            : 'Selected months rollup'
+      }
     >
       <div
         ref={containerRef}
-        className="min-h-[200px] max-h-[min(48vh,440px)] w-full overflow-x-auto overflow-y-auto bg-white"
+        className="min-h-[320px] max-h-none w-full overflow-x-auto bg-white sm:max-h-[min(72vh,640px)] sm:overflow-y-auto"
         onMouseDown={(e) => {
           const cell = (e.target as HTMLElement).closest('[data-grid-row]');
           if (cell) {
@@ -137,21 +153,33 @@ export function AttendanceYearlyExcelGrid({
           </thead>
           <tbody>
             {loading ? (
-              <tr>
-                <td colSpan={COL_COUNT} className="border py-8 text-center text-slate-500">
-                  Loading…
-                </td>
-              </tr>
-            ) : rows.length === 0 ? (
-              <tr>
-                <td colSpan={COL_COUNT} className="border py-8 text-center text-slate-500">
-                  No data for {year}
-                </td>
-              </tr>
+              MONTHS_SHORT.map((label, rowIdx) => (
+                <tr key={label} className="even:bg-[#fafafa]">
+                  <td className="border border-[#e0e0e0] px-2 py-1 text-slate-500">{label}</td>
+                  {Array.from({ length: COL_COUNT - 1 }).map((_, col) => (
+                    <td
+                      key={col}
+                      className="border border-[#e0e0e0] px-2 py-1 text-center text-slate-300"
+                    >
+                      …
+                    </td>
+                  ))}
+                </tr>
+              ))
             ) : (
               <>
-                {rows.map((month, rowIdx) => (
-                  <tr key={month.month} className="even:bg-[#fafafa]">
+                {monthRows.map((month, rowIdx) => {
+                  const monthNum = rowIdx + 1;
+                  const inSelection = selectedSet.has(monthNum);
+                  return (
+                  <tr
+                    key={month.month}
+                    className={cn(
+                      'even:bg-[#fafafa]',
+                      partialSelection && !inSelection && 'opacity-35',
+                      partialSelection && inSelection && 'bg-emerald-50/40',
+                    )}
+                  >
                     {[0, 1, 2, 3, 4, 5].map((col) => {
                       const active = activeCell.row === rowIdx && activeCell.col === col;
                       const values = [
@@ -179,19 +207,20 @@ export function AttendanceYearlyExcelGrid({
                           {values[col]}
                         </GridCell>
                       );
-                    })}
+                    })}\
                   </tr>
-                ))}
+                  );
+                })}\
                 <tr className="bg-[#f2f2f2] font-bold">
                   <td className="border border-[#c6c6c6] px-2 py-1.5 text-xs uppercase text-slate-700">
-                    Year total
+                    {totalsLabel}
                   </td>
                   <td className="border border-[#c6c6c6] px-2 py-1.5 text-center text-[#217346]">{totals.present}</td>
                   <td className="border border-[#c6c6c6] px-2 py-1.5 text-center text-[#c00000]">{totals.absent}</td>
                   <td className="border border-[#c6c6c6] px-2 py-1.5 text-center text-[#2e75b6]">{totals.leave}</td>
                   <td className="border border-[#c6c6c6] px-2 py-1.5 text-center text-[#bf8f00]">{totals.half}</td>
-                  <td className={cn('border border-[#c6c6c6] px-2 py-1.5 text-center', pctStyle(avgPct))}>
-                    avg {avgPct}%
+                  <td className={cn('border border-[#c6c6c6] px-2 py-1.5 text-center', pctStyle(totals.avgPct))}>
+                    avg {totals.avgPct}%
                   </td>
                 </tr>
               </>

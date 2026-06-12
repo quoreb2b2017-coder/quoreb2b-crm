@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 
@@ -54,9 +55,14 @@ export function SideSheet({
   accent = 'emerald',
   children,
   footer,
-  widthClass = 'w-full max-w-[440px]',
+  widthClass = 'w-full sm:max-w-[440px] lg:max-w-[480px]',
 }: SideSheetProps) {
-  const a = accentStyles[accent];
+  const a = accentStyles[resolveAccent(accent)];
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -72,41 +78,51 @@ export function SideSheet({
     };
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
-  return (
-    <div className="fixed inset-0 z-[100] flex justify-end">
+  return createPortal(
+    <>
       <button
         type="button"
         aria-label="Close panel"
-        className="absolute inset-0 bg-black/45 backdrop-blur-[2px] animate-fade-in"
+        className="fixed inset-0 z-[200] bg-black/50 backdrop-blur-[2px] animate-fade-in"
         onClick={onClose}
       />
       <aside
         className={cn(
-          'relative flex h-full flex-col border-l border-white/10 bg-white shadow-2xl animate-slide-in-right',
+          'fixed z-[201] flex flex-col border-white/10 bg-white shadow-2xl',
+          'inset-x-0 bottom-0 max-h-[min(92dvh,100%)] w-full animate-slide-up rounded-t-2xl border-t',
+          'sm:inset-y-0 sm:right-0 sm:left-auto sm:max-h-[100dvh] sm:animate-slide-in-right sm:rounded-none sm:border-l sm:border-t-0',
           widthClass,
         )}
         role="dialog"
         aria-modal="true"
         aria-labelledby="side-sheet-title"
       >
-        <div className={cn('h-1 w-full bg-gradient-to-r flex-shrink-0', a.bar)} />
+        <div className={cn('h-1 w-full flex-shrink-0 rounded-t-2xl bg-gradient-to-r sm:rounded-none', a.bar)} />
 
-        <header className={cn('flex-shrink-0 border-b border-white/10 px-5 py-5 text-white', a.header)}>
+        <header
+          className={cn(
+            'flex-shrink-0 border-b border-white/10 px-4 py-4 text-white sm:px-5 sm:py-4',
+            a.header,
+          )}
+        >
           <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-3 min-w-0">
+            <div className="flex min-w-0 items-start gap-3">
               {icon && (
-                <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/15">
+                <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/15 sm:h-11 sm:w-11">
                   {icon}
                 </span>
               )}
               <div className="min-w-0">
-                <h2 id="side-sheet-title" className="text-lg font-semibold tracking-tight truncate">
+                <h2
+                  id="side-sheet-title"
+                  className="text-base font-semibold tracking-tight sm:text-lg"
+                >
                   {title}
                 </h2>
                 {subtitle && (
-                  <p className="mt-1 text-sm text-slate-400 leading-snug">{subtitle}</p>
+                  <p className="mt-0.5 text-sm text-slate-400 leading-snug">{subtitle}</p>
                 )}
               </div>
             </div>
@@ -120,30 +136,36 @@ export function SideSheet({
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto overscroll-contain bg-slate-50/80 px-5 py-5">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-slate-50/80 px-4 py-4 sm:px-5 sm:py-4">
           {children}
         </div>
 
         {footer && (
-          <footer className="flex-shrink-0 border-t border-slate-200 bg-white px-5 py-4">
+          <footer className="flex-shrink-0 border-t border-slate-200 bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-5 sm:py-4">
             {footer}
           </footer>
         )}
       </aside>
-    </div>
+    </>,
+    document.body,
   );
 }
 
+function resolveAccent(accent: SideSheetAccent): SideSheetAccent {
+  return accent in accentStyles ? accent : 'emerald';
+}
+
 export function sideSheetFieldClass(accent: SideSheetAccent = 'emerald') {
+  const resolved = resolveAccent(accent);
   return cn(
     'w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 shadow-sm transition-shadow',
     'placeholder:text-slate-400 focus:outline-none focus:ring-2',
-    accentStyles[accent].ring,
+    accentStyles[resolved].ring,
   );
 }
 
 export function sideSheetChipClass(active: boolean, accent: SideSheetAccent = 'emerald') {
-  const a = accentStyles[accent];
+  const a = accentStyles[resolveAccent(accent)];
   return cn(
     'rounded-xl px-3 py-2.5 text-sm font-medium capitalize transition-all',
     active
@@ -153,7 +175,7 @@ export function sideSheetChipClass(active: boolean, accent: SideSheetAccent = 'e
 }
 
 export function sideSheetPrimaryBtn(accent: SideSheetAccent = 'emerald') {
-  const a = accentStyles[accent];
+  const a = accentStyles[resolveAccent(accent)];
   return cn(
     'flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-lg transition-all disabled:opacity-50',
     a.btn,

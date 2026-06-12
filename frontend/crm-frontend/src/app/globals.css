@@ -155,4 +155,26 @@
   .tap-smooth {
     @apply transition-all duration-200 ease-out active:scale-[0.98];
   }
+
+  /* Date/time inputs in narrow side panels — full width, responsive picker */
+  .note-date-input {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  .note-date-input::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    margin-left: 0;
+    padding: 0.2rem;
+    opacity: 0.7;
+  }
+
+  .note-date-input::-webkit-date-and-time-value {
+    min-width: 0;
+    text-align: left;
+  }
 }

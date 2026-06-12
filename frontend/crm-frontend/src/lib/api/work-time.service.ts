@@ -5,7 +5,22 @@ export interface DailyWorkTimeRow {
   dayLabel: string;
   totalMinutes: number;
   totalFormatted: string;
+  grossMinutes?: number;
+  breakMinutes?: number;
+  dailyTargetMet?: boolean;
   isToday: boolean;
+}
+
+export interface TodaySessionRow {
+  index: number;
+  sessionId: string;
+  loginAt: string;
+  logoutAt?: string;
+  loginTime: string;
+  logoutTime?: string;
+  durationMinutes: number;
+  durationFormatted: string;
+  stillActive: boolean;
 }
 
 export interface WorkTimeMe {
@@ -14,8 +29,21 @@ export interface WorkTimeMe {
   monthlyFormatted: string;
   todayMinutes: number;
   todayFormatted: string;
+  todayGrossMinutes?: number;
+  todayBreakMinutes?: number;
+  todayBreakMinutesCompleted?: number;
+  /** Net minutes for 7h45m target (includes active break deduction). */
+  todayMinutesAtTarget?: number;
+  onBreak?: boolean;
+  dailyTargetMinutes?: number;
   dailyBreakdown: DailyWorkTimeRow[];
   isTimerRunning: boolean;
+  /** First LOGIN of today (US Eastern). */
+  todayFirstLoginTime?: string;
+  /** Last LOGOUT of today when off duty. */
+  todayLastLogoutTime?: string;
+  isOnDuty?: boolean;
+  todaySessions?: TodaySessionRow[];
   currentSession: {
     sessionId: string;
     loginAt: string;

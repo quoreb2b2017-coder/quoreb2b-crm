@@ -11,6 +11,7 @@ import {
   type NotificationPreferences,
 } from './notification-preferences.util';
 import { serializeNotification } from './notification.util';
+import { SHIFT_LOGIN_LABEL } from '../attendance/attendance-shift.constants';
 
 @Injectable()
 export class NotificationTriggerService {
@@ -244,9 +245,9 @@ export class NotificationTriggerService {
     await this.notifyUser(userId, {
       type: isLate ? 'warning' : 'success',
       category: 'attendanceAlerts',
-      title: isLate ? 'Late attendance marked' : 'Attendance marked',
+      title: isLate ? 'Present (Late)' : 'Attendance marked',
       message: isLate
-        ? `Your attendance for ${date} was recorded late${timeLabel}. On-time cutoff is 6:30 PM.`
+        ? `Your attendance for ${date} was recorded as Present (Late)${timeLabel}. On-time cutoff is ${SHIFT_LOGIN_LABEL} Eastern.`
         : `Your attendance for ${date} is recorded as ${status.replace(/-/g, ' ')}${timeLabel}`,
       priority: isLate ? 'high' : 'medium',
       actionUrl: '/employee/attendance',
@@ -258,9 +259,9 @@ export class NotificationTriggerService {
       await this.notifyDbAdmins({
         type: 'activity_alert',
         category: 'attendanceAlerts',
-        title: isLate ? 'Late attendance' : 'Attendance update',
+        title: isLate ? 'Present (Late)' : 'Attendance update',
         message: isLate
-          ? `${userName} marked late attendance on ${date}${timeLabel}`
+          ? `${userName} marked Present (Late) on ${date}${timeLabel}`
           : `${userName} marked ${status} on ${date}`,
         priority: isLate ? 'high' : 'medium',
         actionUrl: '/db-admin/attendance',

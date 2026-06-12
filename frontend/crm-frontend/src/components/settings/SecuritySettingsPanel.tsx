@@ -6,8 +6,13 @@ import { IDLE_TIMEOUT_MINUTES, IDLE_WARN_BEFORE_MINUTES } from '@/lib/constants/
 const ITEMS = [
   {
     icon: Clock,
-    title: 'Auto logout (idle)',
-    body: `After ${IDLE_TIMEOUT_MINUTES} minutes with no activity you are signed out automatically. Warning appears ${IDLE_WARN_BEFORE_MINUTES} minute before logout.`,
+    title: 'Sleep / idle sign-out',
+    body: `Device sleep or screen lock signs you out after ~90 seconds hidden (tabs alone do not sign you out). After ${IDLE_TIMEOUT_MINUTES} minutes idle while the app is open, you are also signed out (warning ${IDLE_WARN_BEFORE_MINUTES} minute before). Your work day stays open — log in again the same day to resume the timer.`,
+  },
+  {
+    icon: LogOut,
+    title: 'Sign out vs EOD logout',
+    body: 'Sidebar Sign out pauses your session; same-day login resumes work time. Quick Punch EOD Logout ends the calendar day — attendance checkout is final until tomorrow.',
   },
   {
     icon: Shield,
@@ -15,7 +20,7 @@ const ITEMS = [
     body: 'Login, logout, and page views are recorded for audit (employee and DB administrator accounts).',
   },
   {
-    icon: LogOut,
+    icon: Shield,
     title: 'Password change',
     body: 'Use Change Password — all active sessions end after a password update.',
   },

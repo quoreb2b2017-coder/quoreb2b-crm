@@ -19,6 +19,7 @@ import { SystemRole } from '../../common/constants/roles.constant';
 import { OtpService } from './otp.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { actorFromUserDoc } from '../activity-logs/activity-user.util';
+import { AttendanceService } from '../attendance/attendance.service';
 
 function extractMeta(req: Request) {
   const ip =
@@ -37,8 +38,30 @@ export class AuthService {
     private config: ConfigService,
     private otpService: OtpService,
     private activityLogsService: ActivityLogsService,
+    private attendanceService: AttendanceService,
     @InjectModel(RefreshToken.name) private refreshTokenModel: Model<RefreshToken>,
   ) {}
+
+  private async recordLoginAttendance(user: { _id: { toString(): string }; roles?: string[] }) {
+    try {
+      return await this.attendanceService.ensureLoginAttendance(
+        user._id.toString(),
+        user.roles ?? [],
+      );
+    } catch {
+      return { punchedIn: false };
+    }
+  }
+
+  /** Gross minutes logged today (prior sessions + this login) for same-day re-login timer. */
+  private async fetchTodayGrossMinutes(userId: string, sessionId: string): Promise<number> {
+    try {
+      const snap = await this.activityLogsService.getMyWorkTime(userId, sessionId);
+      return snap.todayGrossMinutes ?? 0;
+    } catch {
+      return 0;
+    }
+  }
 
   async register(dto: RegisterDto) {
     const existing = await this.usersService.findByEmail(dto.email);
@@ -77,7 +100,16 @@ export class AuthService {
       userAgent: meta.userAgent,
       sessionId,
     });
-    return this.generateTokens(user, sessionId);
+    const attendancePunch = await this.recordLoginAttendance(user);
+    const workTimeTodayGrossMinutes = await this.fetchTodayGrossMinutes(
+      user._id.toString(),
+      sessionId,
+    );
+    return {
+      ...(await this.generateTokens(user, sessionId)),
+      attendancePunch,
+      workTimeTodayGrossMinutes,
+    };
   }
 
   async loginByEmployeeId(dto: EmployeeIdLoginDto, req?: Request) {
@@ -108,7 +140,16 @@ export class AuthService {
       userAgent: meta.userAgent,
       sessionId,
     });
-    return this.generateTokens(user, sessionId);
+    const attendancePunch = await this.recordLoginAttendance(user);
+    const workTimeTodayGrossMinutes = await this.fetchTodayGrossMinutes(
+      user._id.toString(),
+      sessionId,
+    );
+    return {
+      ...(await this.generateTokens(user, sessionId)),
+      attendancePunch,
+      workTimeTodayGrossMinutes,
+    };
   }
 
   async sendOtp(email: string) {
@@ -134,7 +175,16 @@ export class AuthService {
       metadata: { method: 'otp', sessionId },
       sessionId,
     });
-    return this.generateTokens(user, sessionId);
+    const attendancePunch = await this.recordLoginAttendance(user);
+    const workTimeTodayGrossMinutes = await this.fetchTodayGrossMinutes(
+      user._id.toString(),
+      sessionId,
+    );
+    return {
+      ...(await this.generateTokens(user, sessionId)),
+      attendancePunch,
+      workTimeTodayGrossMinutes,
+    };
   }
 
   async refresh(refreshToken: string) {
@@ -158,19 +208,35 @@ export class AuthService {
 
   async logout(refreshToken: string, reason: string = 'manual', req?: Request) {
     const stored = await this.refreshTokenModel.findOne({ token: refreshToken });
+    const loggedOutAt = new Date();
     if (stored?.userId) {
       const meta = req ? extractMeta(req) : { ip: 'unknown', userAgent: 'unknown' };
       const user = await this.usersService.findDocumentById(stored.userId.toString()).catch(() => null);
       const actor = user
         ? actorFromUserDoc(user)
         : { id: stored.userId.toString(), email: 'unknown', roles: [] };
+      const isEod = reason === 'eod';
+      const isSleepOrIdle = reason === 'idle';
       await this.activityLogsService.logWithActor(actor, {
-        action: reason === 'idle' ? 'IDLE_LOGOUT' : 'LOGOUT',
+        action: isSleepOrIdle ? 'IDLE_LOGOUT' : 'LOGOUT',
         resource: 'auth',
-        metadata: { reason, loggedOutAt: new Date().toISOString() },
+        metadata: {
+          reason,
+          logoutType: isEod ? 'eod' : isSleepOrIdle ? 'sleep_idle' : 'manual',
+          loggedOutAt: loggedOutAt.toISOString(),
+        },
         sessionId: stored.sessionId,
         userAgent: meta.userAgent,
       });
+      if (user) {
+        const uid = user._id.toString();
+        const roles = user.roles ?? [];
+        if (isEod) {
+          await this.attendanceService.ensureEodLogoutAttendance(uid, roles, loggedOutAt);
+        } else {
+          await this.attendanceService.ensureSessionLogoutAttendance(uid, roles, loggedOutAt);
+        }
+      }
     }
     await this.refreshTokenModel.updateOne({ token: refreshToken }, { isRevoked: true });
     return { message: 'Logged out successfully' };

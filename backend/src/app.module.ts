@@ -1,7 +1,8 @@
 import { DynamicModule, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { CustomThrottlerGuard } from './common/guards/custom-throttler.guard';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ActivityLoggingInterceptor } from './common/interceptors/activity-logging.interceptor';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -36,6 +37,8 @@ import { BatchesModule } from './modules/batches/batches.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { LeaveModule } from './modules/leave/leave.module';
 import { BulkEmailVerificationModule } from './modules/bulk-email-verification/bulk-email-verification.module';
+import { PersonalNotesModule } from './modules/personal-notes/personal-notes.module';
+import { BreakPunchesModule } from './modules/break-punches/break-punches.module';
 
 @Module({})
 export class AppModule {
@@ -97,12 +100,14 @@ export class AppModule {
         BatchesModule,
         AttendanceModule,
         LeaveModule,
+        PersonalNotesModule,
+        BreakPunchesModule,
         BulkEmailVerificationModule.register(),
         EventsModule,
         HealthModule,
       ],
       providers: [
-        { provide: APP_GUARD, useClass: ThrottlerGuard },
+        { provide: APP_GUARD, useClass: CustomThrottlerGuard },
         { provide: APP_GUARD, useClass: JwtAuthGuard },
         { provide: APP_GUARD, useClass: RolesGuard },
         { provide: APP_INTERCEPTOR, useExisting: ActivityLoggingInterceptor },

@@ -30,9 +30,13 @@ export class Attendance extends Document {
   @Prop({ default: false })
   isApproved: boolean;
 
-  /** Check-in after 6:30 PM cutoff */
+  /** Check-in after 9:00 AM Eastern cutoff */
   @Prop({ default: false })
   isLate: boolean;
+
+  /** True only after Quick Punch EOD logout — blocks same-day re-punch. */
+  @Prop({ default: false })
+  eodClosed: boolean;
 
   @Prop({ type: Types.ObjectId, ref: 'User' })
   approvedBy?: Types.ObjectId;

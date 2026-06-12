@@ -32,14 +32,23 @@ type ColKey =
   | 'half'
   | 'pct';
 
-function buildDetailsHref(detailsPath: string, userId: string): string {
+function buildDetailsHref(
+  detailsPath: string,
+  userId: string,
+  opts?: { month?: number; year?: number; view?: 'monthly' | 'yearly' },
+): string {
   const from = detailsPath.startsWith('/db-admin')
     ? 'db-admin'
     : detailsPath.startsWith('/admin')
       ? 'admin'
       : '';
-  const qs = from ? `userId=${userId}&from=${from}` : `userId=${userId}`;
-  return `${detailsPath}?${qs}`;
+  const params = new URLSearchParams();
+  params.set('userId', userId);
+  if (from) params.set('from', from);
+  params.set('view', opts?.view ?? 'monthly');
+  if (opts?.month) params.set('month', String(opts.month));
+  if (opts?.year) params.set('year', String(opts.year));
+  return `${detailsPath}?${params.toString()}`;
 }
 
 const LAYOUT_COLUMNS: Record<'team' | 'org', { key: ColKey; label: string }[]> = {
@@ -89,6 +98,8 @@ interface TeamAttendanceExcelTableProps {
   rows: TeamAttendanceRow[];
   loading?: boolean;
   monthLabel?: string;
+  periodMonth?: number;
+  periodYear?: number;
   layout?: 'team' | 'org';
   sheetTitle?: string;
   onSelectMember?: (userId: string) => void;
@@ -193,6 +204,8 @@ export function TeamAttendanceExcelTable({
   rows,
   loading,
   monthLabel,
+  periodMonth,
+  periodYear,
   layout = 'team',
   sheetTitle,
   onSelectMember,
@@ -204,7 +217,13 @@ export function TeamAttendanceExcelTable({
   const colCount = columns.length;
 
   const openHistory = (userId: string) => {
-    router.push(buildDetailsHref(detailsPath, userId));
+    router.push(
+      buildDetailsHref(detailsPath, userId, {
+        month: periodMonth,
+        year: periodYear,
+        view: 'monthly',
+      }),
+    );
   };
 
   const { containerRef, setCell, activeCell } = useExcelTableNavigation({

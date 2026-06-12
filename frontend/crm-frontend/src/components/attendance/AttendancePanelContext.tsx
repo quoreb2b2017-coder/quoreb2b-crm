@@ -57,7 +57,12 @@ export function AttendancePanelProvider({ children, variant }: AttendancePanelPr
 
   const syncUrl = useCallback(
     (next: AttendancePanel) => {
-      const params = new URLSearchParams(searchParams.toString());
+      // Use live browser URL so attendance view/month params from replaceState are preserved
+      const live =
+        typeof window !== 'undefined'
+          ? window.location.search
+          : searchParams.toString();
+      const params = new URLSearchParams(live);
       if (next) {
         params.set('panel', next);
       } else {
@@ -86,10 +91,14 @@ export function AttendancePanelProvider({ children, variant }: AttendancePanelPr
 
   useEffect(() => {
     const p = searchParams.get('panel');
+    if (p === 'mark' && variant === 'employee') {
+      close();
+      return;
+    }
     if (p === 'mark' || p === 'leave') {
       setPanel(p);
     }
-  }, [searchParams]);
+  }, [searchParams, variant, close]);
 
   const onSuccess = useCallback(() => {
     setRefreshKey((k) => k + 1);
@@ -110,7 +119,7 @@ export function AttendancePanelProvider({ children, variant }: AttendancePanelPr
       {user?.id && (
         <>
           <MarkAttendanceModal
-            isOpen={panel === 'mark'}
+            isOpen={panel === 'mark' && variant !== 'employee'}
             onClose={close}
             onSuccess={onSuccess}
             userId={user.id}

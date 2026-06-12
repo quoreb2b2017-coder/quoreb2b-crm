@@ -1,18 +1,61 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
+import { useAuthStore } from '@/store/auth.store';
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
 
 const apiClient = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1',
+  baseURL: API_BASE,
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
   withCredentials: true,
 });
 
-apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('accessToken');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+let refreshInFlight: Promise<{ accessToken: string; refreshToken: string } | null> | null =
+  null;
+
+function getAccessToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return useAuthStore.getState().accessToken ?? localStorage.getItem('accessToken');
+}
+
+function getRefreshToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return useAuthStore.getState().refreshToken ?? localStorage.getItem('refreshToken');
+}
+
+async function refreshAccessToken(): Promise<{ accessToken: string; refreshToken: string } | null> {
+  if (refreshInFlight) return refreshInFlight;
+
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return null;
+
+  refreshInFlight = (async () => {
+    try {
+      const { data } = await axios.post(`${API_BASE}/auth/refresh`, { refreshToken });
+      const tokens = (data.data ?? data) as { accessToken: string; refreshToken: string };
+      localStorage.setItem('accessToken', tokens.accessToken);
+      localStorage.setItem('refreshToken', tokens.refreshToken);
+      useAuthStore.setState({
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        isAuthenticated: true,
+      });
+      return tokens;
+    } catch {
+      useAuthStore.getState().clearAuth();
+      return null;
+    } finally {
+      refreshInFlight = null;
     }
+  })();
+
+  return refreshInFlight;
+}
+
+apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+  const token = getAccessToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
@@ -21,25 +64,15 @@ apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
-    if (error.response?.status === 401 && !original._retry) {
+    if (error.response?.status === 401 && original && !original._retry) {
       original._retry = true;
-      const refreshToken = localStorage.getItem('refreshToken');
-      if (refreshToken) {
-        try {
-          const { data } = await axios.post(
-            `${process.env.NEXT_PUBLIC_API_URL}/auth/refresh`,
-            { refreshToken },
-          );
-          const tokens = data.data ?? data;
-          localStorage.setItem('accessToken', tokens.accessToken);
-          localStorage.setItem('refreshToken', tokens.refreshToken);
-          original.headers.Authorization = `Bearer ${tokens.accessToken}`;
-          return apiClient(original);
-        } catch {
-          localStorage.removeItem('accessToken');
-          localStorage.removeItem('refreshToken');
-          window.location.href = '/';
-        }
+      const tokens = await refreshAccessToken();
+      if (tokens) {
+        original.headers.Authorization = `Bearer ${tokens.accessToken}`;
+        return apiClient(original);
+      }
+      if (typeof window !== 'undefined' && window.location.pathname !== '/') {
+        window.location.href = '/';
       }
     }
     return Promise.reject(error);

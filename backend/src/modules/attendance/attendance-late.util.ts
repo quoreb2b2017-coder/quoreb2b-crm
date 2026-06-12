@@ -1,5 +1,14 @@
-/** On-time attendance must be marked by 6:30 PM (18:30). */
-export const ATTENDANCE_ON_TIME_CUTOFF = '18:30';
+import { WORKSPACE_TIMEZONE } from '../../common/constants/workspace-timezone.constant';
+import {
+  calendarDateKey,
+  currentTimeHHmm as workspaceCurrentTimeHHmm,
+  formatWallTimeHHmm,
+  isTodayDateKey as workspaceIsTodayDateKey,
+} from '../../common/utils/timezone.util';
+import { SHIFT_LOGIN_TIME } from './attendance-shift.constants';
+
+/** On-time login / check-in by 9:00 AM Eastern. */
+export const ATTENDANCE_ON_TIME_CUTOFF = SHIFT_LOGIN_TIME;
 
 export function timeToMinutes(time: string): number {
   const [h, m] = time.split(':').map(Number);
@@ -13,10 +22,9 @@ export function isLateCheckIn(
   return timeToMinutes(checkInTime) > timeToMinutes(cutoff);
 }
 
+/** HH:mm in US Eastern from a stored UTC instant. */
 export function formatStoredTime(date: Date): string {
-  const hh = String(date.getUTCHours()).padStart(2, '0');
-  const mm = String(date.getUTCMinutes()).padStart(2, '0');
-  return `${hh}:${mm}`;
+  return formatWallTimeHHmm(date, WORKSPACE_TIMEZONE);
 }
 
 export function formatTime12h(time: string): string {
@@ -26,24 +34,14 @@ export function formatTime12h(time: string): string {
   return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
 }
 
-export function currentTimeHHmm(timeZone = 'Asia/Kolkata'): string {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone,
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(new Date());
-  const hour = parts.find((p) => p.type === 'hour')?.value ?? '00';
-  const minute = parts.find((p) => p.type === 'minute')?.value ?? '00';
-  return `${hour}:${minute}`;
+export function currentTimeHHmm(timeZone = WORKSPACE_TIMEZONE): string {
+  return workspaceCurrentTimeHHmm(timeZone);
 }
 
-export function isTodayDateKey(dateStr: string, timeZone = 'Asia/Kolkata'): boolean {
-  const today = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date());
-  return dateStr === today;
+export function todayDateKey(timeZone = WORKSPACE_TIMEZONE): string {
+  return calendarDateKey(new Date(), timeZone);
+}
+
+export function isTodayDateKey(dateStr: string, timeZone = WORKSPACE_TIMEZONE): boolean {
+  return workspaceIsTodayDateKey(dateStr, timeZone);
 }

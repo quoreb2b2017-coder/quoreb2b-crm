@@ -1,3 +1,8 @@
+import {
+  attendanceStoredInstantMs as workspaceAttendanceStoredInstantMs,
+  combineDateAndWallTime,
+} from '../../common/utils/timezone.util';
+
 /** Parse YYYY-MM-DD to UTC midnight (stable across server timezones). */
 export function parseDateOnly(dateStr: string): Date {
   const [y, m, d] = dateStr.split('-').map(Number);
@@ -20,11 +25,14 @@ export function monthRangeUtc(year: number, month: number) {
   return { start, end };
 }
 
-/** Combine calendar date (YYYY-MM-DD) with HH:mm → UTC Date (uses UTC for stability). */
+/** Combine calendar date (YYYY-MM-DD) with HH:mm in US Eastern → UTC Date. */
 export function combineDateAndTime(dateStr: string, timeStr: string): Date {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const [hh, mm] = timeStr.split(':').map(Number);
-  return new Date(Date.UTC(y, m - 1, d, hh || 0, mm || 0, 0, 0));
+  return combineDateAndWallTime(dateStr, timeStr);
+}
+
+/** Real epoch ms for elapsed / duration (handles legacy wall-clock storage). */
+export function attendanceStoredInstantMs(stored: Date, nowMs: number = Date.now()): number {
+  return workspaceAttendanceStoredInstantMs(stored, nowMs);
 }
 
 /** Check if day is weekend (Saturday=6, Sunday=0) */

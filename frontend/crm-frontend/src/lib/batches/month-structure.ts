@@ -24,7 +24,7 @@ export const CALENDAR_MONTHS: CalendarMonth[] = [
   { index: 12, label: 'December', short: 'Dec', accent: 'text-blue-700', accentBg: 'bg-blue-50', border: 'border-blue-200' },
 ];
 
-export const BATCH_CALENDAR_TIMEZONE = 'Asia/Kolkata';
+export const BATCH_CALENDAR_TIMEZONE = 'America/New_York';
 
 export function calendarPeriodFromDate(date: Date = new Date()): { month: number; year: number } {
   const parts = new Intl.DateTimeFormat('en-IN', {

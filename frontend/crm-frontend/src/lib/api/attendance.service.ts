@@ -1,5 +1,7 @@
 import apiClient from './client';
 import { formatLocalDate } from '@/lib/attendance/date';
+import { ALL_MONTH_INDICES, normalizeYearlyRows } from '@/lib/attendance/yearly-analytics';
+import { MONTHS_SHORT } from '@/lib/attendance/month-year';
 
 export interface AttendanceRecord {
   _id: string;
@@ -32,6 +34,16 @@ export interface AttendanceAnalytics {
     isPaidLeave?: boolean;
     isLate?: boolean;
     checkInTime?: string;
+    checkOutTime?: string;
+    workDurationMinutes?: number;
+    workDurationFormatted?: string;
+    grossWorkDurationMinutes?: number;
+    grossWorkDurationFormatted?: string;
+    breakMinutes?: number;
+    dailyTargetMet?: boolean;
+    dailyGrossTargetMet?: boolean;
+    /** True after Quick Punch EOD logout — day locked until tomorrow */
+    eodClosed?: boolean;
   }>;
 }
 
@@ -47,8 +59,14 @@ export interface YearlyAnalytics {
 }
 
 function unwrap<T>(response: { data: unknown }): T {
-  const body = response.data as { data?: T };
-  return (body?.data ?? body) as T;
+  const raw = response.data;
+  if (raw && typeof raw === 'object' && raw !== null && 'data' in raw) {
+    const wrapped = raw as { success?: boolean; data?: T };
+    if (wrapped.data !== undefined) {
+      return wrapped.data;
+    }
+  }
+  return raw as T;
 }
 
 export const attendanceService = {
@@ -87,23 +105,45 @@ export const attendanceService = {
     return unwrap(res);
   },
 
-  async getMonthlyAnalytics(userId: string, month?: number, year?: number) {
+  async getMonthlyAnalytics(userId: string, month?: number, year?: number, bustCache = false) {
     const params = new URLSearchParams();
     params.append('userId', userId);
     if (month) params.append('month', month.toString());
     if (year) params.append('year', year.toString());
 
+    if (bustCache) params.append('refresh', String(Date.now()));
+
     const res = await apiClient.get(`attendance/analytics/monthly?${params.toString()}`);
     return unwrap<AttendanceAnalytics>(res);
   },
 
-  async getYearlyAnalytics(userId: string, year?: number) {
-    const params = new URLSearchParams();
-    params.append('userId', userId);
-    if (year) params.append('year', year.toString());
+  /**
+   * Yearly rollup built from the same monthly analytics used by the daily sheet.
+   * Guarantees June (etc.) matches the one-month view.
+   */
+  async getYearlyAnalytics(userId: string, year?: number, bustCache = false) {
+    const targetYear = year ?? new Date().getFullYear();
+    const monthlyResults = await Promise.all(
+      ALL_MONTH_INDICES.map((month) =>
+        this.getMonthlyAnalytics(userId, month, targetYear, bustCache),
+      ),
+    );
 
-    const res = await apiClient.get(`attendance/analytics/yearly?${params.toString()}`);
-    return unwrap<YearlyAnalytics[]>(res);
+    const rows: YearlyAnalytics[] = MONTHS_SHORT.map((month, index) => {
+      const analytics = monthlyResults[index];
+      return {
+        month,
+        presentDays: analytics.presentDays,
+        absentDays: analytics.absentDays,
+        leaveDays: analytics.leaveDays,
+        paidLeaveDays: analytics.paidLeaveDays,
+        halfDays: analytics.halfDays,
+        weekendDays: analytics.weekendDays,
+        attendancePercentage: analytics.attendancePercentage,
+      };
+    });
+
+    return normalizeYearlyRows(rows);
   },
 
   async getTeamAnalytics(userIds: string[], month?: number, year?: number) {

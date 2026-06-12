@@ -1,9 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import {
+  WORKSPACE_TIMEZONE,
+  WORKSPACE_TIMEZONE_LABEL,
+} from '../../common/constants/workspace-timezone.constant';
+import { calendarDateKey } from '../../common/utils/timezone.util';
 import { Attendance } from './schemas/attendance.schema';
-import { parseDateOnly, toDateKey, isWeekend } from './attendance-date.util';
+import { parseDateOnly, isWeekend } from './attendance-date.util';
 
 @Injectable()
 export class AttendanceSchedulerService {
@@ -12,44 +17,48 @@ export class AttendanceSchedulerService {
   constructor(@InjectModel(Attendance.name) private attendanceModel: Model<Attendance>) {}
 
   /**
-   * Run every Saturday and Sunday at 4:30 PM IST (16:30 IST)
-   * Cron: 30 16 * * 0,6
-   * 0 = Sunday, 6 = Saturday
+   * Run every Saturday and Sunday at 4:30 PM US Eastern.
+   * Cron: 30 16 * * 0,6 — 0 = Sunday, 6 = Saturday
    */
-  @Cron('30 16 * * 0,6', { timeZone: 'Asia/Kolkata' })
+  @Cron('30 16 * * 0,6', { timeZone: WORKSPACE_TIMEZONE })
   async autoMarkWeekends() {
     try {
-      this.logger.log('🚀 Starting auto-mark weekends job at 4:30 PM IST...');
+      this.logger.log(
+        `🚀 Starting auto-mark weekends job at 4:30 PM ${WORKSPACE_TIMEZONE_LABEL}…`,
+      );
 
-      // Get current time in IST
-      const istTime = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
-      this.logger.log(`⏰ Current IST time: ${istTime}`);
+      const easternTime = new Date().toLocaleString('en-US', { timeZone: WORKSPACE_TIMEZONE });
+      this.logger.log(`⏰ Current ${WORKSPACE_TIMEZONE_LABEL}: ${easternTime}`);
 
-      // Get day of week in IST
-      const istDate = new Date(new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
-      const dayOfWeek = istDate.getDay();
-      const dayName = dayOfWeek === 0 ? 'Sunday' : dayOfWeek === 6 ? 'Saturday' : 'Unknown';
+      const dayShort = new Intl.DateTimeFormat('en-US', {
+        timeZone: WORKSPACE_TIMEZONE,
+        weekday: 'short',
+      }).format(new Date());
+      const dayMap: Record<string, number> = {
+        Sun: 0,
+        Mon: 1,
+        Tue: 2,
+        Wed: 3,
+        Thu: 4,
+        Fri: 5,
+        Sat: 6,
+      };
+      const dayOfWeek = dayMap[dayShort] ?? new Date().getDay();
+      const dayName =
+        dayOfWeek === 0 ? 'Sunday' : dayOfWeek === 6 ? 'Saturday' : 'Unknown';
 
       this.logger.log(`📅 Today is ${dayName} (Day ${dayOfWeek})`);
-      this.logger.log(`⏰ Cron will run at: 4:30 PM IST every Saturday & Sunday`);
 
-      // Only run on Saturday (6) and Sunday (0)
       if (!isWeekend(dayOfWeek)) {
         this.logger.log('⏭️ Today is not a weekend, skipping auto-mark');
         return;
       }
 
-      // Get today's date in IST
-      const year = istDate.getFullYear();
-      const month = String(istDate.getMonth() + 1).padStart(2, '0');
-      const day = String(istDate.getDate()).padStart(2, '0');
-      const dateKey = `${year}-${month}-${day}`;
-
+      const dateKey = calendarDateKey(new Date());
       this.logger.log(`📆 Processing date: ${dateKey}`);
 
       const normalizedDate = parseDateOnly(dateKey);
 
-      // Get all active users
       const users = await this.getUserIds();
       this.logger.log(`👥 Found ${users.length} active users`);
 
@@ -62,7 +71,6 @@ export class AttendanceSchedulerService {
         return;
       }
 
-      // Bulk upsert weekend marks
       const bulkOps = users.map((userId) => ({
         updateOne: {
           filter: {
@@ -86,13 +94,13 @@ export class AttendanceSchedulerService {
         },
       }));
 
-      this.logger.log(`📝 Preparing to mark ${bulkOps.length} records...`);
+      this.logger.log(`📝 Preparing to mark ${bulkOps.length} records…`);
 
       const result = await this.attendanceModel.bulkWrite(bulkOps);
 
       const totalMarked = result.upsertedCount + result.modifiedCount;
       this.logger.log(
-        `✅ Successfully auto-marked ${totalMarked} weekend records for ${users.length} users at 4:30 PM IST`,
+        `✅ Successfully auto-marked ${totalMarked} weekend records for ${users.length} users at 4:30 PM ${WORKSPACE_TIMEZONE_LABEL}`,
       );
       this.logger.log(`📊 Upserted: ${result.upsertedCount}, Modified: ${result.modifiedCount}`);
     } catch (error) {
@@ -100,15 +108,10 @@ export class AttendanceSchedulerService {
     }
   }
 
-  /**
-   * Get all active user IDs
-   * Tries multiple approaches to find users
-   */
   private async getUserIds(): Promise<string[]> {
     try {
       this.logger.log('🔍 Fetching active users...');
 
-      // Try to find users with isActive: true
       let users = await this.attendanceModel.collection.db
         .collection('users')
         .find({ isActive: true })
@@ -120,7 +123,6 @@ export class AttendanceSchedulerService {
         return users.map((u) => u._id.toString());
       }
 
-      // If no active users, try to find all users
       this.logger.log('⚠️ No active users found, trying to find all users...');
       users = await this.attendanceModel.collection.db
         .collection('users')
@@ -142,9 +144,6 @@ export class AttendanceSchedulerService {
     }
   }
 
-  /**
-   * Manual test endpoint - can be called anytime
-   */
   async testMarkWeekendManual(): Promise<any> {
     this.logger.log('🧪 Manual test triggered...');
     return this.autoMarkWeekends();

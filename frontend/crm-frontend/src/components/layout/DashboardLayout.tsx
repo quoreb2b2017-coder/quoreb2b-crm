@@ -7,7 +7,6 @@ import { cn } from '@/lib/utils/cn';
 import { useAuthStore } from '@/store/auth.store';
 import { useAdminProductStore } from '@/store/admin-product.store';
 import { useIdleLogout } from '@/hooks/useIdleLogout';
-import { activityLogsService } from '@/lib/api/activity-logs.service';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { useNavigation } from '@/components/providers/LoadingProvider';
 import {
@@ -81,6 +80,11 @@ export function isLeaveApplyPath(pathname: string) {
   return /^\/(admin|db-admin|employee)\/leave-apply$/.test(pathname);
 }
 
+/** Personal notes — full viewport height, inner panels scroll */
+export function isPersonalNotesPath(pathname: string) {
+  return /^\/(admin|db-admin|employee)\/personal-notes$/.test(pathname);
+}
+
 /** Edge-to-edge content (no left/right padding) */
 export function isAdminEdgeToEdgePath(pathname: string) {
   return (
@@ -88,10 +92,10 @@ export function isAdminEdgeToEdgePath(pathname: string) {
     isAdminUserReportPath(pathname) ||
     isActivityLogsPath(pathname) ||
     isPanelDashboardPath(pathname) ||
-    isPanelAnalyticsPath(pathname) ||
     isPanelSettingsPath(pathname) ||
     isAttendancePath(pathname) ||
-    isLeaveApplyPath(pathname)
+    isLeaveApplyPath(pathname) ||
+    isPersonalNotesPath(pathname)
   );
 }
 
@@ -241,6 +245,7 @@ const iconMap: Record<string, React.ReactNode> = {
   'attendance':         Icons.attendance,
   'leave requests':     Icons.leave,
   'leave apply':        Icons.leave,
+  'personal notes':     Icons.tasks,
   'mark attendance':    Icons.attendance,
   'apply for leave':    Icons.leave,
 };
@@ -362,6 +367,8 @@ function SidebarInner({
   const showQuickActions =
     attendancePanel &&
     (variant === 'employee' || variant === 'db_admin' || variant === 'admin');
+  /** Today is auto-marked on CRM login — employees must not manual-mark. */
+  const showMarkToday = variant !== 'employee';
 
   return (
     <div className={cn(
@@ -460,21 +467,23 @@ function SidebarInner({
                 Quick actions
               </p>
             )}
-            <Tip label="Mark attendance" collapsed={isCollapsed}>
-              <button
-                type="button"
-                onClick={attendancePanel!.openMark}
-                className={cn(
-                  'flex w-full items-center gap-3 rounded-xl text-sm font-medium transition-colors duration-100 mb-0.5',
-                  isCollapsed ? 'justify-center w-11 h-11 mx-auto text-slate-400 hover:text-white hover:bg-white/[0.08]' : 'px-3 py-2.5 text-slate-400 hover:text-white hover:bg-emerald-500/[0.12] border border-transparent hover:border-emerald-500/20',
-                )}
-              >
-                <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-400">
-                  {quickActionIcons.mark}
-                </span>
-                {!isCollapsed && <span className="flex-1 text-left">Mark Today</span>}
-              </button>
-            </Tip>
+            {showMarkToday && (
+              <Tip label="Mark attendance" collapsed={isCollapsed}>
+                <button
+                  type="button"
+                  onClick={attendancePanel!.openMark}
+                  className={cn(
+                    'flex w-full items-center gap-3 rounded-xl text-sm font-medium transition-colors duration-100 mb-0.5',
+                    isCollapsed ? 'justify-center w-11 h-11 mx-auto text-slate-400 hover:text-white hover:bg-white/[0.08]' : 'px-3 py-2.5 text-slate-400 hover:text-white hover:bg-emerald-500/[0.12] border border-transparent hover:border-emerald-500/20',
+                  )}
+                >
+                  <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-400">
+                    {quickActionIcons.mark}
+                  </span>
+                  {!isCollapsed && <span className="flex-1 text-left">Mark Today</span>}
+                </button>
+              </Tip>
+            )}
             <Tip label="Apply for leave" collapsed={isCollapsed}>
               <button
                 type="button"
@@ -541,8 +550,9 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
   const { pendingHref, isNavigating, startNavigation } = useNavigation();
   const batchExcelView = isBatchExcelViewPath(pathname);
   const attendancePage = isAttendancePath(pathname);
+  const personalNotesPage = isPersonalNotesPath(pathname);
   const edgeToEdge = isAdminEdgeToEdgePath(pathname) || attendancePage;
-  const contentLocked = isAdminContentLockedPath(pathname);
+  const contentLocked = isAdminContentLockedPath(pathname) || personalNotesPage;
   const { user, clearAuth } = useAuthStore();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -560,17 +570,8 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
 
   const handleLogout = useCallback(async () => {
     if (portalTracking) {
-      try {
-        await activityLogsService.track({
-          action: 'LOGOUT',
-          resource: 'auth',
-          metadata: { reason: 'manual' },
-        });
-      } catch {
-        /* non-blocking */
-      }
       if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('work-time:refresh'));
+        window.dispatchEvent(new Event('work-time:stash'));
       }
       await portalLogout('manual');
       return;

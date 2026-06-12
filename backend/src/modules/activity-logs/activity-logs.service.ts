@@ -8,13 +8,25 @@ import { ActivityLog } from './schemas/activity-log.schema';
 import { PaginationDto, paginate } from '../../common/dto/pagination.dto';
 import { TrackActivityDto } from './dto/track-activity.dto';
 import { ActivityLogsQueryDto } from './dto/activity-logs-query.dto';
+import { WORKSPACE_TIMEZONE } from '../../common/constants/workspace-timezone.constant';
+import { calendarDateKey } from '../../common/utils/timezone.util';
 import {
+  buildAuthBoundaryForDay,
   buildEmployeeReport,
   buildWorkTimeSnapshot,
   dayBounds,
+  formatDuration,
+  formatIstTime12h,
+  listSessionsForIstDay,
   monthBounds,
   type ActivityLogRow,
 } from './employee-report.util';
+import {
+  computeNetWorkMinutes,
+  isDailyWorkQuotaMet,
+} from '../attendance/attendance-work-time.util';
+import { formatStoredTime, formatTime12h } from '../attendance/attendance-late.util';
+import { DAILY_NET_WORK_TARGET_MINUTES } from '../attendance/attendance-shift.constants';
 import type { BatchLeadSnapshot } from './lead-activity-report.util';
 import { SystemRole } from '../../common/constants/roles.constant';
 import { AppCacheService } from '../../redis/app-cache.service';
@@ -33,6 +45,8 @@ import {
   isRecordableTrackAction,
 } from './activity-actions.constant';
 import { NotificationTriggerService } from '../notifications/notification-trigger.service';
+import { AttendanceService } from '../attendance/attendance.service';
+import { BreakPunchesService } from '../break-punches/break-punches.service';
 
 export interface TrackActivityContext {
   userId: string;
@@ -54,6 +68,8 @@ export class ActivityLogsService {
     private notifications: NotificationTriggerService,
     private cache: AppCacheService,
     private config: ConfigService,
+    private attendanceService: AttendanceService,
+    private breakPunchesService: BreakPunchesService,
   ) {}
 
   private userSnapshot(user: User): SanitizedUserSnapshot {
@@ -494,7 +510,7 @@ export class ActivityLogsService {
     const timelineGroup = isDayView
       ? {
           _id: {
-            $hour: { date: '$occurredAt', timezone: 'Asia/Kolkata' },
+            $hour: { date: '$occurredAt', timezone: WORKSPACE_TIMEZONE },
           },
         }
       : {
@@ -502,7 +518,7 @@ export class ActivityLogsService {
             $dateToString: {
               format: '%Y-%m-%d',
               date: '$occurredAt',
-              timezone: 'Asia/Kolkata',
+              timezone: WORKSPACE_TIMEZONE,
             },
           },
         };
@@ -806,23 +822,103 @@ export class ActivityLogsService {
     const now = new Date();
     const year = now.getFullYear();
     const month = now.getMonth() + 1;
-    return this.cache.wrap(
-      `act:worktime:${userId}:${year}-${month}:${sessionId ?? 'default'}`,
-      cacheTtlSeconds(this.config, 'live'),
-      async () => {
-        const { start, end, label } = monthBounds(year, month);
-        const logs = await this.findInRange(userId, start, end);
-        const snapshot = buildWorkTimeSnapshot(logs as unknown as ActivityLogRow[], {
-          sessionId,
-          periodEnd: now,
-        });
-        return {
-          period: { year, month, label },
-          ...snapshot,
-          isTimerRunning: Boolean(snapshot.currentSession?.isActive),
-        };
-      },
+    const { start, end } = monthBounds(year, month);
+
+    const [logs, attendanceSnap] = await Promise.all([
+      this.findInRange(userId, start, end),
+      this.attendanceService.getWorkTimeSnapshot(userId, year, month, now),
+    ]);
+
+    const sessionSnap = buildWorkTimeSnapshot(logs as unknown as ActivityLogRow[], {
+      sessionId,
+      periodEnd: now,
+    });
+
+    const attendanceByDate = new Map(
+      attendanceSnap.dailyBreakdown.map((row) => [row.date, row]),
     );
+
+    const dailyBreakdown = sessionSnap.dailyBreakdown.map((day) => {
+      const att = attendanceByDate.get(day.date);
+      const grossMinutes = day.totalMinutes;
+      const breakMinutes = att?.breakMinutes ?? 0;
+      const netMinutes = computeNetWorkMinutes(grossMinutes, breakMinutes);
+      return {
+        date: day.date,
+        dayLabel: day.dayLabel,
+        totalMinutes: netMinutes,
+        totalFormatted: formatDuration(netMinutes),
+        grossMinutes,
+        breakMinutes,
+        dailyTargetMet: isDailyWorkQuotaMet(netMinutes),
+        isToday: day.isToday,
+      };
+    });
+
+    const todayGrossMinutes = sessionSnap.dailyBreakdown.find((d) => d.isToday)?.totalMinutes ?? 0;
+    const todayBreakMinutes = attendanceSnap.todayBreakMinutes ?? 0;
+    const breakToday = await this.breakPunchesService.getToday(userId);
+    const onBreak = Boolean(breakToday.activeType);
+    const todayBreakMinutesCompleted =
+      breakToday.tea.usedMinutesCompleted +
+      breakToday.lunch.usedMinutesCompleted +
+      breakToday.meeting.usedMinutesCompleted;
+    const breaksForLiveNet = onBreak ? todayBreakMinutesCompleted : todayBreakMinutes;
+    const todayMinutes = computeNetWorkMinutes(todayGrossMinutes, breaksForLiveNet);
+    const todayMinutesAtTarget = computeNetWorkMinutes(todayGrossMinutes, todayBreakMinutes);
+    const monthlyMinutes = dailyBreakdown.reduce((sum, row) => sum + row.totalMinutes, 0);
+
+    const isTimerRunning = Boolean(sessionSnap.currentSession);
+    const currentSession = sessionSnap.currentSession;
+    const todayDateKey =
+      sessionSnap.dailyBreakdown.find((d) => d.isToday)?.date ?? calendarDateKey(now);
+    const todayAuth = buildAuthBoundaryForDay(
+      logs as unknown as ActivityLogRow[],
+      todayDateKey,
+      now,
+      sessionId,
+    );
+    const todayAttRecord = await this.attendanceService.getDayAttendanceRecord(
+      userId,
+      todayDateKey,
+    );
+    const todaySessions = listSessionsForIstDay(
+      logs as unknown as ActivityLogRow[],
+      todayDateKey,
+      now,
+      sessionId,
+    );
+
+    return {
+      period: attendanceSnap.period,
+      monthlyMinutes,
+      monthlyFormatted: formatDuration(monthlyMinutes),
+      todayMinutes,
+      todayFormatted: formatDuration(todayMinutes),
+      todayMinutesAtTarget,
+      todayGrossMinutes,
+      todayBreakMinutes,
+      todayBreakMinutesCompleted,
+      onBreak,
+      dailyTargetMinutes: DAILY_NET_WORK_TARGET_MINUTES,
+      dailyBreakdown,
+      currentSession,
+      isTimerRunning,
+      todayFirstLoginTime:
+        todayAttRecord?.eodClosed && todayAttRecord.checkInTime
+          ? formatTime12h(formatStoredTime(new Date(todayAttRecord.checkInTime)))
+          : todayAuth.firstLoginAt
+            ? formatIstTime12h(todayAuth.firstLoginAt)
+            : undefined,
+      todayLastLogoutTime:
+        todayAttRecord?.eodClosed && todayAttRecord.checkOutTime
+          ? formatTime12h(formatStoredTime(new Date(todayAttRecord.checkOutTime)))
+          : todayAuth.lastLogoutAt
+            ? formatIstTime12h(todayAuth.lastLogoutAt)
+            : undefined,
+      isOnDuty: todayAttRecord?.eodClosed ? false : todayAuth.onDuty,
+      todaySessions,
+    };
   }
 
   /** Bulk monthly work time for attendance / admin views. */
@@ -839,27 +935,7 @@ export class ActivityLogsService {
   }
 
   private async loadTeamWorkTime(userIds: string[], year: number, month: number) {
-    const { start, end, label } = monthBounds(year, month);
-    const now = new Date();
-    const periodEnd = now > end ? end : now;
-    const uniqueIds = [
-      ...new Set(userIds.filter((id) => Types.ObjectId.isValid(id))),
-    ];
-
-    const users = await Promise.all(
-      uniqueIds.map(async (userId) => {
-        const logs = await this.findInRange(userId, start, end);
-        const snap = buildWorkTimeSnapshot(logs as unknown as ActivityLogRow[], {
-          periodEnd: now,
-        });
-        return {
-          userId,
-          monthlyMinutes: snap.monthlyMinutes,
-          monthlyFormatted: snap.monthlyFormatted,
-        };
-      }),
-    );
-
-    return { period: { year, month, label }, users };
+    const uniqueIds = [...new Set(userIds.filter((id) => Types.ObjectId.isValid(id)))];
+    return this.attendanceService.getTeamWorkTimeFromAttendance(uniqueIds, year, month);
   }
 }

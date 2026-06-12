@@ -1,65 +1,230 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { CalendarDays, CalendarRange, RefreshCw } from 'lucide-react';
-import { attendanceService } from '@/lib/api/attendance.service';
+import { ChevronRight, RefreshCw } from 'lucide-react';
+import { attendanceService, type AttendanceAnalytics } from '@/lib/api/attendance.service';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils/cn';
+import { AttendanceDashboardStats } from '@/components/attendance/AttendanceDashboardStats';
+import { AttendanceMonthCalendar } from '@/components/attendance/AttendanceMonthCalendar';
+import { AttendanceMonthYearNav } from '@/components/attendance/AttendanceMonthYearNav';
+import { DAILY_NET_WORK_TARGET_LABEL } from '@/lib/attendance/attendance-shift.constants';
+import {
+  countHolidaysInBreakdown,
+  resolveCalendarStatus,
+} from '@/lib/attendance/attendance-calendar';
+import { formatMonthYearLabel, getCurrentMonthYear } from '@/lib/attendance/month-year';
+import { buildAttendancePageUrl } from '@/lib/attendance/period-url';
 
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
+interface AttendanceSummaryCardProps {
+  basePath?: string;
+  variant?: 'full' | 'dashboard';
+  accent?: 'emerald' | 'violet' | 'admin';
+}
 
-export function EmployeeAttendanceSummaryCard() {
+export function AttendanceSummaryCard({
+  basePath = '/employee/attendance',
+  variant = 'full',
+  accent = 'emerald',
+}: AttendanceSummaryCardProps) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [present, setPresent] = useState(0);
-  const [absent, setAbsent] = useState(0);
-  const [late, setLate] = useState(0);
-  const [pct, setPct] = useState(0);
-  const [yearPresent, setYearPresent] = useState(0);
+  const [monthly, setMonthly] = useState<AttendanceAnalytics | null>(null);
+  const initial = getCurrentMonthYear();
+  const [month, setMonth] = useState(initial.month);
+  const [year, setYear] = useState(initial.year);
+  const viewingCurrentRef = useRef(true);
 
-  const now = new Date();
-  const month = now.getMonth() + 1;
-  const year = now.getFullYear();
-  const monthLabel = `${MONTHS[month - 1]} ${year}`;
+  const monthLabel = formatMonthYearLabel(month, year);
+  const monthlySheetHref = buildAttendancePageUrl(basePath, {
+    view: 'monthly',
+    selectedMonth: month,
+    selectedYear: year,
+  });
+  const yearlySheetHref = buildAttendancePageUrl(
+    basePath,
+    { view: 'yearly', selectedMonth: month, selectedYear: year },
+    'attendance-yearly-grid',
+  );
 
-  const load = async () => {
+  const handlePeriodChange = useCallback((nextMonth: number, nextYear: number) => {
+    setMonth(nextMonth);
+    setYear(nextYear);
+    const { month: tm, year: ty } = getCurrentMonthYear();
+    viewingCurrentRef.current = nextMonth === tm && nextYear === ty;
+  }, []);
+
+  const load = useCallback(async () => {
     if (!user?.id) return;
     setLoading(true);
     try {
-      const [monthly, yearly] = await Promise.all([
-        attendanceService.getMonthlyAnalytics(user.id, month, year),
-        attendanceService.getYearlyAnalytics(user.id, year),
-      ]);
-      setPresent(monthly.presentDays);
-      setAbsent(monthly.absentDays);
-      setLate(monthly.lateDays ?? 0);
-      setPct(monthly.attendancePercentage);
-      setYearPresent(yearly.reduce((s, m) => s + m.presentDays, 0));
+      const monthlyData = await attendanceService.getMonthlyAnalytics(user.id, month, year, true);
+      setMonthly(monthlyData);
     } catch {
-      setPresent(0);
-      setAbsent(0);
-      setLate(0);
-      setPct(0);
-      setYearPresent(0);
+      setMonthly(null);
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.id, month, year]);
 
   useEffect(() => {
     load();
     const onRefresh = () => load();
     window.addEventListener('attendance:refresh', onRefresh);
     return () => window.removeEventListener('attendance:refresh', onRefresh);
-  }, [user?.id]);
+  }, [load]);
+
+  useEffect(() => {
+    const syncCurrentMonth = () => {
+      if (!viewingCurrentRef.current) return;
+      const { month: tm, year: ty } = getCurrentMonthYear();
+      setMonth((m) => {
+        setYear((y) => {
+          if (m === tm && y === ty) return y;
+          return ty;
+        });
+        return tm;
+      });
+    };
+    const id = setInterval(syncCurrentMonth, 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const todayKey = useMemo(() => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+  }, []);
+
+  const todayDay = useMemo(
+    () => monthly?.dailyBreakdown.find((d) => d.date.slice(0, 10) === todayKey),
+    [monthly, todayKey],
+  );
+
+  const todayStatus = useMemo(
+    () => resolveCalendarStatus(todayDay, todayKey),
+    [todayDay, todayKey],
+  );
+
+  const present = monthly?.presentDays ?? 0;
+  const absent = monthly?.absentDays ?? 0;
+  const late = monthly?.lateDays ?? 0;
+  const paidLeave = monthly?.paidLeaveDays ?? 0;
+  const leave = Math.max(0, (monthly?.leaveDays ?? 0) - paidLeave);
+  const halfDay = monthly?.halfDays ?? 0;
+  const weekend = monthly?.weekendDays ?? 0;
+  const holiday = monthly ? countHolidaysInBreakdown(monthly.dailyBreakdown) : 0;
+  const pct = monthly?.attendancePercentage ?? 0;
+
+  const periodNav = (
+    <AttendanceMonthYearNav
+      month={month}
+      year={year}
+      onChange={handlePeriodChange}
+      accent={accent}
+      className="w-full sm:w-auto"
+    />
+  );
+
+  if (variant === 'dashboard') {
+    return (
+      <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm ring-1 ring-slate-100">
+        <div className="flex flex-col gap-2.5 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+          <div className="flex items-center justify-between gap-2 sm:block">
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Attendance</p>
+              <p className="text-[11px] text-slate-500">{monthLabel}</p>
+            </div>
+            <button
+              type="button"
+              onClick={load}
+              disabled={loading}
+              className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 shadow-sm hover:text-slate-700 disabled:opacity-50 sm:hidden"
+              title="Refresh"
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {periodNav}
+            <Link
+              href={yearlySheetHref}
+              className="hidden text-xs font-semibold text-emerald-700 hover:underline lg:inline"
+            >
+              12-month report →
+            </Link>
+            <button
+              type="button"
+              onClick={load}
+              disabled={loading}
+              className="hidden rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 shadow-sm hover:text-slate-700 disabled:opacity-50 sm:inline-flex"
+              title="Refresh"
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid gap-4 p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start lg:gap-5">
+          <AttendanceDashboardStats
+            present={present}
+            absent={absent}
+            late={late}
+            leave={leave}
+            paidLeave={paidLeave}
+            holiday={holiday}
+            halfDay={halfDay}
+            weekend={weekend}
+            todayStatus={todayStatus}
+            todayDay={todayDay}
+            monthLabel={monthLabel}
+            attendancePct={pct}
+            loading={loading}
+            compact
+          />
+          <div className="mx-auto w-full max-w-[248px] shrink-0 rounded-xl border border-slate-200/70 bg-gradient-to-b from-white to-slate-50/80 p-2.5 shadow-sm lg:mx-0">
+            <p className="mb-1.5 text-center text-[9px] font-bold uppercase tracking-wider text-slate-400">
+              {DAILY_NET_WORK_TARGET_LABEL} target
+            </p>
+            <AttendanceMonthCalendar
+              year={year}
+              month={month}
+              monthLabel={monthLabel}
+              dailyBreakdown={monthly?.dailyBreakdown ?? []}
+              loading={loading}
+              variant="dashboard"
+              appearance="soft"
+              weekStart="sun"
+              hideHeader
+              compactCells
+            />
+          </div>
+        </div>
+        <div className="border-t border-slate-100 px-4 py-2.5 sm:hidden">
+          <div className="flex flex-wrap gap-3">
+            <Link
+              href={monthlySheetHref}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline"
+            >
+              This month
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Link>
+            <Link
+              href={yearlySheetHref}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline"
+            >
+              12-month report
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="border border-slate-300 bg-white">
-      <div className="flex items-center justify-between border-b border-slate-300 bg-[#217346] px-3 py-2 text-white">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between border-b border-emerald-800/20 bg-gradient-to-r from-[#1a5c38] to-[#217346] px-4 py-2.5 text-white">
         <span className="text-xs font-bold uppercase tracking-wide">Attendance</span>
         <button
           type="button"
@@ -71,29 +236,23 @@ export function EmployeeAttendanceSummaryCard() {
           <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
         </button>
       </div>
-      <div className="p-4">
-        <p className="text-[10px] font-semibold uppercase text-slate-500">{monthLabel}</p>
+      <div className="space-y-3 px-4 pb-4 pt-3">
+        {periodNav}
         {loading ? (
-          <p className="mt-2 text-sm text-slate-400">Loading…</p>
+          <p className="text-sm text-slate-400">Loading…</p>
         ) : (
-          <div className="mt-2 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
             <div>
-              <p className="text-lg font-bold text-[#217346]">{present}</p>
+              <p className="text-lg font-bold text-[#22C55E]">{present}</p>
               <p className="text-[10px] text-slate-500">Present</p>
-              <Link
-                href="/employee/attendance?view=monthly#attendance-daily-log"
-                className="mt-0.5 inline-block text-[10px] font-semibold text-[#217346] underline"
-              >
-                Check history
-              </Link>
             </div>
             <div>
-              <p className="text-lg font-bold text-[#c00000]">{absent}</p>
+              <p className="text-lg font-bold text-[#EF4444]">{absent}</p>
               <p className="text-[10px] text-slate-500">Absent</p>
             </div>
             <div>
-              <p className="text-lg font-bold text-amber-700">{late}</p>
-              <p className="text-[10px] text-slate-500">Late</p>
+              <p className="text-lg font-bold text-[#F59E0B]">{late}</p>
+              <p className="text-[10px] text-slate-500">Present (Late)</p>
             </div>
             <div>
               <p className="text-lg font-bold text-slate-900">{pct}%</p>
@@ -101,26 +260,25 @@ export function EmployeeAttendanceSummaryCard() {
             </div>
           </div>
         )}
-        <p className="mt-2 text-[10px] text-slate-500">
-          Year {year}: <span className="font-semibold text-[#217346]">{yearPresent}</span> present days total
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-3">
           <Link
-            href="/employee/attendance?view=monthly"
-            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-[#217346] hover:bg-emerald-100"
+            href={monthlySheetHref}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline"
           >
-            <CalendarDays className="h-3.5 w-3.5" />
-            Monthly sheet
+            This month
+            <ChevronRight className="h-3.5 w-3.5" />
           </Link>
           <Link
-            href="/employee/attendance?view=yearly"
-            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+            href={yearlySheetHref}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline"
           >
-            <CalendarRange className="h-3.5 w-3.5" />
-            Yearly sheet
+            12-month report
+            <ChevronRight className="h-3.5 w-3.5" />
           </Link>
         </div>
       </div>
     </div>
   );
 }
+
+export const EmployeeAttendanceSummaryCard = AttendanceSummaryCard;

@@ -13,8 +13,10 @@ import {
 import { connectSocket } from '@/lib/socket/socket.client';
 import { useAuthStore } from '@/store/auth.store';
 import { useAdminProductStore } from '@/store/admin-product.store';
-import type { LoginPanel } from '@/types/auth';
+import type { AuthTokens, LoginPanel } from '@/types/auth';
 import { extractApiError } from '@/lib/api/errors';
+import { clearSleepLogoutFlag, markFreshLogin } from '@/lib/auth/sleep-logout';
+import { stashLoginPunch } from '@/lib/auth/login-punch';
 
 function formatLoginError(e: unknown): string {
   const err = e as { code?: string; message?: string };
@@ -35,21 +37,28 @@ export function useLogin() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const completeLogin = (
-    tokens: {
-      accessToken: string;
-      refreshToken: string;
-      user: import('@/types/auth').User;
-      sessionId?: string;
-    },
-    panel: LoginPanel,
-  ) => {
+  const completeLogin = (tokens: AuthTokens, panel: LoginPanel) => {
+    clearSleepLogoutFlag();
+    markFreshLogin();
     setAuth(tokens.user, tokens.accessToken, tokens.refreshToken, panel, tokens.sessionId);
     if (panel === 'admin') {
       useAdminProductStore.getState().openPickerAfterLogin();
     }
     if (!tokens.accessToken.startsWith('demo-')) {
       connectSocket(tokens.accessToken);
+    }
+    if (typeof window !== 'undefined') {
+      if (tokens.attendancePunch?.punchedIn && !tokens.attendancePunch?.dayClosed) {
+        const punch = {
+          ...tokens.attendancePunch,
+          sessionId: tokens.sessionId,
+          workTimeTodayGrossMinutes: tokens.workTimeTodayGrossMinutes,
+        };
+        stashLoginPunch(punch);
+        window.dispatchEvent(new CustomEvent('attendance:login-punch', { detail: punch }));
+      }
+      window.dispatchEvent(new CustomEvent('attendance:refresh'));
+      window.dispatchEvent(new CustomEvent('work-time:refresh'));
     }
     router.replace(getDashboardPath(panel));
   };

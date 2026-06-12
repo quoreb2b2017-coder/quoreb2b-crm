@@ -1,3 +1,8 @@
+import {
+  calendarDateKey,
+  formatTime12hInZone,
+  nextCalendarMidnightMs,
+} from '../../common/utils/timezone.util';
 import { resolveActivityTimestamp } from './activity-date.util';
 import { isPassiveActivityAction } from './activity-actions.constant';
 import {
@@ -91,7 +96,7 @@ export function formatDuration(minutes: number): string {
 }
 
 function formatTime(d: Date): string {
-  return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+  return formatTime12hInZone(d);
 }
 
 function avgLogoutClock(logoutDates: Date[]): string {
@@ -127,7 +132,44 @@ function closeOpenSession(
   });
 }
 
-function buildSessions(logs: ActivityLogRow[], periodEnd: Date): SessionRow[] {
+/** Last recorded activity for a session before `before` (excludes LOGIN itself). */
+function lastActivityAtForSession(
+  sorted: ActivityLogRow[],
+  sessionId: string,
+  loginAt: Date,
+  before: Date,
+): Date {
+  let last = loginAt;
+  for (const log of sorted) {
+    const sid = log.sessionId || `legacy-${String(log._id)}`;
+    if (sid !== sessionId) continue;
+    const at = toDate(log);
+    if (at <= loginAt || at >= before) continue;
+    if (log.action === 'LOGIN') continue;
+    if (at > last) last = at;
+  }
+  return last;
+}
+
+function resolveOrphanSessionEnd(
+  sorted: ActivityLogRow[],
+  open: { loginAt: Date; sessionId: string },
+  before: Date,
+): Date {
+  const last = lastActivityAtForSession(sorted, open.sessionId, open.loginAt, before);
+  return last > open.loginAt ? last : open.loginAt;
+}
+
+export interface BuildSessionsOptions {
+  /** Only this JWT session may extend to periodEnd; others close at last activity. */
+  activeSessionId?: string;
+}
+
+function buildSessions(
+  logs: ActivityLogRow[],
+  periodEnd: Date,
+  opts: BuildSessionsOptions = {},
+): SessionRow[] {
   const sorted = [...logs].sort(
     (a, b) => toDate(a).getTime() - toDate(b).getTime(),
   );
@@ -140,10 +182,10 @@ function buildSessions(logs: ActivityLogRow[], periodEnd: Date): SessionRow[] {
     const at = toDate(log);
 
     if (log.action === 'LOGIN') {
-      // Only one active session: close any other open sessions at this login time.
       for (const [otherSid, open] of [...openBySession.entries()]) {
         if (otherSid !== sid) {
-          closeOpenSession(open, at, completed);
+          const endAt = resolveOrphanSessionEnd(sorted, open, at);
+          closeOpenSession(open, endAt, completed);
           openBySession.delete(otherSid);
         }
       }
@@ -165,23 +207,142 @@ function buildSessions(logs: ActivityLogRow[], periodEnd: Date): SessionRow[] {
   }
 
   for (const [sid, open] of openBySession) {
-    const durationMinutes = Math.max(
-      0,
-      Math.round((periodEnd.getTime() - open.loginAt.getTime()) / 60000),
-    );
-    completed.push({
-      sessionId: sid,
-      loginAt: open.loginAt.toISOString(),
-      durationMinutes,
-      durationFormatted: formatDuration(durationMinutes),
-      logoutTime: '—',
-      stillActive: true,
-    });
+    if (opts.activeSessionId && sid === opts.activeSessionId) {
+      const durationMinutes = Math.max(
+        0,
+        Math.round((periodEnd.getTime() - open.loginAt.getTime()) / 60000),
+      );
+      completed.push({
+        sessionId: sid,
+        loginAt: open.loginAt.toISOString(),
+        durationMinutes,
+        durationFormatted: formatDuration(durationMinutes),
+        logoutTime: '—',
+        stillActive: true,
+      });
+      continue;
+    }
+
+    const endAt = resolveOrphanSessionEnd(sorted, open, periodEnd);
+    closeOpenSession(open, endAt, completed);
   }
 
   return completed.sort(
     (a, b) => new Date(b.loginAt).getTime() - new Date(a.loginAt).getTime(),
   );
+}
+
+/** Latest open session (LOGIN without a later LOGOUT for that sessionId). */
+export function resolveActiveSessionId(logs: ActivityLogRow[]): string | undefined {
+  const sorted = [...logs]
+    .filter((l) => l.action === 'LOGIN' || LOGOUT_ACTIONS.has(l.action))
+    .sort((a, b) => toDate(a).getTime() - toDate(b).getTime());
+  let activeId: string | undefined;
+  for (const log of sorted) {
+    const sid = log.sessionId;
+    if (!sid) continue;
+    if (log.action === 'LOGIN') activeId = sid;
+    if (LOGOUT_ACTIONS.has(log.action) && sid === activeId) activeId = undefined;
+  }
+  return activeId;
+}
+
+/** 12-hour time in US Eastern (legacy name kept for callers). */
+export function formatIstTime12h(d: Date): string {
+  return formatTime12hInZone(d);
+}
+
+export interface DayAuthBoundary {
+  firstLoginAt: Date | null;
+  lastLogoutAt: Date | null;
+  onDuty: boolean;
+}
+
+/** First LOGIN and last LOGOUT/IDLE_LOGOUT on an IST day; checkout hidden while on duty. */
+export function buildAuthBoundaryForDay(
+  logs: ActivityLogRow[],
+  dateKey: string,
+  periodEnd: Date = new Date(),
+  activeSessionId?: string,
+): DayAuthBoundary {
+  const authLogs = logs.filter(
+    (l) => l.action === 'LOGIN' || LOGOUT_ACTIONS.has(l.action),
+  );
+  let firstLoginAt: Date | null = null;
+  let lastLogoutAt: Date | null = null;
+
+  for (const log of authLogs) {
+    const at = toDate(log);
+    if (calendarDateKey(at) !== dateKey) continue;
+    if (log.action === 'LOGIN') {
+      if (!firstLoginAt || at < firstLoginAt) firstLoginAt = at;
+    }
+    if (LOGOUT_ACTIONS.has(log.action)) {
+      if (!lastLogoutAt || at > lastLogoutAt) lastLogoutAt = at;
+    }
+  }
+
+  const resolvedActive = activeSessionId ?? resolveActiveSessionId(logs);
+  const sessions = buildSessions(logs, periodEnd, { activeSessionId: resolvedActive });
+  const onDuty = resolvedActive
+    ? sessions.some((s) => s.sessionId === resolvedActive && s.stillActive)
+    : false;
+
+  return {
+    firstLoginAt,
+    lastLogoutAt: onDuty ? null : lastLogoutAt,
+    onDuty,
+  };
+}
+
+export interface TodaySessionRow {
+  index: number;
+  sessionId: string;
+  loginAt: string;
+  logoutAt?: string;
+  loginTime: string;
+  logoutTime?: string;
+  durationMinutes: number;
+  durationFormatted: string;
+  stillActive: boolean;
+}
+
+function sessionTouchesIstDay(
+  session: SessionRow,
+  dateKey: string,
+  periodEnd: Date,
+): boolean {
+  const loginAt = new Date(session.loginAt);
+  const endAt = session.logoutAt ? new Date(session.logoutAt) : periodEnd;
+  if (calendarDateKey(loginAt) === dateKey) return true;
+  if (session.logoutAt && calendarDateKey(endAt) === dateKey) return true;
+  if (calendarDateKey(loginAt) < dateKey && calendarDateKey(endAt) >= dateKey) return true;
+  return false;
+}
+
+/** All login→logout sessions that count toward an IST calendar day. */
+export function listSessionsForIstDay(
+  logs: ActivityLogRow[],
+  dateKey: string,
+  periodEnd: Date = new Date(),
+  activeSessionId?: string,
+): TodaySessionRow[] {
+  const resolvedActive = activeSessionId ?? resolveActiveSessionId(logs);
+  const sessions = buildSessions(logs, periodEnd, { activeSessionId: resolvedActive });
+  return sessions
+    .filter((s) => sessionTouchesIstDay(s, dateKey, periodEnd))
+    .sort((a, b) => new Date(a.loginAt).getTime() - new Date(b.loginAt).getTime())
+    .map((s, index) => ({
+      index: index + 1,
+      sessionId: s.sessionId,
+      loginAt: s.loginAt,
+      logoutAt: s.logoutAt,
+      loginTime: formatIstTime12h(new Date(s.loginAt)),
+      logoutTime: s.logoutAt ? formatIstTime12h(new Date(s.logoutAt)) : undefined,
+      durationMinutes: s.durationMinutes,
+      durationFormatted: s.durationFormatted,
+      stillActive: Boolean(s.stillActive),
+    }));
 }
 
 function buildSummary(logs: ActivityLogRow[], sessions: SessionRow[]): ReportSummary {
@@ -240,50 +401,52 @@ export interface WorkTimeSnapshot {
   } | null;
 }
 
-function localDateKey(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-/** Split session duration across calendar days (handles overnight shifts). */
+/** Split session duration across IST calendar days (handles overnight shifts). */
 function allocateSessionToDays(
   loginAt: Date,
   endAt: Date,
   dayTotals: Map<string, number>,
 ): void {
-  let cursor = new Date(loginAt.getTime());
+  let cursor = loginAt.getTime();
   const end = endAt.getTime();
-  while (cursor.getTime() < end) {
-    const key = localDateKey(cursor);
-    const nextDay = new Date(
-      cursor.getFullYear(),
-      cursor.getMonth(),
-      cursor.getDate() + 1,
-      0,
-      0,
-      0,
-      0,
-    );
-    const sliceEnd = Math.min(end, nextDay.getTime());
-    const minutes = (sliceEnd - cursor.getTime()) / 60000;
+  while (cursor < end) {
+    const key = calendarDateKey(new Date(cursor));
+    const sliceEnd = Math.min(end, nextCalendarMidnightMs(new Date(cursor)));
+    const minutes = (sliceEnd - cursor) / 60000;
     if (minutes > 0) {
       dayTotals.set(key, (dayTotals.get(key) ?? 0) + minutes);
     }
-    cursor = new Date(sliceEnd);
+    cursor = sliceEnd;
   }
 }
 
 const MAX_MINUTES_PER_DAY = 24 * 60;
 const MAX_DAILY_BREAKDOWN_ROWS = 14;
 
+/** Gross active minutes per calendar day from login sessions (pauses on logout). */
+export function buildSessionGrossMinutesByDay(
+  logs: ActivityLogRow[],
+  periodEnd: Date = new Date(),
+  opts: BuildSessionsOptions = {},
+): Map<string, number> {
+  const sessions = buildSessions(logs, periodEnd, opts);
+  const map = new Map<string, number>();
+  for (const row of buildDailyWorkBreakdown(sessions, periodEnd)) {
+    map.set(row.date, row.totalMinutes);
+  }
+  const todayKey = calendarDateKey(periodEnd);
+  if (!map.has(todayKey)) {
+    map.set(todayKey, 0);
+  }
+  return map;
+}
+
 export function buildDailyWorkBreakdown(
   sessions: SessionRow[],
   periodEnd: Date,
 ): DailyWorkTimeRow[] {
   const dayTotals = new Map<string, number>();
-  const todayKey = localDateKey(periodEnd);
+  const todayKey = calendarDateKey(periodEnd);
 
   for (const session of sessions) {
     const loginAt = new Date(session.loginAt);
@@ -337,7 +500,9 @@ export function buildWorkTimeSnapshot(
   opts: { sessionId?: string; periodEnd?: Date } = {},
 ): WorkTimeSnapshot {
   const periodEnd = opts.periodEnd ?? new Date();
-  const sessions = buildSessions(logs, periodEnd);
+  const sessions = buildSessions(logs, periodEnd, {
+    activeSessionId: opts.sessionId,
+  });
   const monthlyMinutes = sessions.reduce((sum, row) => sum + row.durationMinutes, 0);
   const dailyBreakdown = buildDailyWorkBreakdown(sessions, periodEnd);
   const todayRow = dailyBreakdown.find((d) => d.isToday);

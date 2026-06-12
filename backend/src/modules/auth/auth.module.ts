@@ -11,11 +11,13 @@ import { RefreshToken, RefreshTokenSchema } from './schemas/refresh-token.schema
 import { UsersModule } from '../users/users.module';
 import { jwtConfig } from '../../config/jwt.config';
 import { ActivityLogsModule } from '../activity-logs/activity-logs.module';
+import { AttendanceModule } from '../attendance/attendance.module';
 
 @Module({
   imports: [
     UsersModule,
     ActivityLogsModule,
+    AttendanceModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       imports: [ConfigModule],

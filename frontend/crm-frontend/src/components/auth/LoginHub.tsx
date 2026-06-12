@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { clearSleepLogoutFlag } from '@/lib/auth/sleep-logout';
 import { useSearchParams } from 'next/navigation';
 import { Shield, Database, Users, BarChart3, Bell, Lock } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
@@ -9,6 +10,7 @@ import { PublicFooter } from '@/components/layout/PublicFooter';
 import { AdminLoginForm } from './AdminLoginForm';
 import { IdLoginForm } from './IdLoginForm';
 import type { LoginPanel } from '@/types/auth';
+import { IDLE_TIMEOUT_MINUTES } from '@/lib/constants/session';
 
 const tabs: { id: LoginPanel; label: string; icon: typeof Shield }[] = [
   { id: 'admin', label: 'Super Admin', icon: Shield },
@@ -27,13 +29,19 @@ export function LoginHub() {
   const searchParams = useSearchParams();
   const logoutReason = searchParams.get('reason');
 
+  useEffect(() => {
+    clearSleepLogoutFlag();
+  }, []);
+
   return (
     <div className="flex min-h-screen flex-col bg-white">
       <PublicNavbar />
 
-      {logoutReason === 'idle' && (
+      {(logoutReason === 'idle' || logoutReason === 'sleep') && (
         <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-center text-sm text-amber-900">
-          You were signed out after 5 minutes of inactivity. Please sign in again.
+          {logoutReason === 'sleep'
+            ? 'You were signed out because your device entered sleep mode or the session was hidden. Please sign in again.'
+            : `You were signed out after ${IDLE_TIMEOUT_MINUTES} minutes of inactivity. Please sign in again.`}
         </div>
       )}
 

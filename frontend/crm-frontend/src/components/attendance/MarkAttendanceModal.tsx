@@ -11,13 +11,8 @@ import {
   sideSheetPrimaryBtn,
   type SideSheetAccent,
 } from '@/components/ui/SideSheet';
-import { formatLocalDate } from '@/lib/attendance/date';
-import {
-  calculateShiftHours,
-  DEFAULT_SHIFT_CHECK_IN,
-  DEFAULT_SHIFT_CHECK_OUT,
-  SHIFT_LABEL,
-} from '@/lib/attendance/shift-hours';
+import { todayDateKeyIst } from '@/lib/attendance/ist-date';
+import { DEFAULT_SHIFT_CHECK_IN } from '@/lib/attendance/shift-hours';
 import {
   ATTENDANCE_ON_TIME_CUTOFF,
   ATTENDANCE_ON_TIME_LABEL,
@@ -46,10 +41,9 @@ export function MarkAttendanceModal({
   userId,
   accent = 'emerald',
 }: MarkAttendanceModalProps) {
-  const [date, setDate] = useState(formatLocalDate());
+  const [date, setDate] = useState(todayDateKeyIst());
   const [status, setStatus] = useState<'present' | 'absent' | 'leave' | 'half-day'>('present');
   const [checkInTime, setCheckInTime] = useState(DEFAULT_SHIFT_CHECK_IN);
-  const [checkOutTime, setCheckOutTime] = useState(DEFAULT_SHIFT_CHECK_OUT);
   const [notes, setNotes] = useState('');
   const [isPaidLeave, setIsPaidLeave] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -61,27 +55,28 @@ export function MarkAttendanceModal({
     setIsWeekendDay(isWeekend(date));
   }, [date]);
 
-  const calculateHours = () => calculateShiftHours(checkInTime, checkOutTime);
+  const isToday = date === todayDateKeyIst();
   const isLateEntry =
     (status === 'present' || status === 'half-day') && isLateCheckIn(checkInTime, ATTENDANCE_ON_TIME_CUTOFF);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isToday) {
+      setError('Today is marked automatically when you log in to the CRM. Use logout to check out.');
+      return;
+    }
     setError('');
     setSuccess('');
     setLoading(true);
 
     try {
-      const hoursWorked = status === 'present' ? calculateHours() : 0;
       await attendanceService.markAttendance(
         userId,
         date,
         status,
-        hoursWorked,
+        undefined,
         notes.trim() || undefined,
-        status === 'present' || status === 'half-day'
-          ? { checkIn: checkInTime, checkOut: checkOutTime }
-          : undefined,
+        status === 'present' || status === 'half-day' ? { checkIn: checkInTime } : undefined,
         status === 'leave' ? isPaidLeave : undefined,
       );
       setSuccess('Attendance saved successfully');
@@ -97,18 +92,18 @@ export function MarkAttendanceModal({
   };
 
   const footer = (
-    <div className="flex gap-3">
+    <div className="flex flex-col-reverse gap-2 sm:flex-row sm:gap-3">
       <button
         type="button"
         onClick={onClose}
-        className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:flex-1"
       >
         Cancel
       </button>
       <button
         type="submit"
         form="mark-attendance-form"
-        disabled={loading}
+        disabled={loading || isToday}
         className={sideSheetPrimaryBtn(accent)}
       >
         {loading ? 'Saving…' : 'Save Attendance'}
@@ -121,7 +116,11 @@ export function MarkAttendanceModal({
       isOpen={isOpen}
       onClose={onClose}
       title="Mark Attendance"
-      subtitle={isWeekendDay ? 'Weekend - Auto-marked' : "Log today's status — opens from the sidebar"}
+      subtitle={
+        isWeekendDay
+          ? 'Weekend - Auto-marked'
+          : 'Past days only — today is recorded on CRM login / logout'
+      }
       icon={<Clock className="h-5 w-5 text-emerald-400" />}
       accent={accent}
       footer={footer}
@@ -163,42 +162,36 @@ export function MarkAttendanceModal({
           </div>
         </div>
 
-        {status === 'present' && (
+        {isToday && (
+          <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+            Today&apos;s attendance is automatic — log in to start and log out to check out.
+          </div>
+        )}
+
+        {(status === 'present' || status === 'half-day') && !isToday && (
           <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm space-y-3">
             <p className="text-xs text-slate-500">
-              On-time cutoff: <span className="font-semibold text-slate-700">{ATTENDANCE_ON_TIME_LABEL}</span>
+              On-time cutoff:{' '}
+              <span className="font-semibold text-slate-700">{ATTENDANCE_ON_TIME_LABEL}</span>
               {' · '}
-              Standard shift: <span className="font-semibold text-slate-700">{SHIFT_LABEL}</span>
+              Checkout is set on logout only.
             </p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-xs font-semibold text-slate-500">Check-in time</label>
-                <input
-                  type="time"
-                  value={checkInTime}
-                  onChange={(e) => setCheckInTime(e.target.value)}
-                  className={sideSheetFieldClass(accent)}
-                />
-              </div>
-              <div>
-                <label className="mb-2 block text-xs font-semibold text-slate-500">Check-out (4 AM)</label>
-                <input
-                  type="time"
-                  value={checkOutTime}
-                  onChange={(e) => setCheckOutTime(e.target.value)}
-                  className={sideSheetFieldClass(accent)}
-                />
-              </div>
+            <div>
+              <label className="mb-2 block text-xs font-semibold text-slate-500">
+                Login (first check-in)
+              </label>
+              <input
+                type="time"
+                value={checkInTime}
+                onChange={(e) => setCheckInTime(e.target.value)}
+                className={sideSheetFieldClass(accent)}
+              />
             </div>
-            {isLateEntry ? (
+            {isLateEntry && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                Late attendance — check-in at{' '}
+                Status will be Present (Late) — check-in at{' '}
                 <span className="font-semibold">{formatTime12h(checkInTime)}</span> is after{' '}
                 {ATTENDANCE_ON_TIME_LABEL}.
-              </div>
-            ) : (
-              <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-                <span className="font-medium">{calculateHours().toFixed(2)} hrs</span> worked · on time
               </div>
             )}
           </div>

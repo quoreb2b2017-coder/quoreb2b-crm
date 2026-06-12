@@ -4,16 +4,23 @@ import { cn } from '@/lib/utils/cn';
 
 export type MetricItem = { label: string; value: string | number; note?: string };
 
-/** Compact metric strip — not a bulky dashboard card */
 export function XlThinMetricCard({ label, value, note }: MetricItem) {
   const display = typeof value === 'number' ? value.toLocaleString('en-IN') : value;
   return (
-    <div className="flex min-h-[48px] flex-col justify-center border border-slate-200 border-l-[3px] border-l-[#217346] bg-white px-2.5 py-1.5 shadow-sm transition-colors hover:border-slate-300 hover:bg-[#f9fff9]">
+    <div className="group flex min-h-[56px] flex-col justify-center rounded-lg border border-slate-100 bg-gradient-to-br from-slate-50/80 to-white px-3 py-2.5 transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-200 hover:from-white hover:to-slate-50 hover:shadow-sm">
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[11px] font-medium leading-tight text-slate-600">{label}</span>
-        <span className="shrink-0 font-mono text-base font-bold leading-none text-slate-900">{display}</span>
+        <span className="text-[11px] font-medium leading-tight text-slate-500 transition-colors group-hover:text-slate-600">
+          {label}
+        </span>
+        <span className="shrink-0 font-mono text-base font-bold leading-none text-slate-900 transition-transform group-hover:scale-105">
+          {display}
+        </span>
       </div>
-      {note ? <p className="mt-0.5 line-clamp-1 text-[10px] text-slate-400">{note}</p> : null}
+      {note ? (
+        <p className="mt-1 line-clamp-2 text-[10px] leading-snug text-slate-400 group-hover:text-slate-500">
+          {note}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -37,18 +44,25 @@ export function XlMetricCardSection({
   }[columns];
 
   return (
-    <div className="border border-slate-300 bg-white">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all duration-200 hover:border-slate-300 hover:shadow-md">
       <div
         className={cn(
-          'border-b border-slate-300 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide',
+          'border-b px-4 py-2.5',
           headerVariant === 'green'
-            ? 'bg-[#217346] text-white'
-            : 'bg-[#f3f3f3] text-slate-600',
+            ? 'border-emerald-700/20 bg-gradient-to-r from-[#1a5c38] to-[#217346] text-white'
+            : 'border-slate-100 bg-slate-50/90',
         )}
       >
-        {title}
+        <h3
+          className={cn(
+            'text-xs font-semibold uppercase tracking-wide',
+            headerVariant === 'green' ? 'text-white' : 'text-slate-600',
+          )}
+        >
+          {title}
+        </h3>
       </div>
-      <div className={cn('grid gap-1.5 bg-[#ececec] p-2', gridClass)}>
+      <div className={cn('grid gap-2.5 p-3', gridClass)}>
         {rows.map((row) => (
           <XlThinMetricCard key={row.label} {...row} />
         ))}

@@ -15,6 +15,7 @@ import { useAdminProductStore } from '@/store/admin-product.store';
 import { useAuthStore } from '@/store/auth.store';
 
 const WORKSPACE_PATH = '/admin';
+const EMPTY_ROLES: string[] = [];
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -29,7 +30,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathProductId = getProductIdForPath(pathname);
   const activeProductId = selectedProductId ?? pathProductId;
   const product = getCompanyProduct(activeProductId);
-  const userRoles = useAuthStore((s) => s.user?.roles ?? []);
+  const userRoles = useAuthStore((s) => s.user?.roles ?? EMPTY_ROLES);
   const baseNavItems = useMemo(() => {
     if (showPicker) return [];
     const items = getAdminNavItems(activeProductId);

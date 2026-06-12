@@ -9,28 +9,28 @@ type Accent = 'emerald' | 'violet' | 'admin';
 
 const themes: Record<
   Accent,
-  { hero: string; ring: string; btn: string; btnOutline: string; stat: string }
+  { hero: string; ring: string; btn: string; btnOutline: string; statAccent: string }
 > = {
   admin: {
-    hero: 'from-[#1a5c38] via-[#217346] to-[#0d0f14]',
-    ring: 'ring-emerald-500/30',
-    btn: 'bg-white text-[#217346] hover:bg-emerald-50',
-    btnOutline: 'border-white/30 text-white hover:bg-white/10',
-    stat: 'text-[#217346]',
+    hero: 'from-[#1a5c38] via-[#217346] to-[#0f2922]',
+    ring: 'ring-emerald-500/20',
+    btn: 'bg-white text-[#217346] hover:bg-emerald-50 shadow-md',
+    btnOutline: 'border-white/35 text-white hover:bg-white/10',
+    statAccent: 'border-l-[#217346]',
   },
   emerald: {
-    hero: 'from-emerald-600/90 via-teal-600/80 to-[#0d0f14]',
-    ring: 'ring-emerald-500/30',
-    btn: 'bg-white text-emerald-800 hover:bg-emerald-50',
-    btnOutline: 'border-white/30 text-white hover:bg-white/10',
-    stat: 'text-emerald-600',
+    hero: 'from-emerald-700 via-emerald-600 to-teal-800',
+    ring: 'ring-emerald-500/20',
+    btn: 'bg-white text-emerald-800 hover:bg-emerald-50 shadow-md',
+    btnOutline: 'border-white/35 text-white hover:bg-white/10',
+    statAccent: 'border-l-emerald-500',
   },
   violet: {
-    hero: 'from-violet-600/90 via-purple-600/75 to-[#0d0f14]',
-    ring: 'ring-violet-500/30',
-    btn: 'bg-white text-violet-800 hover:bg-violet-50',
-    btnOutline: 'border-white/30 text-white hover:bg-white/10',
-    stat: 'text-violet-600',
+    hero: 'from-violet-700 via-violet-600 to-purple-900',
+    ring: 'ring-violet-500/20',
+    btn: 'bg-white text-violet-800 hover:bg-violet-50 shadow-md',
+    btnOutline: 'border-white/35 text-white hover:bg-white/10',
+    statAccent: 'border-l-violet-500',
   },
 };
 
@@ -40,7 +40,11 @@ interface AttendancePageChromeProps {
   accent: Accent;
   loading?: boolean;
   onRefresh: () => void;
+  /** e.g. back button shown before the title icon */
+  leading?: React.ReactNode;
   monthControl: React.ReactNode;
+  /** Hide manual mark-today (employee: login auto-marks attendance). */
+  showMarkToday?: boolean;
   stats?: {
     label: string;
     value: string | number;
@@ -52,10 +56,17 @@ interface AttendancePageChromeProps {
 }
 
 const toneClass = {
-  green: 'text-[#217346]',
-  red: 'text-[#c00000]',
-  blue: 'text-[#2e75b6]',
+  green: 'text-emerald-700',
+  red: 'text-rose-600',
+  blue: 'text-blue-600',
   neutral: 'text-slate-900',
+};
+
+const toneBg = {
+  green: 'bg-emerald-50/80',
+  red: 'bg-rose-50/80',
+  blue: 'bg-blue-50/80',
+  neutral: 'bg-slate-50/80',
 };
 
 export function AttendancePageChrome({
@@ -64,7 +75,9 @@ export function AttendancePageChrome({
   accent,
   loading,
   onRefresh,
+  leading,
   monthControl,
+  showMarkToday = true,
   stats,
   children,
 }: AttendancePageChromeProps) {
@@ -72,23 +85,24 @@ export function AttendancePageChrome({
   const t = themes[accent];
 
   return (
-    <AttendanceFullBleed className="gap-4 py-3 sm:py-4 md:gap-5 animate-fade-in">
+    <AttendanceFullBleed className="gap-4 px-3 py-4 sm:px-4 md:gap-5 animate-fade-in">
       <div
         className={cn(
-          'relative mx-0 w-full overflow-hidden rounded-none sm:rounded-xl bg-gradient-to-br px-4 py-4 sm:px-5 sm:py-5 text-white shadow-lg ring-1',
+          'relative w-full overflow-hidden rounded-xl bg-gradient-to-br px-4 py-5 text-white shadow-lg ring-1 sm:px-6',
           t.hero,
           t.ring,
         )}
       >
-        <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-white/10 blur-2xl" />
+        <div className="absolute -right-12 -top-12 h-40 w-40 rounded-full bg-white/10 blur-3xl" />
         <div className="relative flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3">
-            <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/15 backdrop-blur-sm">
-              <CalendarDays className="h-6 w-6" />
+            {leading}
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20 backdrop-blur-sm">
+              <CalendarDays className="h-5 w-5" />
             </span>
             <div>
-              <h1 className="text-xl font-bold tracking-tight md:text-2xl">{title}</h1>
-              <p className="mt-1 max-w-md text-sm text-white/75">{subtitle}</p>
+              <h1 className="text-lg font-bold tracking-tight sm:text-xl">{title}</h1>
+              <p className="mt-0.5 max-w-lg text-sm text-white/80">{subtitle}</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -96,29 +110,32 @@ export function AttendancePageChrome({
               type="button"
               onClick={onRefresh}
               disabled={loading}
-              className={cn('rounded-xl p-2.5 transition-colors', t.btnOutline, 'border')}
+              className={cn('rounded-lg border p-2.5 transition-colors', t.btnOutline)}
               title="Refresh"
+              aria-label="Refresh"
             >
               <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
             </button>
             {panel && (
               <>
-                <button
-                  type="button"
-                  onClick={panel.openMark}
-                  className={cn(
-                    'inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold shadow-md transition-colors',
-                    t.btn,
-                  )}
-                >
-                  <Plus className="h-4 w-4" />
-                  Mark Today
-                </button>
+                {showMarkToday && (
+                  <button
+                    type="button"
+                    onClick={panel.openMark}
+                    className={cn(
+                      'inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold transition-colors',
+                      t.btn,
+                    )}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Mark Today
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={panel.openLeave}
                   className={cn(
-                    'inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold transition-colors',
+                    'inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-semibold transition-colors',
                     t.btnOutline,
                   )}
                 >
@@ -131,36 +148,46 @@ export function AttendancePageChrome({
         </div>
       </div>
 
-      <div className="flex w-full max-w-none flex-wrap items-center gap-3 border-y border-slate-200/80 bg-white px-3 py-3 shadow-sm sm:rounded-xl sm:border sm:px-4">
+      <div className="flex w-full max-w-none flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
         {monthControl}
       </div>
 
-      {stats && stats.length > 0 && !loading && (
-        <div className="grid w-full max-w-none grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3 lg:grid-cols-4">
+      {stats && stats.length > 0 && (
+        <div
+          className={cn(
+            'grid w-full max-w-none grid-cols-2 gap-3 sm:grid-cols-4',
+            loading && 'opacity-70',
+          )}
+        >
           {stats.map((s) => (
             <div
               key={s.label}
-              className="rounded-lg border border-slate-200/80 bg-white px-3 py-3 shadow-sm sm:rounded-xl sm:px-4"
+              className={cn(
+                'rounded-xl border border-slate-200 border-l-[3px] bg-white px-4 py-3 shadow-sm',
+                t.statAccent,
+                toneBg[s.tone ?? 'neutral'],
+              )}
             >
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{s.label}</p>
               <p className={cn('mt-1 text-2xl font-bold tabular-nums', toneClass[s.tone ?? 'neutral'])}>
                 {s.value}
               </p>
-              {(s.checkHistoryHref || s.onCheckHistory) && s.label === 'Present' && (
+              {(s.checkHistoryHref || s.onCheckHistory) &&
+                (s.label === 'Present' || s.label.includes('present')) && (
                 s.checkHistoryHref ? (
                   <a
                     href={s.checkHistoryHref}
-                    className="mt-1.5 inline-block text-xs font-semibold text-[#217346] underline decoration-[#217346]/40 underline-offset-2 hover:text-[#1a5c38]"
+                    className="mt-1.5 inline-block text-xs font-semibold text-emerald-700 hover:underline"
                   >
-                    Check history
+                    {s.label.toLowerCase().includes('year') ? 'View 12-month report' : 'View history'}
                   </a>
                 ) : (
                   <button
                     type="button"
                     onClick={s.onCheckHistory}
-                    className="mt-1.5 block text-xs font-semibold text-[#217346] underline decoration-[#217346]/40 underline-offset-2 hover:text-[#1a5c38]"
+                    className="mt-1.5 block text-xs font-semibold text-emerald-700 hover:underline"
                   >
-                    Check history
+                    View history
                   </button>
                 )
               )}
@@ -169,7 +196,7 @@ export function AttendancePageChrome({
         </div>
       )}
 
-      <div className="flex min-h-0 w-full max-w-none min-w-0 flex-1 flex-col gap-4 sm:gap-5">
+      <div className="flex min-h-0 w-full max-w-none min-w-0 flex-1 flex-col gap-4">
         {children}
       </div>
     </AttendanceFullBleed>

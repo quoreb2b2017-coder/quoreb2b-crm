@@ -9,6 +9,13 @@ import { fetchDbAdminDashboard, type DbAdminDashboardData } from '@/lib/api/anal
 import { formatActivityAction } from '@/lib/constants/activity-labels';
 import { extractApiError } from '@/lib/api/errors';
 import { cn } from '@/lib/utils/cn';
+import { AttendanceSummaryCard } from '@/components/attendance/EmployeeAttendanceSummaryCard';
+import {
+  dashboardCard,
+  dashboardCardHeader,
+  dashboardRefreshBtn,
+  dashboardSectionTitle,
+} from '@/components/dashboard/dashboard-ui';
 
 function formatWhen(iso: string) {
   if (!iso) return '—';
@@ -28,8 +35,8 @@ function BarRow({ label, count, total, color }: { label: string; count: number; 
           {count.toLocaleString('en-IN')} ({pct}%)
         </span>
       </div>
-      <div className="h-2 border border-slate-200 bg-slate-50">
-        <div className={cn('h-full', color)} style={{ width: `${pct}%` }} />
+      <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+        <div className={cn('h-full rounded-full transition-all', color)} style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
@@ -92,23 +99,26 @@ export function DbAdminDashboard() {
   const batchTotal = Math.max(b.total, 1);
 
   return (
-    <div className="w-full min-w-0 space-y-4">
-      <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-stretch">
-        <div className="min-w-0 flex-1">
-          <WelcomeBanner variant="db_admin" />
-        </div>
-        <button
-          type="button"
-          onClick={load}
-          disabled={loading}
-          className="inline-flex shrink-0 items-center justify-center gap-1.5 border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 sm:self-center"
-        >
-          <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
-          Refresh
-        </button>
-      </div>
+    <div className="w-full min-w-0 space-y-5 px-3 py-4 sm:px-4 sm:py-5">
+      <WelcomeBanner
+        variant="db_admin"
+        toolbar={
+          <button
+            type="button"
+            onClick={load}
+            disabled={loading}
+            className={cn(
+              dashboardRefreshBtn,
+              'border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white',
+            )}
+          >
+            <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+            Refresh
+          </button>
+        }
+      />
 
-      <div className="grid gap-0 border border-slate-300 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         <XlMetricCardSection
           title="Database & services (live)"
           headerVariant="green"
@@ -188,24 +198,12 @@ export function DbAdminDashboard() {
         />
       )}
 
-      <div className="border border-slate-300 bg-white">
-        <div className="border-b border-slate-300 bg-[#f3f3f3] px-3 py-1.5 text-[10px] font-semibold uppercase text-slate-600">
-          Attendance
-        </div>
-        <div className="p-4">
-          <Link
-            href="/db-admin/attendance"
-            className="inline-flex items-center gap-2 rounded border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            View Attendance Dashboard →
-          </Link>
-        </div>
-      </div>
+      <AttendanceSummaryCard basePath="/db-admin/attendance" variant="dashboard" accent="violet" />
 
-      <div className="grid gap-0 border border-slate-300 lg:grid-cols-2">
-        <div className="border-b border-slate-300 bg-white p-4 lg:border-b-0 lg:border-r">
-          <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-700">
-            <Layers className="h-3.5 w-3.5 text-[#217346]" />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className={cn(dashboardCard, 'p-4 sm:p-5')}>
+          <h3 className={dashboardSectionTitle()}>
+            <Layers className="h-4 w-4 text-violet-600" />
             Batch split
           </h3>
           <div className="space-y-3">
@@ -214,16 +212,16 @@ export function DbAdminDashboard() {
           </div>
           <Link
             href="/db-admin/batches"
-            className="mt-4 inline-block text-xs font-semibold text-[#217346] hover:underline"
+            className="mt-4 inline-block text-xs font-semibold text-violet-700 hover:underline"
           >
             Open Batches →
           </Link>
         </div>
 
         {data.masterData ? (
-          <div className="bg-white p-4">
-            <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-700">
-              <Database className="h-3.5 w-3.5 text-[#217346]" />
+          <div className={cn(dashboardCard, 'p-4 sm:p-5')}>
+            <h3 className={dashboardSectionTitle()}>
+              <Database className="h-4 w-4 text-violet-600" />
               Master data usage
             </h3>
             <div className="space-y-3">
@@ -242,53 +240,51 @@ export function DbAdminDashboard() {
             </div>
           </div>
         ) : (
-          <div className="flex items-center bg-[#f3f3f3] p-4 text-xs text-slate-500">
-            <Users className="mr-2 h-4 w-4 shrink-0" />
+          <div className={cn(dashboardCard, 'flex items-center p-4 text-xs text-slate-500')}>
+            <Users className="mr-2 h-4 w-4 shrink-0 text-violet-500" />
             Master data stats appear when admin grants you batch-creation access on the master file.
           </div>
         )}
       </div>
 
-      <div className="grid gap-0 border border-slate-300 lg:grid-cols-2">
-        <div className="border-b border-slate-300 bg-white lg:border-b-0 lg:border-r">
-          <div className="border-b border-slate-300 bg-[#f3f3f3] px-3 py-1.5 text-[10px] font-semibold uppercase text-slate-600">
-            Recent batches
-          </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className={dashboardCard}>
+          <div className={dashboardCardHeader}>Recent batches</div>
           <div className="max-h-64 overflow-auto">
-            <table className="w-full border-collapse text-xs">
-              <thead className="sticky top-0 bg-[#f3f3f3] text-[10px] uppercase text-slate-600">
-                <tr>
-                  <th className="border border-slate-200 px-2 py-1 text-left font-semibold">Name</th>
-                  <th className="border border-slate-200 px-2 py-1 text-right font-semibold">Rows</th>
-                  <th className="border border-slate-200 px-2 py-1 text-left font-semibold">Type</th>
-                  <th className="border border-slate-200 px-2 py-1 text-right font-semibold">Updated</th>
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+                <tr className="border-b border-slate-100">
+                  <th className="px-3 py-2 text-left font-semibold">Name</th>
+                  <th className="px-3 py-2 text-right font-semibold">Rows</th>
+                  <th className="px-3 py-2 text-left font-semibold">Type</th>
+                  <th className="px-3 py-2 text-right font-semibold">Updated</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-100">
                 {data.recentBatches.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="border border-slate-200 px-3 py-6 text-center text-slate-400">
-                      No batches yet — create from Batches or admin share
+                    <td colSpan={4} className="px-3 py-8 text-center text-slate-400">
+                      No batches yet
                     </td>
                   </tr>
                 ) : (
                   data.recentBatches.map((batch) => (
-                    <tr key={batch.id} className="hover:bg-[#f9fff9]">
-                      <td className="border border-slate-200 px-2 py-1">
+                    <tr key={batch.id} className="hover:bg-violet-50/40">
+                      <td className="px-3 py-2">
                         <Link
                           href={`/db-admin/batches/${batch.id}`}
-                          className="font-medium text-[#217346] hover:underline"
+                          className="font-medium text-violet-700 hover:underline"
                         >
                           {batch.name}
                         </Link>
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right font-mono">
+                      <td className="px-3 py-2 text-right font-mono text-slate-700">
                         {batch.rowCount.toLocaleString('en-IN')}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-slate-600">
+                      <td className="px-3 py-2 text-slate-600">
                         {batch.isOwner ? `Yours · ${batch.sharedCount} shared` : 'From admin'}
                       </td>
-                      <td className="border border-slate-200 px-2 py-1 text-right text-slate-500">
+                      <td className="px-3 py-2 text-right text-slate-500">
                         {formatWhen(batch.updatedAt)}
                       </td>
                     </tr>
@@ -299,36 +295,34 @@ export function DbAdminDashboard() {
           </div>
         </div>
 
-        <div className="bg-white">
-          <div className="border-b border-slate-300 bg-[#f3f3f3] px-3 py-1.5 text-[10px] font-semibold uppercase text-slate-600">
-            Your recent activity
-          </div>
+        <div className={dashboardCard}>
+          <div className={dashboardCardHeader}>Your recent activity</div>
           <div className="max-h-64 overflow-auto">
-            <table className="w-full border-collapse text-xs">
-              <thead className="sticky top-0 bg-[#f3f3f3] text-[10px] uppercase text-slate-600">
-                <tr>
-                  <th className="border border-slate-200 px-2 py-1 text-left font-semibold">Action</th>
-                  <th className="border border-slate-200 px-2 py-1 text-left font-semibold">Detail</th>
-                  <th className="border border-slate-200 px-2 py-1 text-right font-semibold">When</th>
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+                <tr className="border-b border-slate-100">
+                  <th className="px-3 py-2 text-left font-semibold">Action</th>
+                  <th className="px-3 py-2 text-left font-semibold">Detail</th>
+                  <th className="px-3 py-2 text-right font-semibold">When</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-100">
                 {data.recentActivity.length === 0 ? (
                   <tr>
-                    <td colSpan={3} className="border border-slate-200 px-3 py-6 text-center text-slate-400">
+                    <td colSpan={3} className="px-3 py-8 text-center text-slate-400">
                       No activity logged yet
                     </td>
                   </tr>
                 ) : (
                   data.recentActivity.map((a) => (
-                    <tr key={a.id} className="hover:bg-[#f9fff9]">
-                      <td className="border border-slate-200 px-2 py-1 font-medium text-slate-800">
+                    <tr key={a.id} className="hover:bg-violet-50/40">
+                      <td className="px-3 py-2 font-medium text-slate-800">
                         {formatActivityAction(a.action)}
                       </td>
-                      <td className="max-w-[180px] truncate border border-slate-200 px-2 py-1 text-slate-500">
+                      <td className="max-w-[180px] truncate px-3 py-2 text-slate-500">
                         {a.batchName ?? a.path ?? a.resource}
                       </td>
-                      <td className="whitespace-nowrap border border-slate-200 px-2 py-1 text-right text-slate-500">
+                      <td className="whitespace-nowrap px-3 py-2 text-right text-slate-500">
                         {formatWhen(a.occurredAt)}
                       </td>
                     </tr>
@@ -337,10 +331,10 @@ export function DbAdminDashboard() {
               </tbody>
             </table>
           </div>
-          <div className="border-t border-slate-200 px-3 py-2">
+          <div className="border-t border-slate-100 px-4 py-2.5">
             <Link
               href="/db-admin/activity-logs"
-              className="text-xs font-semibold text-[#217346] hover:underline"
+              className="text-xs font-semibold text-violet-700 hover:underline"
             >
               All activity logs →
             </Link>

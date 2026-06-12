@@ -8,6 +8,8 @@ import { AttendanceDailyExcelGrid } from '@/components/attendance/AttendanceDail
 import { TeamAttendanceExcelTable, type TeamAttendanceRow } from '@/components/attendance/TeamAttendanceExcelTable';
 import { ExcelSheetShell } from '@/components/attendance/ExcelSheetShell';
 import { AttendancePageChrome } from '@/components/attendance/AttendancePageChrome';
+import { AttendanceMonthYearNav } from '@/components/attendance/AttendanceMonthYearNav';
+import { formatMonthYearLabel } from '@/lib/attendance/month-year';
 import { workTimeService } from '@/lib/api/work-time.service';
 
 interface TeamMember {
@@ -26,11 +28,6 @@ interface TeamAnalytics {
   halfDays: number;
   attendancePercentage: number;
 }
-
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
 
 function parseUserList(data: unknown): Record<string, unknown>[] {
   const outer = (data as { data?: unknown })?.data;
@@ -53,8 +50,12 @@ export function DbAdminAttendanceDashboard() {
   const [yearlyData, setYearlyData] = useState<YearlyAnalytics[]>([]);
   const [workTimeByUser, setWorkTimeByUser] = useState<Record<string, string>>({});
 
-  const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
-  const monthLabel = `${MONTHS[selectedMonth - 1]} ${selectedYear}`;
+  const monthLabel = formatMonthYearLabel(selectedMonth, selectedYear);
+
+  const handleMonthYearChange = (month: number, year: number) => {
+    setSelectedMonth(month);
+    setSelectedYear(year);
+  };
 
   const fetchTeamData = useCallback(async () => {
     if (!user?.id) return;
@@ -102,11 +103,24 @@ export function DbAdminAttendanceDashboard() {
   }, [fetchTeamData]);
 
   useEffect(() => {
+    const onRefresh = () => fetchTeamData();
+    window.addEventListener('attendance:refresh', onRefresh);
+    window.addEventListener('work-time:refresh', onRefresh);
+    return () => {
+      window.removeEventListener('attendance:refresh', onRefresh);
+      window.removeEventListener('work-time:refresh', onRefresh);
+    };
+  }, [fetchTeamData]);
+
+  useEffect(() => {
     if (!selectedUserId) {
       setYearlyData([]);
       return;
     }
-    attendanceService.getYearlyAnalytics(selectedUserId, selectedYear).then(setYearlyData).catch(console.error);
+    attendanceService
+      .getYearlyAnalytics(selectedUserId, selectedYear, true)
+      .then(setYearlyData)
+      .catch(console.error);
   }, [selectedUserId, selectedYear]);
 
   const teamRows: TeamAttendanceRow[] = teamMembers.map((member) => {
@@ -131,29 +145,13 @@ export function DbAdminAttendanceDashboard() {
   }
 
   const monthControl = (
-    <>
-      <label className="text-sm font-medium text-slate-600">Month</label>
-      <select
-        value={selectedMonth}
-        onChange={(e) => setSelectedMonth(Number(e.target.value))}
-        className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-violet-500/40"
-      >
-        {MONTHS.map((m, i) => (
-          <option key={m} value={i + 1}>{m}</option>
-        ))}
-      </select>
-      <label className="text-sm font-medium text-slate-600">Year</label>
-      <select
-        value={selectedYear}
-        onChange={(e) => setSelectedYear(Number(e.target.value))}
-        className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-violet-500/40"
-      >
-        {years.map((y) => (
-          <option key={y} value={y}>{y}</option>
-        ))}
-      </select>
-      <span className="ml-auto text-xs font-medium text-slate-400">{monthLabel}</span>
-    </>
+    <AttendanceMonthYearNav
+      month={selectedMonth}
+      year={selectedYear}
+      onChange={handleMonthYearChange}
+      accent="violet"
+      className="flex-1"
+    />
   );
 
   const myStats = myMonthly
@@ -185,6 +183,7 @@ export function DbAdminAttendanceDashboard() {
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-slate-700">My daily log</h2>
         <AttendanceDailyExcelGrid
+          liveToday
           rows={myMonthly?.dailyBreakdown ?? []}
           loading={loading}
           sheetTitle="My Daily Attendance"
@@ -198,6 +197,8 @@ export function DbAdminAttendanceDashboard() {
           rows={teamRows}
           loading={loading}
           monthLabel={monthLabel}
+          periodMonth={selectedMonth}
+          periodYear={selectedYear}
           selectedUserId={selectedUserId}
           onSelectMember={setSelectedUserId}
           detailsPath="/db-admin/attendance/details"

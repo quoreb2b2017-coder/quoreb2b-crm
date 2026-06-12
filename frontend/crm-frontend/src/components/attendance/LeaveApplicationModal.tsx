@@ -79,11 +79,11 @@ export function LeaveApplicationModal({
   };
 
   const footer = (
-    <div className="flex gap-3">
+    <div className="flex flex-col-reverse gap-2 sm:flex-row sm:gap-3">
       <button
         type="button"
         onClick={onClose}
-        className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:flex-1"
       >
         Cancel
       </button>

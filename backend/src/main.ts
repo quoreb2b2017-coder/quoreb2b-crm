@@ -1,5 +1,7 @@
 import './config/env';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { join } from 'path';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as compression from 'compression';
@@ -15,7 +17,8 @@ import { ensureRedisOrDisable, readRedisEnv, MIN_REDIS_VERSION } from './redis/r
 async function bootstrap() {
   await ensureRedisOrDisable();
 
-  const app = await NestFactory.create(AppModule.register());
+  const app = await NestFactory.create<NestExpressApplication>(AppModule.register());
+  app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
   const config = app.get(ConfigService);
 
   initSentry(config);

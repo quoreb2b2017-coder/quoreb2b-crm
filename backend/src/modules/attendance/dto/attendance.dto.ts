@@ -96,4 +96,9 @@ export class AttendanceAnalyticsDto {
   @IsInt()
   @Min(2000)
   year?: number;
+
+  /** Client cache-bust token (ignored by analytics logic). */
+  @IsOptional()
+  @IsString()
+  refresh?: string;
 }

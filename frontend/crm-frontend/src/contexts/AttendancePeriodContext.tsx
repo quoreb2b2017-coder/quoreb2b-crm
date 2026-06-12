@@ -29,18 +29,22 @@ const AttendancePeriodContext = createContext<AttendancePeriodContextValue | nul
 
 export function AttendancePeriodProvider({ 
   children,
-  initialMonth = 6,
-  initialYear = 2026,
+  initialMonth,
+  initialYear,
 }: { 
   children: React.ReactNode;
   initialMonth?: number;
   initialYear?: number;
 }) {
+  const today = new Date();
+  const month = initialMonth ?? (today.getMonth() + 1);
+  const year = initialYear ?? today.getFullYear();
+
   const [state, setState] = useState<AttendancePeriodState>({
     view: 'monthly',
-    selectedMonth: initialMonth,
-    selectedYear: initialYear,
-    selectedMonths: [initialMonth],
+    selectedMonth: month,
+    selectedYear: year,
+    selectedMonths: [month],
   });
 
   const setView = useCallback((newView: AttendancePeriodView) => {
@@ -131,7 +135,7 @@ export function AttendancePeriodProvider({
   const value = useMemo<AttendancePeriodContextValue>(
     () => ({
       ...state,
-      ready: true,
+      ready: !!state,
       setView,
       setMonthYear,
       setPeriod,

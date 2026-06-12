@@ -137,12 +137,13 @@ export function EmployeeAttendanceDashboard() {
             <section className="space-y-2" id="attendance-yearly-grid">
               <h2 className="text-sm font-semibold text-slate-700">Yearly summary</h2>
               <AttendanceRollupSummarySheet
-                view={view}
-                year={selectedYear}
-                monthLabel={monthLabel}
+                yearlyData={yearlyData}
                 selectedMonths={rollupMonths}
-                totals={rollupTotals}
-                loading={yearlyLoading}
+                title={`My Attendance — ${selectedYear}`}
+                onMonthClick={(monthIndex) => {
+                  setView('monthly');
+                  setMonthYear(monthIndex, selectedYear);
+                }}
               />
             </section>
           )}

@@ -1,5 +1,6 @@
 'use client';
 
+import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   Shield,
@@ -116,7 +117,7 @@ function useLiveClock() {
     const id = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(id);
   }, []);
-  return now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  return now.toLocaleTimeString('en-US', { timeZone: WORKSPACE_TIMEZONE,  hour: '2-digit', minute: '2-digit' });
 }
 
 function BannerDecor({
@@ -168,7 +169,7 @@ export function WelcomeBanner({ variant, subtitleOverride, toolbar }: WelcomeBan
   const liveTime = useLiveClock();
   const showWorkTimer = WORK_TIMER_VARIANTS.includes(variant);
 
-  const dateShort = new Date().toLocaleDateString('en-IN', {
+  const dateShort = new Date().toLocaleDateString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
     weekday: 'short',
     day: 'numeric',
     month: 'short',

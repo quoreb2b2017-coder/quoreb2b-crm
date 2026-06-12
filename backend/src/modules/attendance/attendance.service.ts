@@ -14,8 +14,13 @@ import {
   parseDateOnly,
   toDateKey,
   isWeekend,
+  isWeekendDateKey,
 } from './attendance-date.util';
-import { calendarDateKey, formatWallTimeHHmm } from '../../common/utils/timezone.util';
+import {
+  calendarDateKey,
+  formatInWorkspace,
+  formatWallTimeHHmm,
+} from '../../common/utils/timezone.util';
 import {
   currentTimeHHmm,
   formatStoredTime,
@@ -151,7 +156,7 @@ export class AttendanceService {
 
     // Auto-mark Saturday (6) and Sunday (0) as weekend
     let status = dto.status;
-    if (isWeekend(dayOfWeek)) {
+    if (isWeekendDateKey(dto.date)) {
       status = 'weekend';
     }
 
@@ -577,9 +582,14 @@ export class AttendanceService {
 
       const { checkInTime, checkOutTime } = this.resolveDayCheckInOut(dayRecord, authBounds);
 
+      const resolvedStatus =
+        dayRecord?.status === 'weekend' && !isWeekendDateKey(dateKey)
+          ? 'absent'
+          : dayRecord?.status || (isWeekend(dayOfWeek) ? 'weekend' : 'absent');
+
       const dayData = {
         date: dateKey,
-        status: dayRecord?.status || (isWeekend(dayOfWeek) ? 'weekend' : 'absent'),
+        status: resolvedStatus,
         hoursWorked: workHours,
         isPaidLeave: dayRecord?.isPaidLeave,
         isLate: dayRecord?.isLate ?? false,
@@ -604,7 +614,11 @@ export class AttendanceService {
           analytics.leaveDays++;
           if (dayRecord.isPaidLeave) analytics.paidLeaveDays++;
         }         else if (dayRecord.status === 'half-day') analytics.halfDays++;
-        else if (dayRecord.status === 'weekend') analytics.weekendDays++;
+        else if (dayRecord.status === 'weekend' && isWeekendDateKey(dateKey)) {
+          analytics.weekendDays++;
+        } else if (dayRecord.status === 'weekend') {
+          analytics.absentDays++;
+        }
 
         if (dayRecord.isLate) analytics.lateDays++;
 
@@ -807,7 +821,7 @@ export class AttendanceService {
       recordsByUser.set(uid, list);
     }
 
-    const label = new Date(year, month - 1, 1).toLocaleDateString('en-IN', {
+    const label = formatInWorkspace(new Date(year, month - 1, 1), {
       month: 'long',
       year: 'numeric',
     });

@@ -9,7 +9,7 @@ import { PaginationDto, paginate } from '../../common/dto/pagination.dto';
 import { TrackActivityDto } from './dto/track-activity.dto';
 import { ActivityLogsQueryDto } from './dto/activity-logs-query.dto';
 import { WORKSPACE_TIMEZONE } from '../../common/constants/workspace-timezone.constant';
-import { calendarDateKey } from '../../common/utils/timezone.util';
+import { calendarDateKey, formatInWorkspace } from '../../common/utils/timezone.util';
 import {
   buildAuthBoundaryForDay,
   buildEmployeeReport,
@@ -575,7 +575,7 @@ export class ActivityLogsService {
       count: r.count,
       label: isDayView
         ? `${String(r._id).padStart(2, '0')}:00`
-        : new Date(String(r._id) + 'T12:00:00').toLocaleDateString('en-IN', {
+        : formatInWorkspace(new Date(String(r._id) + 'T12:00:00'), {
             day: '2-digit',
             month: 'short',
           }),

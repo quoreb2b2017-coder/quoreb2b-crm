@@ -1,5 +1,6 @@
 import {
   calendarDateKey,
+  formatInWorkspace,
   formatTime12hInZone,
   nextCalendarMidnightMs,
 } from '../../common/utils/timezone.util';
@@ -466,7 +467,7 @@ export function buildDailyWorkBreakdown(
         date,
         dayLabel: isToday
           ? 'Today'
-          : d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric' }),
+          : formatInWorkspace(d, { weekday: 'short', day: 'numeric' }),
         totalMinutes,
         totalFormatted: formatDuration(totalMinutes),
         isToday,
@@ -611,7 +612,7 @@ export function buildEmployeeReport(
 export function dayBounds(dateStr: string): { start: Date; end: Date; label: string } {
   const start = new Date(`${dateStr}T00:00:00.000`);
   const end = new Date(`${dateStr}T23:59:59.999`);
-  const label = start.toLocaleDateString('en-IN', {
+  const label = formatInWorkspace(start, {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
@@ -623,6 +624,6 @@ export function dayBounds(dateStr: string): { start: Date; end: Date; label: str
 export function monthBounds(year: number, month: number): { start: Date; end: Date; label: string } {
   const start = new Date(year, month - 1, 1, 0, 0, 0, 0);
   const end = new Date(year, month, 0, 23, 59, 59, 999);
-  const label = start.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+  const label = formatInWorkspace(start, { month: 'long', year: 'numeric' });
   return { start, end, label };
 }

@@ -8,7 +8,7 @@ import { MarkAttendanceDto, AttendanceQueryDto, AttendanceAnalyticsDto } from '.
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { WORKSPACE_TIMEZONE, WORKSPACE_TIMEZONE_LABEL } from '../../common/constants/workspace-timezone.constant';
 import { calendarDateKey } from '../../common/utils/timezone.util';
-import { parseDateOnly, toDateKey } from './attendance-date.util';
+import { isWeekendDateKey, parseDateOnly, toDateKey } from './attendance-date.util';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('attendance')
@@ -80,8 +80,14 @@ export class AttendanceController {
   @Post('test/mark-weekend-now')
   async testMarkWeekendNow() {
     try {
-      const today = new Date();
-      const dateKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      const dateKey = calendarDateKey(new Date());
+
+      if (!isWeekendDateKey(dateKey)) {
+        return {
+          success: false,
+          message: `Today (${dateKey}) is not Saturday or Sunday in ${WORKSPACE_TIMEZONE_LABEL}`,
+        };
+      }
 
       const users = await this.getUserIds();
 

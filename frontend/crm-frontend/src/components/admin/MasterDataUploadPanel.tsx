@@ -1,5 +1,6 @@
 'use client';
 
+import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Upload, Download, Trash2, Cloud, Loader2, Save } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
@@ -21,6 +22,7 @@ import { activityLogsService } from '@/lib/api/activity-logs.service';
 import { toast } from '@/stores/toast.store';
 import { useAuthStore } from '@/store/auth.store';
 import { useDebouncedAutoSave, type AutoSaveStatus } from '@/hooks/useDebouncedAutoSave';
+import { MasterDataClearConfirmModal } from '@/components/master-data/MasterDataClearConfirmModal';
 
 const ACCEPT = '.csv,.xlsx,.xls';
 
@@ -135,6 +137,8 @@ export function MasterDataUploadPanel() {
     duplicateCount: number;
     totalRows: number;
   } | null>(null);
+  const [clearModalOpen, setClearModalOpen] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   const applyRecord = useCallback((record: Awaited<ReturnType<typeof masterDataService.save>>) => {
     const sheet = recordToSpreadsheet(record);
@@ -324,14 +328,8 @@ export function MasterDataUploadPanel() {
     } catch { toast.error('Download failed', 'Could not create template'); }
   };
 
-  const clearData = async () => {
-    if (
-      !window.confirm(
-        'Delete ALL master data and every batch from the database? This cannot be undone.',
-      )
-    ) {
-      return;
-    }
+  const confirmClearData = async () => {
+    setClearing(true);
     try {
       const result = await masterDataService.clear();
       setData(null);
@@ -340,20 +338,25 @@ export function MasterDataUploadPanel() {
       setSavedAt(null);
       setCoverage(null);
       setError('');
+      setDirty(false);
+      setClearModalOpen(false);
       const n = result.deletedBatches ?? 0;
       toast.success(
         'All data cleared',
         `Master data removed · ${n} batch${n === 1 ? '' : 'es'} deleted from database`,
       );
+      window.dispatchEvent(new CustomEvent('master-data-cleared'));
     } catch (e) {
       toast.error('Clear failed', extractApiError(e, 'Could not clear data'));
+    } finally {
+      setClearing(false);
     }
   };
 
   // ── Open batch modal ──
   const openBatchModal = useCallback(
     (payload: { rows: string[][]; headers: string[]; sourceRowIndices: number[] }) => {
-      const now = new Date().toLocaleDateString('en-IN', {
+      const now = new Date().toLocaleDateString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
         day: '2-digit',
         month: 'short',
         year: 'numeric',
@@ -414,10 +417,10 @@ export function MasterDataUploadPanel() {
               {coverage && coverage.summary.totalRows > 0 && (
                 <>
                   <span className="text-xs text-amber-800">
-                    {coverage.summary.batchedRows.toLocaleString('en-IN')} in batch
+                    {coverage.summary.batchedRows.toLocaleString('en-US')} in batch
                   </span>
                   <span className="text-xs font-medium text-[#217346]">
-                    {coverage.summary.availableRows.toLocaleString('en-IN')} available
+                    {coverage.summary.availableRows.toLocaleString('en-US')} available
                   </span>
                 </>
               )}
@@ -429,7 +432,7 @@ export function MasterDataUploadPanel() {
             <span className="inline-flex items-center gap-1 text-xs text-[#217346]">
               <Cloud className="h-3 w-3 shrink-0" />
               <span className="truncate">
-                Saved {new Date(savedAt).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}
+                Saved {new Date(savedAt).toLocaleString('en-US', { timeZone: WORKSPACE_TIMEZONE,  dateStyle: 'short', timeStyle: 'short' })}
               </span>
             </span>
           )}
@@ -467,8 +470,12 @@ export function MasterDataUploadPanel() {
                 className="inline-flex items-center gap-1.5 bg-[#217346] text-white px-3 py-1 text-xs hover:bg-[#1a5c38]">
                 <Download className="h-3.5 w-3.5" />Export Excel
               </button>
-              <button type="button" onClick={clearData} disabled={savingDb}
-                className="inline-flex items-center gap-1.5 border border-[#ababab] bg-white px-3 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50">
+              <button
+                type="button"
+                onClick={() => setClearModalOpen(true)}
+                disabled={savingDb || clearing}
+                className="inline-flex items-center gap-1.5 border border-[#ababab] bg-white px-3 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
+              >
                 <Trash2 className="h-3.5 w-3.5" />Clear
               </button>
             </>
@@ -543,7 +550,7 @@ export function MasterDataUploadPanel() {
                   </p>
                   <div className="mt-1.5 flex flex-wrap gap-2">
                     <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-700">
-                      {batchModal.rows.length.toLocaleString('en-IN')} rows
+                      {batchModal.rows.length.toLocaleString('en-US')} rows
                     </span>
                     <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">
                       {batchModal.headers.length} columns
@@ -593,7 +600,7 @@ export function MasterDataUploadPanel() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-xs font-semibold text-slate-700">Batch summary</p>
                     <p className="text-xs text-slate-500">
-                      <span className="font-medium text-slate-700">{batchModal.rows.length.toLocaleString('en-IN')}</span> rows selected
+                      <span className="font-medium text-slate-700">{batchModal.rows.length.toLocaleString('en-US')}</span> rows selected
                     </p>
                   </div>
 
@@ -742,6 +749,13 @@ export function MasterDataUploadPanel() {
           </div>
         </>
       )}
+
+      <MasterDataClearConfirmModal
+        open={clearModalOpen}
+        onClose={() => !clearing && setClearModalOpen(false)}
+        onConfirm={confirmClearData}
+        clearing={clearing}
+      />
     </div>
   );
 }

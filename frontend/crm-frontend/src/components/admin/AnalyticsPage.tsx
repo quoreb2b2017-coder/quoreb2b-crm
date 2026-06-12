@@ -1,5 +1,6 @@
 'use client';
 
+import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { useEffect, useState } from 'react';
 import {
   RefreshCw,
@@ -83,7 +84,7 @@ export function AnalyticsPage() {
             {pageTab === 'employees'
               ? 'Employee sessions, lead activity, and productivity reports'
               : lastUpdated
-                ? `CRM insights · Updated ${lastUpdated.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`
+                ? `CRM insights · Updated ${lastUpdated.toLocaleTimeString('en-US', { timeZone: WORKSPACE_TIMEZONE,  hour: '2-digit', minute: '2-digit' })}`
                 : 'Lead pipeline and status distribution from master data'}
           </p>
         </div>
@@ -200,7 +201,7 @@ export function AnalyticsPage() {
                   Master + {chart.batchCount ?? 0} batches
                 </p>
                 <p className="text-xs text-slate-400">
-                  {(chart.trackedRows ?? chart.totalLeads).toLocaleString('en-IN')} rows analyzed
+                  {(chart.trackedRows ?? chart.totalLeads).toLocaleString('en-US')} rows analyzed
                 </p>
               </div>
             </div>
@@ -271,7 +272,7 @@ export function AnalyticsPage() {
                           </span>
                         </td>
                         <td className="px-3 py-2.5 text-right font-mono font-semibold tabular-nums">
-                          {item.count.toLocaleString('en-IN')}
+                          {item.count.toLocaleString('en-US')}
                         </td>
                         <td className="px-3 py-2.5 text-right font-mono tabular-nums text-slate-600">
                           {item.pct}%
@@ -296,7 +297,7 @@ export function AnalyticsPage() {
                         Total
                       </td>
                       <td className="px-3 py-2.5 text-right font-mono">
-                        {(chart.trackedRows ?? chart.totalLeads).toLocaleString('en-IN')}
+                        {(chart.trackedRows ?? chart.totalLeads).toLocaleString('en-US')}
                       </td>
                       <td className="px-3 py-2.5 text-right font-mono">100%</td>
                       <td />

@@ -1,5 +1,6 @@
 'use client';
 
+import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { cn } from '@/lib/utils/cn';
 import { useExcelTableNavigation } from '@/hooks/useExcelTableNavigation';
 import { ExcelSheetShell } from '@/components/attendance/ExcelSheetShell';
@@ -26,7 +27,7 @@ interface LeaveApplicationsExcelTableProps {
 
 function formatDate(val: string) {
   const d = new Date(val);
-  return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-US', { timeZone: WORKSPACE_TIMEZONE,  day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 function GridCell({

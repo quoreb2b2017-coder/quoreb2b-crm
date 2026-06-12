@@ -121,11 +121,15 @@ function SectionHeader({
 
 function NoteSkeleton() {
   return (
-    <div className="flex animate-pulse items-center gap-3 border-b border-slate-100 px-3 py-3 last:border-b-0">
-      <div className="h-2 w-2 rounded-full bg-slate-200" />
-      <div className="flex-1 space-y-1.5">
-        <div className="h-3.5 w-1/3 rounded bg-slate-100" />
-        <div className="h-3 w-2/3 rounded bg-slate-100" />
+    <div className="flex animate-pulse items-start gap-3 px-4 py-3.5">
+      <div className="mt-2 h-2.5 w-2.5 rounded-full bg-slate-200" />
+      <div className="flex-1 space-y-2">
+        <div className="h-4 w-1/3 rounded bg-slate-100" />
+        <div className="h-3.5 w-2/3 rounded bg-slate-100" />
+        <div className="flex gap-2">
+          <div className="h-5 w-28 rounded-md bg-slate-100" />
+          <div className="h-5 w-16 rounded-md bg-slate-100" />
+        </div>
       </div>
     </div>
   );
@@ -281,6 +285,14 @@ export function PersonalNotesPage({ variant = 'employee' }: PersonalNotesPagePro
   useEffect(() => {
     refreshAll();
   }, [debouncedSearch, filter, selectedTag]);
+
+  useEffect(() => {
+    const onRefresh = () => {
+      void refreshAll();
+    };
+    window.addEventListener('personal-notes:refresh', onRefresh);
+    return () => window.removeEventListener('personal-notes:refresh', onRefresh);
+  }, [refreshAll]);
 
   useEffect(() => {
     if (page > 1) loadMorePage(page);

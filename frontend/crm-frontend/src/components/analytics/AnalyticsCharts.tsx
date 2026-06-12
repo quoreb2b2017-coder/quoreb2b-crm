@@ -30,12 +30,12 @@ export function KpiCard({
     rose: 'from-rose-500/10 to-rose-600/5 border-rose-200/80 text-rose-700',
     cyan: 'from-cyan-500/10 to-cyan-600/5 border-cyan-200/80 text-cyan-700',
   };
-  const display = typeof value === 'number' ? value.toLocaleString('en-IN') : value;
+  const display = typeof value === 'number' ? value.toLocaleString('en-US') : value;
 
   return (
     <div
       className={cn(
-        'relative overflow-hidden rounded-xl border bg-gradient-to-br p-4 shadow-sm transition-shadow hover:shadow-md',
+        'relative overflow-hidden rounded-2xl border bg-gradient-to-br p-5 shadow-[0_1px_3px_rgba(15,23,42,0.06)] ring-1 ring-white/60 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md',
         accents[accent],
       )}
     >
@@ -118,7 +118,7 @@ export function DonutChart({
         <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
           {centerValue !== undefined && (
             <span className="text-xl font-bold tabular-nums text-slate-900">
-              {typeof centerValue === 'number' ? centerValue.toLocaleString('en-IN') : centerValue}
+              {typeof centerValue === 'number' ? centerValue.toLocaleString('en-US') : centerValue}
             </span>
           )}
           {centerLabel && (
@@ -205,7 +205,7 @@ export function FunnelChart({
                   className="flex h-full items-center rounded-lg px-2 text-xs font-bold text-white transition-all duration-500"
                   style={{ width: `${widthPct}%`, backgroundColor: color, minWidth: item.value > 0 ? '2.5rem' : 0 }}
                 >
-                  {item.value > 0 ? item.value.toLocaleString('en-IN') : ''}
+                  {item.value > 0 ? item.value.toLocaleString('en-US') : ''}
                 </div>
               </div>
             </div>
@@ -272,15 +272,20 @@ export function AnalyticsPanel({
   action?: React.ReactNode;
 }) {
   return (
-    <div className={cn('overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm', className)}>
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/80 px-4 py-3">
+    <div
+      className={cn(
+        'overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.06)] ring-1 ring-slate-100/80 transition-all duration-300 hover:border-slate-300/80 hover:shadow-md',
+        className,
+      )}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100/90 bg-gradient-to-r from-slate-50 to-white px-5 py-3.5">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
-          {subtitle ? <p className="text-xs text-slate-500">{subtitle}</p> : null}
+          <h3 className="text-sm font-semibold tracking-tight text-slate-900">{title}</h3>
+          {subtitle ? <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p> : null}
         </div>
         {action}
       </div>
-      <div className="p-4">{children}</div>
+      <div className="p-5">{children}</div>
     </div>
   );
 }

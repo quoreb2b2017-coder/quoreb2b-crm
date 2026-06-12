@@ -27,7 +27,7 @@ export const CALENDAR_MONTHS: CalendarMonth[] = [
 export const BATCH_CALENDAR_TIMEZONE = 'America/New_York';
 
 export function calendarPeriodFromDate(date: Date = new Date()): { month: number; year: number } {
-  const parts = new Intl.DateTimeFormat('en-IN', {
+  const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: BATCH_CALENDAR_TIMEZONE,
     year: 'numeric',
     month: 'numeric',

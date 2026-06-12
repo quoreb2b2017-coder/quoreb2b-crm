@@ -10,6 +10,7 @@ import { AttendanceDashboardStats } from '@/components/attendance/AttendanceDash
 import { AttendanceMonthCalendar } from '@/components/attendance/AttendanceMonthCalendar';
 import { AttendanceMonthYearNav } from '@/components/attendance/AttendanceMonthYearNav';
 import { DAILY_NET_WORK_TARGET_LABEL } from '@/lib/attendance/attendance-shift.constants';
+import { todayDateKey } from '@/lib/constants/workspace-timezone';
 import {
   countHolidaysInBreakdown,
   resolveCalendarStatus,
@@ -91,10 +92,7 @@ export function AttendanceSummaryCard({
     return () => clearInterval(id);
   }, []);
 
-  const todayKey = useMemo(() => {
-    const n = new Date();
-    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
-  }, []);
+  const todayKey = useMemo(() => todayDateKey(), []);
 
   const todayDay = useMemo(
     () => monthly?.dailyBreakdown.find((d) => d.date.slice(0, 10) === todayKey),

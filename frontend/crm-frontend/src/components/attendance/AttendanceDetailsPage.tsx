@@ -58,7 +58,7 @@ export function AttendanceDetailsPage() {
   const { yearlyData, yearlyLoading, refetchYearly } = useYearlyAttendance(
     userId,
     selectedYear,
-    selectedMonths,
+    rollupMonths,
     Boolean(userId) && isRollup,
   );
 

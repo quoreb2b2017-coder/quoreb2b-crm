@@ -1,4 +1,22 @@
-import { WORKSPACE_TIMEZONE } from '../constants/workspace-timezone.constant';
+import {
+  WORKSPACE_TIMEZONE,
+  WORKSPACE_TIMEZONE_LABEL,
+} from '../constants/workspace-timezone.constant';
+
+export { WORKSPACE_TIMEZONE, WORKSPACE_TIMEZONE_LABEL };
+
+export const WORKSPACE_LOCALE = 'en-US';
+
+export function formatInWorkspace(
+  value: Date | string | null | undefined,
+  options: Intl.DateTimeFormatOptions,
+  timeZone = WORKSPACE_TIMEZONE,
+): string {
+  if (!value) return '—';
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString(WORKSPACE_LOCALE, { timeZone, ...options });
+}
 
 /** YYYY-MM-DD in the workspace timezone (US Eastern). */
 export function calendarDateKey(d: Date, timeZone = WORKSPACE_TIMEZONE): string {

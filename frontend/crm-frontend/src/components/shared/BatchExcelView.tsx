@@ -1,5 +1,6 @@
 'use client';
 
+import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDebouncedAutoSave } from '@/hooks/useDebouncedAutoSave';
 import { useLeadActivityTracker } from '@/hooks/useLeadActivityTracker';
@@ -133,7 +134,7 @@ export function BatchExcelView({
 
   const openCreateModal = useCallback(
     (payload: { rows: string[][]; headers: string[]; sourceRowIndices: number[] }) => {
-    const now = new Date().toLocaleDateString('en-IN', {
+    const now = new Date().toLocaleDateString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
       day: '2-digit',
       month: 'short',
       year: 'numeric',
@@ -277,7 +278,7 @@ export function BatchExcelView({
                   <p className="font-semibold text-slate-900">Create batch from admin data</p>
                   <div className="mt-1.5 flex flex-wrap gap-2">
                     <span className="inline-flex items-center rounded-full bg-violet-50 px-2.5 py-0.5 text-[11px] font-semibold text-violet-700">
-                      {batchModal.rows.length.toLocaleString('en-IN')} rows
+                      {batchModal.rows.length.toLocaleString('en-US')} rows
                     </span>
                     <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">
                       {batchModal.headers.length} columns

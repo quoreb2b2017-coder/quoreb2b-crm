@@ -1,5 +1,6 @@
 'use client';
 
+import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { RefreshCw, Search, Calendar } from 'lucide-react';
 import {
@@ -26,7 +27,7 @@ const ROLE_OPTIONS = [
 ];
 
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
+  return todayDateKey();
 }
 
 export type ActivityLogsScope = 'system' | 'self';
@@ -79,14 +80,14 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
 
   const periodLabel = useMemo(() => {
     if (period === 'today') {
-      return new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-IN', {
+      return new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
         weekday: 'short',
         day: '2-digit',
         month: 'short',
         year: 'numeric',
       });
     }
-    return new Date(year, month - 1, 1).toLocaleDateString('en-IN', {
+    return new Date(year, month - 1, 1).toLocaleDateString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
       month: 'long',
       year: 'numeric',
     });
@@ -297,7 +298,7 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
         <span className="ml-auto text-xs text-slate-600">
           <span className="font-semibold text-slate-800">{periodLabel}</span>
           {' · '}
-          {total.toLocaleString('en-IN')} records
+          {total.toLocaleString('en-US')} records
           {period === 'today' && (
             <span className="text-slate-500"> · {PAGE_LIMIT_TODAY} per page (newest first)</span>
           )}
@@ -407,7 +408,7 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
                 Recent {PAGE_LIMIT_TODAY} · page {page} of {totalPages}
                 <span className="text-slate-400">
                   {' '}
-                  ({total.toLocaleString('en-IN')} total)
+                  ({total.toLocaleString('en-US')} total)
                 </span>
               </>
             ) : (

@@ -1,5 +1,6 @@
 'use client';
 
+import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { cn } from '@/lib/utils/cn';
 import { ExcelSheetShell } from '@/components/attendance/ExcelSheetShell';
 import type {
@@ -15,7 +16,7 @@ const STATUS_STYLES: Record<MasterDataUploadRequestStatus, string> = {
 
 function formatWhen(value?: string) {
   if (!value) return '—';
-  return new Date(value).toLocaleString('en-IN', {
+  return new Date(value).toLocaleString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
     dateStyle: 'short',
     timeStyle: 'short',
   });

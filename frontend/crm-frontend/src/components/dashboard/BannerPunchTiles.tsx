@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { useBreakPunch } from '@/hooks/useBreakPunch';
+import { toast } from '@/stores/toast.store';
 import { formatRemainingShort, type BreakType } from '@/lib/api/break-punch.service';
 import { attendanceService } from '@/lib/api/attendance.service';
 import { activityLogsService } from '@/lib/api/activity-logs.service';
@@ -211,7 +212,17 @@ export function BannerPunchTiles() {
   const user = useAuthStore((s) => s.user);
   const refreshToken = useAuthStore((s) => s.refreshToken);
   const clearAuth = useAuthStore((s) => s.clearAuth);
-  const { data, toggling, toggle, liveRemainingSeconds, reload } = useBreakPunch(true);
+  const {
+    data,
+    toggling,
+    toggle,
+    requestMeeting,
+    requestingMeeting,
+    meetingNeedsApproval,
+    meetingPending,
+    liveRemainingSeconds,
+    reload,
+  } = useBreakPunch(true);
   const [workIn, setWorkIn] = useState(false);
   const [dayClosed, setDayClosed] = useState(false);
   const [loginTimeLabel, setLoginTimeLabel] = useState<string | undefined>();
@@ -270,6 +281,9 @@ export function BannerPunchTiles() {
   const activeType = data.activeType;
 
   const breakSublabel = (type: BreakKey) => {
+    if (type === 'meeting' && meetingPending && !data.meeting.isActive) {
+      return 'Pending admin';
+    }
     const s = data[type];
     if (s.isActive) {
       const sec =
@@ -286,6 +300,12 @@ export function BannerPunchTiles() {
     const s = data[type];
     if (!s.isActive && s.remainingMinutes <= 0) return;
     if (onBreak && activeType !== type) return;
+    if (type === 'meeting' && meetingNeedsApproval && !s.isActive) {
+      if (meetingPending) return;
+      await requestMeeting();
+      toast.success('Meeting request sent to admin');
+      return;
+    }
     await toggle(type);
   };
 
@@ -345,7 +365,7 @@ export function BannerPunchTiles() {
         <button
           type="button"
           onClick={handleSync}
-          disabled={syncing || toggling !== null || eodLoggingOut}
+          disabled={syncing || toggling !== null || requestingMeeting || eodLoggingOut}
           className="inline-flex items-center gap-1 rounded-lg border border-white/20 bg-white/10 px-2 py-1 text-[9px] font-semibold text-white/75 transition hover:bg-white/20 disabled:opacity-50"
         >
           <RefreshCw className={cn('h-3 w-3', syncing && 'animate-spin')} />
@@ -421,8 +441,12 @@ export function BannerPunchTiles() {
           tone="meeting"
           icon={Users}
           active={activeType === 'meeting'}
-          busy={toggling === 'meeting'}
-          disabled={(onBreak && activeType !== 'meeting') || (!data.meeting.isActive && data.meeting.remainingMinutes <= 0)}
+          busy={toggling === 'meeting' || requestingMeeting}
+          disabled={
+            (onBreak && activeType !== 'meeting') ||
+            meetingPending ||
+            (!data.meeting.isActive && data.meeting.remainingMinutes <= 0)
+          }
           onClick={() => handleBreak('meeting')}
         />
       </div>

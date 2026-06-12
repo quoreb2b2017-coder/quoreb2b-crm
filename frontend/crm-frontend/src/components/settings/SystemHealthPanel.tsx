@@ -106,7 +106,7 @@ export function SystemHealthPanel() {
               <p className="text-sm font-semibold capitalize">Overall: {health.status}</p>
               <p className="text-[10px] opacity-80">
                 {health.service} · v{health.version ?? '1.0'} ·{' '}
-                {new Date(health.timestamp).toLocaleString('en-IN')}
+                {new Date(health.timestamp).toLocaleString('en-US')}
               </p>
               {health.status === 'degraded' && health.issues && health.issues.length > 0 && (
                 <ul className="mt-1.5 list-inside list-disc text-[10px] opacity-90">

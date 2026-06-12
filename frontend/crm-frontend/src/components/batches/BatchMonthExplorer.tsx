@@ -1,5 +1,6 @@
 'use client';
 
+import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronRight, Folder, Loader2 } from 'lucide-react';
 import type { BatchRecord } from '@/lib/api/batches.service';
@@ -17,7 +18,7 @@ import { cn } from '@/lib/utils/cn';
 
 function formatDate(val?: string) {
   if (!val) return '—';
-  return new Date(val).toLocaleString('en-IN', {
+  return new Date(val).toLocaleString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -271,7 +272,7 @@ export function BatchMonthExplorer({
                         )}
                       </td>
                       <td className="border border-slate-200 px-2 py-2 text-right font-mono text-slate-800">
-                        {b.rowCount.toLocaleString('en-IN')}
+                        {b.rowCount.toLocaleString('en-US')}
                       </td>
                       <td className="max-w-[160px] truncate border border-slate-200 px-2 py-2 text-slate-600">
                         {b.sourceFileName ?? '—'}

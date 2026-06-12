@@ -1,3 +1,4 @@
+import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import type { WorkTimeMe } from '@/lib/api/work-time.service';
 import { formatDurationFromMinutes, formatElapsedSeconds } from '@/lib/api/work-time.service';
 import type { StashedLoginPunch } from '@/lib/auth/login-punch';
@@ -40,7 +41,7 @@ export function buildOptimisticWorkTimeFromLoginPunch(
     period: prev?.period ?? {
       year: now.getFullYear(),
       month: now.getMonth() + 1,
-      label: now.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
+      label: now.toLocaleDateString('en-US', { timeZone: WORKSPACE_TIMEZONE,  month: 'long', year: 'numeric' }),
     },
     monthlyMinutes,
     monthlyFormatted: formatDurationFromMinutes(monthlyMinutes),

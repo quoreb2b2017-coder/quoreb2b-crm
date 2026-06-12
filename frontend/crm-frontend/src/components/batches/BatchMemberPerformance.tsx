@@ -1,5 +1,6 @@
 'use client';
 
+import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { batchesService, type BatchMemberPerformance } from '@/lib/api/batches.service';
@@ -7,14 +8,14 @@ import { extractApiError } from '@/lib/api/errors';
 import { cn } from '@/lib/utils/cn';
 
 function formatDate(iso: string) {
-  return new Date(iso + 'T12:00:00').toLocaleDateString('en-IN', {
+  return new Date(iso + 'T12:00:00').toLocaleDateString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
     day: '2-digit',
     month: 'short',
   });
 }
 
 function formatWhen(iso: string) {
-  return new Date(iso).toLocaleString('en-IN', {
+  return new Date(iso).toLocaleString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
     dateStyle: 'short',
     timeStyle: 'short',
   });
@@ -110,7 +111,7 @@ function LeadBreakdownBars({
   return (
     <div className="border border-slate-200 bg-white">
       <div className="border-b border-slate-200 bg-[#f3f3f3] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-        Lead scoring · {total.toLocaleString('en-IN')} assigned
+        Lead scoring · {total.toLocaleString('en-US')} assigned
       </div>
       <div className="space-y-2 px-3 py-3">
         {items.map((item) => {
@@ -185,7 +186,7 @@ export function BatchMemberPerformance({
       <div className="shrink-0 bg-[#217346] px-3 py-2 text-white">
         <p className="text-sm font-semibold">{userName}</p>
         <p className="text-[11px] text-white/75">
-          {dataRows.toLocaleString('en-IN')} rows assigned · Productivity:{' '}
+          {dataRows.toLocaleString('en-US')} rows assigned · Productivity:{' '}
           <span className="font-semibold text-white">{perf.productivityLabel}</span> (
           {perf.productivityScore}%)
         </p>
@@ -219,7 +220,7 @@ export function BatchMemberPerformance({
               <tr key={String(label)} className="hover:bg-[#f9f9f9]">
                 <td className="border border-slate-200 px-2 py-1 text-slate-700">{label}</td>
                 <td className="border border-slate-200 px-2 py-1 text-right font-mono font-semibold text-slate-900">
-                  {Number(val).toLocaleString('en-IN')}
+                  {Number(val).toLocaleString('en-US')}
                 </td>
               </tr>
             ))}

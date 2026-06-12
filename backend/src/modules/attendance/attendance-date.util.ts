@@ -35,7 +35,18 @@ export function attendanceStoredInstantMs(stored: Date, nowMs: number = Date.now
   return workspaceAttendanceStoredInstantMs(stored, nowMs);
 }
 
+/** Day of week for YYYY-MM-DD (0=Sun … 6=Sat). */
+export function dayOfWeekFromDateKey(dateKey: string): number {
+  const [y, m, d] = dateKey.slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return 0;
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
 /** Check if day is weekend (Saturday=6, Sunday=0) */
 export function isWeekend(dayOfWeek: number): boolean {
   return dayOfWeek === 0 || dayOfWeek === 6;
+}
+
+export function isWeekendDateKey(dateKey: string): boolean {
+  return isWeekend(dayOfWeekFromDateKey(dateKey));
 }

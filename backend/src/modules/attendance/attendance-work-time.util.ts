@@ -13,6 +13,7 @@ import {
   formatDuration,
   formatElapsedSeconds,
 } from '../activity-logs/employee-report.util';
+import { formatInWorkspace } from '../../common/utils/timezone.util';
 
 export interface AttendanceRecordLike {
   date: Date;
@@ -136,7 +137,7 @@ export function buildAttendanceWorkTimeSnapshot(
   breakMinutesByDate: Map<string, number> = new Map(),
 ): AttendanceWorkTimeSnapshot {
   const todayKey = todayDateKey();
-  const label = new Date(year, month - 1, 1).toLocaleDateString('en-IN', {
+  const label = formatInWorkspace(new Date(year, month - 1, 1), {
     month: 'long',
     year: 'numeric',
   });
@@ -182,7 +183,7 @@ export function buildAttendanceWorkTimeSnapshot(
         date,
         dayLabel: isToday
           ? 'Today'
-          : d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric' }),
+          : formatInWorkspace(d, { weekday: 'short', day: 'numeric' }),
         totalMinutes,
         totalFormatted: formatDuration(totalMinutes),
         grossMinutes,

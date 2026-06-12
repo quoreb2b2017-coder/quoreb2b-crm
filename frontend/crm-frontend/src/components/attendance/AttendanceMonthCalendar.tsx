@@ -1,5 +1,6 @@
 'use client';
 
+import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { useMemo, useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
@@ -334,10 +335,7 @@ export function AttendanceMonthCalendar({
     [year, month, dailyBreakdown, weekStart],
   );
 
-  const todayKey = useMemo(() => {
-    const n = new Date();
-    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
-  }, []);
+  const todayKey = useMemo(() => todayDateKey(), []);
 
   const selectedDay = selectedDate
     ? cells.find((c) => c.type === 'day' && c.dateKey === selectedDate)
@@ -361,7 +359,7 @@ export function AttendanceMonthCalendar({
           {selectedDay && selectedDay.type === 'day' && (
             <p className="text-xs text-slate-500">
               <span className="font-semibold text-slate-700">
-                {new Date(`${selectedDay.dateKey}T00:00:00`).toLocaleDateString('en-IN', {
+                {new Date(`${selectedDay.dateKey}T00:00:00`).toLocaleDateString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
                   day: 'numeric',
                   month: 'short',
                 })}
@@ -464,7 +462,7 @@ export function AttendanceMonthCalendar({
             {soft && selectedDay && selectedDay.type === 'day' && (
               <p className={cn('text-center text-slate-500', compactCells ? 'mt-1.5 text-[10px]' : 'mt-3 text-xs')}>
                 <span className="font-medium text-slate-700">
-                  {new Date(`${selectedDay.dateKey}T00:00:00`).toLocaleDateString('en-IN', {
+                  {new Date(`${selectedDay.dateKey}T00:00:00`).toLocaleDateString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
                     weekday: 'short',
                     day: 'numeric',
                     month: 'short',

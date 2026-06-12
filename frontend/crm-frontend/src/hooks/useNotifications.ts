@@ -55,17 +55,23 @@ export function useNotifications() {
 
   const handleMarkAsRead = useCallback((id: string) => {
     markAsRead(id);
-    void notificationService.markAsRead(id);
+    void notificationService.markAsRead(id).catch(() => {
+      /* silently fail - notifications are optimistic */
+    });
   }, [markAsRead]);
 
   const handleMarkAllAsRead = useCallback(() => {
     markAllAsRead();
-    void notificationService.markAllAsRead();
+    void notificationService.markAllAsRead().catch(() => {
+      /* silently fail - notifications are optimistic */
+    });
   }, [markAllAsRead]);
 
   const handleDelete = useCallback((id: string) => {
     removeNotification(id);
-    void notificationService.deleteNotification(id);
+    void notificationService.deleteNotification(id).catch(() => {
+      /* silently fail - notifications are optimistic */
+    });
   }, [removeNotification]);
 
   return {

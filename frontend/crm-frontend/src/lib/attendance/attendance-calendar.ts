@@ -1,4 +1,8 @@
 import { formatAttendanceStatusLabel } from '@/lib/attendance/late-attendance';
+import {
+  isWeekendDateKey,
+  todayDateKey,
+} from '@/lib/constants/workspace-timezone';
 
 export type AttendanceCalendarStatus =
   | 'present'
@@ -95,19 +99,13 @@ export const WEEKDAYS_MON = ['M', 'T', 'W', 'T', 'F', 'S', 'S'] as const;
 /** Sunday-first labels (dashboard minimal calendar) */
 export const WEEKDAYS_SUN = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'] as const;
 
-export function isWeekendDay(date: Date): boolean {
-  const d = date.getDay();
-  return d === 0 || d === 6;
-}
-
 export function resolveCalendarStatus(day: AttendanceDayCell | undefined, dateKey: string): AttendanceCalendarStatus {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const cellDate = new Date(`${dateKey}T00:00:00`);
-  if (cellDate > today) return 'future';
+  const key = dateKey.slice(0, 10);
+  const today = todayDateKey();
+  if (key > today) return 'future';
 
   if (!day) {
-    return isWeekendDay(cellDate) ? 'weekend' : 'absent';
+    return isWeekendDateKey(key) ? 'weekend' : 'absent';
   }
 
   const notes = day.notes?.toLowerCase() ?? '';
@@ -118,13 +116,13 @@ export function resolveCalendarStatus(day: AttendanceDayCell | undefined, dateKe
   const status = day.status?.toLowerCase() ?? '';
 
   if (day.isLate && (status === 'present' || status === 'half-day')) return 'late';
-  if (status === 'weekend') return 'weekend';
+  if (status === 'weekend' && isWeekendDateKey(key)) return 'weekend';
   if (status === 'half-day') return 'half-day';
   if (status === 'leave') return day.isPaidLeave ? 'paid-leave' : 'leave';
   if (status === 'present') return 'present';
   if (status === 'absent') return 'absent';
 
-  return isWeekendDay(cellDate) ? 'weekend' : 'absent';
+  return isWeekendDateKey(key) ? 'weekend' : 'absent';
 }
 
 export function getStatusLabel(
@@ -183,12 +181,11 @@ export function buildMonthCalendar(
   for (let i = startOffset - 1; i >= 0; i--) {
     const day = daysInPrevMonth - i;
     const dateKey = dateKeyFrom(prevYear, prevMonth, day);
-    const cellDate = new Date(`${dateKey}T00:00:00`);
     cells.push({
       type: 'outside',
       day,
       dateKey,
-      calendarStatus: isWeekendDay(cellDate) ? 'weekend' : 'outside',
+      calendarStatus: isWeekendDateKey(dateKey) ? 'weekend' : 'outside',
     });
   }
 
@@ -210,12 +207,11 @@ export function buildMonthCalendar(
   const gridSlots = CALENDAR_GRID_ROWS * CALENDAR_GRID_COLS;
   while (cells.length < gridSlots) {
     const dateKey = dateKeyFrom(nextYear, nextMonth, nextDay);
-    const cellDate = new Date(`${dateKey}T00:00:00`);
     cells.push({
       type: 'outside',
       day: nextDay,
       dateKey,
-      calendarStatus: isWeekendDay(cellDate) ? 'weekend' : 'outside',
+      calendarStatus: isWeekendDateKey(dateKey) ? 'weekend' : 'outside',
     });
     nextDay += 1;
   }

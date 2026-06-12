@@ -21,6 +21,7 @@ interface AttendancePeriodContextValue extends AttendancePeriodState {
   ready: boolean;
   setView: (view: AttendancePeriodView) => void;
   setMonthYear: (month: number, year: number) => void;
+  setPeriod: (view: AttendancePeriodView, month: number, year: number) => void;
   setSelectedMonthsApply: (months: number[]) => void;
 }
 
@@ -84,6 +85,22 @@ export function AttendancePeriodProvider({
     });
   }, []);
 
+  const setPeriod = useCallback((nextView: AttendancePeriodView, month: number, year: number) => {
+    const m = Math.max(1, Math.min(12, month));
+    setState((prev) => {
+      let months: number[];
+      if (nextView === 'yearly') months = [...ALL_MONTH_INDICES];
+      else if (nextView === 'custom') months = prev.selectedMonths;
+      else months = [m];
+      return {
+        view: nextView,
+        selectedMonth: m,
+        selectedYear: year,
+        selectedMonths: months,
+      };
+    });
+  }, []);
+
   const setSelectedMonthsApply = useCallback((months: number[]) => {
     const sorted = [...new Set(months.map((m) => Math.max(1, Math.min(12, m))))].sort(
       (a, b) => a - b,
@@ -117,9 +134,10 @@ export function AttendancePeriodProvider({
       ready: true,
       setView,
       setMonthYear,
+      setPeriod,
       setSelectedMonthsApply,
     }),
-    [state, setView, setMonthYear, setSelectedMonthsApply],
+    [state, setView, setMonthYear, setPeriod, setSelectedMonthsApply],
   );
 
   return (

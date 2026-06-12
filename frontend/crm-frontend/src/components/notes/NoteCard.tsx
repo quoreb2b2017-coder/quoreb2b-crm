@@ -4,6 +4,8 @@ import {
   Archive,
   ArchiveRestore,
   Bell,
+  Calendar,
+  Clock,
   MoreHorizontal,
   Pencil,
   Pin,
@@ -13,7 +15,7 @@ import {
 import { useState } from 'react';
 import { cn } from '@/lib/utils/cn';
 import type { PersonalNote } from '@/types/personal-notes';
-import { formatNoteDate, PRIORITY_META, stripHtml } from './note-utils';
+import { formatNoteDateParts, notePreviewText, PRIORITY_META } from './note-utils';
 
 interface NoteCardProps {
   note: PersonalNote;
@@ -23,6 +25,23 @@ interface NoteCardProps {
   onArchive: (note: PersonalNote) => void;
   onRestore: (note: PersonalNote) => void;
   onDelete: (note: PersonalNote) => void;
+}
+
+function NoteDateTime({ iso }: { iso: string | null | undefined }) {
+  const { date, time } = formatNoteDateParts(iso);
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+        <Calendar className="h-3 w-3 shrink-0 text-slate-400" aria-hidden />
+        {date}
+      </span>
+      <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+        <Clock className="h-3 w-3 shrink-0 text-slate-400" aria-hidden />
+        {time}
+      </span>
+    </div>
+  );
 }
 
 export function NoteCard({
@@ -36,7 +55,8 @@ export function NoteCard({
 }: NoteCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const priority = PRIORITY_META[note.priority];
-  const snippet = stripHtml(note.content).slice(0, 80);
+  const snippet = notePreviewText(note.content, 80);
+  const noteWhen = note.updatedAt ?? note.createdAt;
   const closeMenu = () => setMenuOpen(false);
 
   const actions = (
@@ -109,19 +129,21 @@ export function NoteCard({
       <button
         type="button"
         onClick={() => onEdit(note)}
-        className="group relative w-full rounded-lg border border-slate-200 bg-white p-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50/80"
+        className="group relative w-full rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-all hover:border-slate-300 hover:shadow-md"
       >
-        <div className="flex items-start gap-2">
-          <span className={cn('mt-1.5 h-2 w-2 shrink-0 rounded-full', priority.dot)} />
+        <div className={cn('absolute left-0 top-3 bottom-3 w-1 rounded-r', priority.stripe)} />
+        <div className="flex items-start gap-2 pl-2">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               {note.isPinned && <Pin className="h-3 w-3 shrink-0 fill-amber-400 text-amber-500" />}
-              <span className="line-clamp-1 text-sm font-medium text-slate-900">{note.title}</span>
+              <span className="line-clamp-1 text-sm font-semibold text-slate-900">{note.title}</span>
             </div>
             {snippet && (
-              <p className="mt-0.5 line-clamp-2 text-xs text-slate-500">{snippet}</p>
+              <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500">{snippet}</p>
             )}
-            <p className="mt-1.5 text-[10px] text-slate-400">{formatNoteDate(note.updatedAt)}</p>
+            <div className="mt-2.5">
+              <NoteDateTime iso={noteWhen} />
+            </div>
           </div>
         </div>
         <div
@@ -135,36 +157,47 @@ export function NoteCard({
   }
 
   return (
-    <div className="group flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50/80">
-      <span className={cn('h-2 w-2 shrink-0 rounded-full', priority.dot)} title={priority.label} />
+    <div className="group relative flex items-start gap-3 px-4 py-3.5 transition-colors hover:bg-slate-50/90">
+      <span
+        className={cn('absolute left-0 top-3 bottom-3 w-1 rounded-r', priority.stripe)}
+        aria-hidden
+      />
+      <span
+        className={cn('mt-2 h-2.5 w-2.5 shrink-0 rounded-full', priority.dot)}
+        title={priority.label}
+      />
 
       <button
         type="button"
         onClick={() => onEdit(note)}
-        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+        className="min-w-0 flex-1 text-left"
       >
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            {note.isPinned && <Pin className="h-3 w-3 shrink-0 fill-amber-400 text-amber-500" />}
-            <span className="truncate text-sm font-medium text-slate-900">{note.title}</span>
-          </div>
-          {snippet && (
-            <p className="truncate text-xs text-slate-500">{snippet}</p>
-          )}
+        <div className="flex items-center gap-1.5">
+          {note.isPinned && <Pin className="h-3 w-3 shrink-0 fill-amber-400 text-amber-500" />}
+          <span className="truncate text-[15px] font-semibold leading-snug text-slate-900">
+            {note.title}
+          </span>
         </div>
-
-        <div className="hidden shrink-0 items-center gap-2 text-[11px] text-slate-400 sm:flex">
-          {note.reminderDate && <Bell className="h-3 w-3 text-amber-500" />}
-          {note.tags.slice(0, 1).map((tag) => (
-            <span key={tag} className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
+        {snippet && (
+          <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-slate-500">{snippet}</p>
+        )}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <NoteDateTime iso={noteWhen} />
+          {note.reminderDate && <Bell className="h-3 w-3 text-amber-500" title="Reminder set" />}
+          {note.tags.slice(0, 2).map((tag) => (
+            <span
+              key={tag}
+              className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600"
+            >
               {tag}
             </span>
           ))}
-          <span className="whitespace-nowrap">{formatNoteDate(note.updatedAt)}</span>
         </div>
       </button>
 
-      <div className="shrink-0">{actions}</div>
+      <div className="shrink-0 pt-0.5 opacity-90 transition-opacity group-hover:opacity-100">
+        {actions}
+      </div>
     </div>
   );
 }

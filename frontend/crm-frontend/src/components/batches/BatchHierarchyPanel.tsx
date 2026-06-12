@@ -1,5 +1,6 @@
 'use client';
 
+import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { useCallback, useEffect, useState } from 'react';
 import {
   batchesService,
@@ -28,7 +29,7 @@ function roleBadge(role: string) {
 
 function formatWhen(iso?: string) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleString('en-IN', {
+  return new Date(iso).toLocaleString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
     dateStyle: 'medium',
     timeStyle: 'short',
   });
@@ -82,7 +83,7 @@ function MemberRow({
           {roleBadge(node.user.role)}
         </td>
         <td className="border-r border-slate-100 px-2 py-1.5 text-right font-mono text-slate-700">
-          {node.dataRows.toLocaleString('en-IN')}
+          {node.dataRows.toLocaleString('en-US')}
         </td>
         <td className="px-2 py-1.5 text-right font-mono text-slate-500">
           {node.activity.updates}/{node.activity.touches}/{node.activity.views}
@@ -187,7 +188,7 @@ export function BatchHierarchyPanel({
                   {data.root.name}
                   {data.root.monthLabel && ` · ${data.root.monthLabel}`}
                   {' · '}
-                  {data.root.rowCount.toLocaleString('en-IN')} rows total
+                  {data.root.rowCount.toLocaleString('en-US')} rows total
                 </p>
               )}
             </div>
@@ -207,7 +208,7 @@ export function BatchHierarchyPanel({
           <p className="text-sm font-semibold text-slate-800">{data.root.name}</p>
           <p className="text-xs text-slate-500">
             {data.root.monthLabel && `${data.root.monthLabel} · `}
-            {data.root.rowCount.toLocaleString('en-IN')} rows in this batch tree
+            {data.root.rowCount.toLocaleString('en-US')} rows in this batch tree
           </p>
         </div>
       )}

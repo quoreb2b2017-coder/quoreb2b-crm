@@ -1,5 +1,6 @@
 'use client';
 
+import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { useRouter } from 'next/navigation';
 import {
   Users, TrendingUp, ArrowLeftRight,
@@ -140,7 +141,7 @@ export function ProductDashboard({ productId }: { productId: CompanyProductId })
             <h2 className="text-2xl font-bold leading-tight sm:text-3xl">Welcome back, {name}</h2>
             <p className="mt-1 text-sm text-indigo-100 opacity-90">
               Super Admin ·{' '}
-              {new Date().toLocaleDateString('en-IN', {
+              {new Date().toLocaleDateString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
                 weekday: 'long',
                 day: 'numeric',
                 month: 'long',

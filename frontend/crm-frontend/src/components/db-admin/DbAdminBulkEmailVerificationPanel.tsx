@@ -1,5 +1,6 @@
 'use client';
 
+import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
@@ -196,7 +197,7 @@ function batchPeriod(batch: EmailVerificationBatch) {
 
 function formatBatchDate(value?: string) {
   if (!value) return '—';
-  return new Date(value).toLocaleString('en-IN', {
+  return new Date(value).toLocaleString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
     day: '2-digit',
     month: 'short',
     year: 'numeric',

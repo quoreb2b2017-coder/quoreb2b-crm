@@ -1,5 +1,6 @@
 'use client';
 
+import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { useEffect, useState } from 'react';
 import { Clock, CheckCircle, AlertCircle, CalendarDays, LogOut } from 'lucide-react';
 import { attendanceService } from '@/lib/api/attendance.service';
@@ -40,7 +41,7 @@ const STATUS_OPTIONS = ['present', 'absent', 'leave', 'half-day'] as const;
 
 function formatDateLabel(dateKey: string): string {
   try {
-    return new Date(`${dateKey}T12:00:00`).toLocaleDateString('en-IN', {
+    return new Date(`${dateKey}T12:00:00`).toLocaleDateString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
       weekday: 'short',
       day: 'numeric',
       month: 'short',

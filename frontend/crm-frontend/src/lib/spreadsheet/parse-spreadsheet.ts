@@ -1,3 +1,4 @@
+import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 export interface SpreadsheetData {
   fileName: string;
   sheetName: string;
@@ -8,7 +9,7 @@ export interface SpreadsheetData {
 function cellToString(value: unknown): string {
   if (value == null || value === '') return '';
   if (value instanceof Date) {
-    return value.toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' });
+    return value.toLocaleString('en-US', { timeZone: WORKSPACE_TIMEZONE,  dateStyle: 'short', timeStyle: 'short' });
   }
   return String(value).trim();
 }

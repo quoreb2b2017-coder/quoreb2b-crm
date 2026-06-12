@@ -1,5 +1,6 @@
 'use client';
 
+import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { useExcelTableNavigation } from '@/hooks/useExcelTableNavigation';
@@ -18,6 +19,8 @@ import {
 } from '@/lib/attendance/net-work-minutes';
 import { useLiveAttendanceRows } from '@/hooks/useLiveAttendanceRows';
 import { todayDateKeyIst } from '@/lib/attendance/ist-date';
+import { isWeekendDateKey, weekdayShortFromDateKey } from '@/lib/constants/workspace-timezone';
+import { formatDateShort } from '@/lib/datetime';
 import { formatAttendanceStatusLabel } from '@/lib/attendance/late-attendance';
 
 const BASE_COLUMNS = [
@@ -210,23 +213,21 @@ export function AttendanceDailyExcelGrid({
               </tr>
             ) : (
               displayRows.map((day, rowIdx) => {
-                const d = new Date(day.date);
-                const dayName = d.toLocaleDateString('en-IN', { weekday: 'short' });
-                const dateStr = d.toLocaleDateString('en-IN', {
-                  day: '2-digit',
-                  month: 'short',
-                  year: 'numeric',
-                });
+                const dateKey = day.date.slice(0, 10);
+                const dayName = weekdayShortFromDateKey(dateKey);
+                const dateStr = formatDateShort(`${dateKey}T12:00:00`);
                 const rawStatus = day.status?.toLowerCase() ?? '';
+                const effectiveStatus =
+                  rawStatus === 'weekend' && !isWeekendDateKey(dateKey) ? 'absent' : rawStatus;
                 const statusKey =
-                  day.isLate && (rawStatus === 'present' || rawStatus === 'half-day')
+                  day.isLate && (effectiveStatus === 'present' || effectiveStatus === 'half-day')
                     ? 'late'
-                    : rawStatus === 'leave' && day.isPaidLeave
+                    : effectiveStatus === 'leave' && day.isPaidLeave
                       ? 'paid-leave'
-                      : rawStatus;
+                      : effectiveStatus;
                 const statusClass = STATUS_STYLES[statusKey] ?? 'bg-slate-100 text-slate-700';
                 const statusLabel = formatAttendanceStatusLabel(
-                  day.status,
+                  effectiveStatus,
                   day.isLate,
                   day.isPaidLeave,
                 );

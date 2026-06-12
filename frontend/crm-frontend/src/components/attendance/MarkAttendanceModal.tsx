@@ -12,6 +12,7 @@ import {
   type SideSheetAccent,
 } from '@/components/ui/SideSheet';
 import { todayDateKeyIst } from '@/lib/attendance/ist-date';
+import { isWeekendDateKey } from '@/lib/constants/workspace-timezone';
 import { DEFAULT_SHIFT_CHECK_IN } from '@/lib/attendance/shift-hours';
 import {
   ATTENDANCE_ON_TIME_CUTOFF,
@@ -29,9 +30,7 @@ interface MarkAttendanceModalProps {
 }
 
 function isWeekend(date: string): boolean {
-  const d = new Date(date + 'T00:00:00Z');
-  const day = d.getUTCDay();
-  return day === 0 || day === 6;
+  return isWeekendDateKey(date);
 }
 
 export function MarkAttendanceModal({

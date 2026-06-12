@@ -34,7 +34,7 @@ function BarRow({ label, count, total, color }: { label: string; count: number; 
       <div className="mb-1 flex justify-between text-xs text-slate-600">
         <span className="truncate pr-2">{label}</span>
         <span className="shrink-0 font-mono font-semibold text-slate-900">
-          {count.toLocaleString('en-IN')} ({pct}%)
+          {count.toLocaleString('en-US')} ({pct}%)
         </span>
       </div>
       <div className="h-2 border border-slate-200 bg-slate-50">

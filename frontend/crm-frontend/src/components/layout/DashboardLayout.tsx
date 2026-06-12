@@ -8,6 +8,8 @@ import { useAuthStore } from '@/store/auth.store';
 import { useAdminProductStore } from '@/store/admin-product.store';
 import { useIdleLogout } from '@/hooks/useIdleLogout';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
+import { MeetingRequestBell } from '@/components/dashboard/MeetingRequestBell';
+import { QuickNotePad } from '@/components/notes/QuickNotePad';
 import { useNavigation } from '@/components/providers/LoadingProvider';
 import {
   quickActionIcons,
@@ -226,6 +228,7 @@ const Icons = {
 const iconMap: Record<string, React.ReactNode> = {
   'dashboard':          Icons.dashboard,
   'users':              Icons.users,
+  'all users':          Icons.users,
   'companies':          Icons.companies,
   'leads':              Icons.leads,
   'my leads':           Icons.leads,
@@ -239,6 +242,10 @@ const iconMap: Record<string, React.ReactNode> = {
   'backups':            Icons.backups,
   'master data':        Icons.upload,
   'master data upload': Icons.upload,
+  'db admin data':      Icons.upload,
+  'master file':        Icons.upload,
+  'my data':            Icons.upload,
+  'db admin data requests': Icons.upload,
   'db admin upload requests': Icons.upload,
   'batches':            Icons.logs,
   'my batches':         Icons.logs,
@@ -909,6 +916,7 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
           <div className="flex items-center gap-2">
             {/* Notification bell */}
             <NotificationBell />
+            {(variant === 'admin') && <MeetingRequestBell />}
 
             {/* User chip */}
             <div className={cn(
@@ -962,6 +970,8 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
           </div>
         </div>
       </main>
+
+      <QuickNotePad variant={variant} />
     </div>
   );
 }

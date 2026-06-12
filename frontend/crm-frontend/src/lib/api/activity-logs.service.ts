@@ -1,3 +1,4 @@
+import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import apiClient from './client';
 
 export interface ActivityLogRow {
@@ -199,7 +200,7 @@ function formatActivityDate(value: unknown): { createdAt: string; dateFormatted:
   }
   return {
     createdAt: parsed.toISOString(),
-    dateFormatted: parsed.toLocaleString('en-IN', {
+    dateFormatted: parsed.toLocaleString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
       dateStyle: 'medium',
       timeStyle: 'short',
     }),

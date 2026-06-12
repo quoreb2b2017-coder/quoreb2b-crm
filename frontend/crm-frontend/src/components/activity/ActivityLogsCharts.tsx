@@ -156,7 +156,7 @@ export function ActivityLogsCharts({
       <div className="border-b border-slate-300 bg-[#217346] px-3 py-2 text-white">
         <p className="text-xs font-semibold">Activity graph</p>
         <p className="text-[10px] text-white/75">
-          {loading ? 'Updating…' : `${(stats?.total ?? 0).toLocaleString('en-IN')} actions`}
+          {loading ? 'Updating…' : `${(stats?.total ?? 0).toLocaleString('en-US')} actions`}
         </p>
       </div>
 

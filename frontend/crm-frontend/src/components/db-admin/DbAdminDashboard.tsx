@@ -1,5 +1,6 @@
 'use client';
 
+import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { RefreshCw, Database, Layers, Users } from 'lucide-react';
@@ -19,7 +20,7 @@ import {
 
 function formatWhen(iso: string) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleString('en-IN', {
+  return new Date(iso).toLocaleString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
     dateStyle: 'short',
     timeStyle: 'short',
   });
@@ -32,7 +33,7 @@ function BarRow({ label, count, total, color }: { label: string; count: number; 
       <div className="mb-1 flex justify-between text-xs text-slate-600">
         <span>{label}</span>
         <span className="font-mono font-semibold text-slate-900">
-          {count.toLocaleString('en-IN')} ({pct}%)
+          {count.toLocaleString('en-US')} ({pct}%)
         </span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-slate-100">
@@ -279,7 +280,7 @@ export function DbAdminDashboard() {
                         </Link>
                       </td>
                       <td className="px-3 py-2 text-right font-mono text-slate-700">
-                        {batch.rowCount.toLocaleString('en-IN')}
+                        {batch.rowCount.toLocaleString('en-US')}
                       </td>
                       <td className="px-3 py-2 text-slate-600">
                         {batch.isOwner ? `Yours · ${batch.sharedCount} shared` : 'From admin'}

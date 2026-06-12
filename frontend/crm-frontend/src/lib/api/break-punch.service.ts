@@ -1,4 +1,5 @@
 import apiClient from './client';
+import { todayDateKey } from '@/lib/constants/workspace-timezone';
 
 export type BreakType = 'tea' | 'lunch' | 'meeting';
 
@@ -29,12 +30,28 @@ export interface BreakTypeStatus {
   sessions: BreakSession[];
 }
 
+export interface MeetingRequestInfo {
+  id: string;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  requestedAt: string;
+  reviewedAt: string | null;
+}
+
+export interface PendingMeetingRequest {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  requestedAt: string;
+}
+
 export interface BreakPunchToday {
   date: string;
   activeType: BreakType | null;
   tea: BreakTypeStatus;
   lunch: BreakTypeStatus;
   meeting: BreakTypeStatus;
+  meetingRequest: MeetingRequestInfo | null;
 }
 
 function emptyTypeStatus(
@@ -59,13 +76,14 @@ function emptyTypeStatus(
 }
 
 export function createEmptyBreakPunchToday(): BreakPunchToday {
-  const date = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  const date = todayDateKey();
   return {
     date,
     activeType: null,
     tea: emptyTypeStatus('Tea break', '2×15m', 30),
     lunch: emptyTypeStatus('Lunch break', '45m', 45),
     meeting: emptyTypeStatus('Meeting', '60m', 60),
+    meetingRequest: null,
   };
 }
 
@@ -82,6 +100,26 @@ export const breakPunchService = {
 
   async toggle(type: BreakType): Promise<BreakPunchToday> {
     const res = await apiClient.post('break-punches/toggle', { type });
+    return unwrap<BreakPunchToday>(res);
+  },
+
+  async requestMeeting(): Promise<BreakPunchToday> {
+    const res = await apiClient.post('break-punches/meeting/request');
+    return unwrap<BreakPunchToday>(res);
+  },
+
+  async listPendingMeetingRequests(): Promise<PendingMeetingRequest[]> {
+    const res = await apiClient.get('break-punches/meeting/requests/pending');
+    return unwrap<PendingMeetingRequest[]>(res);
+  },
+
+  async approveMeetingRequest(requestId: string): Promise<BreakPunchToday> {
+    const res = await apiClient.post(`break-punches/meeting/requests/${requestId}/approve`);
+    return unwrap<BreakPunchToday>(res);
+  },
+
+  async rejectMeetingRequest(requestId: string): Promise<BreakPunchToday> {
+    const res = await apiClient.post(`break-punches/meeting/requests/${requestId}/reject`);
     return unwrap<BreakPunchToday>(res);
   },
 };

@@ -34,6 +34,7 @@ export function EmployeeAttendanceDashboard() {
   const { yearlyData, yearlyLoading, refetchYearly } = useYearlyAttendance(
     user?.id,
     selectedYear,
+    rollupMonths,
     Boolean(user?.id) && isRollup,
   );
 

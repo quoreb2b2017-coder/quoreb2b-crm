@@ -1,5 +1,6 @@
 'use client';
 
+import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { cn } from '@/lib/utils/cn';
 import { useExcelTableNavigation } from '@/hooks/useExcelTableNavigation';
 
@@ -36,7 +37,7 @@ const roleBadge: Record<string, string> = {
 function formatDate(val: unknown): string {
   if (!val) return '—';
   const d = new Date(val as string);
-  return isNaN(d.getTime()) ? '—' : d.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+  return isNaN(d.getTime()) ? '—' : d.toLocaleString('en-US', { timeZone: WORKSPACE_TIMEZONE,  dateStyle: 'medium', timeStyle: 'short' });
 }
 
 interface GridCellProps {

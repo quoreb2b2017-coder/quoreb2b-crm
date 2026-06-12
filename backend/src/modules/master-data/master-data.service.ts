@@ -194,19 +194,24 @@ export class MasterDataService {
       throw new BadRequestException('No data rows to submit');
     }
 
-    const masterDoc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
-    if (!masterDoc) {
-      throw new NotFoundException('Upload master data before sending a request');
-    }
-    if (!roles.includes(SystemRole.DB_ADMIN) || !this.hasDbAdminAccess(masterDoc, actor.id)) {
-      throw new ForbiddenException(
-        'Admin has not granted you access to upload against the master template',
-      );
+    if (!roles.includes(SystemRole.DB_ADMIN)) {
+      throw new ForbiddenException('Only DB Admin can submit upload requests');
     }
 
-    const headers = masterDoc.headers;
+    const masterDoc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+    const headers = masterDoc
+      ? masterDoc.headers
+      : dto.headers.map((h) => h.trim()).filter(Boolean);
+    if (!headers.length) {
+      throw new BadRequestException('At least one column header is required');
+    }
+
     const existingKeys = new Set(
-      masterDoc.rows.map((row) => this.rowKey(this.normalizeRowToHeaders(row, masterDoc.headers, headers))),
+      masterDoc
+        ? masterDoc.rows.map((row) =>
+            this.rowKey(this.normalizeRowToHeaders(row, masterDoc.headers, headers)),
+          )
+        : [],
     );
     const incomingSeen = new Set<string>();
     const rows: string[][] = [];
@@ -509,11 +514,6 @@ export class MasterDataService {
           const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
           if (!doc) {
             throw new NotFoundException('No master data uploaded yet');
-          }
-          if (!this.hasDbAdminAccess(doc, actorId)) {
-            throw new ForbiddenException(
-              'Admin has not granted you access to master data for batch creation',
-            );
           }
           return this.toResponse(doc);
         },

@@ -1,6 +1,10 @@
 /** Set during sleep/lock logout; must be cleared before a new login session. */
 export const SLEEP_LOGOUT_FLAG = 'crm-sleep-logout';
 const FRESH_LOGIN_MARKER = 'crm-fresh-login';
+const SESSION_ALIVE_KEY = 'crm-session-alive';
+
+/** No heartbeat for this long ⇒ system sleep / tab frozen (not a normal tab switch). */
+export const SLEEP_GAP_MS = 90_000;
 
 export function setSleepLogoutFlag(): void {
   if (typeof sessionStorage === 'undefined') return;
@@ -17,10 +21,37 @@ export function hasSleepLogoutFlag(): boolean {
   return sessionStorage.getItem(SLEEP_LOGOUT_FLAG) != null;
 }
 
+/** Updated every ~15s while the portal session is active. Survives page reload after sleep. */
+export function touchSessionAlive(): void {
+  if (typeof sessionStorage === 'undefined') return;
+  sessionStorage.setItem(SESSION_ALIVE_KEY, String(Date.now()));
+}
+
+export function clearSessionAlive(): void {
+  if (typeof sessionStorage === 'undefined') return;
+  sessionStorage.removeItem(SESSION_ALIVE_KEY);
+}
+
+export function sessionIdleGapMs(): number {
+  if (typeof sessionStorage === 'undefined') return 0;
+  const raw = sessionStorage.getItem(SESSION_ALIVE_KEY);
+  if (!raw) return 0;
+  const t = Number(raw);
+  if (!Number.isFinite(t)) return 0;
+  return Math.max(0, Date.now() - t);
+}
+
+export function shouldLogoutStaleSession(thresholdMs = SLEEP_GAP_MS): boolean {
+  const gap = sessionIdleGapMs();
+  return gap > 0 && gap > thresholdMs;
+}
+
 /** Marks a successful login so stale sleep flags cannot force an immediate re-logout. */
 export function markFreshLogin(): void {
   if (typeof sessionStorage === 'undefined') return;
   sessionStorage.setItem(FRESH_LOGIN_MARKER, String(Date.now()));
+  clearSleepLogoutFlag();
+  touchSessionAlive();
 }
 
 export function isRecentFreshLogin(maxAgeMs = 8000): boolean {

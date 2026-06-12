@@ -18,11 +18,11 @@ export function monthLabel(month: number): string {
   return 'Unknown';
 }
 
-/** CRM filing uses India calendar (matches en-IN UI) */
+/** CRM filing calendar — US Eastern (EDT/EST) */
 export const BATCH_CALENDAR_TIMEZONE = 'America/New_York';
 
 export function periodFromDate(date: Date = new Date()): { batchMonth: number; batchYear: number } {
-  const parts = new Intl.DateTimeFormat('en-IN', {
+  const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: BATCH_CALENDAR_TIMEZONE,
     year: 'numeric',
     month: 'numeric',

@@ -15,7 +15,7 @@ import { useAuthStore } from '@/store/auth.store';
 import { useAdminProductStore } from '@/store/admin-product.store';
 import type { AuthTokens, LoginPanel } from '@/types/auth';
 import { extractApiError } from '@/lib/api/errors';
-import { clearSleepLogoutFlag, markFreshLogin } from '@/lib/auth/sleep-logout';
+import { markFreshLogin } from '@/lib/auth/sleep-logout';
 import { stashLoginPunch } from '@/lib/auth/login-punch';
 
 function formatLoginError(e: unknown): string {
@@ -38,7 +38,6 @@ export function useLogin() {
   const [error, setError] = useState('');
 
   const completeLogin = (tokens: AuthTokens, panel: LoginPanel) => {
-    clearSleepLogoutFlag();
     markFreshLogin();
     setAuth(tokens.user, tokens.accessToken, tokens.refreshToken, panel, tokens.sessionId);
     if (panel === 'admin') {

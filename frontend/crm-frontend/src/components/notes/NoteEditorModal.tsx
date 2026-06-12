@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { ChevronDown, Loader2, Pin, Trash2, X } from 'lucide-react';
-import { PRIORITY_META, stripHtml } from '@/components/notes/note-utils';
+import { PRIORITY_META, stripHtml, stripNoteStamp } from '@/components/notes/note-utils';
 import { personalNotesService } from '@/lib/api/personal-notes.service';
 import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
@@ -129,7 +129,7 @@ export function NoteEditorModal({
   useEffect(() => {
     if (!open) return;
     setTitle(note?.title ?? '');
-    setContent(note?.content ? stripHtml(note.content) : '');
+    setContent(note?.content ? stripNoteStamp(stripHtml(note.content)) : '');
     setTagsInput(note?.tags?.join(', ') ?? '');
     setPriority(note?.priority ?? 'medium');
     setIsPinned(note?.isPinned ?? false);

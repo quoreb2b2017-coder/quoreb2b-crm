@@ -9,9 +9,9 @@ export interface AdminNavItem {
 /** CRM-only sidebar — company products are chosen via login popup, not listed here */
 const crmNav: AdminNavItem[] = [
   { label: 'Dashboard', href: '/admin/dashboard' },
-  { label: 'Users', href: '/admin/users' },
-  { label: 'Master Data Upload', href: '/admin/master-data-upload' },
-  { label: 'DB Admin Upload Requests', href: '/admin/master-data-upload/requests' },
+  { label: 'All users', href: '/admin/users' },
+  { label: 'Master File', href: '/admin/master-data-upload' },
+  { label: 'DB Admin Data Requests', href: '/admin/master-data-upload/requests' },
   { label: 'Email Verification', href: '/admin/bulk-email-verification' },
   { label: 'Batches', href: '/admin/batches' },
   { label: 'Personal Notes', href: '/admin/personal-notes' },
@@ -32,13 +32,13 @@ const intentNav: AdminNavItem[] = [
 const personifiedNav: AdminNavItem[] = [
   { label: 'Dashboard', href: '/admin/companies/personified-b2b' },
   { label: 'Leads', href: '/admin/leads' },
-  { label: 'Users', href: '/admin/users' },
+  { label: 'All users', href: '/admin/users' },
   { label: 'Settings', href: '/admin/settings' },
 ];
 
 const quoreItNav: AdminNavItem[] = [
   { label: 'Dashboard', href: '/admin/companies/quore-it' },
-  { label: 'Users', href: '/admin/users' },
+  { label: 'All users', href: '/admin/users' },
   { label: 'Activity Logs', href: '/admin/activity-logs' },
   { label: 'Settings', href: '/admin/settings' },
 ];

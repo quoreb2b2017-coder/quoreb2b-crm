@@ -170,21 +170,23 @@ export function NotificationSettingsPanel() {
 
   return (
     <div className="min-w-0">
-      <h2 className="text-sm font-bold uppercase tracking-wide text-slate-800">Notifications</h2>
-      <p className="mt-1 text-xs text-slate-500">Control in-app alerts and popup toasts</p>
+      <div className="st-section-head">
+        <h2 className="st-section-title">Notifications</h2>
+        <p className="st-section-sub">Control in-app alerts and popup toasts</p>
+      </div>
 
-      <div className="mt-3 rounded-xl border border-emerald-200/80 bg-gradient-to-r from-emerald-50 to-white px-3 py-2.5 text-xs text-emerald-800 sm:px-4">
-        Attendance is counted <strong>late after {ATTENDANCE_ON_TIME_LABEL}</strong> Eastern. Late entries include check-in time in
-        notifications when enabled below.
+      <div className="mb-4 rounded-xl border border-emerald-200/80 bg-gradient-to-r from-emerald-50/90 to-white px-4 py-3 text-xs leading-relaxed text-emerald-800 shadow-sm">
+        Attendance is counted <strong>late after {ATTENDANCE_ON_TIME_LABEL}</strong> Eastern. Late entries include
+        check-in time in notifications when enabled below.
       </div>
 
       {loading && !preferences ? (
-        <div className="mt-6 flex items-center justify-center gap-2 py-12 text-sm text-slate-500">
-          <Loader2 className="h-4 w-4 animate-spin" />
+        <div className="st-card flex items-center justify-center gap-2 py-14 text-sm text-slate-500">
+          <Loader2 className="h-4 w-4 animate-spin text-[var(--st-accent,#217346)]" />
           Loading preferences…
         </div>
       ) : (
-        <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="st-card">
           {TOGGLES.map((item) => (
             <ToggleRow
               key={item.key}

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Mail, KeyRound, Lock, LogIn, AlertCircle, Fingerprint } from 'lucide-react';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
-import { useLogin } from '@/lib/auth/use-login';
+import { useLogin } from '@/components/auth/LoginProvider';
 import { cn } from '@/lib/utils/cn';
 
 type AuthMode = 'password' | 'otp';

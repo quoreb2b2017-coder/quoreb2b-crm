@@ -183,7 +183,11 @@ export function NoteCard({
         )}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <NoteDateTime iso={noteWhen} />
-          {note.reminderDate && <Bell className="h-3 w-3 text-amber-500" title="Reminder set" />}
+          {note.reminderDate && (
+            <span title="Reminder set">
+              <Bell className="h-3 w-3 text-amber-500" aria-hidden />
+            </span>
+          )}
           {note.tags.slice(0, 2).map((tag) => (
             <span
               key={tag}

@@ -1,6 +1,6 @@
 'use client';
 
-import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
+import { WORKSPACE_TIMEZONE } from '@/lib/constants/workspace-timezone';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { RefreshCw, Layers } from 'lucide-react';
@@ -15,6 +15,8 @@ import { extractApiError } from '@/lib/api/errors';
 import { cn } from '@/lib/utils/cn';
 import { useWorkTimer } from '@/hooks/useWorkTimer';
 import { AttendanceSummaryCard } from '@/components/attendance/EmployeeAttendanceSummaryCard';
+import { DashboardPageShell } from '@/components/dashboard/DashboardPageShell';
+import { DashboardBarRow } from '@/components/dashboard/DashboardBarRow';
 import {
   dashboardCard,
   dashboardCardHeader,
@@ -22,31 +24,16 @@ import {
   dashboardContextStrip,
   dashboardRefreshBtn,
   dashboardSectionTitle,
+  dashboardLink,
 } from '@/components/dashboard/dashboard-ui';
 
 function formatWhen(iso: string) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
+  return new Date(iso).toLocaleString('en-US', {
+    timeZone: WORKSPACE_TIMEZONE,
     dateStyle: 'short',
     timeStyle: 'short',
   });
-}
-
-function BarRow({ label, count, total, color }: { label: string; count: number; total: number; color: string }) {
-  const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-  return (
-    <div>
-      <div className="mb-1 flex justify-between text-xs text-slate-600">
-        <span>{label}</span>
-        <span className="font-mono font-semibold text-slate-900">
-          {count.toLocaleString('en-US')} ({pct}%)
-        </span>
-      </div>
-      <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-        <div className={cn('h-full rounded-full transition-all', color)} style={{ width: `${pct}%` }} />
-      </div>
-    </div>
-  );
 }
 
 export function EmployeeDashboard() {
@@ -74,8 +61,8 @@ export function EmployeeDashboard() {
 
   if (loading && !data) {
     return (
-      <div className="flex items-center justify-center gap-2 py-24 text-sm text-slate-500">
-        <RefreshCw className="h-5 w-5 animate-spin text-emerald-600" />
+      <div className="dash-loading">
+        <div className="dash-loading-ring" aria-hidden />
         Loading your dashboard…
       </div>
     );
@@ -106,8 +93,9 @@ export function EmployeeDashboard() {
   const assignedTotal = Math.max(b.totalLeads, 1);
 
   return (
-    <div className="w-full min-w-0 space-y-5 px-3 py-4 sm:px-4 sm:py-5">
-      <WelcomeBanner
+    <DashboardPageShell>
+      <div className="dash-section">
+        <WelcomeBanner
         variant="employee"
         toolbar={
           <button
@@ -123,9 +111,10 @@ export function EmployeeDashboard() {
             Refresh
           </button>
         }
-      />
+        />
+      </div>
 
-      <div className={dashboardContextStrip}>
+      <div className={cn(dashboardContextStrip, 'dash-section')}>
         <span className="font-semibold text-slate-800">{data.user.name}</span>
         {data.user.employeeId && (
           <span className={dashboardContextPill('emerald')}>{data.user.employeeId}</span>
@@ -136,7 +125,7 @@ export function EmployeeDashboard() {
         </span>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="dash-section grid gap-4 lg:grid-cols-2">
         <XlMetricCardSection
           title="My assigned leads"
           headerVariant="green"
@@ -163,9 +152,11 @@ export function EmployeeDashboard() {
         />
       </div>
 
-      <AttendanceSummaryCard basePath="/employee/attendance" variant="dashboard" />
+      <div className="dash-section">
+        <AttendanceSummaryCard basePath="/employee/attendance" variant="dashboard" />
+      </div>
 
-      <div className={cn(dashboardCard, 'p-4 sm:p-5')}>
+      <div className={cn(dashboardCard, 'dash-section p-4 sm:p-5')}>
         <h3 className={dashboardSectionTitle()}>
           <Layers className="h-4 w-4 text-emerald-600" />
           Lead status breakdown
@@ -173,33 +164,34 @@ export function EmployeeDashboard() {
         {data.statusBreakdown.length === 0 ? (
           <p className="text-xs text-slate-500">No status data in your batches yet.</p>
         ) : (
-          <div className="max-h-40 space-y-2 overflow-auto">
-            {data.statusBreakdown.map((item) => (
-              <BarRow
+          <div className="max-h-44 space-y-3 overflow-auto pr-1">
+            {data.statusBreakdown.map((item, i) => (
+              <DashboardBarRow
                 key={item.label}
                 label={item.label}
                 count={item.count}
                 total={assignedTotal}
-                color="bg-emerald-500"
+                color="bg-gradient-to-r from-emerald-600 to-teal-400"
+                delay={i * 45}
               />
             ))}
           </div>
         )}
         <div className="mt-4 flex flex-wrap gap-4">
-          <Link href="/employee/batches" className="text-xs font-semibold text-emerald-700 hover:underline">
+          <Link href="/employee/batches" className={dashboardLink}>
             Open batches →
           </Link>
-          <Link href="/employee/activity-logs" className="text-xs font-semibold text-emerald-700 hover:underline">
+          <Link href="/employee/activity-logs" className={dashboardLink}>
             Activity logs →
           </Link>
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className={dashboardCard}>
+      <div className="dash-section grid gap-4 lg:grid-cols-2">
+        <div className={cn(dashboardCard, 'dash-section')}>
           <div className={dashboardCardHeader}>Recent batches</div>
-          <div className="max-h-64 overflow-auto">
-            <table className="w-full text-xs">
+          <div className="dash-table-wrap">
+            <table className="dash-table w-full text-xs">
               <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
                 <tr className="border-b border-slate-100">
                   <th className="px-3 py-2 text-left font-semibold">Name</th>
@@ -239,10 +231,10 @@ export function EmployeeDashboard() {
           </div>
         </div>
 
-        <div className={dashboardCard}>
+        <div className={cn(dashboardCard, 'dash-section')}>
           <div className={dashboardCardHeader}>Your recent activity</div>
-          <div className="max-h-64 overflow-auto">
-            <table className="w-full text-xs">
+          <div className="dash-table-wrap">
+            <table className="dash-table w-full text-xs">
               <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
                 <tr className="border-b border-slate-100">
                   <th className="px-3 py-2 text-left font-semibold">Action</th>
@@ -276,15 +268,12 @@ export function EmployeeDashboard() {
             </table>
           </div>
           <div className="border-t border-slate-100 px-4 py-2.5">
-            <Link
-              href="/employee/activity-logs"
-              className="text-xs font-semibold text-emerald-700 hover:underline"
-            >
+            <Link href="/employee/activity-logs" className={dashboardLink}>
               All activity logs →
             </Link>
           </div>
         </div>
       </div>
-    </div>
+    </DashboardPageShell>
   );
 }

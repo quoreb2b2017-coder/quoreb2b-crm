@@ -1,5 +1,7 @@
 'use client';
 
+import '@/components/dashboard/dashboard.css';
+
 import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { useRouter } from 'next/navigation';
 import {
@@ -128,8 +130,8 @@ export function ProductDashboard({ productId }: { productId: CompanyProductId })
   const stats = PRODUCT_STATS[productId];
 
   return (
-    <div className="space-y-6">
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-violet-600 to-blue-700 p-6 text-white shadow-xl sm:p-8">
+    <div className="dash-page dash-stagger space-y-6">
+      <div className="dash-section relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-violet-600 to-blue-700 p-6 text-white shadow-xl sm:p-8">
         <div className="relative z-10 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/15 px-3 py-1 backdrop-blur-sm">
@@ -163,12 +165,12 @@ export function ProductDashboard({ productId }: { productId: CompanyProductId })
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="dash-section grid grid-cols-1 gap-4 sm:grid-cols-2">
         {stats.slice(0, 2).map((s, i) => (
           <StatCard key={s.label} stat={s} idx={i} />
         ))}
       </div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="dash-section grid grid-cols-1 gap-4 sm:grid-cols-2">
         {stats.slice(2, 4).map((s, i) => (
           <StatCard key={s.label} stat={s} idx={i + 2} />
         ))}

@@ -11,36 +11,23 @@ import { formatActivityAction } from '@/lib/constants/activity-labels';
 import { extractApiError } from '@/lib/api/errors';
 import { cn } from '@/lib/utils/cn';
 import { AttendanceSummaryCard } from '@/components/attendance/EmployeeAttendanceSummaryCard';
+import { DashboardPageShell } from '@/components/dashboard/DashboardPageShell';
+import { DashboardBarRow } from '@/components/dashboard/DashboardBarRow';
 import {
   dashboardCard,
   dashboardCardHeader,
   dashboardRefreshBtn,
   dashboardSectionTitle,
+  dashboardLinkViolet,
 } from '@/components/dashboard/dashboard-ui';
 
 function formatWhen(iso: string) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
+  return new Date(iso).toLocaleString('en-US', {
+    timeZone: WORKSPACE_TIMEZONE,
     dateStyle: 'short',
     timeStyle: 'short',
   });
-}
-
-function BarRow({ label, count, total, color }: { label: string; count: number; total: number; color: string }) {
-  const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-  return (
-    <div>
-      <div className="mb-1 flex justify-between text-xs text-slate-600">
-        <span>{label}</span>
-        <span className="font-mono font-semibold text-slate-900">
-          {count.toLocaleString('en-US')} ({pct}%)
-        </span>
-      </div>
-      <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-        <div className={cn('h-full rounded-full transition-all', color)} style={{ width: `${pct}%` }} />
-      </div>
-    </div>
-  );
 }
 
 export function DbAdminDashboard() {
@@ -70,8 +57,8 @@ export function DbAdminDashboard() {
 
   if (loading && !data) {
     return (
-      <div className="flex items-center justify-center gap-2 py-24 text-sm text-slate-500">
-        <RefreshCw className="h-5 w-5 animate-spin text-[#217346]" />
+      <div className="dash-loading">
+        <div className="dash-loading-ring" aria-hidden />
         Loading dashboard from database…
       </div>
     );
@@ -100,26 +87,28 @@ export function DbAdminDashboard() {
   const batchTotal = Math.max(b.total, 1);
 
   return (
-    <div className="w-full min-w-0 space-y-5 px-3 py-4 sm:px-4 sm:py-5">
-      <WelcomeBanner
-        variant="db_admin"
-        toolbar={
-          <button
-            type="button"
-            onClick={load}
-            disabled={loading}
-            className={cn(
-              dashboardRefreshBtn,
-              'border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white',
-            )}
-          >
-            <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
-            Refresh
-          </button>
-        }
-      />
+    <DashboardPageShell>
+      <div className="dash-section">
+        <WelcomeBanner
+          variant="db_admin"
+          toolbar={
+            <button
+              type="button"
+              onClick={load}
+              disabled={loading}
+              className={cn(
+                dashboardRefreshBtn,
+                'border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white',
+              )}
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+              Refresh
+            </button>
+          }
+        />
+      </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="dash-section grid gap-4 lg:grid-cols-2">
         <XlMetricCardSection
           title="Database & services (live)"
           headerVariant="green"
@@ -183,7 +172,8 @@ export function DbAdminDashboard() {
       </div>
 
       {data.masterData && (
-        <XlMetricCardSection
+        <div className="dash-section">
+          <XlMetricCardSection
           title="Master database (admin shared access)"
           columns={4}
           rows={[
@@ -197,24 +187,24 @@ export function DbAdminDashboard() {
             },
           ]}
         />
+        </div>
       )}
 
-      <AttendanceSummaryCard basePath="/db-admin/attendance" variant="dashboard" accent="violet" />
+      <div className="dash-section">
+        <AttendanceSummaryCard basePath="/db-admin/attendance" variant="dashboard" accent="violet" />
+      </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="dash-section grid gap-4 lg:grid-cols-2">
         <div className={cn(dashboardCard, 'p-4 sm:p-5')}>
           <h3 className={dashboardSectionTitle()}>
             <Layers className="h-4 w-4 text-violet-600" />
             Batch split
           </h3>
           <div className="space-y-3">
-            <BarRow label="Your batches" count={b.owned} total={batchTotal} color="bg-[#217346]" />
-            <BarRow label="Admin shared" count={b.sharedWithMe} total={batchTotal} color="bg-violet-500" />
+            <DashboardBarRow label="Your batches" count={b.owned} total={batchTotal} color="bg-gradient-to-r from-[#1a5c38] to-emerald-500" />
+            <DashboardBarRow label="Admin shared" count={b.sharedWithMe} total={batchTotal} color="bg-gradient-to-r from-violet-600 to-purple-400" delay={60} />
           </div>
-          <Link
-            href="/db-admin/batches"
-            className="mt-4 inline-block text-xs font-semibold text-violet-700 hover:underline"
-          >
+          <Link href="/db-admin/batches" className={dashboardLinkViolet}>
             Open Batches →
           </Link>
         </div>
@@ -226,17 +216,18 @@ export function DbAdminDashboard() {
               Master data usage
             </h3>
             <div className="space-y-3">
-              <BarRow
+              <DashboardBarRow
                 label="In batches"
                 count={data.masterData.batchedRows}
                 total={data.masterData.totalRows}
-                color="bg-amber-500"
+                color="bg-gradient-to-r from-amber-500 to-orange-400"
               />
-              <BarRow
+              <DashboardBarRow
                 label="Still available"
                 count={data.masterData.availableRows}
                 total={data.masterData.totalRows}
-                color="bg-[#217346]"
+                color="bg-gradient-to-r from-[#1a5c38] to-emerald-500"
+                delay={60}
               />
             </div>
           </div>
@@ -248,11 +239,11 @@ export function DbAdminDashboard() {
         )}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="dash-section grid gap-4 lg:grid-cols-2">
         <div className={dashboardCard}>
           <div className={dashboardCardHeader}>Recent batches</div>
-          <div className="max-h-64 overflow-auto">
-            <table className="w-full text-xs">
+          <div className="dash-table-wrap">
+            <table className="dash-table w-full text-xs">
               <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
                 <tr className="border-b border-slate-100">
                   <th className="px-3 py-2 text-left font-semibold">Name</th>
@@ -298,8 +289,8 @@ export function DbAdminDashboard() {
 
         <div className={dashboardCard}>
           <div className={dashboardCardHeader}>Your recent activity</div>
-          <div className="max-h-64 overflow-auto">
-            <table className="w-full text-xs">
+          <div className="dash-table-wrap">
+            <table className="dash-table w-full text-xs">
               <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
                 <tr className="border-b border-slate-100">
                   <th className="px-3 py-2 text-left font-semibold">Action</th>
@@ -333,15 +324,12 @@ export function DbAdminDashboard() {
             </table>
           </div>
           <div className="border-t border-slate-100 px-4 py-2.5">
-            <Link
-              href="/db-admin/activity-logs"
-              className="text-xs font-semibold text-violet-700 hover:underline"
-            >
+            <Link href="/db-admin/activity-logs" className={dashboardLinkViolet}>
               All activity logs →
             </Link>
           </div>
         </div>
       </div>
-    </div>
+    </DashboardPageShell>
   );
 }

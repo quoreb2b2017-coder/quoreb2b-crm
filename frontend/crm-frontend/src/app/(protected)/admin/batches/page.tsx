@@ -1,5 +1,7 @@
 'use client';
 
+import '@/components/batches/batches.css';
+
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { batchesService, type BatchRecord } from '@/lib/api/batches.service';
@@ -157,24 +159,26 @@ export default function AdminBatchesPage() {
 
       {shareModal && (
         <>
-          <div
-            onClick={() => setShareModal(null)}
-            className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm"
-          />
+          <div className="xl-modal-backdrop" onClick={() => setShareModal(null)} />
           <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="pointer-events-auto w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
-              <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-                <div>
-                  <p className="font-semibold text-slate-900">Share Batch</p>
-                  <p className="mt-0.5 text-xs text-slate-400">&quot;{shareModal.name}&quot;</p>
+            <div className="xl-modal pointer-events-auto">
+              <div className="xl-modal-head">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="xl-modal-head-xl">
+                      <span className="xl-badge xl-badge--light">XL</span>
+                      <p className="font-semibold text-slate-900">Share Batch</p>
+                    </div>
+                    <p className="mt-0.5 text-xs text-slate-400">&quot;{shareModal.name}&quot;</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShareModal(null)}
+                    className="xl-btn px-2 py-1 text-base leading-none"
+                  >
+                    ×
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setShareModal(null)}
-                  className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100"
-                >
-                  ×
-                </button>
               </div>
               <div className="px-6 py-4">
                 <div className="mb-3 flex items-center justify-between">
@@ -228,7 +232,7 @@ export default function AdminBatchesPage() {
                 <button
                   type="button"
                   onClick={() => setShareModal(null)}
-                  className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                  className="xl-btn flex-1 py-2.5 text-sm"
                 >
                   Cancel
                 </button>
@@ -236,7 +240,7 @@ export default function AdminBatchesPage() {
                   type="button"
                   onClick={handleShare}
                   disabled={sharing}
-                  className="flex-1 rounded-xl bg-indigo-600 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+                  className="xl-btn xl-btn--xl flex-1 py-2.5 text-sm disabled:opacity-50"
                 >
                   {sharing ? 'Sharing…' : `Share (${selectedUserIds.size})`}
                 </button>

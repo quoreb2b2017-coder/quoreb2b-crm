@@ -1,3 +1,5 @@
+import '@/components/dashboard/dashboard.css';
+
 interface StatCardProps {
   label: string;
   value: string | number;
@@ -6,10 +8,14 @@ interface StatCardProps {
 
 export function StatCard({ label, value, trend }: StatCardProps) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 hover:shadow-md transition-shadow duration-300">
-      <p className="text-sm font-medium text-slate-500">{label}</p>
-      <p className="text-3xl font-bold text-slate-900 mt-2 tracking-tight">{value}</p>
-      {trend && <p className="text-xs text-emerald-600 mt-2 font-medium">{trend}</p>}
+    <div className="dash-card group p-6 transition-transform duration-300 hover:-translate-y-0.5">
+      <p className="text-xs font-bold uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="dash-kpi-value">{value}</p>
+      {trend && (
+        <p className="mt-2 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+          {trend}
+        </p>
+      )}
     </div>
   );
 }

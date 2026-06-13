@@ -1,5 +1,7 @@
 'use client';
 
+import '@/components/batches/batches.css';
+
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { batchesService, type BatchRecord } from '@/lib/api/batches.service';
@@ -149,11 +151,14 @@ export default function SharedBatchesPage({
 
       {shareModal && (
         <>
-          <div className="fixed inset-0 z-50 bg-black/40" onClick={() => setShareModal(null)} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-              <div className="border-b border-slate-100 px-5 py-4">
-                <p className="font-semibold text-slate-900">Share with team</p>
+          <div className="xl-modal-backdrop" onClick={() => setShareModal(null)} />
+          <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="xl-modal pointer-events-auto">
+              <div className="xl-modal-head">
+                <div className="xl-modal-head-xl">
+                  <span className="xl-badge xl-badge--light">XL</span>
+                  <p className="font-semibold text-slate-900">Share with team</p>
+                </div>
                 <p className="text-xs text-slate-500">{shareModal.name}</p>
               </div>
               <div className="max-h-56 overflow-y-auto px-5 py-3">
@@ -183,7 +188,7 @@ export default function SharedBatchesPage({
                 <button
                   type="button"
                   onClick={() => setShareModal(null)}
-                  className="flex-1 rounded-xl border border-slate-200 py-2 text-sm hover:bg-slate-50"
+                  className="xl-btn flex-1 py-2 text-sm"
                 >
                   Cancel
                 </button>
@@ -191,7 +196,7 @@ export default function SharedBatchesPage({
                   type="button"
                   onClick={handleShare}
                   disabled={sharing}
-                  className="flex-1 rounded-xl bg-violet-600 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+                  className="xl-btn xl-btn--xl flex-1 py-2 text-sm disabled:opacity-50"
                 >
                   {sharing ? 'Sharing…' : 'Save'}
                 </button>

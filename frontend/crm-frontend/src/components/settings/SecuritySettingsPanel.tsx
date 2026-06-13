@@ -1,56 +1,68 @@
 'use client';
 
-import { Shield, Clock, LogOut } from 'lucide-react';
+import { Shield, Clock, LogOut, Eye } from 'lucide-react';
 import { IDLE_TIMEOUT_MINUTES, IDLE_WARN_BEFORE_MINUTES } from '@/lib/constants/session';
 
 const ITEMS = [
   {
     icon: Clock,
     title: 'Sleep / idle sign-out',
-    body: `Device sleep or screen lock signs you out after ~90 seconds hidden (tabs alone do not sign you out). After ${IDLE_TIMEOUT_MINUTES} minutes idle while the app is open, you are also signed out (warning ${IDLE_WARN_BEFORE_MINUTES} minute before). Your work day stays open — log in again the same day to resume the timer.`,
+    body: `Device sleep signs you out after ~90 seconds hidden. After ${IDLE_TIMEOUT_MINUTES} minutes idle, you are signed out (warning ${IDLE_WARN_BEFORE_MINUTES} min before). Same-day login resumes your work timer.`,
+    tone: 'amber',
   },
   {
     icon: LogOut,
     title: 'Sign out vs EOD logout',
-    body: 'Sidebar Sign out pauses your session; same-day login resumes work time. Quick Punch EOD Logout ends the calendar day — attendance checkout is final until tomorrow.',
+    body: 'Sidebar Sign out pauses your session. Quick Punch EOD Logout ends the calendar day — attendance checkout is final until tomorrow.',
+    tone: 'blue',
   },
   {
-    icon: Shield,
+    icon: Eye,
     title: 'Activity tracking',
-    body: 'Login, logout, and page views are recorded for audit (employee and DB administrator accounts).',
+    body: 'Login, logout, and key actions are recorded for audit on employee and DB administrator accounts.',
+    tone: 'green',
   },
   {
     icon: Shield,
     title: 'Password change',
-    body: 'Use Change Password — all active sessions end after a password update.',
+    body: 'Use Change Password — all active sessions end after a password update for security.',
+    tone: 'violet',
   },
 ];
+
+const TONE_ICON: Record<string, string> = {
+  amber: 'bg-amber-50 text-amber-700 border-amber-100',
+  blue: 'bg-sky-50 text-sky-700 border-sky-100',
+  green: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+  violet: 'bg-violet-50 text-violet-700 border-violet-100',
+};
 
 export function SecuritySettingsPanel() {
   return (
     <div>
-      <h2 className="text-sm font-bold uppercase tracking-wide text-slate-800">Security</h2>
-      <p className="mt-1 text-xs text-slate-500">Session and access policies for your account</p>
+      <div className="st-section-head">
+        <h2 className="st-section-title">Security</h2>
+        <p className="st-section-sub">Session and access policies for your account</p>
+      </div>
 
-      <ul className="mt-4 space-y-0 border border-slate-300">
+      <div className="st-policy-grid">
         {ITEMS.map((item) => {
           const Icon = item.icon;
           return (
-            <li
-              key={item.title}
-              className="flex gap-3 border-b border-slate-200 bg-white px-3 py-3 last:border-b-0"
-            >
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center border border-slate-200 bg-[#f3f3f3] text-[#217346]">
-                <Icon className="h-3.5 w-3.5" />
+            <div key={item.title} className="st-policy-card">
+              <span
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${TONE_ICON[item.tone]}`}
+              >
+                <Icon className="h-4 w-4" />
               </span>
-              <div>
-                <p className="text-sm font-semibold text-slate-900">{item.title}</p>
-                <p className="mt-0.5 text-xs text-slate-500">{item.body}</p>
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-slate-900">{item.title}</p>
+                <p className="mt-1 text-xs leading-relaxed text-slate-500">{item.body}</p>
               </div>
-            </li>
+            </div>
           );
         })}
-      </ul>
+      </div>
     </div>
   );
 }

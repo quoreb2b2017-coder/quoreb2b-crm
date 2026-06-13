@@ -1,6 +1,9 @@
 'use client';
 
-import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
+import './dashboard.css';
+
+import { WORKSPACE_TIMEZONE } from '@/lib/constants/workspace-timezone';
+import { dailyTipForToday } from '@/lib/auth/login-welcome';
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   Shield,
@@ -14,6 +17,7 @@ import {
   Upload,
   Share2,
   ClipboardList,
+  Sparkles,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/auth.store';
@@ -138,7 +142,7 @@ function BannerDecor({
             return (
               <div
                 key={tile.label}
-                className="flex flex-col items-center gap-1 rounded-lg border border-white/15 bg-white/10 px-1.5 py-2 backdrop-blur-sm"
+                className="dash-deco-tile"
               >
                 <TileIcon className="h-3.5 w-3.5 text-white/90" strokeWidth={2} />
                 <span className="text-center text-[9px] font-semibold text-white/75">{tile.label}</span>
@@ -176,12 +180,13 @@ export function WelcomeBanner({ variant, subtitleOverride, toolbar }: WelcomeBan
   });
 
   const empId = user?.employeeId;
+  const dailyTip = dailyTipForToday();
 
   return (
-    <div className="animate-fade-in">
+    <div className="dash-section animate-fade-in">
       <div
         className={cn(
-          'relative overflow-hidden rounded-2xl shadow-xl ring-1 ring-black/10',
+          'dash-banner-shine relative overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/10',
           c.shell,
         )}
       >
@@ -203,12 +208,7 @@ export function WelcomeBanner({ variant, subtitleOverride, toolbar }: WelcomeBan
           {/* Header row */}
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
-              <div
-                className={cn(
-                  'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border text-sm font-bold text-white shadow-lg',
-                  'border-white/20 bg-black/20 backdrop-blur-sm',
-                )}
-              >
+              <div className="dash-avatar">
                 {initials(user?.firstName, user?.lastName, user?.email)}
               </div>
               <div className="min-w-0">
@@ -228,22 +228,26 @@ export function WelcomeBanner({ variant, subtitleOverride, toolbar }: WelcomeBan
                     </span>
                   )}
                 </div>
-                <h2 className="text-base font-semibold leading-tight text-white sm:text-lg">
+                <h2 className="text-lg font-bold leading-tight tracking-tight text-white sm:text-xl">
                   {timeGreeting()}, {name}
                 </h2>
                 <p className={cn('mt-0.5 line-clamp-1 text-[11px]', c.badgeText)}>
                   {subtitleOverride ?? c.subtitle}
+                </p>
+                <p className="dash-daily-tip">
+                  <Sparkles className="h-3 w-3 shrink-0 text-amber-200/90" />
+                  {dailyTip}
                 </p>
               </div>
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3">
               {toolbar}
-              <div className="hidden text-right sm:block">
-                <p className="font-mono text-base font-semibold tabular-nums text-white">{liveTime}</p>
-                <p className="text-[10px] text-white/55">{dateShort}</p>
+              <div className="dash-clock-widget hidden sm:block">
+                <p className="dash-clock-time">{liveTime}</p>
+                <p className="dash-clock-date">{dateShort}</p>
               </div>
-              <div className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/10 px-2.5 py-1.5 text-[10px] font-semibold text-white backdrop-blur-sm">
+              <div className="dash-status-pill">
                 <span className="relative flex h-1.5 w-1.5">
                   <span className={cn('absolute h-full w-full animate-ping rounded-full opacity-50', c.statusDot)} />
                   <span className={cn('relative h-1.5 w-1.5 rounded-full', c.statusDot)} />

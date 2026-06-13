@@ -72,9 +72,9 @@ export function ChangePasswordForm({ variant = 'inline', onClose }: ChangePasswo
 
   const formBody = (
     <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
-        <p className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-xs leading-relaxed text-amber-800 sm:text-sm">
-          After updating, you will be signed out on all devices for security.
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5 sm:py-5">
+        <p className="rounded-lg border border-amber-100 bg-amber-50/90 px-3 py-2.5 text-xs leading-relaxed text-amber-800">
+          You will be signed out on all devices after saving.
         </p>
 
         <div className="grid gap-4 sm:gap-5">
@@ -155,18 +155,19 @@ export function ChangePasswordForm({ variant = 'inline', onClose }: ChangePasswo
 
   if (variant === 'inline') {
     return (
-      <div className="mx-auto w-full max-w-xl">
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-start gap-3 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white px-4 py-4 sm:px-6">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
+      <div className="mx-auto w-full max-w-lg">
+        <div className="st-section-head">
+          <h2 className="st-section-title">Change password</h2>
+          <p className="st-section-sub">Use at least 8 characters. Avoid reusing old passwords.</p>
+        </div>
+        <div className="st-card overflow-hidden">
+          <div className="flex items-center gap-3 border-b border-slate-100 bg-gradient-to-r from-indigo-50/80 to-white px-4 py-4 sm:px-5">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 shadow-sm">
               <ShieldCheck className="h-5 w-5" />
             </span>
-            <div className="min-w-0">
-              <h2 className="text-base font-semibold text-slate-900 sm:text-lg">Change password</h2>
-              <p className="mt-0.5 text-xs text-slate-500 sm:text-sm">
-                Use at least 8 characters. Avoid reusing old passwords.
-              </p>
-            </div>
+            <p className="text-xs leading-relaxed text-slate-500">
+              After updating, you will be signed out on all devices for security.
+            </p>
           </div>
           {formBody}
         </div>

@@ -8,7 +8,6 @@ import {
   loginWithEmployeeId,
   loginWithOtp,
   requestAdminOtp,
-  resolvePanelFromUser,
 } from '@/lib/auth/login';
 import { connectSocket } from '@/lib/socket/socket.client';
 import { useAuthStore } from '@/store/auth.store';
@@ -17,6 +16,7 @@ import type { AuthTokens, LoginPanel } from '@/types/auth';
 import { extractApiError } from '@/lib/api/errors';
 import { markFreshLogin } from '@/lib/auth/sleep-logout';
 import { stashLoginPunch } from '@/lib/auth/login-punch';
+import { stashLoginWelcome } from '@/lib/auth/login-welcome';
 
 function formatLoginError(e: unknown): string {
   const err = e as { code?: string; message?: string };
@@ -31,7 +31,7 @@ function formatLoginError(e: unknown): string {
   return extractApiError(e, 'Login failed');
 }
 
-export function useLogin() {
+export function useLoginCore() {
   const router = useRouter();
   const setAuth = useAuthStore((s) => s.setAuth);
   const [loading, setLoading] = useState(false);
@@ -47,6 +47,9 @@ export function useLogin() {
       connectSocket(tokens.accessToken);
     }
     if (typeof window !== 'undefined') {
+      const name = tokens.user.firstName ?? tokens.user.email?.split('@')[0] ?? 'there';
+      stashLoginWelcome({ name, panel });
+
       if (tokens.attendancePunch?.punchedIn && !tokens.attendancePunch?.dayClosed) {
         const punch = {
           ...tokens.attendancePunch,
@@ -74,7 +77,6 @@ export function useLogin() {
       completeLogin(tokens, 'admin');
     } catch (e: unknown) {
       setError(formatLoginError(e));
-    } finally {
       setLoading(false);
     }
   };
@@ -86,12 +88,12 @@ export function useLogin() {
     setError('');
     try {
       const result = await requestAdminOtp(email);
+      setLoading(false);
       return { ok: true, devOtp: result.devOtp };
     } catch (e: unknown) {
       setError(formatLoginError(e));
-      return { ok: false };
-    } finally {
       setLoading(false);
+      return { ok: false };
     }
   };
 
@@ -103,7 +105,6 @@ export function useLogin() {
       completeLogin(tokens, 'admin');
     } catch (e: unknown) {
       setError(formatLoginError(e));
-    } finally {
       setLoading(false);
     }
   };
@@ -127,7 +128,6 @@ export function useLogin() {
       completeLogin(tokens, panel);
     } catch (e: unknown) {
       setError(formatLoginError(e));
-    } finally {
       setLoading(false);
     }
   };
@@ -141,4 +141,9 @@ export function useLogin() {
     loginAdminOtpVerify,
     loginWithId,
   };
+}
+
+/** @deprecated Use useLogin from LoginProvider */
+export function useLogin() {
+  return useLoginCore();
 }

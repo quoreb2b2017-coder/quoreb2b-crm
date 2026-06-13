@@ -41,24 +41,22 @@ export function BatchYearToolbar({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <div className="flex items-center gap-1.5 border border-white/30 bg-white/10 px-2 py-1">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-white/80">
-          Year
-        </span>
+      <div className="xl-chip">
+        <span className="font-semibold uppercase tracking-wide text-white/80">Year</span>
         <select
           value={year}
           onChange={(e) => onYearChange(Number(e.target.value))}
-          className="min-w-[4.5rem] cursor-pointer bg-transparent text-sm font-bold text-white outline-none"
+          className="min-w-[4.5rem] cursor-pointer text-sm font-bold"
         >
           {years.map((y) => (
-            <option key={y} value={y} className="text-slate-900">
+            <option key={y} value={y}>
               {y}
             </option>
           ))}
         </select>
       </div>
 
-      <div className="flex items-center border border-white/30 bg-white/10">
+      <div className="xl-chip">
         <input
           type="number"
           min={2000}
@@ -70,26 +68,18 @@ export function BatchYearToolbar({
             setAddError('');
           }}
           onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-          className="w-20 bg-transparent px-2 py-1 text-xs text-white placeholder:text-white/40 outline-none"
+          className="w-20 px-1 text-xs placeholder:text-white/40"
         />
-        <button
-          type="button"
-          onClick={handleAdd}
-          className="flex items-center gap-1 border-l border-white/25 px-2 py-1 text-[10px] font-semibold text-white hover:bg-white/15"
-        >
+        <button type="button" onClick={handleAdd} className="xl-chip-btn">
           <Plus className="h-3 w-3" />
           Add year
         </button>
       </div>
 
-      {addError && (
-        <span className="text-[10px] text-amber-200">{addError}</span>
-      )}
+      {addError && <span className="text-[10px] text-amber-200">{addError}</span>}
 
-      <span className="border border-white/25 bg-white/10 px-2 py-1 text-[10px] text-white/90">
-        12 folders · Jan–Dec
-      </span>
-      <span className="border border-white/25 bg-white/10 px-2.5 py-1 font-mono text-[11px]">
+      <span className="xl-chip">12 folders · Jan–Dec</span>
+      <span className="xl-chip font-mono text-[11px]">
         {totalInYear} batch{totalInYear !== 1 ? 'es' : ''}
       </span>
     </div>

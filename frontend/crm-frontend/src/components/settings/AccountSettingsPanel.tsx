@@ -1,8 +1,23 @@
 'use client';
 
-import { User, Mail, BadgeCheck, Shield } from 'lucide-react';
+import { User, Mail, BadgeCheck, Shield, LayoutGrid } from 'lucide-react';
 import { useAuthStore } from '@/store/auth.store';
 import { formatRoleLabel } from '@/lib/api/activity-logs.service';
+import { cn } from '@/lib/utils/cn';
+
+function avatarHue(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  const hues = ['#217346', '#2e75b6', '#7c3aed', '#0d9488', '#c2410c'];
+  return hues[Math.abs(hash) % hues.length];
+}
+
+const ROLE_BADGE: Record<string, string> = {
+  super_admin: 'bg-slate-700 text-white',
+  admin: 'bg-violet-100 text-violet-800 ring-1 ring-violet-200',
+  db_admin: 'bg-sky-100 text-sky-800 ring-1 ring-sky-200',
+  employee: 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200',
+};
 
 export function AccountSettingsPanel() {
   const user = useAuthStore((s) => s.user);
@@ -12,39 +27,75 @@ export function AccountSettingsPanel() {
 
   const name = [user.firstName, user.lastName].filter(Boolean).join(' ') || '—';
   const primaryRole = user.roles?.[0] ?? '—';
+  const initials = name !== '—'
+    ? name.split(/\s+/).map((p) => p[0]).join('').slice(0, 2).toUpperCase()
+    : '?';
 
   const rows = [
     { icon: User, label: 'Full name', value: name },
     { icon: Mail, label: 'Email', value: user.email },
     { icon: BadgeCheck, label: 'Employee ID', value: user.employeeId ?? '—' },
-    { icon: Shield, label: 'Role', value: formatRoleLabel(primaryRole) },
-    { icon: Shield, label: 'Portal', value: panel ?? '—' },
+    { icon: Shield, label: 'Role', value: formatRoleLabel(primaryRole), isRole: true },
+    { icon: LayoutGrid, label: 'Portal', value: panel ?? '—' },
   ];
 
   return (
     <div>
-      <h2 className="text-sm font-bold uppercase tracking-wide text-slate-800">My account</h2>
-      <p className="mt-1 text-xs text-slate-500">Your profile information on this portal</p>
+      <div className="st-section-head">
+        <h2 className="st-section-title">My account</h2>
+        <p className="st-section-sub">Your profile information on this portal</p>
+      </div>
 
-      <dl className="mt-4 space-y-0 border border-slate-300">
+      <div className="mb-5 flex items-center gap-4 rounded-xl border border-slate-200/90 bg-gradient-to-r from-slate-50 to-white p-4 shadow-sm">
+        <span
+          className="st-profile-avatar flex h-14 w-14 shrink-0 items-center justify-center rounded-xl text-base"
+          style={{ backgroundColor: avatarHue(name) }}
+        >
+          {initials}
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-base font-bold text-slate-900">{name}</p>
+          <p className="truncate text-sm text-slate-500">{user.email}</p>
+          <span
+            className={cn(
+              'st-badge mt-2',
+              ROLE_BADGE[primaryRole] ?? 'bg-slate-100 text-slate-700 ring-1 ring-slate-200',
+            )}
+          >
+            {formatRoleLabel(primaryRole)}
+          </span>
+        </div>
+      </div>
+
+      <div className="st-card">
         {rows.map((row) => {
           const Icon = row.icon;
           return (
-            <div
-              key={row.label}
-              className="flex items-center gap-3 border-b border-slate-200 bg-white px-3 py-2.5 last:border-b-0"
-            >
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center border border-slate-200 bg-[#f3f3f3] text-[#217346]">
-                <Icon className="h-3.5 w-3.5" />
+            <div key={row.label} className="st-info-row">
+              <span className="st-info-icon">
+                <Icon className="h-4 w-4" />
               </span>
               <div className="min-w-0 flex-1">
-                <dt className="text-[10px] font-semibold uppercase text-slate-500">{row.label}</dt>
-                <dd className="text-sm font-medium text-slate-900">{row.value}</dd>
+                <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{row.label}</dt>
+                <dd className="mt-0.5 truncate text-sm font-semibold text-slate-900">
+                  {row.isRole ? (
+                    <span
+                      className={cn(
+                        'st-badge',
+                        ROLE_BADGE[primaryRole] ?? 'bg-slate-100 text-slate-700',
+                      )}
+                    >
+                      {row.value}
+                    </span>
+                  ) : (
+                    row.value
+                  )}
+                </dd>
               </div>
             </div>
           );
         })}
-      </dl>
+      </div>
     </div>
   );
 }

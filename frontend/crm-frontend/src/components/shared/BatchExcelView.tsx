@@ -1,6 +1,8 @@
 'use client';
 
-import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
+import '@/components/batches/batches.css';
+
+import { WORKSPACE_TIMEZONE } from '@/lib/constants/workspace-timezone';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useDebouncedAutoSave } from '@/hooks/useDebouncedAutoSave';
 import { useLeadActivityTracker } from '@/hooks/useLeadActivityTracker';
@@ -180,15 +182,13 @@ export function BatchExcelView({
   };
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col bg-[#e6e6e6]">
-      <div className="flex flex-shrink-0 items-center justify-between bg-[#217346] px-4 py-2 text-white">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded bg-white/20">
-            <span className="text-[10px] font-bold">XL</span>
-          </div>
+    <div className="xl-view">
+      <div className="xl-view-titlebar">
+        <div className="relative z-[1] flex min-w-0 items-center gap-3">
+          <div className="xl-badge">XL</div>
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold leading-tight">{name}</p>
-            <p className="truncate text-[11px] text-white/70">
+            <p className="truncate text-[11px] text-white/75">
               {rowCount != null && `${rowCount} rows`}
               {columnCount != null && ` · ${columnCount} columns`}
               {sourceFileName && ` · ${sourceFileName}`}
@@ -201,18 +201,14 @@ export function BatchExcelView({
             </p>
           </div>
         </div>
-        <div className="flex flex-shrink-0 items-center gap-2">
+        <div className="relative z-[1] flex flex-shrink-0 items-center gap-2">
           {sharedBy && allowCreateSubBatch && (
-            <span className="hidden text-xs text-white/70 sm:block">
+            <span className="hidden text-xs text-white/75 sm:block">
               From admin: <span className="font-medium text-white">{sharedBy}</span>
             </span>
           )}
           {teamHref && (
-            <button
-              type="button"
-              onClick={() => router.push(teamHref)}
-              className="inline-flex items-center gap-1.5 rounded bg-white/15 px-3 py-1 text-xs font-medium hover:bg-white/25"
-            >
+            <button type="button" onClick={() => router.push(teamHref)} className="xl-view-btn">
               <Users className="h-3.5 w-3.5" />
               Team
             </button>
@@ -222,7 +218,7 @@ export function BatchExcelView({
               type="button"
               onClick={saveBatch}
               disabled={saving || (!dirty && autoSaveStatus !== 'error')}
-              className="inline-flex items-center gap-1.5 rounded bg-white/20 px-3 py-1 text-xs font-medium hover:bg-white/30 disabled:opacity-40"
+              className="xl-view-btn"
             >
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
               Save now
@@ -232,7 +228,7 @@ export function BatchExcelView({
             <button
               type="button"
               onClick={onClose}
-              className="rounded p-1.5 transition-colors hover:bg-white/20"
+              className="xl-view-btn px-2"
               title={closeLabel}
             >
               <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">

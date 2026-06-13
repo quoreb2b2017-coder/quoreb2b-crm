@@ -3,7 +3,7 @@
 import { BadgeCheck, Lock, LogIn, AlertCircle, KeyRound } from 'lucide-react';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
-import { useLogin } from '@/lib/auth/use-login';
+import { useLogin } from '@/components/auth/LoginProvider';
 
 interface IdLoginFormProps {
   panel: 'db_admin' | 'employee';

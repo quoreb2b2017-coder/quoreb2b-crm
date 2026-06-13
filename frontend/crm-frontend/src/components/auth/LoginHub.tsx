@@ -9,6 +9,7 @@ import { PublicNavbar } from '@/components/layout/PublicNavbar';
 import { PublicFooter } from '@/components/layout/PublicFooter';
 import { AdminLoginForm } from './AdminLoginForm';
 import { IdLoginForm } from './IdLoginForm';
+import { LoginProvider } from './LoginProvider';
 import type { LoginPanel } from '@/types/auth';
 import { IDLE_TIMEOUT_MINUTES } from '@/lib/constants/session';
 
@@ -34,6 +35,7 @@ export function LoginHub() {
   }, []);
 
   return (
+    <LoginProvider>
     <div className="flex min-h-screen flex-col bg-white">
       <PublicNavbar />
 
@@ -122,5 +124,6 @@ export function LoginHub() {
 
       <PublicFooter />
     </div>
+    </LoginProvider>
   );
 }

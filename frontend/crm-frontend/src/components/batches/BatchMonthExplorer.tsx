@@ -1,8 +1,10 @@
 'use client';
 
-import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
+import './batches.css';
+
+import { WORKSPACE_TIMEZONE } from '@/lib/constants/workspace-timezone';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronRight, Folder, Loader2 } from 'lucide-react';
+import { ChevronRight, FileSpreadsheet, Folder } from 'lucide-react';
 import type { BatchRecord } from '@/lib/api/batches.service';
 import {
   CALENDAR_MONTHS,
@@ -18,7 +20,8 @@ import { cn } from '@/lib/utils/cn';
 
 function formatDate(val?: string) {
   if (!val) return '—';
-  return new Date(val).toLocaleString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
+  return new Date(val).toLocaleString('en-US', {
+    timeZone: WORKSPACE_TIMEZONE,
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -53,14 +56,9 @@ export function BatchMonthExplorer({
   useEffect(() => {
     setSavedYears(loadSavedLibraryYears());
   }, []);
-  const years = useMemo(
-    () => buildLibraryYears(batches, savedYears),
-    [batches, savedYears],
-  );
-  const [year, setYear] = useState(() => {
-    const { year: currentYear } = currentCalendarPeriod();
-    return currentYear;
-  });
+
+  const years = useMemo(() => buildLibraryYears(batches, savedYears), [batches, savedYears]);
+  const [year, setYear] = useState(() => currentCalendarPeriod().year);
   const byMonth = useMemo(() => groupBatchesByMonth(batches, year), [batches, year]);
   const [selectedMonth, setSelectedMonth] = useState(() =>
     pickDefaultMonth(groupBatchesByMonth(batches, currentCalendarPeriod().year), currentCalendarPeriod().year),
@@ -116,27 +114,24 @@ export function BatchMonthExplorer({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center gap-2 border border-slate-300 bg-[#f3f3f3] py-24 text-sm text-slate-600">
-        <Loader2 className="h-5 w-5 animate-spin text-[#217346]" />
+      <div className="xl-loading">
+        <div className="xl-loading-ring" aria-hidden />
         Loading batch library…
       </div>
     );
   }
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col border-0 border-t border-slate-300 bg-[#e8e8e8]">
-      {/* Excel title bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-[#217346] px-4 py-2.5 text-white">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center border border-white/30 bg-white/15">
-            <span className="text-[10px] font-bold">XL</span>
-          </div>
+    <div className="xl-workbook">
+      <div className="xl-titlebar">
+        <div className="relative z-[1] flex min-w-0 items-center gap-3">
+          <div className="xl-badge">XL</div>
           <div className="min-w-0">
-            <h1 className="truncate text-sm font-semibold leading-tight">{title}</h1>
-            <p className="truncate text-[11px] text-white/75">{subtitle}</p>
+            <h1 className="xl-titlebar-title truncate">{title}</h1>
+            <p className="xl-titlebar-sub truncate">{subtitle}</p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="relative z-[1] flex flex-wrap items-center gap-2">
           {headerExtra}
           <BatchYearToolbar
             year={year}
@@ -148,18 +143,14 @@ export function BatchMonthExplorer({
         </div>
       </div>
 
-      {/* Path bar (formula-bar style) */}
-      <div className="flex items-center gap-2 border-b border-slate-300 bg-[#f3f3f3] px-3 py-1 text-[11px] text-slate-600">
-        <span className="font-semibold text-slate-500">Path</span>
-        <span className="font-mono text-slate-800">{folderPath}</span>
+      <div className="xl-pathbar">
+        <span className="xl-pathbar-label">Path</span>
+        <span className="xl-pathbar-value">{folderPath}</span>
       </div>
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        {/* Month folders — plain list */}
-        <aside className="flex w-[min(240px,22vw)] shrink-0 flex-col border-r border-slate-300 bg-white">
-          <div className="border-b border-slate-300 bg-[#f3f3f3] px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-            {year} · Jan–Dec (12 folders)
-          </div>
+        <aside className="xl-sidebar">
+          <div className="xl-sidebar-head">{year} · Jan–Dec (12 folders)</div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             <table className="w-full border-collapse text-xs">
               <thead className="sticky top-0 bg-[#fafafa]">
@@ -177,15 +168,12 @@ export function BatchMonthExplorer({
                     <tr
                       key={m.index}
                       onClick={() => setSelectedMonth(m.index)}
-                      className={cn(
-                        'cursor-pointer border-b border-slate-100',
-                        active ? 'bg-[#e2efda]' : 'hover:bg-[#f5f5f5]',
-                      )}
+                      className={cn('xl-folder-row', active && 'xl-folder-row--active')}
                     >
                       <td className="border-r border-slate-100 px-1 py-1.5 text-center">
                         <Folder
                           className={cn(
-                            'mx-auto h-3.5 w-3.5',
+                            'mx-auto h-3.5 w-3.5 transition-colors',
                             active ? 'text-[#217346]' : 'text-slate-400',
                           )}
                         />
@@ -214,12 +202,11 @@ export function BatchMonthExplorer({
           </div>
         </aside>
 
-        {/* Batch sheet */}
-        <section className="flex min-w-0 flex-1 flex-col bg-white">
-          <div className="flex items-center justify-between border-b border-slate-300 bg-[#e2efda] px-3 py-1.5">
+        <section className="xl-sheet-panel">
+          <div className="xl-sheet-head">
             <div className="flex items-center gap-2">
               <ChevronRight className="h-3.5 w-3.5 text-[#217346]" />
-              <span className="text-xs font-semibold text-[#217346]">
+              <span className="xl-sheet-head-title">
                 {monthMeta.label} {year}
               </span>
               <span className="text-[11px] text-slate-600">
@@ -229,15 +216,20 @@ export function BatchMonthExplorer({
           </div>
 
           {monthBatches.length === 0 ? (
-            <div className="flex flex-1 flex-col items-center justify-center bg-[#fafafa] p-8 text-center">
+            <div className="xl-empty">
+              <div className="xl-empty-icon">
+                <FileSpreadsheet className="h-5 w-5 text-[#217346]" />
+              </div>
               {batches.length === 0 ? (
                 <>
-                  <p className="text-sm font-medium text-slate-700">{emptyTitle}</p>
-                  <p className="mt-2 max-w-md text-xs text-slate-500">{emptyHint}</p>
+                  <p className="text-sm font-semibold text-slate-700">{emptyTitle}</p>
+                  <p className="mt-2 max-w-md text-xs leading-relaxed text-slate-500">{emptyHint}</p>
                 </>
               ) : (
                 <>
-                  <p className="text-sm text-slate-600">No batches in {monthMeta.label} {year}</p>
+                  <p className="text-sm font-medium text-slate-700">
+                    No batches in {monthMeta.label} {year}
+                  </p>
                   <p className="mt-1 text-xs text-slate-400">
                     Batches created in this month are filed here automatically
                   </p>
@@ -245,42 +237,34 @@ export function BatchMonthExplorer({
               )}
             </div>
           ) : (
-            <div className="min-h-0 flex-1 overflow-auto">
-              <table className="w-full border-collapse text-xs">
-                <thead className="sticky top-0 z-10">
-                  <tr className="bg-[#f3f3f3] text-[10px] font-semibold uppercase text-slate-600">
-                    <th className="w-10 border border-slate-300 px-2 py-1.5 text-center">#</th>
-                    <th className="border border-slate-300 px-2 py-1.5 text-left">Batch name</th>
-                    <th className="w-20 border border-slate-300 px-2 py-1.5 text-right">Rows</th>
-                    <th className="border border-slate-300 px-2 py-1.5 text-left">Source file</th>
-                    <th className="w-36 border border-slate-300 px-2 py-1.5 text-left">Created</th>
-                    <th className="min-w-[280px] border border-slate-300 px-2 py-1.5 text-center whitespace-nowrap">
-                      Actions
-                    </th>
+            <div className="xl-table-wrap">
+              <table className="xl-table">
+                <thead>
+                  <tr>
+                    <th className="w-10 text-center">#</th>
+                    <th className="text-left">Batch name</th>
+                    <th className="w-20 text-right">Rows</th>
+                    <th className="text-left">Source file</th>
+                    <th className="w-36 text-left">Created</th>
+                    <th className="min-w-[280px] text-center whitespace-nowrap">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {monthBatches.map((b, i) => (
-                    <tr key={b.id} className="hover:bg-[#f9fff9]">
-                      <td className="border border-slate-200 bg-[#fafafa] px-2 py-2 text-center font-mono text-slate-400">
-                        {i + 1}
-                      </td>
-                      <td className="border border-slate-200 px-2 py-2">
-                        <p className="font-medium text-slate-800">{b.name}</p>
+                    <tr key={b.id}>
+                      <td className="xl-row-num">{i + 1}</td>
+                      <td>
+                        <p className="xl-cell-name">{b.name}</p>
                         {b.description && (
                           <p className="mt-0.5 text-[10px] text-slate-500">{b.description}</p>
                         )}
                       </td>
-                      <td className="border border-slate-200 px-2 py-2 text-right font-mono text-slate-800">
-                        {b.rowCount.toLocaleString('en-US')}
-                      </td>
-                      <td className="max-w-[160px] truncate border border-slate-200 px-2 py-2 text-slate-600">
+                      <td className="text-right xl-cell-mono">{b.rowCount.toLocaleString('en-US')}</td>
+                      <td className="max-w-[160px] truncate text-slate-600">
                         {b.sourceFileName ?? '—'}
                       </td>
-                      <td className="whitespace-nowrap border border-slate-200 px-2 py-2 text-slate-500">
-                        {formatDate(b.createdAt)}
-                      </td>
-                      <td className="border border-slate-200 px-2 py-1.5">
+                      <td className="whitespace-nowrap text-slate-500">{formatDate(b.createdAt)}</td>
+                      <td>
                         <div className="flex flex-nowrap items-center justify-center gap-1 whitespace-nowrap">
                           {renderActions(b)}
                         </div>
@@ -292,23 +276,22 @@ export function BatchMonthExplorer({
             </div>
           )}
 
-          {/* Sheet tab strip */}
-          <div className="flex shrink-0 items-end gap-0 border-t border-slate-300 bg-[#f3f3f3] px-1 pt-1">
-            <span className="border border-b-0 border-slate-300 bg-white px-3 py-1 text-[11px] font-medium text-[#217346]">
+          <div className="xl-tabs">
+            <span className="xl-tab xl-tab--active">
               {monthMeta.short} {year}
             </span>
-            {CALENDAR_MONTHS.filter((m) => (byMonth.get(m.index)?.length ?? 0) > 0 && m.index !== selectedMonth).map(
-              (m) => (
-                <button
-                  key={m.index}
-                  type="button"
-                  onClick={() => setSelectedMonth(m.index)}
-                  className="border border-transparent px-2 py-1 text-[10px] text-slate-500 hover:bg-white/60"
-                >
-                  {m.short}
-                </button>
-              ),
-            )}
+            {CALENDAR_MONTHS.filter(
+              (m) => (byMonth.get(m.index)?.length ?? 0) > 0 && m.index !== selectedMonth,
+            ).map((m) => (
+              <button
+                key={m.index}
+                type="button"
+                onClick={() => setSelectedMonth(m.index)}
+                className="xl-tab"
+              >
+                {m.short}
+              </button>
+            ))}
           </div>
         </section>
       </div>

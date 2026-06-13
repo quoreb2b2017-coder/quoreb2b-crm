@@ -58,9 +58,11 @@ export function BatchExcelView({
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
-  const [batchModal, setBatchModal] = useState<{ rows: string[][]; headers: string[] } | null>(
-    null,
-  );
+  const [batchModal, setBatchModal] = useState<{
+    rows: string[][];
+    headers: string[];
+    sourceRowIndices: number[];
+  } | null>(null);
   const [batchName, setBatchName] = useState('');
   const [batchDesc, setBatchDesc] = useState('');
   const [savingBatch, setSavingBatch] = useState(false);
@@ -143,7 +145,11 @@ export function BatchExcelView({
     });
     setBatchName(`Batch ${now}`);
     setBatchDesc('');
-    setBatchModal({ rows: payload.rows, headers: payload.headers });
+    setBatchModal({
+      rows: payload.rows,
+      headers: payload.headers,
+      sourceRowIndices: payload.sourceRowIndices,
+    });
   },
   [],
   );
@@ -159,6 +165,7 @@ export function BatchExcelView({
         rows: batchModal.rows,
         sourceFileName: data?.fileName ?? sourceFileName,
         sourceBatchId,
+        parentSourceRowIndices: batchModal.sourceRowIndices,
       });
       toast.success('Batch created', `"${batch.name}" — share it with your team from Batches`);
       setBatchModal(null);

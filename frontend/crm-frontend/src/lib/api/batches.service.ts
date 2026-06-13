@@ -79,6 +79,18 @@ export interface BatchHierarchyShareEvent {
   occurredAt: string;
 }
 
+export interface BatchShareResult {
+  batch: BatchRecord;
+  distributed: Array<{
+    userId: string;
+    userName: string;
+    batchId: string;
+    batchName: string;
+    rowCount: number;
+  }>;
+  fullShareUserIds: string[];
+}
+
 export interface BatchHierarchyResponse {
   root: {
     id: string;
@@ -166,6 +178,7 @@ export const batchesService = {
     sourceFileName?: string;
     sourceBatchId?: string;
     masterSourceRowIndices?: number[];
+    parentSourceRowIndices?: number[];
   }) => apiClient.post('/batches', payload).then(r => {
     const result = unwrap<BatchRecord>(r);
     if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('master-data-updated'));
@@ -204,7 +217,7 @@ export const batchesService = {
     }),
 
   share: (id: string, userIds: string[]) =>
-    apiClient.post(`/batches/${id}/share`, { userIds }).then(r => unwrap<BatchRecord>(r)),
+    apiClient.post(`/batches/${id}/share`, { userIds }).then(r => unwrap<BatchShareResult>(r)),
 
   unshare: (id: string, userId: string) =>
     apiClient.delete(`/batches/${id}/share/${userId}`).then(r => unwrap<BatchRecord>(r)),

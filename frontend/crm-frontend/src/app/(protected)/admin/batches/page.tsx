@@ -12,6 +12,7 @@ import { useCrmDataCleared } from '@/hooks/useCrmDataCleared';
 import { useNotificationTrigger } from '@/hooks/useNotificationTrigger';
 import { BatchMonthExplorer } from '@/components/batches/BatchMonthExplorer';
 import { BatchActionButton, BatchXlButton } from '@/components/batches/batch-action-buttons';
+import { toastBatchShareResult } from '@/lib/batches/share-result-toast';
 
 function Initials({ name }: { name: string }) {
   const p = name.trim().split(' ');
@@ -95,9 +96,9 @@ export default function AdminBatchesPage() {
     if (!shareModal) return;
     setSharing(true);
     try {
-      const updated = await batchesService.share(shareModal.id, Array.from(selectedUserIds));
-      toast.success('Batch shared', `Shared with ${updated.sharedWith.length} user(s)`);
-      notifyBatchShared(shareModal.name, updated.sharedWith.length);
+      const result = await batchesService.share(shareModal.id, Array.from(selectedUserIds));
+      toastBatchShareResult(result);
+      notifyBatchShared(shareModal.name, selectedUserIds.size);
       setShareModal(null);
       await loadBatches();
     } catch (e) {
@@ -181,6 +182,13 @@ export default function AdminBatchesPage() {
                 </div>
               </div>
               <div className="px-6 py-4">
+                <p className="mb-3 rounded-lg border border-emerald-100 bg-emerald-50/80 px-3 py-2 text-xs leading-relaxed text-emerald-900">
+                  <span className="font-semibold">Employees</span> receive an{' '}
+                  <span className="font-semibold">equal, unique slice</span> of leads — no duplicate
+                  rows across team members.{' '}
+                  <span className="font-semibold">DB Administrators</span> receive the full batch to
+                  split and assign further.
+                </p>
                 <div className="mb-3 flex items-center justify-between">
                   <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                     Select users

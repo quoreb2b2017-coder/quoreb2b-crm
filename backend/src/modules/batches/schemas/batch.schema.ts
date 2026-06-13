@@ -54,6 +54,10 @@ export class Batch extends Document {
   /** Master sheet row indices (0-based) when batch was created from master data upload */
   @Prop({ type: [Number], default: [] })
   masterSourceRowIndices?: number[];
+
+  /** Parent batch row indices when this batch is an equal-share slice from sourceBatchId */
+  @Prop({ type: [Number], default: [] })
+  parentSourceRowIndices?: number[];
 }
 
 export const BatchSchema = SchemaFactory.createForClass(Batch);

@@ -12,6 +12,7 @@ import { useAuthStore } from '@/store/auth.store';
 import { useCrmDataCleared } from '@/hooks/useCrmDataCleared';
 import { BatchMonthExplorer } from '@/components/batches/BatchMonthExplorer';
 import { BatchActionButton, BatchXlButton } from '@/components/batches/batch-action-buttons';
+import { toastBatchShareResult } from '@/lib/batches/share-result-toast';
 
 interface UserOption {
   id: string;
@@ -89,8 +90,8 @@ export default function SharedBatchesPage({
     if (!shareModal) return;
     setSharing(true);
     try {
-      const updated = await batchesService.share(shareModal.id, Array.from(selectedUserIds));
-      toast.success('Batch shared', `Shared with ${updated.sharedWith.length} user(s)`);
+      const result = await batchesService.share(shareModal.id, Array.from(selectedUserIds));
+      toastBatchShareResult(result);
       setShareModal(null);
       await loadBatches();
     } catch (e) {
@@ -160,6 +161,10 @@ export default function SharedBatchesPage({
                   <p className="font-semibold text-slate-900">Share with team</p>
                 </div>
                 <p className="text-xs text-slate-500">{shareModal.name}</p>
+                <p className="mt-2 rounded-lg border border-violet-100 bg-violet-50/80 px-2.5 py-2 text-[11px] leading-relaxed text-violet-900">
+                  Each selected <span className="font-semibold">employee</span> gets an equal unique
+                  portion of leads — no duplicates between team members.
+                </p>
               </div>
               <div className="max-h-56 overflow-y-auto px-5 py-3">
                 {usersLoading ? (

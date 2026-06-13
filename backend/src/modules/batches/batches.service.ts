@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -24,6 +24,28 @@ import {
 import { NotificationTriggerService } from '../notifications/notification-trigger.service';
 import { AppCacheService } from '../../redis/app-cache.service';
 import { cacheTtlSeconds } from '../../redis/cache.util';
+
+import {
+  assignedParentRowIndices,
+  buildRowSlice,
+  employeeDisplayName,
+  equalSplitIndices,
+  unassignedParentRowIndices,
+} from './batch-distribute.util';
+
+export interface BatchShareDistribution {
+  userId: string;
+  userName: string;
+  batchId: string;
+  batchName: string;
+  rowCount: number;
+}
+
+export interface BatchShareResult {
+  batch: Record<string, unknown>;
+  distributed: BatchShareDistribution[];
+  fullShareUserIds: string[];
+}
 
 const MAX_LEAD_LOGS_PER_SAVE = 200;
 
@@ -71,6 +93,9 @@ export class BatchesService {
       batchYear: period.batchYear,
       masterSourceRowIndices: dto.masterSourceRowIndices?.length
         ? [...new Set(dto.masterSourceRowIndices)]
+        : [],
+      parentSourceRowIndices: dto.parentSourceRowIndices?.length
+        ? [...new Set(dto.parentSourceRowIndices)]
         : [],
       createdBy: new Types.ObjectId(actor.id),
       createdByEmail: actor.email,
@@ -234,30 +259,148 @@ export class BatchesService {
     return this.toResponse(batch as unknown as Batch);
   }
 
-  async share(batchId: string, dto: ShareBatchDto, actorId: string) {
+  async share(batchId: string, dto: ShareBatchDto, actorId: string): Promise<BatchShareResult> {
     const batch = await this.model.findById(batchId).exec();
     if (!batch) throw new NotFoundException('Batch not found');
     if (batch.createdBy?.toString() !== actorId) throw new ForbiddenException('Only creator can share');
-    const newIds = dto.userIds
-      .filter(id => Types.ObjectId.isValid(id))
-      .map(id => new Types.ObjectId(id));
-    // merge without duplicates
-    const existing = (batch.sharedWith as Types.ObjectId[]).map(u => u.toString());
-    const toAdd = newIds.filter(id => !existing.includes(id.toString()));
-    batch.sharedWith = [...(batch.sharedWith as Types.ObjectId[]), ...toAdd];
+
+    const validIds = dto.userIds.filter((id) => Types.ObjectId.isValid(id));
+    const existing = (batch.sharedWith as Types.ObjectId[]).map((u) => u.toString());
+    const toAddIds = validIds.filter((id) => !existing.includes(id));
+    if (toAddIds.length === 0) {
+      return {
+        batch: this.toResponse(batch),
+        distributed: [],
+        fullShareUserIds: [],
+      };
+    }
+
+    const recipientUsers = await this.usersRepository.findByIds(toAddIds);
+    const userRoleMap = new Map<string, string[]>();
+    for (const u of recipientUsers) {
+      const o = u.toObject ? u.toObject() : u;
+      const id = String((o as { _id: Types.ObjectId })._id);
+      userRoleMap.set(id, ((o as { roles?: string[] }).roles ?? []) as string[]);
+    }
+
+    const dbAdminToAdd: Types.ObjectId[] = [];
+    const employeeToAdd: Types.ObjectId[] = [];
+    for (const id of toAddIds) {
+      const oid = new Types.ObjectId(id);
+      const roles = userRoleMap.get(id) ?? [];
+      if (roles.includes(SystemRole.DB_ADMIN)) {
+        dbAdminToAdd.push(oid);
+      } else if (roles.includes(SystemRole.EMPLOYEE)) {
+        employeeToAdd.push(oid);
+      } else {
+        dbAdminToAdd.push(oid);
+      }
+    }
+
+    if (dbAdminToAdd.length) {
+      batch.sharedWith = [...(batch.sharedWith as Types.ObjectId[]), ...dbAdminToAdd];
+    }
+
+    const sharer = await this.usersRepository.findById(actorId);
+    const sharerRoles = (sharer?.roles as string[]) ?? [];
+    const rootBatchId = await resolveRootBatchId(this.model, batchId);
+    const rootDoc =
+      rootBatchId === batchId
+        ? batch
+        : await this.model.findById(rootBatchId).select('name rowCount').lean().exec();
+
+    const distributed: BatchShareDistribution[] = [];
+
+    if (employeeToAdd.length > 0) {
+      const parentHeaders = (batch.headers as string[]) ?? [];
+      const parentRows = (batch.rows as string[][]) ?? [];
+      if (parentRows.length === 0) {
+        throw new BadRequestException('Batch has no rows to distribute to employees');
+      }
+
+      const childDocs = await this.model
+        .find({ sourceBatchId: batch._id })
+        .select('headers rows parentSourceRowIndices sharedWith')
+        .lean()
+        .exec();
+
+      const alreadyAssignedEmployee = new Set<string>();
+      for (const child of childDocs) {
+        for (const uid of (child.sharedWith as Types.ObjectId[]) ?? []) {
+          alreadyAssignedEmployee.add(uid.toString());
+        }
+      }
+
+      const employeesToDistribute = employeeToAdd.filter(
+        (id) => !alreadyAssignedEmployee.has(id.toString()),
+      );
+
+      if (employeesToDistribute.length > 0) {
+        const assigned = assignedParentRowIndices(parentHeaders, parentRows, childDocs);
+        const unassigned = unassignedParentRowIndices(parentRows.length, assigned);
+
+        if (unassigned.length < employeesToDistribute.length) {
+          throw new BadRequestException(
+            `Not enough unassigned leads (${unassigned.length}) for ${employeesToDistribute.length} employee(s). ` +
+              'Some rows are already distributed — select fewer employees or share remaining leads later.',
+          );
+        }
+
+        const buckets = equalSplitIndices(unassigned, employeesToDistribute.length);
+        const period = currentPeriod();
+        const sharerName = [sharer?.firstName, sharer?.lastName].filter(Boolean).join(' ').trim() || sharer?.email;
+
+        for (let i = 0; i < employeesToDistribute.length; i++) {
+          const empOid = employeesToDistribute[i];
+          const empId = empOid.toString();
+          const indices = buckets[i];
+          if (!indices.length) continue;
+
+          const slice = buildRowSlice(parentHeaders, parentRows, indices);
+          const empDoc = recipientUsers.find(
+            (u) => String((u.toObject ? u.toObject() : u as { _id: Types.ObjectId })._id) === empId,
+          );
+          const empObj = empDoc?.toObject ? empDoc.toObject() : empDoc;
+          const empName = employeeDisplayName({
+            firstName: (empObj as { firstName?: string })?.firstName,
+            lastName: (empObj as { lastName?: string })?.lastName,
+            email: (empObj as { email?: string })?.email,
+            employeeId: (empObj as { employeeId?: string })?.employeeId,
+          });
+
+          const child = await this.model.create({
+            name: `${batch.name} — ${empName}`,
+            description: `Equal unique share from ${batch.name} (${slice.rows.length} leads)`,
+            headers: slice.headers,
+            rows: slice.rows,
+            rowCount: slice.rows.length,
+            columnCount: slice.headers.length,
+            sourceFileName: batch.sourceFileName,
+            sourceBatchId: batch._id,
+            parentSourceRowIndices: slice.parentSourceRowIndices,
+            batchMonth: period.batchMonth,
+            batchYear: period.batchYear,
+            createdBy: new Types.ObjectId(actorId),
+            createdByEmail: sharer?.email,
+            createdByName: sharerName,
+            sharedWith: [empOid],
+          });
+
+          distributed.push({
+            userId: empId,
+            userName: empName,
+            batchId: child._id.toString(),
+            batchName: child.name,
+            rowCount: slice.rows.length,
+          });
+        }
+      }
+    }
+
     await batch.save();
 
-    if (toAdd.length > 0) {
-      const sharer = await this.usersRepository.findById(actorId);
-      const sharerRoles = (sharer?.roles as string[]) ?? [];
-      const rootBatchId = await resolveRootBatchId(this.model, batchId);
-      const rootDoc =
-        rootBatchId === batchId
-          ? batch
-          : await this.model.findById(rootBatchId).select('name rowCount').lean().exec();
-      const recipientUsers = await this.usersRepository.findByIds(
-        toAdd.map((id) => id.toString()),
-      );
+    const allNewIds = [...dbAdminToAdd, ...employeeToAdd];
+    if (allNewIds.length > 0 || distributed.length > 0) {
       try {
         await this.activityLogs.logWithActor(
           {
@@ -278,39 +421,43 @@ export class BatchesService {
               rowCount: batch.rowCount,
               rootBatchId,
               rootBatchName: rootDoc?.name ?? batch.name,
-              sharedUserIds: toAdd.map((id) => id.toString()),
-              sharedCount: toAdd.length,
-              sharedUsers: recipientUsers.map((u) => {
-                const o = u.toObject ? u.toObject() : u;
-                const roles = ((o as { roles?: string[] }).roles ?? []) as string[];
-                return {
-                  id: String((o as { _id: Types.ObjectId })._id),
-                  name: [
-                    (o as { firstName?: string }).firstName,
-                    (o as { lastName?: string }).lastName,
-                  ]
-                    .filter(Boolean)
-                    .join(' ')
-                    .trim(),
-                  email: (o as { email?: string }).email,
-                  role: roles[0],
-                };
-              }),
+              sharedUserIds: allNewIds.map((id) => id.toString()),
+              fullShareUserIds: dbAdminToAdd.map((id) => id.toString()),
+              distributed,
+              distributionMode: distributed.length > 0 ? 'equal_unique_slices' : 'full_batch',
             },
           },
         );
       } catch {
         /* non-blocking */
       }
+
       try {
+        for (const dist of distributed) {
+          await this.notifications.notifyUser(dist.userId, {
+            type: 'info',
+            title: 'Leads assigned to you',
+            message: `"${dist.batchName}" — ${dist.rowCount} unique lead(s), equal share`,
+            priority: 'medium',
+            actionUrl: '/employee/batches',
+            actionLabel: 'Open my batches',
+            metadata: { batchId: dist.batchId, batchName: dist.batchName, rowCount: dist.rowCount },
+          });
+        }
+
+        const fullShareRecipients = recipientUsers.filter((u) => {
+          const id = String((u.toObject ? u.toObject() : u as { _id: Types.ObjectId })._id);
+          return dbAdminToAdd.some((oid) => oid.toString() === id);
+        });
+
         await Promise.all(
-          recipientUsers.map((recipient) => {
+          fullShareRecipients.map((recipient) => {
             const o = recipient.toObject ? recipient.toObject() : recipient;
             const recipientRoles = ((o as { roles?: string[] }).roles ?? []) as string[];
             return this.notifications.notifyUser(String((o as { _id: Types.ObjectId })._id), {
               type: 'info',
               title: 'Batch shared with you',
-              message: `Batch "${batch.name}" was shared with you`,
+              message: `Full batch "${batch.name}" was shared with you`,
               priority: 'medium',
               actionUrl: recipientRoles.includes(SystemRole.EMPLOYEE)
                 ? '/employee/batches'
@@ -326,7 +473,11 @@ export class BatchesService {
     }
 
     void this.bustBatchCaches(actorId, batchId);
-    return this.toResponse(batch);
+    return {
+      batch: this.toResponse(batch),
+      distributed,
+      fullShareUserIds: dbAdminToAdd.map((id) => id.toString()),
+    };
   }
 
   async unshare(batchId: string, userId: string, actorId: string) {

@@ -37,6 +37,14 @@ export class CreateBatchDto {
   @IsInt({ each: true })
   @Min(0, { each: true })
   masterSourceRowIndices?: number[];
+
+  /** Parent batch row indices when creating a filtered sub-batch from sourceBatchId */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50000)
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  parentSourceRowIndices?: number[];
 }
 
 export class ShareBatchDto {

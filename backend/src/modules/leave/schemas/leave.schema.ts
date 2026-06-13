@@ -32,6 +32,14 @@ export class Leave extends Document {
 
   @Prop()
   rejectionReason?: string;
+
+  /** Weekdays marked as paid leave when approved (counts toward annual allowance). */
+  @Prop({ default: 0 })
+  paidDaysApplied: number;
+
+  /** Weekdays marked as unpaid leave when approved. */
+  @Prop({ default: 0 })
+  unpaidDaysApplied: number;
 }
 
 export const LeaveSchema = SchemaFactory.createForClass(Leave);

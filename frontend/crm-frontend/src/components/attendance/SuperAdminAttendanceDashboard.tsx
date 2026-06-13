@@ -158,7 +158,7 @@ export function SuperAdminAttendanceDashboard() {
   );
 
   const filterBar = (
-    <div className="flex w-full max-w-none flex-wrap items-center gap-3 border border-slate-200/80 bg-white px-3 py-3 shadow-sm sm:px-4">
+    <div className="flex w-full max-w-none flex-wrap items-center gap-3 border border-[#b4b4b4] bg-[#f3f3f3] px-3 py-3 shadow-sm sm:px-4">
       <div className="relative min-w-[200px] flex-1">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <input
@@ -196,17 +196,17 @@ export function SuperAdminAttendanceDashboard() {
       stats={
         !loading
           ? [
-              { label: 'Total users', value: allUsers.length, tone: 'neutral' },
-              { label: 'Avg attendance', value: `${avgAttendance}%`, tone: 'green' },
+              { label: 'Total users', value: allUsers.length, tone: 'neutral' as const },
+              { label: 'Avg attendance', value: `${avgAttendance}%`, tone: 'green' as const },
               {
                 label: 'Total present',
                 value: teamAnalytics.reduce((s, a) => s + a.presentDays, 0),
-                tone: 'green',
+                tone: 'green' as const,
               },
               {
                 label: 'Total absent',
                 value: teamAnalytics.reduce((s, a) => s + a.absentDays, 0),
-                tone: 'red',
+                tone: 'red' as const,
               },
             ]
           : undefined

@@ -4,6 +4,10 @@ import { CalendarDays, Plus, FileText, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { useAttendancePanelOptional } from '@/components/attendance/AttendancePanelContext';
 import { AttendanceFullBleed } from '@/components/attendance/AttendanceFullBleed';
+import {
+  AttendanceStatsStrip,
+  type AttendanceStatItem,
+} from '@/components/attendance/AttendanceStatsStrip';
 
 type Accent = 'emerald' | 'violet' | 'admin';
 
@@ -45,29 +49,9 @@ interface AttendancePageChromeProps {
   monthControl: React.ReactNode;
   /** Hide manual mark-today (employee: login auto-marks attendance). */
   showMarkToday?: boolean;
-  stats?: {
-    label: string;
-    value: string | number;
-    tone?: 'green' | 'red' | 'blue' | 'neutral';
-    checkHistoryHref?: string;
-    onCheckHistory?: () => void;
-  }[];
+  stats?: AttendanceStatItem[];
   children: React.ReactNode;
 }
-
-const toneClass = {
-  green: 'text-emerald-700',
-  red: 'text-rose-600',
-  blue: 'text-blue-600',
-  neutral: 'text-slate-900',
-};
-
-const toneBg = {
-  green: 'bg-emerald-50/80',
-  red: 'bg-rose-50/80',
-  blue: 'bg-blue-50/80',
-  neutral: 'bg-slate-50/80',
-};
 
 export function AttendancePageChrome({
   title,
@@ -85,10 +69,11 @@ export function AttendancePageChrome({
   const t = themes[accent];
 
   return (
-    <AttendanceFullBleed className="gap-4 px-3 py-4 sm:px-4 md:gap-5 animate-fade-in">
+    <AttendanceFullBleed className="xl-stagger gap-4 px-3 py-4 sm:px-4 md:gap-5 animate-fade-in">
       <div
         className={cn(
-          'relative w-full overflow-hidden rounded-xl bg-gradient-to-br px-4 py-5 text-white shadow-lg ring-1 sm:px-6',
+          'relative w-full overflow-hidden rounded-sm bg-gradient-to-br px-4 py-5 text-white shadow-md ring-1 sm:px-6',
+          'transition-shadow duration-200 hover:shadow-lg',
           t.hero,
           t.ring,
         )}
@@ -110,7 +95,10 @@ export function AttendancePageChrome({
               type="button"
               onClick={onRefresh}
               disabled={loading}
-              className={cn('rounded-lg border p-2.5 transition-colors', t.btnOutline)}
+              className={cn(
+                'rounded-lg border p-2.5 transition-all duration-150 ease-out hover:bg-white/15 active:scale-95',
+                t.btnOutline,
+              )}
               title="Refresh"
               aria-label="Refresh"
             >
@@ -148,52 +136,15 @@ export function AttendancePageChrome({
         </div>
       </div>
 
-      <div className="flex w-full max-w-none flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className="flex w-full max-w-none flex-wrap items-center gap-3 border border-[#b4b4b4] bg-[#f3f3f3] px-4 py-2.5 shadow-sm sm:rounded-sm">
+        <span className="hidden items-center gap-1.5 rounded bg-[#217346] px-2 py-0.5 text-[10px] font-bold text-white sm:inline-flex">
+          XL
+        </span>
         {monthControl}
       </div>
 
       {stats && stats.length > 0 && (
-        <div
-          className={cn(
-            'grid w-full max-w-none grid-cols-2 gap-3 sm:grid-cols-4',
-            loading && 'opacity-70',
-          )}
-        >
-          {stats.map((s) => (
-            <div
-              key={s.label}
-              className={cn(
-                'rounded-xl border border-slate-200 border-l-[3px] bg-white px-4 py-3 shadow-sm',
-                t.statAccent,
-                toneBg[s.tone ?? 'neutral'],
-              )}
-            >
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{s.label}</p>
-              <p className={cn('mt-1 text-2xl font-bold tabular-nums', toneClass[s.tone ?? 'neutral'])}>
-                {s.value}
-              </p>
-              {(s.checkHistoryHref || s.onCheckHistory) &&
-                (s.label === 'Present' || s.label.includes('present')) && (
-                s.checkHistoryHref ? (
-                  <a
-                    href={s.checkHistoryHref}
-                    className="mt-1.5 inline-block text-xs font-semibold text-emerald-700 hover:underline"
-                  >
-                    {s.label.toLowerCase().includes('year') ? 'View 12-month report' : 'View history'}
-                  </a>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={s.onCheckHistory}
-                    className="mt-1.5 block text-xs font-semibold text-emerald-700 hover:underline"
-                  >
-                    View history
-                  </button>
-                )
-              )}
-            </div>
-          ))}
-        </div>
+        <AttendanceStatsStrip stats={stats} loading={loading} perRow={4} />
       )}
 
       <div className="flex min-h-0 w-full max-w-none min-w-0 flex-1 flex-col gap-4">

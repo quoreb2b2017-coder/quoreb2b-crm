@@ -2,8 +2,10 @@
 
 import { useState } from 'react';
 import { Calendar, AlertCircle, CheckCircle } from 'lucide-react';
-import apiClient from '@/lib/api/client';
 import { extractApiError } from '@/lib/api/errors';
+import { leaveService } from '@/lib/api/leave.service';
+import { countWeekdaysBetween } from '@/lib/attendance/leave-balance';
+import { PaidLeaveBalanceCard } from '@/components/attendance/PaidLeaveBalanceCard';
 import {
   SideSheet,
   sideSheetChipClass,
@@ -35,12 +37,7 @@ export function LeaveApplicationModal({
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const calculateDays = () => {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const diffTime = Math.abs(end.getTime() - start.getTime());
-    return Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1);
-  };
+  const weekdayDays = countWeekdaysBetween(startDate, endDate);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,17 +53,24 @@ export function LeaveApplicationModal({
       return;
     }
 
+    if (weekdayDays === 0) {
+      setError('Selected range has no weekdays (weekends only)');
+      return;
+    }
+
     setLoading(true);
     try {
-      await apiClient.post('leave/apply', {
+      await leaveService.apply({
         userId,
         leaveType,
         startDate,
         endDate,
         reason,
-        numberOfDays: calculateDays(),
       });
       setSuccess('Leave application submitted');
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('attendance:refresh'));
+      }
       setTimeout(() => {
         onSuccess();
         onClose();
@@ -109,6 +113,8 @@ export function LeaveApplicationModal({
       footer={footer}
     >
       <form id="leave-apply-form" onSubmit={handleSubmit} className="space-y-5">
+        <PaidLeaveBalanceCard compact year={new Date(startDate).getFullYear()} />
+
         <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm">
           <label className="mb-3 block text-xs font-semibold uppercase tracking-wide text-slate-500">
             Leave type
@@ -152,7 +158,12 @@ export function LeaveApplicationModal({
             </div>
           </div>
           <div className="mt-3 rounded-lg bg-violet-50 border border-violet-100 px-3 py-2 text-sm text-violet-900">
-            <span className="font-semibold">{calculateDays()}</span> day(s) selected
+            <span className="font-semibold">{weekdayDays}</span> weekday(s) — weekends excluded
+            {leaveType !== 'unpaid' && weekdayDays > 0 && (
+              <span className="block text-[11px] text-violet-700 mt-0.5">
+                Paid leave balance will be checked on submit
+              </span>
+            )}
           </div>
         </div>
 

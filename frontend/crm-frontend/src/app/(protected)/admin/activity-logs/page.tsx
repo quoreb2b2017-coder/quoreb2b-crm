@@ -5,7 +5,7 @@ export default function AdminActivityLogsPage() {
     <ActivityLogsView
       scope="system"
       title="System activity logs"
-      subtitle="Super Admin — all users, filter by date or month"
+      subtitle="Admin — all users, filter by date or month"
     />
   );
 }

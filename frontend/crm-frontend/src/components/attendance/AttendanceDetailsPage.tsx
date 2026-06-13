@@ -10,12 +10,14 @@ import {
   type AttendanceAnalytics,
 } from '@/lib/api/attendance.service';
 import { usersService } from '@/lib/api/users.service';
+import { usePaidLeaveBalance } from '@/hooks/usePaidLeaveBalance';
 import { AttendancePeriodControls } from '@/components/attendance/AttendancePeriodControls';
 import { AttendancePageChrome } from '@/components/attendance/AttendancePageChrome';
 import { AttendancePeriodBody } from '@/components/attendance/AttendancePeriodBody';
 import { formatMonthYearLabel } from '@/lib/attendance/month-year';
 import { ALL_MONTH_INDICES, sumYearlyByMonths } from '@/lib/attendance/yearly-analytics';
 import { buildAttendancePeriodStats } from '@/lib/attendance/build-period-stats';
+import { buildUserPaidLeaveStats } from '@/lib/attendance/build-paid-leave-stats';
 import {
   EditAttendanceDayModal,
   type EditAttendanceDayRow,
@@ -66,6 +68,10 @@ export function AttendanceDetailsPage() {
   const [editOpen, setEditOpen] = useState(false);
 
   const monthLabel = formatMonthYearLabel(selectedMonth, selectedYear);
+  const { balance: paidLeaveBalance, reload: reloadPaidBalance } = usePaidLeaveBalance(
+    selectedYear,
+    userId ?? undefined,
+  );
 
   const fetchUser = useCallback(async () => {
     if (!userId) return;
@@ -132,6 +138,7 @@ export function AttendanceDetailsPage() {
     const onRefresh = () => {
       if (!isRollup) fetchMonthly();
       else refetchYearly();
+      reloadPaidBalance();
     };
     window.addEventListener('attendance:refresh', onRefresh);
     window.addEventListener('work-time:refresh', onRefresh);
@@ -139,7 +146,7 @@ export function AttendanceDetailsPage() {
       window.removeEventListener('attendance:refresh', onRefresh);
       window.removeEventListener('work-time:refresh', onRefresh);
     };
-  }, [fetchMonthly, isRollup, refetchYearly]);
+  }, [fetchMonthly, isRollup, refetchYearly, reloadPaidBalance]);
 
   const openMonthFromYearly = (monthIndex: number) => {
     // Navigate back to monthly view for that month
@@ -155,10 +162,14 @@ export function AttendanceDetailsPage() {
 
   if (!userId) return null;
 
-  const stats = buildAttendancePeriodStats(view, monthly, rollupTotals, {
-    checkHistoryHref: '#attendance-daily-log',
-    yearlyHistoryHref: '#attendance-yearly-grid',
-  });
+  const stats = useMemo(() => {
+    const periodStats = buildAttendancePeriodStats(view, monthly, rollupTotals, {
+      checkHistoryHref: '#attendance-daily-log',
+      yearlyHistoryHref: '#attendance-yearly-grid',
+    });
+    const paidStats = buildUserPaidLeaveStats(paidLeaveBalance);
+    return periodStats ? [...periodStats, ...paidStats] : paidStats;
+  }, [view, monthly, rollupTotals, paidLeaveBalance]);
 
   const displayName = user ? `${user.firstName} ${user.lastName}`.trim() : 'Attendance details';
   const subtitle = userLoading
@@ -178,6 +189,7 @@ export function AttendanceDetailsPage() {
       onRefresh={() => {
         if (!isRollup) fetchMonthly();
         else refetchYearly();
+        reloadPaidBalance();
       }}
       leading={
         <button

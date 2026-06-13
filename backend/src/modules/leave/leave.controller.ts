@@ -23,9 +23,26 @@ export class LeaveController {
     return this.leaveService.getUserLeaves(req.user.id, status);
   }
 
+  @Get('balances/:year')
+  async getLeaveBalances(
+    @Req() req: any,
+    @Param('year') year: string,
+    @Query('userIds') userIds?: string,
+  ) {
+    const ids = userIds
+      ? userIds.split(',').map((id) => id.trim()).filter(Boolean)
+      : [];
+    return this.leaveService.getLeaveBalancesForUsers(
+      req.user.id,
+      req.user.roles ?? [],
+      parseInt(year, 10),
+      ids,
+    );
+  }
+
   @Get('balance/:year')
   async getLeaveBalance(@Req() req: any, @Param('year') year: string) {
-    return this.leaveService.getLeaveBalance(req.user.id, parseInt(year));
+    return this.leaveService.getLeaveBalance(req.user.id, parseInt(year, 10));
   }
 
   @Post(':leaveId/approve')

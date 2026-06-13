@@ -27,7 +27,8 @@ export class ApplyLeaveDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  numberOfDays: number;
+  @IsOptional()
+  numberOfDays?: number;
 
   @IsString()
   @MinLength(3)

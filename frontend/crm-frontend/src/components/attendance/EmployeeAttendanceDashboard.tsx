@@ -5,12 +5,14 @@ import { useAttendancePeriodUrl } from '@/contexts/AttendancePeriodContext';
 import { useYearlyAttendance } from '@/hooks/useYearlyAttendance';
 import { attendanceService, type AttendanceAnalytics } from '@/lib/api/attendance.service';
 import { useAuth } from '@/hooks/useAuth';
+import { usePaidLeaveBalance } from '@/hooks/usePaidLeaveBalance';
 import { AttendancePageChrome } from '@/components/attendance/AttendancePageChrome';
 import { AttendancePeriodTabs } from '@/components/attendance/AttendancePeriodTabs';
 import { AttendanceMonthYearNav } from '@/components/attendance/AttendanceMonthYearNav';
 import { formatMonthYearLabel } from '@/lib/attendance/month-year';
 import { ALL_MONTH_INDICES, sumYearlyByMonths } from '@/lib/attendance/yearly-analytics';
 import { buildAttendancePeriodStats } from '@/lib/attendance/build-period-stats';
+import { buildMyPaidLeaveStats } from '@/lib/attendance/build-paid-leave-stats';
 import { periodViewDescription } from '@/lib/attendance/period-labels';
 import { AttendanceDailyExcelGrid } from '@/components/attendance/AttendanceDailyExcelGrid';
 import { AttendanceRollupSummarySheet } from '@/components/attendance/AttendanceRollupSummarySheet';
@@ -30,6 +32,7 @@ export function EmployeeAttendanceDashboard() {
 
   const [monthlyData, setMonthlyData] = useState<AttendanceAnalytics | null>(null);
   const [monthlyLoading, setMonthlyLoading] = useState(false);
+  const { balance: paidLeaveBalance, reload: reloadPaidBalance } = usePaidLeaveBalance(selectedYear);
 
   const isRollup = view === 'yearly' || view === 'custom';
   const rollupMonths = view === 'yearly' ? ALL_MONTH_INDICES : selectedMonths;
@@ -82,10 +85,14 @@ export function EmployeeAttendanceDashboard() {
     return <div className="p-6 text-center text-slate-500">Loading…</div>;
   }
 
-  const stats = buildAttendancePeriodStats(view, monthlyData, rollupTotals, {
-    checkHistoryHref: '#attendance-daily-log',
-    yearlyHistoryHref: '#attendance-yearly-grid',
-  });
+  const stats = useMemo(() => {
+    const periodStats = buildAttendancePeriodStats(view, monthlyData, rollupTotals, {
+      checkHistoryHref: '#attendance-daily-log',
+      yearlyHistoryHref: '#attendance-yearly-grid',
+    });
+    const paidStats = buildMyPaidLeaveStats(paidLeaveBalance);
+    return periodStats ? [...periodStats, ...paidStats] : paidStats;
+  }, [view, monthlyData, rollupTotals, paidLeaveBalance]);
 
   const monthControl = (
     <div className="flex w-full flex-wrap items-center gap-3">
@@ -113,6 +120,7 @@ export function EmployeeAttendanceDashboard() {
       onRefresh={() => {
         if (!isRollup) fetchMonthly();
         else refetchYearly();
+        reloadPaidBalance();
       }}
       showMarkToday={false}
       monthControl={monthControl}

@@ -1,28 +1,173 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Leave } from './schemas/leave.schema';
 import { ApplyLeaveDto, LeaveQueryDto } from './dto/leave.dto';
 import { User } from '../users/schemas/user.schema';
 import { NotificationTriggerService } from '../notifications/notification-trigger.service';
+import { AttendanceService } from '../attendance/attendance.service';
+import { Attendance } from '../attendance/schemas/attendance.schema';
+import { ANNUAL_PAID_LEAVE_ALLOWANCE } from './leave-balance.constants';
+import { parseDateOnly, toDateKey } from '../attendance/attendance-date.util';
+import {
+  calendarYearBounds,
+  countWeekdaysBetween,
+  weekdayDateKeysBetween,
+  yearFromDateKey,
+} from './leave-balance.util';
 
 @Injectable()
 export class LeaveService {
   constructor(
     @InjectModel(Leave.name) private leaveModel: Model<Leave>,
     @InjectModel(User.name) private userModel: Model<User>,
+    @InjectModel(Attendance.name) private attendanceModel: Model<Attendance>,
     private notifications: NotificationTriggerService,
+    private attendanceService: AttendanceService,
   ) {}
 
+  private async countPaidLeaveUsedInYear(userId: string, year: number): Promise<number> {
+    const { start, end } = calendarYearBounds(year);
+
+    const fromAttendance = await this.attendanceModel.countDocuments({
+      userId: new Types.ObjectId(userId),
+      status: 'leave',
+      isPaidLeave: true,
+      date: { $gte: start, $lte: end },
+    });
+
+    const approvedLeaves = await this.leaveModel.find({
+      userId: new Types.ObjectId(userId),
+      status: 'approved',
+      paidDaysApplied: { $gt: 0 },
+      startDate: { $lte: end },
+      endDate: { $gte: start },
+    });
+
+    let fromApproved = 0;
+    for (const leave of approvedLeaves) {
+      const startKey = toDateKey(leave.startDate);
+      const endKey = toDateKey(leave.endDate);
+      if (yearFromDateKey(startKey) === year && yearFromDateKey(endKey) === year) {
+        fromApproved += leave.paidDaysApplied ?? 0;
+      }
+    }
+
+    return Math.max(fromAttendance, fromApproved);
+  }
+
+  async getLeaveBalance(userId: string, year: number) {
+    const paidDaysUsed = await this.countPaidLeaveUsedInYear(userId, year);
+    const paidDaysRemaining = Math.max(0, ANNUAL_PAID_LEAVE_ALLOWANCE - paidDaysUsed);
+
+    const { start, end } = calendarYearBounds(year);
+    const approvedLeaves = await this.leaveModel.find({
+      userId: new Types.ObjectId(userId),
+      status: 'approved',
+      startDate: { $lte: end },
+      endDate: { $gte: start },
+    });
+
+    const unpaidDaysUsed = approvedLeaves.reduce(
+      (sum, leave) => sum + (leave.unpaidDaysApplied ?? 0),
+      0,
+    );
+
+    return {
+      year,
+      allowance: ANNUAL_PAID_LEAVE_ALLOWANCE,
+      periodLabel: `January – December ${year}`,
+      paidDaysUsed,
+      paidDaysRemaining,
+      unpaidDaysUsed,
+      approvedLeaveCount: approvedLeaves.length,
+      /** @deprecated use paidDaysRemaining */
+      remainingDays: paidDaysRemaining,
+      /** @deprecated use paidDaysUsed */
+      totalDaysUsed: paidDaysUsed,
+      approvedLeaves: approvedLeaves.length,
+    };
+  }
+
+  async getLeaveBalancesForUsers(
+    requesterId: string,
+    requesterRoles: string[],
+    year: number,
+    requestedUserIds: string[] = [],
+  ) {
+    const isOrgViewer = requesterRoles.some((r) =>
+      ['super_admin', 'admin', 'db_admin'].includes(r),
+    );
+
+    let userIds = requestedUserIds.filter(Boolean);
+    if (!isOrgViewer) {
+      userIds = [requesterId];
+    } else if (userIds.length === 0) {
+      userIds = [requesterId];
+    }
+
+    const uniqueIds = [...new Set(userIds)].slice(0, 500);
+    const users = await Promise.all(
+      uniqueIds.map(async (userId) => {
+        const balance = await this.getLeaveBalance(userId, year);
+        return { userId, ...balance };
+      }),
+    );
+
+    const allowanceTotal = users.length * ANNUAL_PAID_LEAVE_ALLOWANCE;
+    const paidDaysUsedTotal = users.reduce((sum, row) => sum + row.paidDaysUsed, 0);
+    const paidDaysRemainingTotal = users.reduce((sum, row) => sum + row.paidDaysRemaining, 0);
+    const unpaidDaysUsedTotal = users.reduce((sum, row) => sum + row.unpaidDaysUsed, 0);
+
+    return {
+      year,
+      allowancePerUser: ANNUAL_PAID_LEAVE_ALLOWANCE,
+      periodLabel: `January – December ${year}`,
+      users,
+      totals: {
+        userCount: users.length,
+        allowanceTotal,
+        paidDaysUsedTotal,
+        paidDaysRemainingTotal,
+        unpaidDaysUsedTotal,
+      },
+    };
+  }
+
   async applyLeave(dto: ApplyLeaveDto) {
+    const weekdayCount = countWeekdaysBetween(dto.startDate, dto.endDate);
+    if (weekdayCount === 0) {
+      throw new BadRequestException('Leave range has no weekdays (weekends only)');
+    }
+
+    if (dto.leaveType !== 'unpaid') {
+      const years = new Set([
+        yearFromDateKey(dto.startDate.slice(0, 10)),
+        yearFromDateKey(dto.endDate.slice(0, 10)),
+      ]);
+      for (const year of years) {
+        const balance = await this.getLeaveBalance(dto.userId, year);
+        const daysInYear = weekdayDateKeysBetween(dto.startDate, dto.endDate).filter(
+          (key) => yearFromDateKey(key) === year,
+        ).length;
+        if (daysInYear > balance.paidDaysRemaining) {
+          throw new BadRequestException(
+            `Only ${balance.paidDaysRemaining} paid leave day(s) remaining for ${year} (allowance ${ANNUAL_PAID_LEAVE_ALLOWANCE})`,
+          );
+        }
+      }
+    }
+
     const leave = new this.leaveModel({
       userId: new Types.ObjectId(dto.userId),
       leaveType: dto.leaveType,
-      startDate: new Date(dto.startDate),
-      endDate: new Date(dto.endDate),
-      numberOfDays: dto.numberOfDays,
+      startDate: parseDateOnly(dto.startDate.slice(0, 10)),
+      endDate: parseDateOnly(dto.endDate.slice(0, 10)),
+      numberOfDays: weekdayCount,
       reason: dto.reason,
       status: 'pending',
+      paidDaysApplied: 0,
+      unpaidDaysApplied: 0,
     });
 
     const saved = await leave.save();
@@ -45,7 +190,7 @@ export class LeaveService {
   }
 
   async getLeaveApplications(dto: LeaveQueryDto) {
-    const query: any = {};
+    const query: Record<string, unknown> = {};
 
     if (dto.status) {
       query.status = dto.status;
@@ -79,16 +224,68 @@ export class LeaveService {
     };
   }
 
+  private async syncApprovedLeaveToAttendance(leave: Leave) {
+    const userId = leave.userId.toString();
+    const weekdayKeys = weekdayDateKeysBetween(
+      toDateKey(leave.startDate),
+      toDateKey(leave.endDate),
+    );
+
+    const paidKeys: string[] = [];
+    const unpaidKeys: string[] = [];
+    const remainingByYear = new Map<number, number>();
+
+    for (const dateKey of weekdayKeys) {
+      const year = yearFromDateKey(dateKey);
+      if (!remainingByYear.has(year)) {
+        const balance = await this.getLeaveBalance(userId, year);
+        remainingByYear.set(year, balance.paidDaysRemaining);
+      }
+
+      const usePaid = leave.leaveType !== 'unpaid' && (remainingByYear.get(year) ?? 0) > 0;
+      if (usePaid) {
+        paidKeys.push(dateKey);
+        remainingByYear.set(year, (remainingByYear.get(year) ?? 0) - 1);
+      } else {
+        unpaidKeys.push(dateKey);
+      }
+    }
+
+    if (paidKeys.length) {
+      await this.attendanceService.markApprovedLeaveDays(userId, paidKeys, true);
+    }
+    if (unpaidKeys.length) {
+      await this.attendanceService.markApprovedLeaveDays(userId, unpaidKeys, false);
+    }
+
+    return { paidDaysApplied: paidKeys.length, unpaidDaysApplied: unpaidKeys.length };
+  }
+
   async approveLeave(leaveId: string, approvedBy: string) {
+    const existing = await this.leaveModel.findById(leaveId).exec();
+    if (!existing) {
+      throw new BadRequestException('Leave request not found');
+    }
+    if (existing.status !== 'pending') {
+      throw new BadRequestException('Only pending leave requests can be approved');
+    }
+
+    const { paidDaysApplied, unpaidDaysApplied } =
+      await this.syncApprovedLeaveToAttendance(existing);
+
     const leave = await this.leaveModel.findByIdAndUpdate(
       leaveId,
       {
         status: 'approved',
         approvedBy: new Types.ObjectId(approvedBy),
         approvalDate: new Date(),
+        paidDaysApplied,
+        unpaidDaysApplied,
+        numberOfDays: paidDaysApplied + unpaidDaysApplied,
       },
       { new: true },
     );
+
     if (leave) {
       const [applicant, approver] = await Promise.all([
         this.userModel.findById(leave.userId).lean().exec(),
@@ -101,15 +298,26 @@ export class LeaveService {
           leave.userId.toString(),
           applicantName,
           leave.leaveType,
-          new Date(leave.startDate).toISOString().slice(0, 10),
-          new Date(leave.endDate).toISOString().slice(0, 10),
+          toDateKey(leave.startDate),
+          toDateKey(leave.endDate),
           approverName,
         );
       } catch {
         /* notification should not block leave approval */
       }
+
+      const balanceYear = yearFromDateKey(toDateKey(leave.startDate));
+      const balance = await this.getLeaveBalance(leave.userId.toString(), balanceYear);
+
+      return {
+        leave,
+        applicantUserId: leave.userId.toString(),
+        paidDaysApplied,
+        unpaidDaysApplied,
+        balance,
+      };
     }
-    return leave;
+    return { leave, paidDaysApplied, unpaidDaysApplied };
   }
 
   async rejectLeave(leaveId: string, rejectionReason: string) {
@@ -141,34 +349,12 @@ export class LeaveService {
   }
 
   async getUserLeaves(userId: string, status?: string) {
-    const query: any = { userId: new Types.ObjectId(userId) };
+    const query: Record<string, unknown> = { userId: new Types.ObjectId(userId) };
 
     if (status) {
       query.status = status;
     }
 
-    return this.leaveModel
-      .find(query)
-      .sort({ startDate: -1 });
-  }
-
-  async getLeaveBalance(userId: string, year: number) {
-    const startDate = new Date(year, 0, 1);
-    const endDate = new Date(year, 11, 31, 23, 59, 59, 999);
-
-    const approvedLeaves = await this.leaveModel.find({
-      userId: new Types.ObjectId(userId),
-      status: 'approved',
-      startDate: { $gte: startDate, $lte: endDate },
-    });
-
-    const totalDaysUsed = approvedLeaves.reduce((sum, leave) => sum + leave.numberOfDays, 0);
-
-    return {
-      year,
-      totalDaysUsed,
-      remainingDays: Math.max(0, 30 - totalDaysUsed),
-      approvedLeaves: approvedLeaves.length,
-    };
+    return this.leaveModel.find(query).sort({ startDate: -1 });
   }
 }

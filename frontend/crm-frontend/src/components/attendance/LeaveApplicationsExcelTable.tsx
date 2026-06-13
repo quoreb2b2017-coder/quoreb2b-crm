@@ -4,9 +4,11 @@ import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-time
 import { cn } from '@/lib/utils/cn';
 import { useExcelTableNavigation } from '@/hooks/useExcelTableNavigation';
 import { ExcelSheetShell } from '@/components/attendance/ExcelSheetShell';
+import { ExcelGridCell } from '@/components/attendance/ExcelGridCell';
+import { xlScrollClass } from '@/lib/attendance/xl-sheet-theme';
 import type { LeaveApplication } from '@/lib/api/leave.service';
 
-const COLUMNS = ['#', 'Type', 'From', 'To', 'Days', 'Reason', 'Status', 'Applied'] as const;
+const COLUMNS = ['#', 'Type', 'From', 'To', 'Days', 'Paid', 'Unpaid', 'Reason', 'Status', 'Applied'] as const;
 const COL_COUNT = COLUMNS.length;
 
 const STATUS_STYLES: Record<string, string> = {
@@ -30,16 +32,7 @@ function formatDate(val: string) {
   return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-US', { timeZone: WORKSPACE_TIMEZONE,  day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-function GridCell({
-  row,
-  col,
-  active,
-  align = 'left',
-  className,
-  sticky,
-  onActivate,
-  children,
-}: {
+function GridCell(props: {
   row: number;
   col: number;
   active: boolean;
@@ -49,27 +42,7 @@ function GridCell({
   onActivate: () => void;
   children: React.ReactNode;
 }) {
-  return (
-    <td
-      data-grid-row={row}
-      data-grid-col={col}
-      tabIndex={active ? 0 : -1}
-      onFocus={onActivate}
-      onClick={onActivate}
-      className={cn(
-        'border border-[#e0e0e0] p-0 text-[13px] text-slate-900 outline-none transition-colors cursor-default',
-        align === 'center' && 'text-center',
-        sticky && 'sticky left-0 z-10 bg-[#f2f2f2]',
-        active && 'relative z-[1] bg-[#e7f3ff] ring-2 ring-inset ring-[#217346]',
-        !active && 'hover:bg-[#e7f3ff]/50',
-        className,
-      )}
-    >
-      <div className={cn('px-2 py-1 truncate', align === 'center' && 'flex justify-center')}>
-        {children}
-      </div>
-    </td>
-  );
+  return <ExcelGridCell {...props} />;
 }
 
 export function LeaveApplicationsExcelTable({
@@ -96,7 +69,10 @@ export function LeaveApplicationsExcelTable({
     <ExcelSheetShell title={title} rowCount={leaves.length} loading={loading}>
       <div
         ref={containerRef}
-        className="min-h-[200px] max-h-[min(52vh,520px)] w-full overflow-x-auto overflow-y-auto bg-white"
+        className={cn(
+          'min-h-[200px] max-h-[min(52vh,520px)] w-full bg-white',
+          xlScrollClass,
+        )}
         onMouseDown={(e) => {
           const cell = (e.target as HTMLElement).closest('[data-grid-row]');
           if (cell) {
@@ -115,7 +91,7 @@ export function LeaveApplicationsExcelTable({
                   className={cn(
                     'border border-[#c6c6c6] bg-[#f2f2f2] px-2 py-1.5 text-xs font-semibold text-slate-800',
                     i === 0 && 'sticky left-0 z-40 w-10 text-center',
-                    i >= 4 && i <= 6 && 'text-center',
+                    i >= 4 && i <= 7 && 'text-center',
                   )}
                 >
                   {label}
@@ -149,7 +125,7 @@ export function LeaveApplicationsExcelTable({
                     : '';
 
                 return (
-                  <tr key={leave._id} className="even:bg-[#fafafa]">
+                  <tr key={leave._id} className="even:bg-[#fafafa] transition-colors duration-150 hover:bg-[#e7f3ff]/30">
                     <GridCell
                       row={rowIdx}
                       col={0}
@@ -175,19 +151,26 @@ export function LeaveApplicationsExcelTable({
                       formatDate(leave.startDate),
                       formatDate(leave.endDate),
                       String(leave.numberOfDays),
+                      leave.status === 'approved'
+                        ? String(leave.paidDaysApplied ?? 0)
+                        : '—',
+                      leave.status === 'approved'
+                        ? String(leave.unpaidDaysApplied ?? 0)
+                        : '—',
                       leave.reason,
                       leave.status,
                       formatDate(leave.createdAt),
                     ].map((val, i) => {
                       const col = showEmployee ? i + 2 : i + 1;
-                      const isStatus = (showEmployee && i === 5) || (!showEmployee && i === 5);
+                      const isStatus = (showEmployee && i === 7) || (!showEmployee && i === 7);
+                      const isCenter = i >= 1 && i <= 5;
                       return (
                         <GridCell
                           key={col}
                           row={rowIdx}
                           col={col}
                           active={activeCell.row === rowIdx && activeCell.col === col}
-                          align={i >= 1 && i <= 3 ? 'center' : 'left'}
+                          align={isCenter ? 'center' : 'left'}
                           className={isStatus ? STATUS_STYLES[leave.status] : undefined}
                           onActivate={() => setCell({ row: rowIdx, col })}
                         >

@@ -10,9 +10,39 @@ export interface LeaveApplication {
   startDate: string;
   endDate: string;
   numberOfDays: number;
+  paidDaysApplied?: number;
+  unpaidDaysApplied?: number;
   reason: string;
   status: LeaveStatus;
   createdAt: string;
+}
+
+export interface PaidLeaveBalance {
+  year: number;
+  allowance: number;
+  periodLabel: string;
+  paidDaysUsed: number;
+  paidDaysRemaining: number;
+  unpaidDaysUsed: number;
+  approvedLeaveCount: number;
+}
+
+export interface UserPaidLeaveBalance extends PaidLeaveBalance {
+  userId: string;
+}
+
+export interface PaidLeaveBalancesResponse {
+  year: number;
+  allowancePerUser: number;
+  periodLabel: string;
+  users: UserPaidLeaveBalance[];
+  totals: {
+    userCount: number;
+    allowanceTotal: number;
+    paidDaysUsedTotal: number;
+    paidDaysRemainingTotal: number;
+    unpaidDaysUsedTotal: number;
+  };
 }
 
 function unwrapLeaveList(response: { data: unknown }): LeaveApplication[] {
@@ -33,7 +63,40 @@ function unwrapLeaveList(response: { data: unknown }): LeaveApplication[] {
   return [];
 }
 
+function unwrap<T>(response: { data: unknown }): T {
+  const body = response.data as { data?: T };
+  return (body?.data ?? body) as T;
+}
+
+export interface ApproveLeaveResult {
+  leave?: LeaveApplication;
+  applicantUserId?: string;
+  paidDaysApplied?: number;
+  unpaidDaysApplied?: number;
+  balance?: PaidLeaveBalance;
+}
+
 export const leaveService = {
+  async getBalance(year: number): Promise<PaidLeaveBalance> {
+    const res = await apiClient.get(`leave/balance/${year}`);
+    return unwrap<PaidLeaveBalance>(res);
+  },
+
+  async getBalances(year: number, userIds?: string[]): Promise<PaidLeaveBalancesResponse> {
+    const params = userIds?.length ? `?userIds=${userIds.join(',')}` : '';
+    const res = await apiClient.get(`leave/balances/${year}${params}`);
+    return unwrap<PaidLeaveBalancesResponse>(res);
+  },
+  async apply(payload: {
+    userId: string;
+    leaveType: LeaveType;
+    startDate: string;
+    endDate: string;
+    reason: string;
+  }) {
+    await apiClient.post('leave/apply', payload);
+  },
+
   async getMyLeaves(status?: LeaveStatus | 'all') {
     const params = status && status !== 'all' ? `?status=${status}` : '';
     const res = await apiClient.get(`leave/my-leaves${params}`);
@@ -50,8 +113,23 @@ export const leaveService = {
     return unwrapLeaveList(res);
   },
 
-  async approve(leaveId: string) {
-    await apiClient.post(`leave/${leaveId}/approve`);
+  async approve(leaveId: string): Promise<ApproveLeaveResult> {
+    const res = await apiClient.post(`leave/${leaveId}/approve`);
+    const data = unwrap<ApproveLeaveResult>(res);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('attendance:refresh'));
+      if (data.balance) {
+        window.dispatchEvent(
+          new CustomEvent('leave:balance-updated', {
+            detail: {
+              userId: data.applicantUserId,
+              balance: data.balance,
+            },
+          }),
+        );
+      }
+    }
+    return data;
   },
 
   async reject(leaveId: string, rejectionReason: string) {

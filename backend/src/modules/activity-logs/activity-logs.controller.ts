@@ -25,6 +25,20 @@ function extractUserAgent(req: Request) {
   return (req.headers['user-agent'] as string) || 'unknown';
 }
 
+/** Employees and DB admins may only query their own logs; admins see everyone. */
+function applyActivityLogScope(
+  dto: ActivityLogsQueryDto,
+  user: { id: string; roles?: string[] },
+) {
+  const canViewAll =
+    user.roles?.includes(SystemRole.SUPER_ADMIN) ||
+    user.roles?.includes(SystemRole.ADMIN);
+  if (!canViewAll) {
+    dto.userId = user.id;
+    dto.role = undefined;
+  }
+}
+
 @Controller({ path: 'activity-logs', version: '1' })
 export class ActivityLogsController {
   constructor(private activityLogsService: ActivityLogsService) {}
@@ -72,12 +86,7 @@ export class ActivityLogsController {
     @Query() dto: ActivityLogsQueryDto,
     @CurrentUser() user: { id: string; roles?: string[] },
   ) {
-    const canViewAll =
-      user.roles?.includes(SystemRole.SUPER_ADMIN) ||
-      user.roles?.includes(SystemRole.ADMIN);
-    if (!canViewAll) {
-      dto.userId = user.id;
-    }
+    applyActivityLogScope(dto, user);
     return this.activityLogsService.getActivityStats(dto);
   }
 
@@ -88,12 +97,7 @@ export class ActivityLogsController {
     @Query() dto: ActivityLogsQueryDto,
     @CurrentUser() user: { id: string; roles?: string[] },
   ) {
-    const canViewAll =
-      user.roles?.includes(SystemRole.SUPER_ADMIN) ||
-      user.roles?.includes(SystemRole.ADMIN);
-    if (!canViewAll) {
-      dto.userId = user.id;
-    }
+    applyActivityLogScope(dto, user);
     return this.activityLogsService.findAll(dto);
   }
 

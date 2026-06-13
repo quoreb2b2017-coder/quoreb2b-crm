@@ -29,3 +29,19 @@ export const ACTIVITY_ACTION_LABELS: Record<string, string> = {
 export function formatActivityAction(action: string): string {
   return ACTIVITY_ACTION_LABELS[action] ?? action.replace(/_/g, ' ').toLowerCase();
 }
+
+const AUTH_ACTIONS_WITH_ACTOR = new Set(['LOGIN', 'LOGOUT', 'IDLE_LOGOUT']);
+
+/** Append user name on login/logout rows so it's clear who signed in or out. */
+export function formatActivityActionForLog(
+  action: string,
+  options?: { userName?: string; showActorOnAuth?: boolean },
+): string {
+  const base = formatActivityAction(action);
+  const name = options?.userName?.trim();
+  if (!options?.showActorOnAuth || !name || name === 'Unknown') return base;
+  if (AUTH_ACTIONS_WITH_ACTOR.has(action)) {
+    return `${base} — ${name}`;
+  }
+  return base;
+}

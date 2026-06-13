@@ -46,6 +46,11 @@ export class MarkAttendanceDto {
   @Type(() => Boolean)
   @IsBoolean()
   isPaidLeave?: boolean;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  skipNotification?: boolean;
 }
 
 export class AttendanceQueryDto {

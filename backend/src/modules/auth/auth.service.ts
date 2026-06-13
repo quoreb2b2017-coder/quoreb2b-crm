@@ -93,10 +93,15 @@ export class AuthService {
     const sessionId = randomBytes(16).toString('hex');
     const meta = req ? extractMeta(req) : { ip: 'unknown', userAgent: 'unknown' };
     await this.usersService.update(user._id.toString(), { lastLoginAt: new Date() });
-    await this.activityLogsService.logWithActor(actorFromUserDoc(user), {
+    const actor = actorFromUserDoc(user);
+    await this.activityLogsService.logWithActor(actor, {
       action: 'LOGIN',
       resource: 'auth',
-      metadata: { method: 'email', sessionId },
+      metadata: {
+        method: 'email',
+        sessionId,
+        actorName: [actor.firstName, actor.lastName].filter(Boolean).join(' ').trim() || actor.email,
+      },
       userAgent: meta.userAgent,
       sessionId,
     });
@@ -132,10 +137,16 @@ export class AuthService {
     const sessionId = randomBytes(16).toString('hex');
     const meta = req ? extractMeta(req) : { ip: 'unknown', userAgent: 'unknown' };
     await this.usersService.update(user._id.toString(), { lastLoginAt: new Date() });
-    await this.activityLogsService.logWithActor(actorFromUserDoc(user), {
+    const actor = actorFromUserDoc(user);
+    await this.activityLogsService.logWithActor(actor, {
       action: 'LOGIN',
       resource: 'auth',
-      metadata: { method: 'employee_id', employeeId, sessionId },
+      metadata: {
+        method: 'employee_id',
+        employeeId,
+        sessionId,
+        actorName: [actor.firstName, actor.lastName].filter(Boolean).join(' ').trim() || actor.email,
+      },
       ipAddress: meta.ip,
       userAgent: meta.userAgent,
       sessionId,
@@ -169,10 +180,15 @@ export class AuthService {
     }
 
     const sessionId = randomBytes(16).toString('hex');
-    await this.activityLogsService.logWithActor(actorFromUserDoc(user), {
+    const actor = actorFromUserDoc(user);
+    await this.activityLogsService.logWithActor(actor, {
       action: 'LOGIN',
       resource: 'auth',
-      metadata: { method: 'otp', sessionId },
+      metadata: {
+        method: 'otp',
+        sessionId,
+        actorName: [actor.firstName, actor.lastName].filter(Boolean).join(' ').trim() || actor.email,
+      },
       sessionId,
     });
     const attendancePunch = await this.recordLoginAttendance(user);
@@ -224,6 +240,7 @@ export class AuthService {
           reason,
           logoutType: isEod ? 'eod' : isSleepOrIdle ? 'sleep_idle' : 'manual',
           loggedOutAt: loggedOutAt.toISOString(),
+          actorName: [actor.firstName, actor.lastName].filter(Boolean).join(' ').trim() || actor.email,
         },
         sessionId: stored.sessionId,
         userAgent: meta.userAgent,

@@ -224,21 +224,39 @@ export class AttendanceService {
     );
 
     await this.invalidateAttendanceCaches(dto.userId, dto.date.slice(0, 10));
-    const user = await this.userModel.findById(dto.userId).lean().exec();
-    const userName = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() || user?.email || 'Employee';
-    try {
-      await this.notifications.notifyAttendanceMarked(
-        dto.userId,
-        userName,
-        dto.date,
-        status,
-        resolvedCheckInHHmm ? formatTime12h(resolvedCheckInHHmm) : undefined,
-        isLate,
-      );
-    } catch {
-      /* notification should not block attendance marking */
+    if (!dto.skipNotification) {
+      const user = await this.userModel.findById(dto.userId).lean().exec();
+      const userName = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() || user?.email || 'Employee';
+      try {
+        await this.notifications.notifyAttendanceMarked(
+          dto.userId,
+          userName,
+          dto.date,
+          status,
+          resolvedCheckInHHmm ? formatTime12h(resolvedCheckInHHmm) : undefined,
+          isLate,
+        );
+      } catch {
+        /* notification should not block attendance marking */
+      }
     }
     return record;
+  }
+
+  async markApprovedLeaveDays(
+    userId: string,
+    dateKeys: string[],
+    isPaidLeave: boolean,
+  ) {
+    for (const dateKey of dateKeys) {
+      await this.markAttendance({
+        userId,
+        date: dateKey,
+        status: 'leave',
+        isPaidLeave,
+        skipNotification: true,
+      });
+    }
   }
 
   /**

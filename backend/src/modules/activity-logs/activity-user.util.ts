@@ -16,6 +16,8 @@ export function displayName(actor: ActivityActor | null | undefined): string {
 }
 
 export function displayNameFromMeta(meta: Record<string, unknown>): string | undefined {
+  const actorName = meta.actorName as string | undefined;
+  if (actorName && actorName !== 'Unknown') return actorName;
   const userName = meta.userName as string | undefined;
   if (userName && userName !== 'Unknown') return userName;
   const email = meta.email as string | undefined;

@@ -60,6 +60,36 @@
     border-radius: 9999px;
     background: rgb(203 213 225);
   }
+
+  .xl-scroll {
+    overflow-x: auto;
+    overflow-y: auto;
+    scroll-behavior: smooth;
+    scrollbar-width: thin;
+    scrollbar-color: #21734655 #f3f3f3;
+  }
+  .xl-scroll::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .xl-scroll::-webkit-scrollbar-track {
+    background: #f3f3f3;
+  }
+  .xl-scroll::-webkit-scrollbar-thumb {
+    border-radius: 4px;
+    background: #21734666;
+    transition: background 0.2s ease;
+  }
+  .xl-scroll::-webkit-scrollbar-thumb:hover {
+    background: #21734699;
+  }
+
+  .xl-stagger > * {
+    animation: slideUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  }
+  .xl-stagger > *:nth-child(1) { animation-delay: 0.03s; }
+  .xl-stagger > *:nth-child(2) { animation-delay: 0.08s; }
+  .xl-stagger > *:nth-child(3) { animation-delay: 0.13s; }
 }
 
 @keyframes fadeIn {

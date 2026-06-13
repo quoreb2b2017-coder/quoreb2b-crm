@@ -5,6 +5,8 @@ import { Pencil } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { useExcelTableNavigation } from '@/hooks/useExcelTableNavigation';
 import { ExcelSheetShell } from '@/components/attendance/ExcelSheetShell';
+import { ExcelGridCell } from '@/components/attendance/ExcelGridCell';
+import { xlScrollClass } from '@/lib/attendance/xl-sheet-theme';
 import { WorkDurationCell } from '@/lib/attendance/work-duration-display';
 import {
   DAILY_GROSS_TARGET_LABEL,
@@ -73,16 +75,7 @@ interface AttendanceDailyExcelGridProps {
   liveToday?: boolean;
 }
 
-function GridCell({
-  row,
-  col,
-  active,
-  align = 'left',
-  className,
-  sticky,
-  onActivate,
-  children,
-}: {
+function GridCell(props: {
   row: number;
   col: number;
   active: boolean;
@@ -92,27 +85,7 @@ function GridCell({
   onActivate: () => void;
   children: React.ReactNode;
 }) {
-  return (
-    <td
-      data-grid-row={row}
-      data-grid-col={col}
-      tabIndex={active ? 0 : -1}
-      onFocus={onActivate}
-      onClick={onActivate}
-      className={cn(
-        'border border-[#e0e0e0] p-0 text-[13px] text-slate-900 outline-none transition-colors cursor-default',
-        align === 'center' && 'text-center',
-        sticky && 'sticky left-0 z-10 bg-[#f2f2f2]',
-        active && 'relative z-[1] bg-[#e7f3ff] ring-2 ring-inset ring-[#217346]',
-        !active && 'hover:bg-[#e7f3ff]/50',
-        className,
-      )}
-    >
-      <div className={cn('px-2 py-1 truncate', align === 'center' && 'flex justify-center')}>
-        {children}
-      </div>
-    </td>
-  );
+  return <ExcelGridCell {...props} />;
 }
 
 function resolveGrossMinutes(day: AttendanceDailyRow): number {
@@ -163,7 +136,10 @@ export function AttendanceDailyExcelGrid({
     <ExcelSheetShell title={title} rowCount={rows.length} loading={loading}>
       <div
         ref={containerRef}
-        className="min-h-[200px] max-h-[min(52vh,520px)] w-full overflow-x-auto overflow-y-auto bg-white"
+        className={cn(
+          'min-h-[200px] max-h-[min(52vh,520px)] w-full bg-white',
+          xlScrollClass,
+        )}
         onMouseDown={(e) => {
           const cell = (e.target as HTMLElement).closest('[data-grid-row]');
           if (cell) {
@@ -267,7 +243,7 @@ export function AttendanceDailyExcelGrid({
                 ];
 
                 return (
-                  <tr key={day.date + rowIdx} className="even:bg-[#fafafa]">
+                  <tr key={day.date + rowIdx} className="even:bg-[#fafafa] transition-colors duration-150 hover:bg-[#e7f3ff]/30">
                     {cells.map((content, col) => {
                       const active = activeCell.row === rowIdx && activeCell.col === col;
                       const onActivate = () => setCell({ row: rowIdx, col });

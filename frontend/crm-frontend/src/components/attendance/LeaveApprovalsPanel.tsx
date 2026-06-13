@@ -102,10 +102,10 @@ export function LeaveApprovalsPanel({
   const pendingCount = leaves.filter((l) => l.status === 'pending').length;
 
   return (
-    <AttendanceFullBleed className="gap-4 py-3 sm:py-4 md:gap-5 animate-fade-in">
+    <AttendanceFullBleed className="xl-stagger gap-4 py-3 sm:py-4 md:gap-5 animate-fade-in">
       <div
         className={cn(
-          'relative overflow-hidden rounded-2xl bg-gradient-to-br px-5 py-5 text-white shadow-lg ring-1',
+          'relative overflow-hidden rounded-sm bg-gradient-to-br px-5 py-5 text-white shadow-md ring-1 transition-shadow duration-200 hover:shadow-lg',
           theme.header,
         )}
       >
@@ -159,10 +159,10 @@ export function LeaveApprovalsPanel({
             type="button"
             onClick={() => setFilter(f.id)}
             className={cn(
-              'rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors',
+              'rounded-sm px-3 py-1.5 text-xs font-semibold transition-all duration-150',
               filter === f.id
                 ? theme.filterActive
-                : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50',
+                : 'border border-[#d4d4d4] bg-[#f3f3f3] text-slate-600 hover:bg-white',
             )}
           >
             {f.label}

@@ -1,8 +1,12 @@
 'use client';
 
-import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
+import { RefreshCw } from 'lucide-react';
+import { WORKSPACE_TIMEZONE } from '@/lib/constants/workspace-timezone';
 import { cn } from '@/lib/utils/cn';
 import { useExcelTableNavigation } from '@/hooks/useExcelTableNavigation';
+import { ExcelSheetShell } from '@/components/attendance/ExcelSheetShell';
+import { ExcelGridCell } from '@/components/attendance/ExcelGridCell';
+import { xlScrollClass } from '@/lib/attendance/xl-sheet-theme';
 
 const COL_COUNT = 11;
 
@@ -34,54 +38,21 @@ const roleBadge: Record<string, string> = {
   super_admin: 'bg-slate-200 text-slate-700',
 };
 
+const STATUS_STYLES = {
+  active: 'bg-[#e2efda] text-[#217346] font-semibold',
+  blocked: 'bg-[#fce4d6] text-[#c00000] font-semibold',
+};
+
 function formatDate(val: unknown): string {
   if (!val) return '—';
   const d = new Date(val as string);
-  return isNaN(d.getTime()) ? '—' : d.toLocaleString('en-US', { timeZone: WORKSPACE_TIMEZONE,  dateStyle: 'medium', timeStyle: 'short' });
-}
-
-interface GridCellProps {
-  row: number;
-  col: number;
-  active: boolean;
-  align?: 'left' | 'center';
-  className?: string;
-  sticky?: boolean;
-  onActivate: () => void;
-  children: React.ReactNode;
-}
-
-function GridCell({
-  row,
-  col,
-  active,
-  align = 'left',
-  className,
-  sticky,
-  onActivate,
-  children,
-}: GridCellProps) {
-  return (
-    <td
-      data-grid-row={row}
-      data-grid-col={col}
-      tabIndex={active ? 0 : -1}
-      onFocus={onActivate}
-      onClick={onActivate}
-      className={cn(
-        'border border-[#e0e0e0] p-0 text-[13px] text-slate-900 outline-none transition-colors cursor-default',
-        align === 'center' && 'text-center',
-        sticky && 'sticky left-0 z-10 bg-[#f2f2f2]',
-        active && 'relative z-[1] bg-[#e7f3ff] ring-2 ring-inset ring-[#217346]',
-        !active && 'hover:bg-[#e7f3ff]/50',
-        className,
-      )}
-    >
-      <div className={cn('px-2 py-1 truncate', align === 'center' && 'flex justify-center')}>
-        {children}
-      </div>
-    </td>
-  );
+  return isNaN(d.getTime())
+    ? '—'
+    : d.toLocaleString('en-US', {
+        timeZone: WORKSPACE_TIMEZONE,
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      });
 }
 
 export interface UserRowMeta {
@@ -118,6 +89,55 @@ function parseRows(users: Record<string, unknown>[]): UserRowMeta[] {
   });
 }
 
+function GridCell(props: {
+  row: number;
+  col: number;
+  active: boolean;
+  align?: 'left' | 'center';
+  className?: string;
+  sticky?: boolean;
+  onActivate: () => void;
+  children: React.ReactNode;
+}) {
+  return <ExcelGridCell {...props} />;
+}
+
+function XlActionButton({
+  active,
+  children,
+  onClick,
+  disabled,
+  variant = 'default',
+}: {
+  active: boolean;
+  children: React.ReactNode;
+  onClick: (e: React.MouseEvent) => void;
+  disabled?: boolean;
+  variant?: 'default' | 'warn' | 'danger';
+}) {
+  const variantClass = {
+    default: 'text-[#217346] hover:bg-[#e2efda]',
+    warn: 'text-amber-900 hover:bg-[#fff8e6]',
+    danger: 'text-red-700 hover:bg-red-50',
+  }[variant];
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        'pointer-events-auto rounded-sm border px-2 py-0.5 text-[11px] font-semibold transition-all duration-150',
+        'border-[#ababab] bg-white disabled:opacity-50',
+        variantClass,
+        active && 'ring-2 ring-[#217346]/40 shadow-sm',
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
 export function UsersDataTable({
   users,
   loading,
@@ -133,7 +153,7 @@ export function UsersDataTable({
   const isManageable = (role: string) => role === 'employee' || role === 'db_admin';
   const hasActivityReport = (role: string) => role === 'employee' || role === 'db_admin';
 
-  const { containerRef, isActive, setCell, activeCell } = useExcelTableNavigation({
+  const { containerRef, isActive, setCell } = useExcelTableNavigation({
     rowCount: rows.length,
     colCount: COL_COUNT,
     enabled: navigationEnabled && !loading && rows.length > 0,
@@ -161,31 +181,16 @@ export function UsersDataTable({
 
   return (
     <div className={cn('flex min-h-0 w-full flex-1 flex-col', className)}>
-      <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden border-0 border-t border-[#b4b4b4] bg-[#e6e6e6]">
-        {/* Excel-style title bar */}
-        <div className="flex flex-shrink-0 items-center justify-between bg-[#217346] px-3 py-1.5 text-white">
-          <div className="flex items-center gap-2">
-            <span className="flex h-5 w-5 items-center justify-center rounded bg-white/20 text-[9px] font-bold">
-              XL
-            </span>
-            <span className="text-xs font-semibold">Users</span>
-          </div>
-          <span className="text-[11px] text-white/80">
-            {loading ? 'Loading…' : `${rows.length} row${rows.length !== 1 ? 's' : ''}`}
-          </span>
-        </div>
-
-        <div className="flex flex-shrink-0 flex-wrap items-center gap-2 border-b border-[#d4d4d4] bg-[#f3f3f3] px-3 py-1.5 text-xs text-slate-600">
-          <span className="inline-flex items-center gap-0.5 rounded bg-slate-200/80 px-1 font-medium text-slate-600">
-            ↑ ↓ ← →
-          </span>
-          <span>Navigate cells (Excel style)</span>
-          <span className="text-slate-400">· Tab / Enter on action columns</span>
-        </div>
-
+      <ExcelSheetShell
+        title="Users"
+        rowCount={rows.length}
+        loading={loading}
+        hint="Arrow keys navigate · Enter on Password / Activity / Block / Delete"
+        className="flex min-h-0 flex-1 flex-col"
+      >
         <div
           ref={containerRef}
-          className="min-h-0 w-full flex-1 overflow-x-auto overflow-y-auto bg-white"
+          className={cn('min-h-0 min-h-[240px] w-full flex-1 bg-white', xlScrollClass)}
           onMouseDown={(e) => {
             const cell = (e.target as HTMLElement).closest('[data-grid-row]');
             if (cell) {
@@ -195,7 +200,7 @@ export function UsersDataTable({
             }
           }}
         >
-          <table className="w-full border-collapse text-[13px]">
+          <table className="w-full min-w-[960px] border-collapse text-[13px]">
             <thead className="sticky top-0 z-20">
               <tr>
                 {COLUMNS.map((label, i) => (
@@ -204,7 +209,7 @@ export function UsersDataTable({
                     className={cn(
                       'border border-[#c6c6c6] bg-[#f2f2f2] px-2 py-1.5 text-xs font-semibold text-slate-800',
                       i === 0 && 'sticky left-0 z-40 w-10 text-center',
-                      i >= 7 && 'text-center',
+                      i >= 7 && 'text-center min-w-[72px]',
                       i === 1 && 'min-w-[150px] text-left',
                       i === 2 && 'min-w-[200px] text-left',
                       i === 6 && 'min-w-[150px] text-left',
@@ -223,10 +228,7 @@ export function UsersDataTable({
                     colSpan={COL_COUNT}
                     className="border border-[#e0e0e0] px-4 py-12 text-center text-sm text-slate-500"
                   >
-                    <svg className="mx-auto mb-2 h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={4} />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                    </svg>
+                    <RefreshCw className="mx-auto mb-2 h-5 w-5 animate-spin text-[#217346]" />
                     Loading users…
                   </td>
                 </tr>
@@ -245,14 +247,18 @@ export function UsersDataTable({
                   const activate = (col: number) => () => setCell({ row: rowIndex, col });
 
                   return (
-                    <tr key={row.userId} className="hover:bg-[#e7f3ff]/40">
+                    <tr
+                      key={row.userId}
+                      className="even:bg-[#fafafa] transition-colors duration-150 hover:bg-[#e7f3ff]/35"
+                    >
                       <GridCell
                         row={rowIndex}
                         col={0}
                         active={isActive(rowIndex, 0)}
                         sticky
+                        align="center"
                         onActivate={activate(0)}
-                        className="text-center text-[11px] text-slate-500"
+                        className="text-[11px] text-slate-500"
                       >
                         {rowIndex + 1}
                       </GridCell>
@@ -291,15 +297,14 @@ export function UsersDataTable({
                           {roleLabels[row.role] ?? row.role}
                         </span>
                       </GridCell>
-                      <GridCell row={rowIndex} col={5} active={isActive(rowIndex, 5)} onActivate={activate(5)}>
-                        <span
-                          className={cn(
-                            'text-xs font-medium',
-                            row.active ? 'text-[#217346]' : 'text-red-600',
-                          )}
-                        >
-                          {row.active ? 'Active' : 'Blocked'}
-                        </span>
+                      <GridCell
+                        row={rowIndex}
+                        col={5}
+                        active={isActive(rowIndex, 5)}
+                        onActivate={activate(5)}
+                        className={row.active ? STATUS_STYLES.active : STATUS_STYLES.blocked}
+                      >
+                        {row.active ? 'Active' : 'Blocked'}
                       </GridCell>
                       <GridCell
                         row={rowIndex}
@@ -316,6 +321,7 @@ export function UsersDataTable({
                         active={isActive(rowIndex, 7)}
                         onActivate={activate(7)}
                         align="center"
+                        className={isActive(rowIndex, 7) ? 'bg-[#e7f3ff]' : undefined}
                       >
                         <button
                           type="button"
@@ -324,7 +330,10 @@ export function UsersDataTable({
                             onOpenPassword(row.userId, row.name);
                           }}
                           title="View password (Enter)"
-                          className="pointer-events-auto text-[11px] font-medium text-[#217346] hover:underline"
+                          className={cn(
+                            'pointer-events-auto text-[11px] font-semibold text-[#217346] underline decoration-[#217346]/40 underline-offset-2 hover:text-[#1a5c38]',
+                            isActive(rowIndex, 7) && 'decoration-[#217346]',
+                          )}
                         >
                           View
                         </button>
@@ -343,7 +352,7 @@ export function UsersDataTable({
                               e.stopPropagation();
                               onOpenReport(row.raw);
                             }}
-                            className="pointer-events-auto text-[11px] font-medium text-[#217346] hover:underline"
+                            className="pointer-events-auto text-[11px] font-semibold text-[#217346] underline decoration-[#217346]/40 underline-offset-2 hover:text-[#1a5c38]"
                           >
                             Report
                           </button>
@@ -359,17 +368,17 @@ export function UsersDataTable({
                         align="center"
                       >
                         {isManageable(row.role) ? (
-                          <button
-                            type="button"
+                          <XlActionButton
+                            active={isActive(rowIndex, 9)}
+                            variant="warn"
                             disabled={actionLoading === `block-${row.userId}`}
                             onClick={(e) => {
                               e.stopPropagation();
                               onToggleBlock(row.userId, row.active);
                             }}
-                            className="pointer-events-auto border border-[#ababab] bg-white px-2 py-0.5 text-[11px] font-medium text-amber-800 hover:bg-[#fff8e6] disabled:opacity-50"
                           >
                             {row.active ? 'Block' : 'Unblock'}
-                          </button>
+                          </XlActionButton>
                         ) : (
                           <span className="text-slate-400">—</span>
                         )}
@@ -382,17 +391,17 @@ export function UsersDataTable({
                         align="center"
                       >
                         {isManageable(row.role) ? (
-                          <button
-                            type="button"
+                          <XlActionButton
+                            active={isActive(rowIndex, 10)}
+                            variant="danger"
                             disabled={actionLoading === `delete-${row.userId}`}
                             onClick={(e) => {
                               e.stopPropagation();
                               onDelete(row.userId, row.name);
                             }}
-                            className="pointer-events-auto border border-[#ababab] bg-white px-2 py-0.5 text-[11px] font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
                           >
                             Delete
-                          </button>
+                          </XlActionButton>
                         ) : (
                           <span className="text-slate-400">—</span>
                         )}
@@ -404,7 +413,7 @@ export function UsersDataTable({
             </tbody>
           </table>
         </div>
-      </div>
+      </ExcelSheetShell>
     </div>
   );
 }

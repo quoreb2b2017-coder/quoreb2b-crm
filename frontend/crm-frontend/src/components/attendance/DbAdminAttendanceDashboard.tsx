@@ -11,6 +11,11 @@ import { AttendancePageChrome } from '@/components/attendance/AttendancePageChro
 import { AttendanceMonthYearNav } from '@/components/attendance/AttendanceMonthYearNav';
 import { formatMonthYearLabel } from '@/lib/attendance/month-year';
 import { workTimeService } from '@/lib/api/work-time.service';
+import { leaveService, type PaidLeaveBalancesResponse } from '@/lib/api/leave.service';
+import {
+  buildMyPaidLeaveStats,
+  buildUserPaidLeaveStats,
+} from '@/lib/attendance/build-paid-leave-stats';
 
 interface TeamMember {
   id: string;
@@ -49,6 +54,7 @@ export function DbAdminAttendanceDashboard() {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [yearlyData, setYearlyData] = useState<YearlyAnalytics[]>([]);
   const [workTimeByUser, setWorkTimeByUser] = useState<Record<string, string>>({});
+  const [paidLeaveBalances, setPaidLeaveBalances] = useState<PaidLeaveBalancesResponse | null>(null);
 
   const monthLabel = formatMonthYearLabel(selectedMonth, selectedYear);
 
@@ -75,21 +81,26 @@ export function DbAdminAttendanceDashboard() {
           email: u.email,
         }));
       setTeamMembers(members);
+      const balanceUserIds = [user.id, ...members.map((m) => m.id)];
       if (members.length > 0) {
         const userIds = members.map((m) => m.id);
-        const [analytics, workTime] = await Promise.all([
+        const [analytics, workTime, leaveBalances] = await Promise.all([
           attendanceService.getTeamAnalytics(userIds, selectedMonth, selectedYear),
           workTimeService.getTeamWorkTime(userIds, selectedYear, selectedMonth),
+          leaveService.getBalances(selectedYear, balanceUserIds),
         ]);
         setTeamAnalytics(analytics);
+        setPaidLeaveBalances(leaveBalances);
         const map: Record<string, string> = {};
         workTime.users.forEach((row) => {
           map[row.userId] = row.monthlyFormatted;
         });
         setWorkTimeByUser(map);
       } else {
+        const leaveBalances = await leaveService.getBalances(selectedYear, [user.id]);
         setTeamAnalytics([]);
         setWorkTimeByUser({});
+        setPaidLeaveBalances(leaveBalances);
       }
     } catch (error) {
       console.error('Failed to fetch team data:', error);
@@ -122,6 +133,11 @@ export function DbAdminAttendanceDashboard() {
       .then(setYearlyData)
       .catch(console.error);
   }, [selectedUserId, selectedYear]);
+
+  const paidByUser = paidLeaveBalances
+    ? Object.fromEntries(paidLeaveBalances.users.map((row) => [row.userId, row]))
+    : {};
+  const myPaidBalance = user ? paidByUser[user.id] ?? null : null;
 
   const teamRows: TeamAttendanceRow[] = teamMembers.map((member) => {
     const analytics = teamAnalytics.find((a) => a.userId === member.id);
@@ -167,8 +183,9 @@ export function DbAdminAttendanceDashboard() {
               : '—',
           tone: 'blue' as const,
         },
+        ...buildMyPaidLeaveStats(myPaidBalance),
       ]
-    : undefined;
+    : buildMyPaidLeaveStats(myPaidBalance);
 
   return (
     <AttendancePageChrome

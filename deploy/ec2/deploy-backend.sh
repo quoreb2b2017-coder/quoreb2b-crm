@@ -1,7 +1,28 @@
 #!/usr/bin/env bash
 # Build and run QuoreB2B backend on EC2 (also triggered by GitHub Actions on push to main).
-# Run: bash deploy/ec2/deploy-backend.sh
+# Run ON EC2 ONLY: bash deploy/ec2/deploy-backend.sh
+# From your PC use: bash deploy/ec2/ssh-deploy-from-local.sh path/to/crm-key.pem
 set -euo pipefail
+
+if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* || -n "${MSYSTEM:-}" ]]; then
+  echo ""
+  echo "ERROR: This script must run ON THE EC2 SERVER, not on Windows/Git Bash."
+  echo ""
+  echo "From your PC, run ONE of these instead:"
+  echo "  bash deploy/ec2/ssh-deploy-from-local.sh /path/to/crm-key.pem"
+  echo "  ssh -i crm-key.pem ubuntu@13.232.248.18 'bash ~/quoreb2b-crm/deploy/ec2/deploy-backend.sh'"
+  echo ""
+  exit 1
+fi
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo ""
+  echo "ERROR: docker not found on this machine."
+  echo "If this is EC2, run once: bash ~/quoreb2b-crm/deploy/ec2/setup-ec2.sh"
+  echo "Then log out/in (or: newgrp docker) and run this script again."
+  echo ""
+  exit 1
+fi
 
 APP_DIR="${APP_DIR:-$HOME/quoreb2b-crm}"
 ENV_FILE="${ENV_FILE:-$APP_DIR/backend/.env.production}"
@@ -34,11 +55,15 @@ docker run -d \
   "$IMAGE_NAME"
 
 echo "==> Waiting for API..."
-sleep 8
-curl -sf http://127.0.0.1:4000/api/v1/health | head -c 500 || {
-  echo "Health check failed — recent logs:"
-  docker logs "$CONTAINER_NAME" 2>&1 | tail -20
-  exit 1
-}
-echo ""
-echo "Deploy done. Logs: docker logs -f $CONTAINER_NAME"
+for i in $(seq 1 30); do
+  if curl -sf http://127.0.0.1:4000/api/v1/health >/dev/null; then
+    curl -sf http://127.0.0.1:4000/api/v1/health | head -c 500
+    echo ""
+    echo "Deploy done. Logs: docker logs -f $CONTAINER_NAME"
+    exit 0
+  fi
+  sleep 2
+done
+echo "Health check failed — recent logs:"
+docker logs "$CONTAINER_NAME" 2>&1 | tail -30
+exit 1

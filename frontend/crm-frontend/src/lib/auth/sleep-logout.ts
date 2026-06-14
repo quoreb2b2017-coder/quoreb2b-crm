@@ -3,11 +3,11 @@ export const SLEEP_LOGOUT_FLAG = 'crm-sleep-logout';
 const FRESH_LOGIN_MARKER = 'crm-fresh-login';
 const SESSION_ALIVE_KEY = 'crm-session-alive';
 
-/** No heartbeat for this long ⇒ system sleep / tab frozen (logout on wake). */
-export const SLEEP_GAP_MS = 5_000;
-
-/** Tab hidden this long ⇒ screen lock / sleep / away (logout while still hidden). */
-export const HIDDEN_LOGOUT_MS = 1_000;
+/**
+ * JS timers frozen this long ⇒ real sleep / screen lock (not a normal tab switch).
+ * Tab switches do NOT logout — only clock freeze (Page Lifecycle) or this gap on resume.
+ */
+export const SLEEP_GAP_MS = 90_000;
 
 export function setSleepLogoutFlag(): void {
   if (typeof sessionStorage === 'undefined') return;
@@ -24,7 +24,7 @@ export function hasSleepLogoutFlag(): boolean {
   return sessionStorage.getItem(SLEEP_LOGOUT_FLAG) != null;
 }
 
-/** Updated every ~15s while the portal session is active. Survives page reload after sleep. */
+/** Updated while the portal tab is active. Survives reload after sleep. */
 export function touchSessionAlive(): void {
   if (typeof sessionStorage === 'undefined') return;
   sessionStorage.setItem(SESSION_ALIVE_KEY, String(Date.now()));
@@ -70,7 +70,12 @@ export function isHardPageReload(): boolean {
   if (typeof window === 'undefined') return false;
   const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
   if (nav?.type === 'reload') return true;
-  // Legacy API (deprecated but still present in some browsers)
   const perf = performance as Performance & { navigation?: { type?: number } };
   return perf.navigation?.type === 1;
+}
+
+/** Timers were frozen (sleep/lock) — not just a background tab throttle. */
+export function detectFrozenClockGap(lastTickMs: number, thresholdMs = SLEEP_GAP_MS): boolean {
+  if (lastTickMs <= 0) return false;
+  return Date.now() - lastTickMs >= thresholdMs;
 }

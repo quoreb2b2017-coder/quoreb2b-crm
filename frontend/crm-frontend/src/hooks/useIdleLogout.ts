@@ -7,10 +7,12 @@ import { activityLogsService } from '@/lib/api/activity-logs.service';
 import { IDLE_TIMEOUT_MINUTES, IDLE_WARN_BEFORE_MINUTES } from '@/lib/constants/session';
 import {
   clearSleepLogoutFlag,
+  clearTabHidden,
   detectFrozenClockGap,
   hasSleepLogoutFlag,
-  isHardPageReload,
+  hiddenDurationMs,
   isRecentFreshLogin,
+  markTabHidden,
   setSleepLogoutFlag,
   shouldLogoutStaleSession,
   SLEEP_GAP_MS,
@@ -20,8 +22,8 @@ import {
 const IDLE_MS = IDLE_TIMEOUT_MINUTES * 60 * 1000;
 const WARN_MS = (IDLE_TIMEOUT_MINUTES - IDLE_WARN_BEFORE_MINUTES) * 60 * 1000;
 const WARN_SECONDS = IDLE_WARN_BEFORE_MINUTES * 60;
-/** Heartbeat while tab is visible */
-const HEARTBEAT_MS = 15_000;
+/** Heartbeat tick — also detects frozen timers after sleep */
+const HEARTBEAT_MS = 10_000;
 const EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'] as const;
 
 function isPortalUser(roles: string[] | undefined) {
@@ -43,7 +45,6 @@ function buildLoginRedirect(reason: 'idle' | 'manual', trigger?: 'sleep' | 'idle
   return `/${q}`;
 }
 
-/** Fire-and-forget logout — survives tab freeze / sleep (keepalive + sendBeacon). */
 function sendLogoutBeacon(refreshToken: string, reason: string) {
   const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
   const url = `${base}/auth/logout`;
@@ -79,7 +80,6 @@ export function useIdleLogout(
   const warned = useRef(false);
   const loggingOut = useRef(false);
   const lastActivityAt = useRef(Date.now());
-  const frozenLogout = useRef(false);
 
   const trackIdleEvent = useCallback(
     (action: string, metadata?: Record<string, unknown>) => {
@@ -169,27 +169,27 @@ export function useIdleLogout(
 
   const logoutOnSleep = useCallback(() => {
     if (!enabled || loggingOut.current) return;
-    frozenLogout.current = true;
     clearTimers();
     void doLogout('idle', 'sleep');
   }, [enabled, clearTimers, doLogout]);
 
-  /** After real sleep/lock — JS clock jumped because timers were frozen. */
-  const checkFrozenWake = useCallback(() => {
-    if (!enabled || loggingOut.current || frozenLogout.current) return false;
-    if (document.visibilityState === 'hidden') return false;
+  /**
+   * Sleep / lock: JS timers freeze → gap since last heartbeat or session alive tick.
+   * Does NOT fire on quick tab switches (< SLEEP_GAP_MS).
+   */
+  const checkSleepOrLock = useCallback(() => {
+    if (!enabled || loggingOut.current) return false;
 
-    const gap = Date.now() - lastHeartbeat.current;
-    const staleSession = shouldLogoutStaleSession(SLEEP_GAP_MS);
+    const heartbeatGap = detectFrozenClockGap(lastHeartbeat.current, SLEEP_GAP_MS);
+    const sessionStale = shouldLogoutStaleSession(SLEEP_GAP_MS);
+    const wokeFromHidden =
+      document.visibilityState === 'visible' &&
+      hiddenDurationMs() >= SLEEP_GAP_MS &&
+      sessionStale;
 
-    if (detectFrozenClockGap(lastHeartbeat.current, SLEEP_GAP_MS) || staleSession) {
+    if (heartbeatGap || sessionStale || wokeFromHidden) {
       logoutOnSleep();
       return true;
-    }
-
-    if (gap < HEARTBEAT_MS * 2) {
-      lastHeartbeat.current = Date.now();
-      touchSessionAlive();
     }
     return false;
   }, [enabled, logoutOnSleep]);
@@ -199,6 +199,7 @@ export function useIdleLogout(
 
     lastActivityAt.current = Date.now();
     lastHeartbeat.current = Date.now();
+    clearTabHidden();
     touchSessionAlive();
 
     if (warned.current) {
@@ -215,15 +216,11 @@ export function useIdleLogout(
 
     if (isRecentFreshLogin()) {
       clearSleepLogoutFlag();
+      clearTabHidden();
       touchSessionAlive();
     } else if (hasSleepLogoutFlag() || shouldLogoutStaleSession(SLEEP_GAP_MS)) {
       void doLogout('idle', 'sleep');
       return;
-    } else if (isHardPageReload()) {
-      clearSleepLogoutFlag();
-      touchSessionAlive();
-    } else {
-      clearSleepLogoutFlag();
     }
 
     lastActivityAt.current = Date.now();
@@ -232,15 +229,17 @@ export function useIdleLogout(
     scheduleTimers();
 
     const onVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') return;
-      if (checkFrozenWake()) return;
+      if (document.visibilityState === 'hidden') {
+        markTabHidden();
+        return;
+      }
+      if (checkSleepOrLock()) return;
       reset();
     };
 
     const onResume = () => {
-      if (document.visibilityState === 'hidden') return;
-      if (checkFrozenWake()) return;
-      reset();
+      if (checkSleepOrLock()) return;
+      if (document.visibilityState === 'visible') reset();
     };
 
     const onPageShow = (e: PageTransitionEvent) => {
@@ -248,30 +247,45 @@ export function useIdleLogout(
         logoutOnSleep();
         return;
       }
-      if (checkFrozenWake()) return;
+      if (checkSleepOrLock()) return;
     };
 
     const onWindowFocus = () => {
       if (document.visibilityState === 'hidden') return;
-      if (checkFrozenWake()) return;
+      if (checkSleepOrLock()) return;
     };
 
-    /** Browser frozen page (sleep / screen lock / laptop lid). */
     const onFreeze = () => {
       logoutOnSleep();
+    };
+
+    const onPageHide = () => {
+      markTabHidden();
+    };
+
+    const onHeartbeat = () => {
+      if (!enabled || loggingOut.current) return;
+
+      const gap = Date.now() - lastHeartbeat.current;
+      if (gap >= SLEEP_GAP_MS) {
+        logoutOnSleep();
+        return;
+      }
+
+      if (document.visibilityState === 'hidden') return;
+
+      lastHeartbeat.current = Date.now();
+      touchSessionAlive();
     };
 
     EVENTS.forEach((e) => window.addEventListener(e, reset, { passive: true }));
     document.addEventListener('visibilitychange', onVisibilityChange);
     document.addEventListener('freeze', onFreeze);
     document.addEventListener('resume', onResume);
+    document.addEventListener('pagehide', onPageHide);
     window.addEventListener('pageshow', onPageShow);
     window.addEventListener('focus', onWindowFocus);
-    heartbeatTimer.current = setInterval(() => {
-      if (!enabled || loggingOut.current || document.visibilityState === 'hidden') return;
-      lastHeartbeat.current = Date.now();
-      touchSessionAlive();
-    }, HEARTBEAT_MS);
+    heartbeatTimer.current = setInterval(onHeartbeat, HEARTBEAT_MS);
 
     return () => {
       clearTimers();
@@ -283,6 +297,7 @@ export function useIdleLogout(
       document.removeEventListener('visibilitychange', onVisibilityChange);
       document.removeEventListener('freeze', onFreeze);
       document.removeEventListener('resume', onResume);
+      document.removeEventListener('pagehide', onPageHide);
       window.removeEventListener('pageshow', onPageShow);
       window.removeEventListener('focus', onWindowFocus);
     };
@@ -294,7 +309,7 @@ export function useIdleLogout(
     logoutOnSleep,
     clearTimers,
     doLogout,
-    checkFrozenWake,
+    checkSleepOrLock,
   ]);
 
   return {

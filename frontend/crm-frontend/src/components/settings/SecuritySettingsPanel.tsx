@@ -2,12 +2,13 @@
 
 import { Shield, Clock, LogOut, Eye } from 'lucide-react';
 import { IDLE_TIMEOUT_MINUTES, IDLE_WARN_BEFORE_MINUTES } from '@/lib/constants/session';
+import { SLEEP_GAP_MS } from '@/lib/auth/sleep-logout';
 
 const ITEMS = [
   {
     icon: Clock,
     title: 'Sleep / idle sign-out',
-    body: `Sign-out only when: (1) PC sleep or screen lock, (2) ${IDLE_TIMEOUT_MINUTES} minutes with no mouse/keyboard action. Switching tabs or apps does not sign you out. Same-day login resumes your work timer.`,
+    body: `Sign-out when: (1) PC sleep or screen lock (~${Math.round(SLEEP_GAP_MS / 1000)}s+ frozen), (2) ${IDLE_TIMEOUT_MINUTES} minutes with no mouse/keyboard. Quick tab switches under ~${Math.round(SLEEP_GAP_MS / 1000)}s do not sign you out.`,
     tone: 'amber',
   },
   {

@@ -1,6 +1,9 @@
 'use client';
 
+import { useRef } from 'react';
 import { cn } from '@/lib/utils/cn';
+import { spreadsheetGuardProps } from '@/lib/spreadsheet/spreadsheet-access';
+import { useCanExportSpreadsheet, useShowSpreadsheetRestrictionHint } from '@/hooks/useSpreadsheetCopyGuard';
 
 interface ExcelSheetShellProps {
   title: string;
@@ -23,6 +26,10 @@ export function ExcelSheetShell({
   hint = 'Navigate cells (Excel style)',
   headerVariant = 'green',
 }: ExcelSheetShellProps) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  const canExport = useCanExportSpreadsheet();
+  const showRestrictionHint = useShowSpreadsheetRestrictionHint();
+
   const headerClass =
     headerVariant === 'violet'
       ? 'bg-gradient-to-r from-violet-700 to-purple-800'
@@ -30,11 +37,13 @@ export function ExcelSheetShell({
 
   return (
     <div
+      {...spreadsheetGuardProps}
       className={cn(
         'flex min-h-0 w-full max-w-none self-stretch flex-col overflow-hidden',
         'border-x-0 border-y border-[#b4b4b4] bg-[#e6e6e6]',
         'shadow-sm transition-shadow duration-200 hover:shadow-md',
         'sm:border sm:rounded-sm',
+        !canExport && 'select-none',
         className,
       )}
     >
@@ -65,12 +74,20 @@ export function ExcelSheetShell({
                 ↑ ↓ ← →
               </span>
               <span>{hint}</span>
+              {showRestrictionHint && (
+                <>
+                  <span className="text-slate-300">|</span>
+                  <span className="text-amber-800">Copy/download restricted — paste shows ++++++</span>
+                </>
+              )}
             </>
           )}
         </div>
       )}
 
-      {children}
+      <div ref={contentRef} className="min-h-0 flex-1">
+        {children}
+      </div>
     </div>
   );
 }

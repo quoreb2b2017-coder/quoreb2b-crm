@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils/cn';
 import { useAuthStore } from '@/store/auth.store';
 import { useAdminProductStore } from '@/store/admin-product.store';
 import { useIdleLogout } from '@/hooks/useIdleLogout';
+import { useGlobalSpreadsheetCopyGuard } from '@/hooks/useSpreadsheetCopyGuard';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { MeetingRequestBell } from '@/components/dashboard/MeetingRequestBell';
 import { QuickNotePad } from '@/components/notes/QuickNotePad';
@@ -558,6 +559,7 @@ function SidebarInner({
 }
 
 export function DashboardLayout({ children, title, variant, navItems }: DashboardLayoutProps) {
+  useGlobalSpreadsheetCopyGuard();
   const pathname = usePathname() ?? '';
   const { pendingHref, isNavigating, startNavigation } = useNavigation();
   const batchExcelView = isBatchExcelViewPath(pathname);

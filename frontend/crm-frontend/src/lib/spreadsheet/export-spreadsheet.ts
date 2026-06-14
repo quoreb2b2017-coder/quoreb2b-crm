@@ -1,9 +1,17 @@
 import type { SpreadsheetData } from './parse-spreadsheet';
+import { canExportSpreadsheet } from './spreadsheet-access';
+import { useAuthStore } from '@/store/auth.store';
 
 export async function downloadSpreadsheetXlsx(
   data: SpreadsheetData,
   downloadName?: string,
 ): Promise<void> {
+  const roles =
+    typeof window !== 'undefined' ? useAuthStore.getState().user?.roles : undefined;
+  const panel = typeof window !== 'undefined' ? useAuthStore.getState().panel : undefined;
+  if (!canExportSpreadsheet(roles, panel)) {
+    throw new Error('Download is restricted to Super Admin');
+  }
   const XLSX = await import('xlsx');
   const aoa = [data.headers, ...data.rows];
   const ws = XLSX.utils.aoa_to_sheet(aoa);

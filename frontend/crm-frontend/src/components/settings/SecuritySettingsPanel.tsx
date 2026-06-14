@@ -2,12 +2,13 @@
 
 import { Shield, Clock, LogOut, Eye } from 'lucide-react';
 import { IDLE_TIMEOUT_MINUTES, IDLE_WARN_BEFORE_MINUTES } from '@/lib/constants/session';
+import { HIDDEN_LOGOUT_MS, SLEEP_GAP_MS } from '@/lib/auth/sleep-logout';
 
 const ITEMS = [
   {
     icon: Clock,
     title: 'Sleep / idle sign-out',
-    body: `Device sleep signs you out after ~90 seconds hidden. After ${IDLE_TIMEOUT_MINUTES} minutes idle, you are signed out (warning ${IDLE_WARN_BEFORE_MINUTES} min before). Same-day login resumes your work timer.`,
+    body: `PC sleep or screen lock signs you out within ~${Math.round(HIDDEN_LOGOUT_MS / 1000)} seconds. Wake after ${Math.round(SLEEP_GAP_MS / 1000)}+ seconds away also signs you out. After ${IDLE_TIMEOUT_MINUTES} minutes idle, you are signed out (warning ${IDLE_WARN_BEFORE_MINUTES} min before). Same-day login resumes your work timer.`,
     tone: 'amber',
   },
   {

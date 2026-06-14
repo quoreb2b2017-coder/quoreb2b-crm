@@ -12,6 +12,8 @@ import {
 } from '@/lib/spreadsheet/filter-rows';
 import { useEditableSpreadsheet } from '@/hooks/useEditableSpreadsheet';
 import { useExcelTableNavigation } from '@/hooks/useExcelTableNavigation';
+import { useCanExportSpreadsheet, useShowSpreadsheetRestrictionHint } from '@/hooks/useSpreadsheetCopyGuard';
+import { spreadsheetGuardProps } from '@/lib/spreadsheet/spreadsheet-access';
 
 function colLetter(index: number): string {
   let n = index;
@@ -66,6 +68,8 @@ export function ExcelPreviewGrid({
   onLeadCellFocus,
 }: ExcelPreviewGridProps) {
   const editable = editableProp ?? Boolean(onDataChange);
+  const canExport = useCanExportSpreadsheet();
+  const showRestrictionHint = useShowSpreadsheetRestrictionHint();
   const sheet = useEditableSpreadsheet(
     { headers: data.headers, rows: data.rows },
     editable ? onDataChange : undefined,
@@ -372,9 +376,11 @@ export function ExcelPreviewGrid({
 
   return (
     <div
+      {...spreadsheetGuardProps}
       className={cn(
         'flex flex-col bg-white',
         fillHeight ? 'h-full min-h-0 border-0' : 'border border-[#b4b4b4]',
+        !canExport && 'select-none',
       )}
     >
       <div className="flex flex-shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[#d4d4d4] bg-[#f3f3f3] px-3 py-1.5 text-xs text-slate-600">
@@ -397,6 +403,12 @@ export function ExcelPreviewGrid({
                 ↑ ↓ ← →
               </span>{' '}
               navigate · double-click or type to edit · changes auto-save
+            </span>
+          )}
+          {showRestrictionHint && (
+            <span className="text-amber-800">
+              {' · '}
+              Copy/download restricted — paste shows ++++++
             </span>
           )}
         </span>

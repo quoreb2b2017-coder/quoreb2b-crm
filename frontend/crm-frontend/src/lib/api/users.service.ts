@@ -35,8 +35,7 @@ export const usersService = {
   /** Employees (or employees + db_admins for admin) — for batch share modal */
   listTeamMembers: async (): Promise<TeamMember[]> => {
     const res = await apiClient.get('/users/team-members');
-    const body = res.data as { data?: TeamMember[] };
-    return body.data ?? [];
+    return unwrapList<TeamMember>(res);
   },
 
   create: (payload: CreateUserPayload) => apiClient.post('/users', payload),

@@ -1,7 +1,10 @@
 'use client';
 
+import { useRef } from 'react';
 import { Loader2, X } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
+import { spreadsheetGuardProps } from '@/lib/spreadsheet/spreadsheet-access';
+import { useCanExportSpreadsheet, useShowSpreadsheetRestrictionHint } from '@/hooks/useSpreadsheetCopyGuard';
 
 const DEFAULT_PREVIEW_LIMIT = 500;
 
@@ -40,6 +43,10 @@ export function SpreadsheetPreviewModal({
   note,
   actions,
 }: SpreadsheetPreviewModalProps) {
+  const tableRef = useRef<HTMLDivElement>(null);
+  const canExport = useCanExportSpreadsheet();
+  const showRestrictionHint = useShowSpreadsheetRestrictionHint();
+
   if (!isOpen) return null;
 
   const total = totalRows ?? rows.length;
@@ -84,7 +91,17 @@ export function SpreadsheetPreviewModal({
             </div>
           ) : null}
 
-          <div className="min-h-0 flex-1 overflow-auto bg-white">
+          {showRestrictionHint && (
+            <div className="border-b border-amber-100 bg-amber-50 px-6 py-2 text-xs text-amber-900">
+              Copy/download restricted — paste shows ++++++
+            </div>
+          )}
+
+          <div
+            ref={tableRef}
+            {...spreadsheetGuardProps}
+            className={cn('min-h-0 flex-1 overflow-auto bg-white', !canExport && 'select-none')}
+          >
             <table className="w-full min-w-[640px] border-collapse text-[13px]">
               <thead className="sticky top-0 z-10 bg-[#f2f2f2]">
                 <tr>

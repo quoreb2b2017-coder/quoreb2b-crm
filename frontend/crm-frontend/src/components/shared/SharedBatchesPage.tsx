@@ -67,15 +67,16 @@ export default function SharedBatchesPage({
     setUsersLoading(true);
     try {
       const list = await usersService.listTeamMembers();
+      const members = Array.isArray(list) ? list : [];
       setUsers(
-        list.map((u) => ({
+        members.map((u) => ({
           id: u.id,
           name: `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || u.email,
           email: u.email,
           role: u.roles?.[0] ?? 'employee',
         })),
       );
-      if (list.length === 0) {
+      if (members.length === 0) {
         toast.info('No employees yet', 'Ask admin to create employee users in Users');
       }
     } catch (e) {

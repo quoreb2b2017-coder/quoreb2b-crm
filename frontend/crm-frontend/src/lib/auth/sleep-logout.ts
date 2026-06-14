@@ -3,8 +3,11 @@ export const SLEEP_LOGOUT_FLAG = 'crm-sleep-logout';
 const FRESH_LOGIN_MARKER = 'crm-fresh-login';
 const SESSION_ALIVE_KEY = 'crm-session-alive';
 
-/** No heartbeat for this long ⇒ system sleep / tab frozen (not a normal tab switch). */
-export const SLEEP_GAP_MS = 90_000;
+/** No heartbeat for this long ⇒ system sleep / tab frozen (logout on wake). */
+export const SLEEP_GAP_MS = 5_000;
+
+/** Tab hidden this long ⇒ screen lock / sleep / away (logout while still hidden). */
+export const HIDDEN_LOGOUT_MS = 1_000;
 
 export function setSleepLogoutFlag(): void {
   if (typeof sessionStorage === 'undefined') return;

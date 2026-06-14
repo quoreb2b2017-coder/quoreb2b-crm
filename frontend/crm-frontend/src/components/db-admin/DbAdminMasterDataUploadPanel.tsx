@@ -20,6 +20,7 @@ import { SpreadsheetPreviewModal } from '@/components/spreadsheet/SpreadsheetPre
 import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
 import { MasterDataUploadRequestList } from '@/components/master-data/MasterDataUploadRequestList';
 import { cn } from '@/lib/utils/cn';
+import { useCanExportSpreadsheet } from '@/hooks/useSpreadsheetCopyGuard';
 
 const ACCEPT = '.csv,.xlsx,.xls';
 const FILTERS: Array<MasterDataUploadRequestStatus | 'all'> = [
@@ -64,6 +65,7 @@ function formatRequestDate(value?: string) {
 
 export function DbAdminMasterDataUploadPanel() {
   const inputRef = useRef<HTMLInputElement>(null);
+  const canExport = useCanExportSpreadsheet();
   const [template, setTemplate] = useState<MasterDataRecord | null>(null);
   const [requests, setRequests] = useState<MasterDataUploadRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -287,15 +289,17 @@ export function DbAdminMasterDataUploadPanel() {
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </button>
-            <button
-              type="button"
-              onClick={handleTemplateDownload}
-              disabled={!template}
-              className="inline-flex items-center gap-1.5 border border-[#c6c6c6] bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-[#fafafa] disabled:opacity-50"
-            >
-              <Download className="h-3.5 w-3.5" />
-              Template
-            </button>
+            {canExport && (
+              <button
+                type="button"
+                onClick={handleTemplateDownload}
+                disabled={!template}
+                className="inline-flex items-center gap-1.5 border border-[#c6c6c6] bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-[#fafafa] disabled:opacity-50"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Template
+              </button>
+            )}
             <button
               type="button"
               onClick={() => inputRef.current?.click()}

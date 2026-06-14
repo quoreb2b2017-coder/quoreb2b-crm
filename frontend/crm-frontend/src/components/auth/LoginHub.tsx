@@ -42,7 +42,7 @@ export function LoginHub() {
       {(logoutReason === 'idle' || logoutReason === 'sleep') && (
         <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-center text-sm text-amber-900">
           {logoutReason === 'sleep'
-            ? 'You were signed out because your device entered sleep mode or the session was hidden. Please sign in again.'
+            ? 'You were signed out because your PC slept, the screen was locked, or the session was hidden. Please sign in again.'
             : `You were signed out after ${IDLE_TIMEOUT_MINUTES} minutes of inactivity. Please sign in again.`}
         </div>
       )}

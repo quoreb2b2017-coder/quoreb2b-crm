@@ -8,6 +8,7 @@ import { IDLE_TIMEOUT_MINUTES, IDLE_WARN_BEFORE_MINUTES } from '@/lib/constants/
 import {
   clearSleepLogoutFlag,
   hasSleepLogoutFlag,
+  HIDDEN_LOGOUT_MS,
   isHardPageReload,
   isRecentFreshLogin,
   setSleepLogoutFlag,
@@ -19,10 +20,8 @@ import {
 const IDLE_MS = IDLE_TIMEOUT_MINUTES * 60 * 1000;
 const WARN_MS = (IDLE_TIMEOUT_MINUTES - IDLE_WARN_BEFORE_MINUTES) * 60 * 1000;
 const WARN_SECONDS = IDLE_WARN_BEFORE_MINUTES * 60;
-/** Screen lock / away — tab hidden continuously while awake */
-const HIDDEN_SLEEP_MS = 90_000;
 /** Heartbeat while session is active */
-const HEARTBEAT_MS = 15_000;
+const HEARTBEAT_MS = 5_000;
 const EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'] as const;
 
 function isPortalUser(roles: string[] | undefined) {
@@ -220,12 +219,12 @@ export function useIdleLogout(
     if (isRecentFreshLogin()) {
       clearSleepLogoutFlag();
       touchSessionAlive();
-    } else if (isHardPageReload()) {
-      clearSleepLogoutFlag();
-      touchSessionAlive();
     } else if (hasSleepLogoutFlag() || shouldLogoutStaleSession()) {
       void doLogout('idle', 'sleep');
       return;
+    } else if (isHardPageReload()) {
+      clearSleepLogoutFlag();
+      touchSessionAlive();
     } else {
       clearSleepLogoutFlag();
     }
@@ -245,7 +244,7 @@ export function useIdleLogout(
     const shouldLogoutAfterHidden = () => {
       const since = hiddenSince.current;
       if (since == null) return false;
-      return Date.now() - since >= HIDDEN_SLEEP_MS;
+      return Date.now() - since >= HIDDEN_LOGOUT_MS;
     };
 
     const endHiddenSession = (logoutIfLongHidden: boolean) => {
@@ -269,7 +268,7 @@ export function useIdleLogout(
           if (document.visibilityState === 'hidden') {
             logoutOnSleep();
           }
-        }, HIDDEN_SLEEP_MS);
+        }, HIDDEN_LOGOUT_MS);
         return;
       }
 

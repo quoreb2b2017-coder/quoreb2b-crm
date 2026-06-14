@@ -23,61 +23,80 @@ jobs:
         id: validate
         run: |
           set -euo pipefail
-          missing=0
+          missing=()
           if [ -z "${{ secrets.EC2_HOST }}" ]; then
-            echo "::error::Missing secret EC2_HOST — set to your EC2 public IP (e.g. 13.232.248.18)"
-            missing=1
+            missing+=("EC2_HOST")
           fi
           if [ -z "${{ secrets.EC2_USER }}" ]; then
-            echo "::error::Missing secret EC2_USER — set to ubuntu"
-            missing=1
+            missing+=("EC2_USER")
           fi
           if [ -z "${{ secrets.EC2_SSH_PRIVATE_KEY }}" ]; then
-            echo "::error::Missing secret EC2_SSH_PRIVATE_KEY — paste the full crm-key.pem file"
-            missing=1
+            missing+=("EC2_SSH_PRIVATE_KEY")
           fi
-          if [ "$missing" -ne 0 ]; then
-            echo ""
-            echo "Add secrets: GitHub repo → Settings → Secrets and variables → Actions → New repository secret"
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            {
+              echo "## Deploy blocked — missing GitHub Actions secrets"
+              echo ""
+              echo "Add these in the repo:"
+              echo "**Settings → Secrets and variables → Actions → New repository secret**"
+              echo ""
+              echo "| Secret | Example value |"
+              echo "|--------|----------------|"
+              echo "| \`EC2_HOST\` | \`13.232.248.18\` (public IPv4 only) |"
+              echo "| \`EC2_USER\` | \`ubuntu\` |"
+              echo "| \`EC2_SSH_PRIVATE_KEY\` | Full \`crm-key.pem\` file (BEGIN/END lines included) |"
+              echo ""
+              echo "**Missing now:** ${missing[*]}"
+              echo ""
+              echo "After saving secrets, re-run this workflow from the Actions tab."
+              echo "See \`DEPLOY_EC2_VERCEL.md\` section **A8** for full setup."
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            for name in "${missing[@]}"; do
+              echo "::error::Missing secret $name"
+            done
             exit 1
           fi
-          echo "Secrets present. Target: ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}"
 
-      - name: Configure SSH key
+          echo "Secrets present. Target: ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}"
+          echo "Target host configured." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Setup SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+
+      - name: Add EC2 host key
         run: |
           set -euo pipefail
           install -m 700 -d ~/.ssh
-          printf '%s\n' "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/ec2_deploy_key
-          chmod 600 ~/.ssh/ec2_deploy_key
-          if ! grep -q 'BEGIN.*PRIVATE KEY' ~/.ssh/ec2_deploy_key; then
-            echo "::error::EC2_SSH_PRIVATE_KEY is invalid — must include -----BEGIN ... PRIVATE KEY-----"
-            exit 1
-          fi
           ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: Test SSH connection
         run: |
           set -euo pipefail
-          if ! ssh -i ~/.ssh/ec2_deploy_key \
-            -o BatchMode=yes \
+          if ! ssh -o BatchMode=yes \
             -o ConnectTimeout=15 \
             -o StrictHostKeyChecking=accept-new \
             "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" \
             'echo connected && hostname'; then
-            echo ""
-            echo "::error::SSH failed. Common fixes:"
-            echo "  1. AWS Security Group → Inbound → SSH (22) from 0.0.0.0/0 (GitHub uses dynamic IPs)"
-            echo "  2. EC2_SSH_PRIVATE_KEY = full .pem contents (no extra quotes)"
-            echo "  3. EC2_HOST = public IPv4 only (no https://, no trailing spaces)"
-            echo "  4. EC2 instance running and ubuntu user allowed"
+            {
+              echo "## SSH connection failed"
+              echo ""
+              echo "1. AWS Security Group → Inbound → **SSH (22)** from \`0.0.0.0/0\` (GitHub uses dynamic IPs)"
+              echo "2. \`EC2_SSH_PRIVATE_KEY\` = full \`crm-key.pem\` contents"
+              echo "3. \`EC2_HOST\` = public IPv4 only (no \`https://\`, no spaces)"
+              echo "4. EC2 instance running, \`ubuntu\` user allowed"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::SSH failed — see job summary for checklist"
             exit 1
           fi
 
       - name: Deploy on EC2
         run: |
           set -euo pipefail
-          ssh -i ~/.ssh/ec2_deploy_key \
-            -o BatchMode=yes \
+          ssh -o BatchMode=yes \
             -o ConnectTimeout=15 \
             -o ServerAliveInterval=30 \
             "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" \

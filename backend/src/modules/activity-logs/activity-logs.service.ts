@@ -332,6 +332,7 @@ export class ActivityLogsService {
         }
         return {
           ...basePayload,
+          notifyActor: false,
           actorTitle: 'Action completed',
           superAdminTitle: 'New system activity',
           actorMessage: `${log.action.replaceAll('_', ' ').toLowerCase()} completed successfully`,

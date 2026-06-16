@@ -7,13 +7,11 @@ import { User, UserSchema } from '../users/schemas/user.schema';
 import { Batch, BatchSchema } from '../batches/schemas/batch.schema';
 import { UsersRepository } from '../users/users.repository';
 import { ActivityLoggingInterceptor } from '../../common/interceptors/activity-logging.interceptor';
-import { NotificationsModule } from '../notifications/notifications.module';
 import { AttendanceModule } from '../attendance/attendance.module';
 import { BreakPunchesModule } from '../break-punches/break-punches.module';
 
 @Module({
   imports: [
-    NotificationsModule,
     AttendanceModule,
     BreakPunchesModule,
     MongooseModule.forFeature([

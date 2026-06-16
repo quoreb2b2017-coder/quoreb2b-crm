@@ -44,7 +44,6 @@ import {
   PASSIVE_ACTIVITY_ACTIONS,
   isRecordableTrackAction,
 } from './activity-actions.constant';
-import { NotificationTriggerService } from '../notifications/notification-trigger.service';
 import { AttendanceService } from '../attendance/attendance.service';
 import { BreakPunchesService } from '../break-punches/break-punches.service';
 
@@ -65,7 +64,6 @@ export class ActivityLogsService {
     @InjectModel(ActivityLog.name) private model: Model<ActivityLog>,
     @InjectModel(Batch.name) private batchModel: Model<Batch>,
     private usersRepository: UsersRepository,
-    private notifications: NotificationTriggerService,
     private cache: AppCacheService,
     private config: ConfigService,
     private attendanceService: AttendanceService,
@@ -106,58 +104,7 @@ export class ActivityLogsService {
         recordedAt: new Date().toISOString(),
       },
     });
-    try {
-      await this.notifyFromActivityLog(created as ActivityLog, resolved);
-    } catch {
-      /* notifications should not block activity logging */
-    }
     return created;
-  }
-
-  private buildNotificationPayload(_log: ActivityLog, _actor: ActivityActor | null) {
-    // Activity logs are audit-only. Real-time alerts come from domain services
-    // (batches share, master-data requests, leave workflow, email verification, etc.).
-    return null;
-  }
-
-  private async notifyFromActivityLog(log: ActivityLog, actor: ActivityActor | null) {
-    const payload = this.buildNotificationPayload(log, actor);
-    if (!payload) return;
-
-    if (payload.notifyActor && actor?.id) {
-      await this.notifications.notifyUser(actor.id, {
-        type: 'activity_alert',
-        title: payload.actorTitle,
-        message: payload.actorMessage,
-        priority: payload.priority,
-        actionUrl: payload.actorActionUrl,
-        actionLabel: payload.actorActionLabel,
-        metadata: {
-          action: log.action,
-          resource: log.resource,
-          resourceId: log.resourceId,
-        },
-      });
-    }
-
-    if (payload.notifySuperAdmins) {
-      await this.notifications.notifySuperAdmins(
-        {
-          type: 'activity_alert',
-          title: payload.superAdminTitle,
-          message: payload.superAdminMessage,
-          priority: payload.priority,
-          actionUrl: payload.superAdminActionUrl,
-          actionLabel: payload.superAdminActionLabel,
-          metadata: {
-            action: log.action,
-            resource: log.resource,
-            resourceId: log.resourceId,
-          },
-        },
-        actor?.id ? [actor.id] : [],
-      );
-    }
   }
 
   private async resolveActor(actor: ActivityActor | null): Promise<ActivityActor | null> {

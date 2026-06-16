@@ -63,6 +63,16 @@ export function useBreakPunch(enabled = true) {
   }, [load]);
 
   useEffect(() => {
+    const onRefresh = () => void load();
+    window.addEventListener('break-punch:refresh', onRefresh);
+    window.addEventListener('work-time:refresh', onRefresh);
+    return () => {
+      window.removeEventListener('break-punch:refresh', onRefresh);
+      window.removeEventListener('work-time:refresh', onRefresh);
+    };
+  }, [load]);
+
+  useEffect(() => {
     if (!data?.activeType) return;
     const id = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(id);

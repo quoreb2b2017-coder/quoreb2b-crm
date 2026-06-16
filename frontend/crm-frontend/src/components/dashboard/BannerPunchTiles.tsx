@@ -326,9 +326,6 @@ export function BannerPunchTiles() {
     if (!workIn || eodLoggingOut) return;
     setEodLoggingOut(true);
     try {
-      if (onBreak && activeType) {
-        await toggle(activeType);
-      }
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new Event('work-time:stash'));
       }

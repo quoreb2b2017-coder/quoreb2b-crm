@@ -21,7 +21,7 @@ import {
   grossMinutesFromElapsedSeconds,
 } from '@/lib/attendance/live-punch-time';
 import { useBreakPunch } from '@/hooks/useBreakPunch';
-import { completedBreakMinutesFromToday } from '@/lib/attendance/break-minutes';
+import { totalBreakMinutesFromToday } from '@/lib/attendance/break-minutes';
 import { stashTodayWorkGross } from '@/lib/attendance/today-work-cache';
 
 const MAX_DAY_MINUTES = 24 * 60;
@@ -145,7 +145,7 @@ export function useWorkTimer(enabled = true) {
   const breakMinutesForLive = useMemo(() => {
     if (!data) return 0;
     if (onBreak && breakToday) {
-      return completedBreakMinutesFromToday(breakToday);
+      return totalBreakMinutesFromToday(breakToday);
     }
     return data.todayBreakMinutes ?? 0;
   }, [data, onBreak, breakToday]);

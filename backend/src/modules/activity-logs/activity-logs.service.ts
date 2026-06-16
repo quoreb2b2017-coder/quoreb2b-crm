@@ -642,7 +642,11 @@ export class ActivityLogsService {
       breakToday.tea.usedMinutesCompleted +
       breakToday.lunch.usedMinutesCompleted +
       breakToday.meeting.usedMinutesCompleted;
-    const breaksForLiveNet = onBreak ? todayBreakMinutesCompleted : todayBreakMinutes;
+    const todayBreakMinutesLive =
+      breakToday.tea.usedMinutes +
+      breakToday.lunch.usedMinutes +
+      breakToday.meeting.usedMinutes;
+    const breaksForLiveNet = onBreak ? todayBreakMinutesLive : todayBreakMinutes;
     const todayMinutes = computeNetWorkMinutes(todayGrossMinutes, breaksForLiveNet);
     const todayMinutesAtTarget = computeNetWorkMinutes(todayGrossMinutes, todayBreakMinutes);
     const monthlyMinutes = dailyBreakdown.reduce((sum, row) => sum + row.totalMinutes, 0);

@@ -61,6 +61,7 @@ export function useLoginCore() {
       }
       window.dispatchEvent(new CustomEvent('attendance:refresh'));
       window.dispatchEvent(new CustomEvent('work-time:refresh'));
+      window.dispatchEvent(new CustomEvent('break-punch:refresh'));
     }
     router.replace(getDashboardPath(panel));
   };

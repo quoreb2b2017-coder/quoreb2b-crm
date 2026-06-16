@@ -129,7 +129,47 @@ export class BreakPunchesService {
     ]);
   }
 
+  /** Close open breaks when budget is used up or the IST day has rolled over (runs while logged out). */
+  async syncActiveBreakSessions(userId: string): Promise<void> {
+    const actives = await this.breakModel
+      .find({
+        userId: new Types.ObjectId(userId),
+        $or: [{ endedAt: { $exists: false } }, { endedAt: null }],
+      })
+      .exec();
+
+    if (!actives.length) return;
+
+    const todayKey = todayDateKeyIst();
+    let changed = false;
+
+    for (const active of actives) {
+      const type = active.type as BreakType;
+      const limits = BREAK_LIMITS[type];
+      const completedUsed = await this.sumCompletedMinutes(userId, active.date, type);
+      const remainingAtSessionStart = Math.max(
+        0,
+        limits.dailyBudgetMinutes - completedUsed,
+      );
+      const sessionDayKey = dateKeyFromUtcDate(active.date);
+      const elapsedMinutes = Math.max(
+        0,
+        Math.round((Date.now() - active.startedAt.getTime()) / 60_000),
+      );
+
+      if (sessionDayKey !== todayKey || elapsedMinutes >= remainingAtSessionStart) {
+        await this.endBreak(active, remainingAtSessionStart);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      await this.invalidateWorkTimeCaches(userId);
+    }
+  }
+
   async getToday(userId: string): Promise<BreakPunchTodayDto> {
+    await this.syncActiveBreakSessions(userId);
     const date = todayDateUtc();
     const records = await this.breakModel
       .find({ userId: new Types.ObjectId(userId), date })

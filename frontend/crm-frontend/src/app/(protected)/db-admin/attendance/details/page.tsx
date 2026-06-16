@@ -1,13 +1,15 @@
-import { Suspense } from 'react';
-import { AttendanceDetailsPage } from '@/components/attendance/AttendanceDetailsPage';
-import { AttendancePeriodProvider } from '@/contexts/AttendancePeriodContext';
+'use client';
 
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+
+/** DB Admin may only view own attendance on the main page — not employee detail sheets. */
 export default function DbAdminAttendanceDetailsRoute() {
-  return (
-    <Suspense fallback={<div className="p-6 text-center text-slate-500">Loading…</div>}>
-      <AttendancePeriodProvider>
-        <AttendanceDetailsPage />
-      </AttendancePeriodProvider>
-    </Suspense>
-  );
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace('/db-admin/attendance');
+  }, [router]);
+
+  return <div className="p-6 text-center text-slate-500">Redirecting…</div>;
 }

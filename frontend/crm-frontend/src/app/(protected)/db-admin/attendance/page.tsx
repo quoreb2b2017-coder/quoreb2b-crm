@@ -6,7 +6,7 @@ export default function DbAdminAttendancePage() {
   return (
     <Suspense fallback={<div className="p-6 text-center text-slate-500">Loading…</div>}>
       <AttendancePeriodProvider>
-        <EmployeeAttendanceDashboard />
+        <EmployeeAttendanceDashboard accent="violet" title="My Attendance" />
       </AttendancePeriodProvider>
     </Suspense>
   );

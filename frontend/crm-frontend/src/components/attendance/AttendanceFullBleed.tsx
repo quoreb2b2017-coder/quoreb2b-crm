@@ -15,7 +15,7 @@ export function AttendanceFullBleed({
   return (
     <div
       className={cn(
-        'attendance-full-bleed flex min-h-0 w-full max-w-none flex-1 flex-col self-stretch',
+        'attendance-full-bleed flex w-full max-w-none flex-col self-stretch',
         className,
       )}
     >

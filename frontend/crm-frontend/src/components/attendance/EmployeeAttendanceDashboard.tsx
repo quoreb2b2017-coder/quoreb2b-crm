@@ -17,7 +17,17 @@ import { periodViewDescription } from '@/lib/attendance/period-labels';
 import { AttendanceDailyExcelGrid } from '@/components/attendance/AttendanceDailyExcelGrid';
 import { AttendanceRollupSummarySheet } from '@/components/attendance/AttendanceRollupSummarySheet';
 
-export function EmployeeAttendanceDashboard() {
+type AttendanceAccent = 'emerald' | 'violet' | 'admin';
+
+interface EmployeeAttendanceDashboardProps {
+  accent?: AttendanceAccent;
+  title?: string;
+}
+
+export function EmployeeAttendanceDashboard({
+  accent = 'emerald',
+  title = 'My Attendance',
+}: EmployeeAttendanceDashboardProps) {
   const { user } = useAuth();
   const {
     ready,
@@ -81,10 +91,6 @@ export function EmployeeAttendanceDashboard() {
 
   const pageLoading = isRollup ? yearlyLoading : monthlyLoading;
 
-  if (!user) {
-    return <div className="p-6 text-center text-slate-500">Loading…</div>;
-  }
-
   const stats = useMemo(() => {
     const periodStats = buildAttendancePeriodStats(view, monthlyData, rollupTotals, {
       checkHistoryHref: '#attendance-daily-log',
@@ -96,7 +102,7 @@ export function EmployeeAttendanceDashboard() {
 
   const monthControl = (
     <div className="flex w-full flex-wrap items-center gap-3">
-      <AttendancePeriodTabs view={view} onChange={setView} accent="emerald" />
+      <AttendancePeriodTabs view={view} onChange={setView} accent={accent} />
       <AttendanceMonthYearNav
         month={selectedMonth}
         year={selectedYear}
@@ -105,17 +111,21 @@ export function EmployeeAttendanceDashboard() {
         onChange={setMonthYear}
         onMonthsApply={setSelectedMonthsApply}
         onSelectFullYear={() => setView('yearly')}
-        accent="emerald"
+        accent={accent}
         className="flex-1"
       />
     </div>
   );
 
+  if (!user) {
+    return <div className="p-6 text-center text-slate-500">Loading…</div>;
+  }
+
   return (
     <AttendancePageChrome
-      title="My Attendance"
+      title={title}
       subtitle={periodViewDescription(view)}
-      accent="emerald"
+      accent={accent}
       loading={pageLoading}
       onRefresh={() => {
         if (!isRollup) fetchMonthly();

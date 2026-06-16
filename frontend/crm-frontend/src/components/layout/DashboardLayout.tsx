@@ -961,7 +961,8 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
           className={cn(
             'flex-1 min-h-0 min-w-0 w-full transition-opacity duration-200',
             edgeToEdge ? 'p-0' : 'overflow-auto p-4 sm:p-6',
-            contentLocked ? 'flex flex-col overflow-hidden' : 'overflow-auto',
+            contentLocked ? 'flex flex-col overflow-hidden' : 'overflow-y-auto overflow-x-hidden',
+            attendancePage && 'overflow-y-auto',
             isNavigating && 'opacity-80',
           )}
         >

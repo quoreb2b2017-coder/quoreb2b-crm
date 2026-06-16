@@ -11,7 +11,6 @@ import {
   type NotificationPreferences,
 } from './notification-preferences.util';
 import { serializeNotification } from './notification.util';
-import { SHIFT_LOGIN_LABEL } from '../attendance/attendance-shift.constants';
 
 @Injectable()
 export class NotificationTriggerService {
@@ -281,20 +280,6 @@ export class NotificationTriggerService {
     isLate?: boolean,
   ) {
     const timeLabel = checkInTime ? ` at ${checkInTime}` : '';
-    const lateNote = isLate ? ' (late attendance)' : '';
-
-    await this.notifyUser(userId, {
-      type: isLate ? 'warning' : 'success',
-      category: 'attendanceAlerts',
-      title: isLate ? 'Present (Late)' : 'Attendance marked',
-      message: isLate
-        ? `Your attendance for ${date} was recorded as Present (Late)${timeLabel}. On-time cutoff is ${SHIFT_LOGIN_LABEL} Eastern.`
-        : `Your attendance for ${date} is recorded as ${status.replace(/-/g, ' ')}${timeLabel}`,
-      priority: isLate ? 'high' : 'medium',
-      actionUrl: '/employee/attendance',
-      actionLabel: 'View attendance',
-      metadata: { checkInTime, isLate, date, status },
-    });
 
     if (status === 'leave' || status === 'absent' || isLate) {
       await this.notifyDbAdmins({

@@ -9,7 +9,6 @@ import { usersService } from '@/lib/api/users.service';
 import { toast } from '@/stores/toast.store';
 import { extractApiError } from '@/lib/api/errors';
 import { useCrmDataCleared } from '@/hooks/useCrmDataCleared';
-import { useNotificationTrigger } from '@/hooks/useNotificationTrigger';
 import { BatchMonthExplorer } from '@/components/batches/BatchMonthExplorer';
 import { BatchActionButton, BatchXlButton } from '@/components/batches/batch-action-buttons';
 import { toastBatchShareResult } from '@/lib/batches/share-result-toast';
@@ -32,7 +31,6 @@ interface UserOption {
 
 export default function AdminBatchesPage() {
   const router = useRouter();
-  const { notifyBatchDeleted, notifyBatchShared } = useNotificationTrigger();
   const [batches, setBatches] = useState<BatchRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [shareModal, setShareModal] = useState<BatchRecord | null>(null);
@@ -98,7 +96,6 @@ export default function AdminBatchesPage() {
     try {
       const result = await batchesService.share(shareModal.id, Array.from(selectedUserIds));
       toastBatchShareResult(result);
-      notifyBatchShared(shareModal.name, selectedUserIds.size);
       setShareModal(null);
       await loadBatches();
     } catch (e) {
@@ -114,7 +111,6 @@ export default function AdminBatchesPage() {
     try {
       await batchesService.delete(batch.id);
       toast.success('Batch deleted', `"${batch.name}" removed`);
-      notifyBatchDeleted(batch.name);
       await loadBatches();
     } catch (e) {
       toast.error('Delete failed', extractApiError(e));

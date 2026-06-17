@@ -36,12 +36,12 @@ export function CreateBatchModal({
     e.preventDefault();
     
     if (!formData.name.trim()) {
-      setValidationError('Batch name is required');
+      setValidationError('Campaign name is required');
       return;
     }
 
     if (formData.name.trim().length < 3) {
-      setValidationError('Batch name must be at least 3 characters');
+      setValidationError('Campaign name must be at least 3 characters');
       return;
     }
 
@@ -75,8 +75,8 @@ export function CreateBatchModal({
           {/* Header */}
           <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-4 py-4 sm:px-6">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">Create Batch</h2>
-              <p className="mt-0.5 text-xs text-slate-400">Add a new batch to organize leads</p>
+              <h2 className="text-lg font-semibold text-slate-900">Create Campaign</h2>
+              <p className="mt-0.5 text-xs text-slate-400">Add a new campaign to organize leads</p>
             </div>
             <button
               type="button"
@@ -138,7 +138,7 @@ export function CreateBatchModal({
                 name="description"
                 value={formData.description}
                 onChange={handleChange}
-                placeholder="Add notes about this batch..."
+                placeholder="Add notes about this campaign..."
                 disabled={loading}
                 rows={3}
                 className={cn(
@@ -184,7 +184,7 @@ export function CreateBatchModal({
             {/* Info Box */}
             <div className="rounded-lg bg-blue-50 p-3 sm:p-4">
               <p className="text-xs text-blue-900">
-                <span className="font-medium">💡 Tip:</span> Batches help organize and track leads. You can share batches with team members and monitor progress.
+                <span className="font-medium">💡 Tip:</span> Campaigns help organize and track leads. You can share campaigns with team members and monitor progress.
               </p>
             </div>
           </form>
@@ -213,7 +213,7 @@ export function CreateBatchModal({
                 'disabled:opacity-50 disabled:cursor-not-allowed'
               )}
             >
-              {loading ? 'Creating...' : 'Create Batch'}
+              {loading ? 'Creating...' : 'Create Campaign'}
             </button>
           </div>
         </div>

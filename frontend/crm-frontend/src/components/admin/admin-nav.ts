@@ -13,7 +13,7 @@ const crmNav: AdminNavItem[] = [
   { label: 'Master File', href: '/admin/master-data-upload' },
   { label: 'DB Admin Data Requests', href: '/admin/master-data-upload/requests' },
   { label: 'Email Verification', href: '/admin/bulk-email-verification' },
-  { label: 'Batches', href: '/admin/batches' },
+  { label: 'Campaigns', href: '/admin/batches' },
   { label: 'Personal Notes', href: '/admin/personal-notes' },
   { label: 'Attendance', href: '/admin/attendance' },
   { label: 'Leave Requests', href: '/admin/leave-apply' },

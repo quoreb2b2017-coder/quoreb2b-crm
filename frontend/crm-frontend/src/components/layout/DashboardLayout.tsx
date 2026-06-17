@@ -47,13 +47,21 @@ export function isAdminUserReportPath(pathname: string) {
   return /^\/admin\/users\/[^/]+\/report$/.test(pathname);
 }
 
+/** Master data spreadsheet (admin upload + DB admin read-only master file) */
+export function isMasterDataSpreadsheetPath(pathname: string) {
+  return (
+    pathname.startsWith('/admin/master-data-upload') ||
+    pathname === '/db-admin/master-file'
+  );
+}
+
 /** Pages that fill the content area edge-to-edge (no side padding) */
 export function isAdminFullBleedPath(pathname: string) {
   return (
     isBatchExcelViewPath(pathname) ||
     isBatchesListPath(pathname) ||
     isBatchTeamPath(pathname) ||
-    pathname.startsWith('/admin/master-data-upload') ||
+    isMasterDataSpreadsheetPath(pathname) ||
     isAdminUsersListPath(pathname)
   );
 }
@@ -253,8 +261,8 @@ const iconMap: Record<string, React.ReactNode> = {
   'email verification': Icons.upload,
   'db admin data requests': Icons.upload,
   'db admin upload requests': Icons.upload,
-  'batches':            Icons.logs,
   'my batches':         Icons.logs,
+  'my campaigns':       Icons.logs,
   'attendance':         Icons.attendance,
   'leave requests':     Icons.leave,
   'leave apply':        Icons.leave,

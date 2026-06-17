@@ -43,7 +43,7 @@ export class BatchesController {
   @Get()
   @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN, SystemRole.EMPLOYEE)
   findAll(@CurrentUser() user: JwtUser) {
-    return this.batchesService.findAll(user.id ?? user.sub!);
+    return this.batchesService.findAll(user.id ?? user.sub!, user.roles ?? []);
   }
 
   @Get(':id/hierarchy')

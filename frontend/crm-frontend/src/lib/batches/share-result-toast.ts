@@ -11,7 +11,7 @@ export function toastBatchShareResult(result: BatchShareResult) {
     toast.success(
       'Shared successfully',
       `${distributed.length} employee(s) got equal unique slices (~${avg} leads each). ` +
-        `${fullShareUserIds.length} DB admin(s) got full batch access.`,
+        `${fullShareUserIds.length} DB admin(s) got full campaign access.`,
     );
     return;
   }
@@ -29,8 +29,8 @@ export function toastBatchShareResult(result: BatchShareResult) {
 
   if (fullShareUserIds.length > 0) {
     toast.success(
-      'Batch shared',
-      `Full batch access granted to ${fullShareUserIds.length} recipient(s)`,
+      'Campaign shared',
+      `Full campaign access granted to ${fullShareUserIds.length} recipient(s)`,
     );
     return;
   }

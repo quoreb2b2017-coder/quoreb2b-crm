@@ -7,6 +7,8 @@ interface MemoryEntry {
   expiresAt: number;
 }
 
+const REDIS_OP_TIMEOUT_MS = 2_500;
+
 /** Shared cache: Redis when available, in-memory L1 fallback. */
 @Injectable()
 export class AppCacheService {
@@ -42,22 +44,33 @@ export class AppCacheService {
     });
   }
 
+  private async withRedisTimeout<T>(op: () => Promise<T>): Promise<T | null> {
+    try {
+      return await Promise.race([
+        op(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Redis operation timed out')), REDIS_OP_TIMEOUT_MS),
+        ),
+      ]);
+    } catch (err) {
+      this.logger.debug(
+        `Redis op skipped: ${err instanceof Error ? err.message : err}`,
+      );
+      return null;
+    }
+  }
+
   async get(key: string): Promise<string | null> {
     const mem = this.readMemory(key);
     if (mem !== null) return mem;
 
     if (!this.redis) return null;
 
-    try {
-      const value = await this.redis.get(this.fullKey(key));
-      if (value !== null) {
-        this.writeMemory(key, value, 60);
-      }
-      return value;
-    } catch (err) {
-      this.logger.debug(`Redis get miss for ${key}: ${err instanceof Error ? err.message : err}`);
-      return null;
+    const value = await this.withRedisTimeout(() => this.redis!.get(this.fullKey(key)));
+    if (value !== null) {
+      this.writeMemory(key, value, 60);
     }
+    return value;
   }
 
   async set(key: string, value: string, ttlSeconds: number): Promise<void> {
@@ -65,11 +78,7 @@ export class AppCacheService {
 
     if (!this.redis) return;
 
-    try {
-      await this.redis.set(this.fullKey(key), value, ttlSeconds);
-    } catch (err) {
-      this.logger.debug(`Redis set failed for ${key}: ${err instanceof Error ? err.message : err}`);
-    }
+    await this.withRedisTimeout(() => this.redis!.set(this.fullKey(key), value, ttlSeconds));
   }
 
   async getJson<T>(key: string): Promise<T | null> {
@@ -99,11 +108,7 @@ export class AppCacheService {
   async del(key: string): Promise<void> {
     this.memory.delete(key);
     if (!this.redis) return;
-    try {
-      await this.redis.del(this.fullKey(key));
-    } catch {
-      /* non-blocking */
-    }
+    await this.withRedisTimeout(() => this.redis!.del(this.fullKey(key)));
   }
 
   async delByPrefix(localPrefix: string): Promise<void> {
@@ -113,11 +118,7 @@ export class AppCacheService {
       }
     }
     if (!this.redis) return;
-    try {
-      await this.redis.delByPattern(`${this.prefix}:${localPrefix}*`);
-    } catch (err) {
-      this.logger.debug(`Redis delByPrefix failed: ${err instanceof Error ? err.message : err}`);
-    }
+    await this.withRedisTimeout(() => this.redis!.delByPattern(`${this.prefix}:${localPrefix}*`));
   }
 }
 

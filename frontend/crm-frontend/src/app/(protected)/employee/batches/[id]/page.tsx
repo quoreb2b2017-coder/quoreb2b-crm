@@ -34,7 +34,7 @@ export default function EmployeeBatchViewPage() {
       .catch(() => {
         setBatch(null);
         setData(null);
-        setError('Could not load batch. It may have been removed by admin.');
+        setError('Could not load campaign. It may have been removed by admin.');
       })
       .finally(() => setLoading(false));
   };
@@ -50,10 +50,8 @@ export default function EmployeeBatchViewPage() {
       router.replace('/employee/batches');
     };
     window.addEventListener('crm-data-cleared', onCleared);
-    window.addEventListener('master-data-updated', onCleared);
     return () => {
       window.removeEventListener('crm-data-cleared', onCleared);
-      window.removeEventListener('master-data-updated', onCleared);
     };
   }, [router]);
 
@@ -96,7 +94,7 @@ export default function EmployeeBatchViewPage() {
   return (
     <BatchExcelView
       batchId={canEdit ? id : undefined}
-      name={batch?.name ?? 'Batch'}
+      name={batch?.name ?? 'Campaign'}
       rowCount={data?.rows.length ?? batch?.rowCount}
       columnCount={data?.headers.length ?? batch?.columnCount}
       sourceFileName={batch?.sourceFileName}

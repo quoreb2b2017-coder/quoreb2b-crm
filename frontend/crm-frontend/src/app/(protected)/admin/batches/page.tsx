@@ -46,7 +46,7 @@ export default function AdminBatchesPage() {
       const list = await batchesService.list();
       setBatches(Array.isArray(list) ? list : []);
     } catch (e) {
-      toast.error('Failed to load batches', extractApiError(e));
+      toast.error('Failed to load campaigns', extractApiError(e));
       setBatches([]);
     } finally {
       setLoading(false);
@@ -106,11 +106,11 @@ export default function AdminBatchesPage() {
   };
 
   const handleDelete = async (batch: BatchRecord) => {
-    if (!confirm(`Delete batch "${batch.name}"? This cannot be undone.`)) return;
+    if (!confirm(`Delete campaign "${batch.name}"? This cannot be undone.`)) return;
     setDeleting(batch.id);
     try {
       await batchesService.delete(batch.id);
-      toast.success('Batch deleted', `"${batch.name}" removed`);
+      toast.success('Campaign deleted', `"${batch.name}" removed`);
       await loadBatches();
     } catch (e) {
       toast.error('Delete failed', extractApiError(e));
@@ -133,16 +133,19 @@ export default function AdminBatchesPage() {
       <BatchMonthExplorer
         batches={batches}
         loading={loading}
-        title="Batches"
-        subtitle="Add a year · Jan–Dec folders auto-created · batches file by creation month"
-        emptyHint='Go to Master Data Upload, apply filters, then click "Create Batch"'
+        title="Campaigns"
+        subtitle="Add a year · Jan–Dec folders auto-created · campaigns file by creation month"
+        emptyHint='Go to Master Data Upload, apply filters, then click "Create Campaign"'
+        onOpenBatch={(b) => router.push(`/admin/batches/${b.id}`)}
         renderActions={(b) => (
           <>
             <BatchActionButton onClick={() => router.push(`/admin/batches/${b.id}/team`)}>
               Team
             </BatchActionButton>
             <BatchXlButton onClick={() => router.push(`/admin/batches/${b.id}`)} />
-            <BatchActionButton onClick={() => openShareModal(b)}>Share</BatchActionButton>
+            {!b.sourceBatchId && (
+              <BatchActionButton onClick={() => openShareModal(b)}>Share</BatchActionButton>
+            )}
             <BatchActionButton
               variant="danger"
               disabled={deleting === b.id}
@@ -164,7 +167,7 @@ export default function AdminBatchesPage() {
                   <div>
                     <div className="xl-modal-head-xl">
                       <span className="xl-badge xl-badge--light">XL</span>
-                      <p className="font-semibold text-slate-900">Share Batch</p>
+                      <p className="font-semibold text-slate-900">Share Campaign</p>
                     </div>
                     <p className="mt-0.5 text-xs text-slate-400">&quot;{shareModal.name}&quot;</p>
                   </div>

@@ -159,11 +159,7 @@ export class AnalyticsService {
       }
     }
 
-    const hasMasterAccess =
-      !!masterDoc &&
-      ((masterDoc.sharedWithDbAdmins as Types.ObjectId[]) ?? []).some(
-        (id) => id.toString() === actorId,
-      );
+    const hasMasterAccess = !!masterDoc?.rows?.length;
 
     let masterData: {
       totalRows: number;

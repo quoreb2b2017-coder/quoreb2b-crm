@@ -4,6 +4,7 @@ import {
   SCHEDULED_SHIFT_BREAK_MINUTES,
 } from '@/lib/attendance/attendance-shift.constants';
 
+/** Tea + lunch minutes to subtract from gross for Working (7h 45m). Meeting is work time. */
 export function resolveEffectiveBreakMinutes(
   grossMinutes: number,
   punchedBreakMinutes: number,

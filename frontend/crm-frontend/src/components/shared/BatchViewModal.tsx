@@ -38,7 +38,7 @@ export function BatchViewModal({ batch, onClose }: BatchViewModalProps) {
         });
       })
       .catch((e) => {
-        toast.error('Could not load batch data', extractApiError(e));
+        toast.error('Could not load campaign data', extractApiError(e));
         onClose();
       })
       .finally(() => setLoading(false));

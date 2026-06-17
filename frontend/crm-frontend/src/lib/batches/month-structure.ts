@@ -94,8 +94,8 @@ export function getAvailableYears(batches: BatchRecord[]): number[] {
 }
 
 /** Selecting a year always exposes Jan–Dec (empty folders included). */
-export function createEmptyMonthMap(): Map<number, BatchRecord[]> {
-  const map = new Map<number, BatchRecord[]>();
+export function createEmptyMonthMap<T = BatchRecord[]>(): Map<number, T[]> {
+  const map = new Map<number, T[]>();
   for (let m = 1; m <= 12; m++) map.set(m, []);
   return map;
 }
@@ -120,9 +120,9 @@ export function groupBatchesByMonth(
   return map;
 }
 
-/** Current year → always open current month folder; other years → latest month with batches */
+/** Current year → always open current month folder; other years → latest month with folders */
 export function pickDefaultMonth(
-  map: Map<number, BatchRecord[]>,
+  map: Map<number, { length: number }[] | unknown[]>,
   year: number = currentCalendarPeriod().year,
 ): number {
   const { month: currentMonth, year: currentYear } = currentCalendarPeriod();

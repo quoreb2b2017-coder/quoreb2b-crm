@@ -1,5 +1,5 @@
 import SharedBatchesPage from '@/components/shared/SharedBatchesPage';
 
-export default function EmployeeBatchesPage() {
+export default function EmployeeCampaignsPage() {
   return <SharedBatchesPage role="employee" />;
 }

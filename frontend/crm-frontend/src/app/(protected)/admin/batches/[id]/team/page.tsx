@@ -10,7 +10,7 @@ export default function AdminBatchTeamPage() {
       batchId={id}
       backHref="/admin/batches"
       batchViewHref={`/admin/batches/${id}`}
-      backLabel="Back to batches"
+      backLabel="Back to campaigns"
     />
   );
 }

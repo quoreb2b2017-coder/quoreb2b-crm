@@ -1,9 +1,11 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { InjectModel } from '@nestjs/mongoose';
@@ -44,6 +46,7 @@ export class MasterDataService {
     private masterDataModel: Model<MasterDataRecord>,
     @InjectModel(MasterDataUploadRequest.name)
     private uploadRequestModel: Model<MasterDataUploadRequest>,
+    @Inject(forwardRef(() => BatchesService))
     private batchesService: BatchesService,
     private activityLogs: ActivityLogsService,
     private notifications: NotificationTriggerService,
@@ -890,13 +893,67 @@ export class MasterDataService {
     const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
     if (!doc) {
       throw new ForbiddenException(
-        'No master data available. Ask admin to upload and grant batch creation access.',
+        'No master data available. Ask admin to upload master file first.',
       );
     }
-    if (!this.hasDbAdminAccess(doc, actorId)) {
-      throw new ForbiddenException(
-        'Admin has not granted you batch creation access on master data',
-      );
+  }
+
+  async resolveMasterBatchCreate(
+    masterSourceRowIndices: number[],
+    actorId: string,
+  ): Promise<{ headers: string[]; rows: string[][]; masterSourceRowIndices: number[] }> {
+    await this.assertBatchCreatorAccess(actorId);
+    const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+    if (!doc) {
+      throw new NotFoundException('No master data uploaded yet');
+    }
+    if (!masterSourceRowIndices?.length) {
+      throw new BadRequestException('Select at least one row from the master file');
+    }
+
+    const seen = new Set<number>();
+    const indices: number[] = [];
+    for (const raw of masterSourceRowIndices) {
+      const idx = Number(raw);
+      if (!Number.isInteger(idx) || seen.has(idx)) continue;
+      if (idx < 0 || idx >= doc.rows.length) {
+        throw new BadRequestException(`Invalid master row selection (row ${idx + 1})`);
+      }
+      seen.add(idx);
+      indices.push(idx);
+    }
+    if (!indices.length) {
+      throw new BadRequestException('Select at least one row from the master file');
+    }
+
+    const rows = indices.map((idx) => doc.rows[idx].map((cell) => String(cell ?? '')));
+    return {
+      headers: [...doc.headers],
+      rows,
+      masterSourceRowIndices: indices,
+    };
+  }
+
+  /** @deprecated use resolveMasterBatchCreate — kept for tests/callers */
+  async validateMasterBatchCreate(
+    dto: {
+      headers: string[];
+      rows: string[][];
+      masterSourceRowIndices: number[];
+    },
+    actorId: string,
+  ) {
+    const resolved = await this.resolveMasterBatchCreate(dto.masterSourceRowIndices, actorId);
+    if (dto.headers.length !== resolved.headers.length) {
+      throw new BadRequestException('Headers must match master file');
+    }
+    for (let i = 0; i < resolved.headers.length; i++) {
+      if (dto.headers[i] !== resolved.headers[i]) {
+        throw new BadRequestException('Headers must match master file');
+      }
+    }
+    if (dto.rows.length !== resolved.rows.length) {
+      throw new BadRequestException('Row count must match selected master rows');
     }
   }
 

@@ -460,6 +460,7 @@ export function ExcelPreviewGrid({
             <button
               type="button"
               onClick={() => {
+                if (createBatchStats.available === 0) return;
                 const pairs = displayRows
                   .map((row, i) => ({ row, src: sourceIndices[i] }))
                   .filter(
@@ -471,14 +472,19 @@ export function ExcelPreviewGrid({
                   sourceRowIndices: pairs.map((p) => p.src as number),
                 });
               }}
-              disabled={createBatchStats.available === 0 && createBatchStats.batched > 0}
+              disabled={createBatchStats.available === 0}
+              title={
+                createBatchStats.available === 0
+                  ? 'No new rows — uncheck "Hide rows already in a campaign" or pick rows not yet in a campaign'
+                  : undefined
+              }
               className="inline-flex items-center gap-1.5 bg-[#217346] px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-[#1a5c38] disabled:opacity-50"
             >
               <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 4v16m8-8H4" />
               </svg>
-              Create batch ({createBatchStats.available} new
-              {createBatchStats.batched > 0 ? ` · ${createBatchStats.batched} in batch` : ''})
+              Create campaign ({createBatchStats.available} new
+              {createBatchStats.batched > 0 ? ` · ${createBatchStats.batched} in campaign` : ''})
             </button>
           )}
         </div>
@@ -629,7 +635,7 @@ export function ExcelPreviewGrid({
                     )}
                     title={
                       inBatch
-                        ? `Already in batch: ${batchRefs!.map((b) => b.name).join(', ')}`
+                        ? `Already in campaign: ${batchRefs!.map((b) => b.name).join(', ')}`
                         : undefined
                     }
                   >

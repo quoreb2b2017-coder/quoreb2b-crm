@@ -33,8 +33,8 @@ const TOGGLES: Array<{
   },
   {
     key: 'batchAlerts',
-    label: 'Batch & uploads',
-    description: 'Batch shared, created, or master data updates',
+    label: 'Campaigns & uploads',
+    description: 'Campaign shared, created, or master data updates',
     icon: Package,
     requiresMaster: true,
   },

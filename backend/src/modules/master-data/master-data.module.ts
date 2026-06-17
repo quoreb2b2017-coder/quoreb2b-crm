@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { MasterDataController } from './master-data.controller';
 import { MasterDataService } from './master-data.service';
@@ -17,7 +17,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 @Module({
   imports: [
     ActivityLogsModule,
-    BatchesModule,
+    forwardRef(() => BatchesModule),
     NotificationsModule,
     MongooseModule.forFeature([
       { name: MasterDataRecord.name, schema: MasterDataSchema },

@@ -154,19 +154,19 @@ export function DbAdminDashboard() {
           ]}
         />
         <XlMetricCardSection
-          title="Your batches (from database)"
+          title="Your campaigns (from database)"
           columns={2}
           rows={[
-            { label: 'Total batches', value: b.total, note: `${b.owned} created by you` },
+            { label: 'Total campaigns', value: b.total, note: `${b.owned} created by you` },
             { label: 'Shared with you', value: b.sharedWithMe, note: 'From admin' },
-            { label: 'Rows in your batches', value: b.totalRows, note: 'All assigned data' },
+            { label: 'Rows in your campaigns', value: b.totalRows, note: 'All assigned data' },
             {
               label: 'Shared to employees',
               value: b.employeesShared,
-              note: 'People on your batches',
+              note: 'People on your campaigns',
             },
             { label: 'Active leads', value: b.activeLeads, note: 'Status Active in sheets' },
-            { label: 'Won / Lead status', value: b.wonLeads, note: 'From batch row data' },
+            { label: 'Won / Lead status', value: b.wonLeads, note: 'From campaign row data' },
           ]}
         />
       </div>
@@ -178,10 +178,10 @@ export function DbAdminDashboard() {
           columns={4}
           rows={[
             { label: 'Master rows', value: data.masterData.totalRows, note: 'Full master file' },
-            { label: 'Already in batches', value: data.masterData.batchedRows, note: 'Yellow rows in upload' },
-            { label: 'Available for new batch', value: data.masterData.availableRows, note: 'Not batched yet' },
+            { label: 'Already in campaigns', value: data.masterData.batchedRows, note: 'Yellow rows in upload' },
+            { label: 'Available for new campaign', value: data.masterData.availableRows, note: 'Not in a campaign yet' },
             {
-              label: 'Batches from master',
+              label: 'Campaigns from master',
               value: data.masterData.batchesFromMaster,
               note: 'Created from master data',
             },
@@ -198,14 +198,14 @@ export function DbAdminDashboard() {
         <div className={cn(dashboardCard, 'p-4 sm:p-5')}>
           <h3 className={dashboardSectionTitle()}>
             <Layers className="h-4 w-4 text-violet-600" />
-            Batch split
+            Campaign split
           </h3>
           <div className="space-y-3">
-            <DashboardBarRow label="Your batches" count={b.owned} total={batchTotal} color="bg-gradient-to-r from-[#1a5c38] to-emerald-500" />
+            <DashboardBarRow label="Your campaigns" count={b.owned} total={batchTotal} color="bg-gradient-to-r from-[#1a5c38] to-emerald-500" />
             <DashboardBarRow label="Admin shared" count={b.sharedWithMe} total={batchTotal} color="bg-gradient-to-r from-violet-600 to-purple-400" delay={60} />
           </div>
           <Link href="/db-admin/batches" className={dashboardLinkViolet}>
-            Open Batches →
+            Open Campaigns →
           </Link>
         </div>
 
@@ -217,7 +217,7 @@ export function DbAdminDashboard() {
             </h3>
             <div className="space-y-3">
               <DashboardBarRow
-                label="In batches"
+                label="In campaigns"
                 count={data.masterData.batchedRows}
                 total={data.masterData.totalRows}
                 color="bg-gradient-to-r from-amber-500 to-orange-400"
@@ -241,7 +241,7 @@ export function DbAdminDashboard() {
 
       <div className="dash-section grid gap-4 lg:grid-cols-2">
         <div className={dashboardCard}>
-          <div className={dashboardCardHeader}>Recent batches</div>
+          <div className={dashboardCardHeader}>Recent campaigns</div>
           <div className="dash-table-wrap">
             <table className="dash-table w-full text-xs">
               <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
@@ -256,7 +256,7 @@ export function DbAdminDashboard() {
                 {data.recentBatches.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="px-3 py-8 text-center text-slate-400">
-                      No batches yet
+                      No campaigns yet
                     </td>
                   </tr>
                 ) : (

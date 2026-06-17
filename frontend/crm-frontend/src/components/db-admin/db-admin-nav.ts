@@ -1,6 +1,7 @@
 export const dbAdminNav = [
   { label: 'Dashboard', href: '/db-admin/dashboard' },
-  { label: 'Batches', href: '/db-admin/batches' },
+  { label: 'Campaigns', href: '/db-admin/batches' },
+  { label: 'Master File', href: '/db-admin/master-file' },
   { label: 'Personal Notes', href: '/db-admin/personal-notes' },
   { label: 'My Data', href: '/db-admin/master-data' },
   { label: 'Employee Data', href: '/db-admin/master-data?tab=employee' },

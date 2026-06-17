@@ -92,7 +92,7 @@ export function MasterDataClearConfirmModal({
                   Clear master file?
                 </h2>
                 <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                  All master rows and every batch will be permanently removed.
+                  All master rows and every campaign will be permanently removed.
                 </p>
               </div>
               <button

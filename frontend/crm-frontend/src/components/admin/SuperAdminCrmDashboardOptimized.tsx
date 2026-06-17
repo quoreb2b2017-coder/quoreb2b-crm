@@ -47,7 +47,7 @@ function BarRow({ label, count, total, color }: { label: string; count: number; 
 const QUICK_ACTIONS = [
   { label: 'Users', desc: 'Create & manage accounts', icon: UserCheck, href: '/admin/users' },
   { label: 'Master data', desc: 'Upload lead database', icon: Database, href: '/admin/master-data-upload' },
-  { label: 'Batches', desc: 'Assign & split data', icon: Layers, href: '/admin/batches' },
+  { label: 'Campaigns', desc: 'Assign & split data', icon: Layers, href: '/admin/batches' },
   { label: 'Activity logs', desc: 'All user actions', icon: Activity, href: '/admin/activity-logs' },
   { label: 'Analytics', desc: 'Team performance', icon: BarChart3, href: '/admin/analytics' },
 ];

@@ -21,7 +21,8 @@ import {
   grossMinutesFromElapsedSeconds,
 } from '@/lib/attendance/live-punch-time';
 import { useBreakPunch } from '@/hooks/useBreakPunch';
-import { totalBreakMinutesFromToday } from '@/lib/attendance/break-minutes';
+import { totalBreakMinutesFromToday, workDeductibleBreakMinutesFromToday } from '@/lib/attendance/break-minutes';
+import { resolveGrossLoginMinutes } from '@/lib/attendance/gross-login-minutes';
 import { stashTodayWorkGross } from '@/lib/attendance/today-work-cache';
 
 const MAX_DAY_MINUTES = 24 * 60;
@@ -142,21 +143,46 @@ export function useWorkTimer(enabled = true) {
   const punchInAt = data?.currentSession?.loginAt ?? punchInAtRef.current;
   const sessionElapsedAtLoad = data?.currentSession?.elapsedSeconds ?? 0;
 
-  const breakMinutesForLive = useMemo(() => {
-    if (!data) return 0;
-    if (onBreak && breakToday) {
-      return totalBreakMinutesFromToday(breakToday);
+  const dayCheckInAt = useMemo(() => {
+    if (!data) return null;
+    if (data.todayCheckInAt) return data.todayCheckInAt;
+    const sessions = data.todaySessions ?? [];
+    if (sessions.length > 0) {
+      return sessions.reduce<string | null>(
+        (earliest, s) => (!earliest || s.loginAt < earliest ? s.loginAt : earliest),
+        null,
+      );
     }
-    return data.todayBreakMinutes ?? 0;
-  }, [data, onBreak, breakToday]);
+    return data.currentSession?.loginAt ?? null;
+  }, [data]);
 
-  const breakMinutesForTarget = data?.todayBreakMinutes ?? 0;
+  const workBreakMinutesLive = useMemo(() => {
+    if (breakToday) return workDeductibleBreakMinutesFromToday(breakToday);
+    return data?.todayBreakMinutes ?? 0;
+  }, [breakToday, data]);
+
+  const allBreakMinutesForGross = useMemo(() => {
+    if (!data) return 0;
+    if (breakToday) return totalBreakMinutesFromToday(breakToday);
+    return data.todayBreakMinutes ?? 0;
+  }, [data, breakToday]);
+
+  const isLiveDuty = Boolean(
+    data &&
+      (onBreak ||
+        data.isOnDuty ||
+        data.isTimerRunning ||
+        (allBreakMinutesForGross > 0 && dayCheckInAt) ||
+        (data.isTimerRunning && punchInAt)),
+  );
+
+  const breakMinutesForTarget = workBreakMinutesLive;
 
   useEffect(() => {
-    if (!data?.isTimerRunning || !punchInAt) return;
+    if (!isLiveDuty) return;
     const id = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(id);
-  }, [data?.isTimerRunning, punchInAt]);
+  }, [isLiveDuty]);
 
   const liveSeconds = useMemo(() => {
     if (!data?.isTimerRunning || !punchInAt) return 0;
@@ -169,14 +195,35 @@ export function useWorkTimer(enabled = true) {
   const todayLiveGrossMinutes = useMemo(() => {
     if (!data) return 0;
     const baseGross = data.todayGrossMinutes ?? 0;
-    if (!data.isTimerRunning || !punchInAt) return baseGross;
-    const serverSessionGross = grossMinutesFromElapsedSeconds(sessionElapsedAtLoad);
-    const liveSessionGross = grossMinutesFromElapsedSeconds(liveSeconds);
-    return Math.max(0, baseGross - serverSessionGross + liveSessionGross);
-  }, [data, punchInAt, liveSeconds, sessionElapsedAtLoad]);
+    let gross = baseGross;
+
+    if (data.isTimerRunning && punchInAt) {
+      const serverSessionGross = grossMinutesFromElapsedSeconds(sessionElapsedAtLoad);
+      const liveSessionGross = grossMinutesFromElapsedSeconds(liveSeconds);
+      gross = Math.max(0, baseGross - serverSessionGross + liveSessionGross);
+    }
+
+    if (
+      dayCheckInAt &&
+      (data.isTimerRunning || data.isOnDuty || onBreak || allBreakMinutesForGross > 0)
+    ) {
+      gross = resolveGrossLoginMinutes(
+        gross,
+        dayCheckInAt,
+        {
+          onDuty: data.isOnDuty || data.isTimerRunning,
+          activeBreak: onBreak,
+          punchedBreakMinutes: allBreakMinutesForGross,
+        },
+      );
+    }
+
+    return gross;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tick drives live gross during break/on-duty
+  }, [data, punchInAt, liveSeconds, sessionElapsedAtLoad, onBreak, allBreakMinutesForGross, dayCheckInAt, tick]);
 
   const todayGrossForCacheRef = useRef(0);
-  todayGrossForCacheRef.current = data?.isTimerRunning
+  todayGrossForCacheRef.current = isLiveDuty
     ? todayLiveGrossMinutes
     : (data?.todayGrossMinutes ?? 0);
 
@@ -191,52 +238,58 @@ export function useWorkTimer(enabled = true) {
 
   const todayLiveMinutes = useMemo(() => {
     if (!data) return 0;
-    if (!data.isTimerRunning || !punchInAt) {
-      return data.todayMinutes ?? 0;
+    const netFromLive = computeNetWorkMinutes(todayLiveGrossMinutes, workBreakMinutesLive);
+    if (isLiveDuty) {
+      return netFromLive;
     }
-    return computeNetWorkMinutes(todayLiveGrossMinutes, breakMinutesForLive);
-  }, [data, punchInAt, todayLiveGrossMinutes, breakMinutesForLive]);
+    return data.todayMinutes ?? 0;
+  }, [data, isLiveDuty, todayLiveGrossMinutes, workBreakMinutesLive]);
 
   const todayMinutesAtTarget = useMemo(() => {
     if (!data) return 0;
-    if (data.isTimerRunning && punchInAt) {
-      return computeNetWorkMinutes(todayLiveGrossMinutes, breakMinutesForTarget);
+    if (isLiveDuty) {
+      return computeNetWorkMinutes(todayLiveGrossMinutes, workBreakMinutesLive);
     }
     return (
       data.todayMinutesAtTarget ??
-      computeNetWorkMinutes(data.todayGrossMinutes ?? data.todayMinutes ?? 0, breakMinutesForTarget)
+      computeNetWorkMinutes(data.todayGrossMinutes ?? data.todayMinutes ?? 0, workBreakMinutesLive)
     );
-  }, [data, punchInAt, todayLiveGrossMinutes, breakMinutesForTarget]);
+  }, [data, isLiveDuty, todayLiveGrossMinutes, workBreakMinutesLive]);
 
   const todayLiveTotalSeconds = useMemo(() => {
     if (!data) return 0;
-    if (!data.isTimerRunning || !punchInAt) {
-      return Math.round((data.todayGrossMinutes ?? data.todayMinutes ?? 0) * 60);
+    if (data.isTimerRunning && punchInAt) {
+      const priorSessionsSeconds = Math.max(
+        0,
+        Math.round((data.todayGrossMinutes ?? 0) * 60) - sessionElapsedAtLoad,
+      );
+      return priorSessionsSeconds + liveSeconds;
     }
-    const priorSessionsSeconds = Math.max(
-      0,
-      Math.round((data.todayGrossMinutes ?? 0) * 60) - sessionElapsedAtLoad,
-    );
-    return priorSessionsSeconds + liveSeconds;
-  }, [data, punchInAt, liveSeconds, sessionElapsedAtLoad]);
+    if (isLiveDuty) {
+      return Math.round(todayLiveGrossMinutes * 60);
+    }
+    return Math.round((data.todayGrossMinutes ?? data.todayMinutes ?? 0) * 60);
+  }, [data, punchInAt, liveSeconds, sessionElapsedAtLoad, isLiveDuty, todayLiveGrossMinutes]);
 
   const todayLiveFormatted = useMemo(() => {
     if (!data) return '0m';
-    if (!data.isTimerRunning || !punchInAt) {
-      return data.todayFormatted ?? formatDurationFromMinutes(data.todayMinutes ?? 0);
+    if (data.isTimerRunning && punchInAt) {
+      return formatTodayTotalSeconds(todayLiveTotalSeconds);
     }
-    return formatTodayTotalSeconds(todayLiveTotalSeconds);
-  }, [data, punchInAt, todayLiveTotalSeconds]);
+    if (isLiveDuty) {
+      return formatDurationFromMinutes(todayLiveGrossMinutes);
+    }
+    return data.todayFormatted ?? formatDurationFromMinutes(data.todayMinutes ?? 0);
+  }, [data, punchInAt, todayLiveTotalSeconds, isLiveDuty, todayLiveGrossMinutes]);
 
   const dailyBreakdown = useMemo(() => {
     const rows = data?.dailyBreakdown ?? [];
     if (!data || rows.length === 0) return rows;
     const target = data.dailyTargetMinutes ?? 7 * 60 + 45;
-    const gross = data.isTimerRunning
-      ? todayLiveGrossMinutes
-      : (data.todayGrossMinutes ?? 0);
-    const net = data.isTimerRunning ? todayLiveMinutes : (data.todayMinutes ?? 0);
-    const formatted = data.isTimerRunning
+    const isTodayLive = isLiveDuty;
+    const gross = isTodayLive ? todayLiveGrossMinutes : (data.todayGrossMinutes ?? 0);
+    const net = isTodayLive ? todayLiveMinutes : (data.todayMinutes ?? 0);
+    const formatted = isTodayLive
       ? todayLiveFormatted
       : (data.todayFormatted ?? formatDurationFromMinutes(net));
     return rows.map((day) =>
@@ -247,12 +300,14 @@ export function useWorkTimer(enabled = true) {
             totalMinutes: Math.round(net),
             grossMinutes: gross,
             breakMinutes: breakMinutesForTarget,
-            dailyTargetMet: (data.isTimerRunning ? todayMinutesAtTarget : net) >= target,
+            dailyTargetMet: (isTodayLive ? todayMinutesAtTarget : net) >= target,
           }
         : day,
     );
   }, [
     data,
+    onBreak,
+    isLiveDuty,
     todayLiveFormatted,
     todayLiveMinutes,
     todayLiveGrossMinutes,
@@ -263,18 +318,18 @@ export function useWorkTimer(enabled = true) {
   const monthlyLiveMinutes = useMemo(() => {
     if (!data) return 0;
     const base = data.monthlyMinutes ?? 0;
-    if (!data.isTimerRunning || !punchInAt) return base;
+    if (!isLiveDuty) return base;
     const serverToday = data.todayMinutes ?? 0;
     return Math.max(0, base - serverToday + todayLiveMinutes);
-  }, [data, punchInAt, todayLiveMinutes]);
+  }, [data, isLiveDuty, todayLiveMinutes]);
 
   const monthlyLiveFormatted = useMemo(() => {
     if (!data) return '0m';
-    if (!data.isTimerRunning || !punchInAt) {
+    if (!isLiveDuty) {
       return data.monthlyFormatted ?? formatDurationFromMinutes(data.monthlyMinutes ?? 0);
     }
     return formatDurationFromMinutes(monthlyLiveMinutes);
-  }, [data, punchInAt, monthlyLiveMinutes]);
+  }, [data, isLiveDuty, monthlyLiveMinutes]);
 
   const isRunning = Boolean(data?.isTimerRunning && punchInAt);
 
@@ -319,5 +374,8 @@ export function useWorkTimer(enabled = true) {
     isOnDuty: data?.isOnDuty ?? Boolean(data?.isTimerRunning),
     todaySessions: todaySessionsLive,
     todayLiveTotalSeconds,
+    workBreakMinutesLive,
+    isLiveDuty,
+    dayCheckInAt,
   };
 }

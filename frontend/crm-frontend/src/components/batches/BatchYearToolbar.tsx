@@ -80,7 +80,7 @@ export function BatchYearToolbar({
 
       <span className="xl-chip">12 folders · Jan–Dec</span>
       <span className="xl-chip font-mono text-[11px]">
-        {totalInYear} batch{totalInYear !== 1 ? 'es' : ''}
+        {totalInYear} campaign{totalInYear !== 1 ? 's' : ''}
       </span>
     </div>
   );

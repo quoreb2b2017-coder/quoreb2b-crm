@@ -41,6 +41,17 @@ export function buildRedisOptions(config: ConfigService): RedisOptions {
   };
 }
 
+/** Fail-fast client for AppCacheService — do not queue commands while Redis is down. */
+export function buildCacheRedisOptions(config: ConfigService): RedisOptions {
+  return {
+    ...buildRedisOptions(config),
+    connectTimeout: 5_000,
+    enableOfflineQueue: false,
+    maxRetriesPerRequest: 1,
+    retryStrategy: (times) => (times > 3 ? null : Math.min(times * 200, 2_000)),
+  };
+}
+
 export function buildRedisOptionsFromEnv(): RedisOptions {
   const { host, port, password, db } = readRedisEnv();
   return {
@@ -73,7 +84,7 @@ export function attachRedisErrorHandler(client: Redis, label = 'Redis'): void {
 }
 
 export function createRedisClient(config: ConfigService, label = 'Redis'): Redis {
-  const client = new Redis(buildRedisOptions(config));
+  const client = new Redis(buildCacheRedisOptions(config));
   attachRedisErrorHandler(client, label);
   return client;
 }

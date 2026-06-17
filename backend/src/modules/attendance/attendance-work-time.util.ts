@@ -26,7 +26,7 @@ export interface AttendanceRecordLike {
 const MAX_MINUTES_PER_DAY = 24 * 60;
 const MAX_DAILY_ROWS = 14;
 
-/** Use punched breaks when logged; else standard 75m off a full 9h shift. */
+/** Use punched tea/lunch breaks for net work; meeting time is not deducted. */
 export function resolveEffectiveBreakMinutes(
   grossMinutes: number,
   punchedBreakMinutes: number,
@@ -102,6 +102,74 @@ export function isOnDutyRecord(
   );
 }
 
+/** Attendance row with auth first-login fallback for gross login span. */
+export function attendanceRecordForGrossLogin(
+  record: AttendanceRecordLike | undefined,
+  firstLoginAt: Date | null | undefined,
+): AttendanceRecordLike | undefined {
+  if (record?.checkInTime) return record;
+  if (!firstLoginAt) return record;
+  return {
+    date: record?.date ?? new Date(),
+    status: record?.status ?? 'present',
+    checkInTime: firstLoginAt,
+    checkOutTime: record?.checkOutTime,
+  };
+}
+
+/**
+ * Gross login spans first check-in → now (on duty), checkout (off duty after breaks),
+ * or through an active break — so tea/lunch/meeting gaps count inside login time.
+ */
+export interface GrossLoginOptions {
+  onDuty?: boolean;
+  activeBreak?: boolean;
+  punchedBreakMinutes?: number;
+}
+
+export function resolveGrossLoginMinutes(
+  sessionGrossMinutes: number,
+  record: AttendanceRecordLike | undefined,
+  dateKey: string,
+  periodEnd: Date,
+  opts: GrossLoginOptions = {},
+): number {
+  if (!record?.checkInTime || dateKey !== todayDateKey()) {
+    return sessionGrossMinutes;
+  }
+
+  const onDuty = opts.onDuty ?? isOnDutyRecord(record, dateKey);
+  const activeBreak = opts.activeBreak ?? false;
+  const punchedBreakMinutes = opts.punchedBreakMinutes ?? 0;
+  const includeBreakGaps = onDuty || activeBreak || punchedBreakMinutes > 0;
+  if (!includeBreakGaps) return sessionGrossMinutes;
+
+  let endMs = periodEnd.getTime();
+  if (!onDuty && !activeBreak && record.checkOutTime) {
+    endMs = record.checkOutTime.getTime();
+  }
+
+  const inMs = attendanceStoredInstantMs(record.checkInTime, endMs);
+  const spanMinutes = Math.min(
+    MAX_MINUTES_PER_DAY,
+    Math.max(0, Math.round((endMs - inMs) / 60000)),
+  );
+  return Math.max(sessionGrossMinutes, spanMinutes);
+}
+
+/** @deprecated Use resolveGrossLoginMinutes */
+export function extendGrossForContinuingBreak(
+  sessionGrossMinutes: number,
+  record: AttendanceRecordLike | undefined,
+  dateKey: string,
+  periodEnd: Date,
+  hasActiveBreak: boolean,
+): number {
+  return resolveGrossLoginMinutes(sessionGrossMinutes, record, dateKey, periodEnd, {
+    activeBreak: hasActiveBreak,
+  });
+}
+
 export interface AttendanceWorkTimeSnapshot {
   period: { year: number; month: number; label: string };
   monthlyMinutes: number;
@@ -134,9 +202,12 @@ export function buildAttendanceWorkTimeSnapshot(
   year: number,
   month: number,
   periodEnd: Date = new Date(),
-  breakMinutesByDate: Map<string, number> = new Map(),
+  workBreakMinutesByDate: Map<string, number> = new Map(),
+  hasActiveBreakToday = false,
+  allBreakMinutesByDate?: Map<string, number>,
 ): AttendanceWorkTimeSnapshot {
   const todayKey = todayDateKey();
+  const allBreaks = allBreakMinutesByDate ?? workBreakMinutesByDate;
   const label = formatInWorkspace(new Date(year, month - 1, 1), {
     month: 'long',
     year: 'numeric',
@@ -154,11 +225,17 @@ export function buildAttendanceWorkTimeSnapshot(
   const breakByDay = new Map<string, number>();
 
   for (const [dateKey, record] of byDay.entries()) {
-    const gross = computeDayWorkMinutes(record, dateKey, periodEnd);
-    const breaks = breakMinutesByDate.get(dateKey) ?? 0;
-    const net = computeNetWorkMinutes(gross, breaks);
+    const rawGross = computeDayWorkMinutes(record, dateKey, periodEnd);
+    const workBreaks = workBreakMinutesByDate.get(dateKey) ?? 0;
+    const allBreakMins = allBreaks.get(dateKey) ?? 0;
+    const gross = resolveGrossLoginMinutes(rawGross, record, dateKey, periodEnd, {
+      onDuty: isOnDutyRecord(record, dateKey),
+      activeBreak: hasActiveBreakToday && dateKey === todayKey,
+      punchedBreakMinutes: allBreakMins,
+    });
+    const net = computeNetWorkMinutes(gross, workBreaks);
     grossByDay.set(dateKey, gross);
-    breakByDay.set(dateKey, breaks);
+    breakByDay.set(dateKey, workBreaks);
     if (net > 0 || gross > 0 || dateKey === todayKey) {
       dayTotals.set(dateKey, net);
     }
@@ -166,11 +243,17 @@ export function buildAttendanceWorkTimeSnapshot(
   }
 
   if (!dayTotals.has(todayKey)) {
-    const gross = computeDayWorkMinutes(todayRecord, todayKey, periodEnd);
-    const breaks = breakMinutesByDate.get(todayKey) ?? 0;
+    const rawGross = computeDayWorkMinutes(todayRecord, todayKey, periodEnd);
+    const workBreaks = workBreakMinutesByDate.get(todayKey) ?? 0;
+    const allBreakMins = allBreaks.get(todayKey) ?? 0;
+    const gross = resolveGrossLoginMinutes(rawGross, todayRecord, todayKey, periodEnd, {
+      onDuty: isOnDutyRecord(todayRecord, todayKey),
+      activeBreak: hasActiveBreakToday,
+      punchedBreakMinutes: allBreakMins,
+    });
     grossByDay.set(todayKey, gross);
-    breakByDay.set(todayKey, breaks);
-    dayTotals.set(todayKey, computeNetWorkMinutes(gross, breaks));
+    breakByDay.set(todayKey, workBreaks);
+    dayTotals.set(todayKey, computeNetWorkMinutes(gross, workBreaks));
   }
 
   const dailyBreakdown = [...dayTotals.entries()]

@@ -46,7 +46,7 @@ export default function SharedBatchesPage({
       const list = await batchesService.list();
       setBatches(Array.isArray(list) ? list : []);
     } catch (e) {
-      toast.error('Failed to load batches', extractApiError(e));
+      toast.error('Failed to load campaigns', extractApiError(e));
       setBatches([]);
     } finally {
       setLoading(false);
@@ -113,23 +113,26 @@ export default function SharedBatchesPage({
 
   const subtitle =
     role === 'db_admin'
-      ? 'Add year · Jan–Dec folders · admin-shared and your batches'
-      : 'Add year · Jan–Dec folders · batches shared with you';
+      ? 'Add year · Jan–Dec folders · admin-shared and your campaigns'
+      : 'Add year · Jan–Dec folders · campaigns shared with you';
 
   const emptyHint =
     role === 'db_admin'
-      ? 'Ask admin to share a batch, or create one from a shared admin batch'
-      : 'When admin shares a batch, it appears in the month it was created';
+      ? 'Create a campaign from Master File, or open an admin-shared campaign'
+      : 'When admin shares a campaign, it appears in the month it was created';
+
+  const openBatch = (b: BatchRecord) => router.push(`${basePath}/batches/${b.id}`);
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
       <BatchMonthExplorer
         batches={batches}
         loading={loading}
-        title={role === 'db_admin' ? 'Batches' : 'My Batches'}
+        title={role === 'db_admin' ? 'Campaigns' : 'My Campaigns'}
         subtitle={subtitle}
-        emptyTitle={role === 'db_admin' ? 'No batches yet' : 'No batches shared yet'}
+        emptyTitle={role === 'db_admin' ? 'No campaigns yet' : 'No campaigns shared yet'}
         emptyHint={emptyHint}
+        onOpenBatch={openBatch}
         renderActions={(b) => {
           const own = isOwner(b);
           return (
@@ -139,7 +142,7 @@ export default function SharedBatchesPage({
                   Team
                 </BatchActionButton>
               )}
-              {canShareOwn && own && (
+              {canShareOwn && own && !b.sourceBatchId && (
                 <BatchActionButton onClick={() => openShareModal(b)}>Share</BatchActionButton>
               )}
               {role === 'db_admin' && !own && (

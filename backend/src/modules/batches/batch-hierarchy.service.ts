@@ -70,7 +70,7 @@ export class BatchHierarchyService {
     roles: string[] = [],
   ): Promise<BatchHierarchyResult> {
     if (!Types.ObjectId.isValid(batchId)) {
-      throw new NotFoundException('Batch not found');
+      throw new NotFoundException('Campaign not found');
     }
 
     const treeDocs = await collectBatchTree(this.batchModel, batchId);
@@ -462,7 +462,7 @@ export class BatchHierarchyService {
         sharerName: sharer?.name ?? String(row.userName ?? 'Unknown'),
         sharerRole: sharer?.role ?? 'employee',
         batchId: String(meta.batchId ?? row.resourceId ?? ''),
-        batchName: String(meta.batchName ?? 'Batch'),
+        batchName: String(meta.batchName ?? 'Campaign'),
         rowCount: Number(meta.rowCount ?? 0),
         recipients,
         occurredAt: at ? new Date(at).toISOString() : '',
@@ -594,11 +594,11 @@ function emptySummary(): ActivitySummary {
 
 function actionLabel(action: string): string {
   const map: Record<string, string> = {
-    LEAD_VIEW: 'Opened batch',
+    LEAD_VIEW: 'Opened campaign',
     LEAD_TOUCH: 'Touched lead',
     LEAD_UPDATE: 'Updated lead',
-    BATCH_CREATE: 'Created batch',
-    BATCH_SHARE: 'Shared batch',
+    BATCH_CREATE: 'Created campaign',
+    BATCH_SHARE: 'Shared campaign',
   };
   return map[action] ?? action.replace(/_/g, ' ').toLowerCase();
 }

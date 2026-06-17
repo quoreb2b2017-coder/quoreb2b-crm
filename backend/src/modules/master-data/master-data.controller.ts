@@ -47,7 +47,7 @@ export class MasterDataController {
   }
 
   @Get('batch-coverage')
-  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
   getBatchCoverage() {
     return this.masterDataService.getBatchCoverage();
   }

@@ -47,7 +47,7 @@ const config: Record<
 > = {
   admin: {
     roleLabel: 'Super Admin',
-    subtitle: 'CRM control center — users, master data, batches & analytics',
+    subtitle: 'CRM control center — users, master data, campaigns & analytics',
     Icon: Shield,
     shell: 'bg-gradient-to-br from-[#143d28] via-[#1a5c38] to-[#0f3d2e]',
     accentBar: 'bg-gradient-to-r from-amber-400 to-amber-300',
@@ -59,13 +59,13 @@ const config: Record<
     decoTiles: [
       { icon: Users, label: 'Users' },
       { icon: Upload, label: 'Master data' },
-      { icon: Layers, label: 'Batches' },
+      { icon: Layers, label: 'Campaigns' },
       { icon: BarChart3, label: 'Analytics' },
     ],
   },
   db_admin: {
     roleLabel: 'Database Administrator',
-    subtitle: 'Database operations — batches, master data & team assignments',
+    subtitle: 'Database operations — campaigns, master data & team assignments',
     Icon: Database,
     shell: 'bg-gradient-to-br from-[#3b1578] via-[#5b21b6] to-[#4c1d95]',
     accentBar: 'bg-gradient-to-r from-violet-300 to-purple-300',
@@ -76,14 +76,14 @@ const config: Record<
     statusDot: 'bg-violet-200',
     decoTiles: [
       { icon: Database, label: 'Master DB' },
-      { icon: Layers, label: 'Batches' },
+      { icon: Layers, label: 'Campaigns' },
       { icon: Share2, label: 'Assign' },
       { icon: Activity, label: 'Logs' },
     ],
   },
   employee: {
     roleLabel: 'Employee',
-    subtitle: 'Your workspace — assigned batches, leads & activity',
+    subtitle: 'Your workspace — assigned campaigns, leads & activity',
     Icon: Briefcase,
     shell: 'bg-gradient-to-br from-[#065f46] via-[#047857] to-[#0d9488]',
     accentBar: 'bg-gradient-to-r from-teal-300 to-emerald-300',
@@ -93,7 +93,7 @@ const config: Record<
     gridLine: 'border-white/[0.08]',
     statusDot: 'bg-teal-200',
     decoTiles: [
-      { icon: Layers, label: 'Batches' },
+      { icon: Layers, label: 'Campaigns' },
       { icon: ClipboardList, label: 'Leads' },
       { icon: Activity, label: 'Activity' },
       { icon: Briefcase, label: 'Tasks' },

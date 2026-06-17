@@ -27,7 +27,7 @@ export default function AdminBatchViewPage() {
           rows: b.rows ?? [],
         });
       })
-      .catch(() => setError('Could not load batch. You may not have access.'))
+      .catch(() => setError('Could not load campaign. You may not have access.'))
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -64,7 +64,7 @@ export default function AdminBatchViewPage() {
     <BatchExcelView
       batchId={id}
       editable
-      name={batch?.name ?? 'Batch'}
+      name={batch?.name ?? 'Campaign'}
       rowCount={data?.rows.length ?? batch?.rowCount}
       columnCount={data?.headers.length ?? batch?.columnCount}
       sourceFileName={batch?.sourceFileName}

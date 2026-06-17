@@ -2,6 +2,7 @@
 
 import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Upload, Download, Trash2, Cloud, Loader2, Save } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { ExcelPreviewGrid } from '@/components/admin/ExcelPreviewGrid';
@@ -21,6 +22,7 @@ import { extractApiError } from '@/lib/api/errors';
 import { activityLogsService } from '@/lib/api/activity-logs.service';
 import { toast } from '@/stores/toast.store';
 import { useAuthStore } from '@/store/auth.store';
+import { useCanExportSpreadsheet } from '@/hooks/useSpreadsheetCopyGuard';
 import { useDebouncedAutoSave, type AutoSaveStatus } from '@/hooks/useDebouncedAutoSave';
 import { MasterDataClearConfirmModal } from '@/components/master-data/MasterDataClearConfirmModal';
 
@@ -104,7 +106,12 @@ function AutoSaveHint({ status }: { status: AutoSaveStatus }) {
   );
 }
 
-export function MasterDataUploadPanel() {
+export type MasterDataPanelVariant = 'admin' | 'db_admin';
+
+export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterDataPanelVariant }) {
+  const isDbAdminView = variant === 'db_admin';
+  const canExport = useCanExportSpreadsheet();
+  const router = useRouter();
   const { user } = useAuthStore();
   const inputRef = useRef<HTMLInputElement>(null);
   const [data, setData] = useState<SpreadsheetData | null>(null);
@@ -343,7 +350,7 @@ export function MasterDataUploadPanel() {
       const n = result.deletedBatches ?? 0;
       toast.success(
         'All data cleared',
-        `Master data removed · ${n} batch${n === 1 ? '' : 'es'} deleted from database`,
+        `Master data removed · ${n} campaign${n === 1 ? '' : 'es'} deleted from database`,
       );
       window.dispatchEvent(new CustomEvent('master-data-cleared'));
     } catch (e) {
@@ -356,12 +363,16 @@ export function MasterDataUploadPanel() {
   // ── Open batch modal ──
   const openBatchModal = useCallback(
     (payload: { rows: string[][]; headers: string[]; sourceRowIndices: number[] }) => {
+      if (!payload.sourceRowIndices.length) {
+        toast.error('No rows selected', 'Apply filters or pick rows that are not already in a campaign');
+        return;
+      }
       const now = new Date().toLocaleDateString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
         day: '2-digit',
         month: 'short',
         year: 'numeric',
       });
-      setBatchName(`Batch ${now}`);
+      setBatchName(`Campaign ${now}`);
       setBatchDesc('');
       setBatchModal(payload);
     },
@@ -382,7 +393,7 @@ export function MasterDataUploadPanel() {
         masterSourceRowIndices: batchModal.sourceRowIndices,
       });
       await loadCoverage();
-      toast.success('Batch created!', `"${batch.name}" — ${batch.rowCount} rows`);
+      toast.success('Campaign created!', `"${batch.name}" — ${batch.rowCount} rows`);
       setBatchModal(null);
       window.dispatchEvent(
         new CustomEvent('batch-created', {
@@ -394,8 +405,11 @@ export function MasterDataUploadPanel() {
         }),
       );
       window.dispatchEvent(new CustomEvent('master-data-updated'));
+      if (isDbAdminView) {
+        router.push('/db-admin/batches');
+      }
     } catch (e) {
-      toast.error('Batch creation failed', extractApiError(e, 'Could not create batch'));
+      toast.error('Campaign creation failed', extractApiError(e, 'Could not create campaign'));
     } finally { setSavingBatch(false); }
   };
 
@@ -417,7 +431,7 @@ export function MasterDataUploadPanel() {
               {coverage && coverage.summary.totalRows > 0 && (
                 <>
                   <span className="text-xs text-amber-800">
-                    {coverage.summary.batchedRows.toLocaleString('en-US')} in batch
+                    {coverage.summary.batchedRows.toLocaleString('en-US')} in campaign
                   </span>
                   <span className="text-xs font-medium text-[#217346]">
                     {coverage.summary.availableRows.toLocaleString('en-US')} available
@@ -436,7 +450,7 @@ export function MasterDataUploadPanel() {
               </span>
             </span>
           )}
-          <AutoSaveHint status={autoSaveStatus} />
+          <AutoSaveHint status={isDbAdminView ? 'idle' : autoSaveStatus} />
           {(savingDb || loadingDb) && (
             <span className="inline-flex items-center gap-1 text-xs text-slate-500">
               <Loader2 className="h-3 w-3 animate-spin" />
@@ -445,15 +459,21 @@ export function MasterDataUploadPanel() {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
-          <button type="button" onClick={() => inputRef.current?.click()} disabled={busy}
-            className="inline-flex items-center gap-1.5 border border-[#ababab] bg-white px-3 py-1 text-xs hover:bg-[#fafafa] disabled:opacity-50">
-            <Upload className="h-3.5 w-3.5" />{data ? 'Open file' : 'Upload'}
-          </button>
-          <button type="button" onClick={handleSampleTemplate}
-            className="inline-flex items-center gap-1.5 border border-[#ababab] bg-white px-3 py-1 text-xs hover:bg-[#fafafa]">
-            <Download className="h-3.5 w-3.5" />Template
-          </button>
-          {data && (
+          {!isDbAdminView && (
+            <>
+              <button type="button" onClick={() => inputRef.current?.click()} disabled={busy}
+                className="inline-flex items-center gap-1.5 border border-[#ababab] bg-white px-3 py-1 text-xs hover:bg-[#fafafa] disabled:opacity-50">
+                <Upload className="h-3.5 w-3.5" />{data ? 'Open file' : 'Upload'}
+              </button>
+              {canExport && (
+                <button type="button" onClick={handleSampleTemplate}
+                  className="inline-flex items-center gap-1.5 border border-[#ababab] bg-white px-3 py-1 text-xs hover:bg-[#fafafa]">
+                  <Download className="h-3.5 w-3.5" />Template
+                </button>
+              )}
+            </>
+          )}
+          {!isDbAdminView && data && (
             <button
               type="button"
               onClick={saveEditsToDb}
@@ -464,7 +484,7 @@ export function MasterDataUploadPanel() {
               Save now
             </button>
           )}
-          {data && (
+          {!isDbAdminView && data && canExport && (
             <>
               <button type="button" onClick={handleDownloadFormatted}
                 className="inline-flex items-center gap-1.5 bg-[#217346] text-white px-3 py-1 text-xs hover:bg-[#1a5c38]">
@@ -495,28 +515,37 @@ export function MasterDataUploadPanel() {
         </div>
       ) : !data ? (
         <div
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={onDrop}
+          onDragOver={isDbAdminView ? undefined : (e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={isDbAdminView ? undefined : () => setDragOver(false)}
+          onDrop={isDbAdminView ? undefined : onDrop}
           className={cn(
             'flex-1 flex flex-col items-center justify-center border-b border-[#d4d4d4] bg-white min-h-[400px]',
-            dragOver && 'bg-[#e7f3ff]',
-            parsing && 'opacity-60 pointer-events-none',
+            !isDbAdminView && dragOver && 'bg-[#e7f3ff]',
+            !isDbAdminView && parsing && 'opacity-60 pointer-events-none',
           )}
         >
-          <p className="text-sm text-slate-600">
-            Drop <span className="font-medium">.xlsx</span>, <span className="font-medium">.xls</span>, or{' '}
-            <span className="font-medium">.csv</span> here
-          </p>
-          <p className="mt-1 text-xs text-slate-400">Data is stored in MongoDB after upload</p>
+          {isDbAdminView ? (
+            <>
+              <p className="text-sm text-slate-600">Master file is not available yet.</p>
+              <p className="mt-1 text-xs text-slate-400">Ask Super Admin to upload master data.</p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-slate-600">
+                Drop <span className="font-medium">.xlsx</span>, <span className="font-medium">.xls</span>, or{' '}
+                <span className="font-medium">.csv</span> here
+              </p>
+              <p className="mt-1 text-xs text-slate-400">Data is stored in MongoDB after upload</p>
+            </>
+          )}
         </div>
       ) : (
         <div className="flex-1 min-h-0 p-0 bg-[#e6e6e6]">
           <ExcelPreviewGrid
             data={data}
             dataResetKey={savedAt ?? 'master-empty'}
-            editable
-            onDataChange={handleGridChange}
+            editable={!isDbAdminView}
+            onDataChange={isDbAdminView ? undefined : handleGridChange}
             onFilteredDataChange={setFilteredRows}
             batchedByRow={coverage?.batchedByRow}
             hideBatchedRows={hideBatchedRows}
@@ -539,14 +568,14 @@ export function MasterDataUploadPanel() {
             <div
               role="dialog"
               aria-modal="true"
-              aria-labelledby="create-batch-title"
+              aria-labelledby="create-campaign-title"
               className="pointer-events-auto flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-2xl"
             >
               {/* Header */}
               <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-6">
                 <div className="min-w-0">
-                  <p id="create-batch-title" className="font-semibold text-slate-900">
-                    Create New Batch
+                  <p id="create-campaign-title" className="font-semibold text-slate-900">
+                    Create New Campaign
                   </p>
                   <div className="mt-1.5 flex flex-wrap gap-2">
                     <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-700">
@@ -573,7 +602,7 @@ export function MasterDataUploadPanel() {
               <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Batch Name <span className="text-red-500">*</span>
+                    Campaign Name <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -590,7 +619,7 @@ export function MasterDataUploadPanel() {
                   <textarea
                     value={batchDesc}
                     onChange={(e) => setBatchDesc(e.target.value)}
-                    placeholder="What is this batch for?"
+                    placeholder="What is this campaign for?"
                     rows={2}
                     className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
                   />
@@ -598,7 +627,7 @@ export function MasterDataUploadPanel() {
 
                 <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-xs font-semibold text-slate-700">Batch summary</p>
+                    <p className="text-xs font-semibold text-slate-700">Campaign summary</p>
                     <p className="text-xs text-slate-500">
                       <span className="font-medium text-slate-700">{batchModal.rows.length.toLocaleString('en-US')}</span> rows selected
                     </p>
@@ -606,9 +635,16 @@ export function MasterDataUploadPanel() {
 
                   <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
                     <p className="text-xs leading-relaxed text-emerald-800">
-                      Master data stays unchanged. Batched rows remain in the database and show as{' '}
-                      <span className="font-semibold text-amber-700">&quot;In batch&quot;</span> (yellow) so
+                      Master data stays unchanged. Campaign rows remain in the database and show as{' '}
+                      <span className="font-semibold text-amber-700">&quot;In campaign&quot;</span> (yellow) so
                       you can pick only new rows next time.
+                      {isDbAdminView && (
+                        <>
+                          {' '}
+                          After creating, the campaign opens in{' '}
+                          <span className="font-semibold">Campaigns</span> (year → month folder).
+                        </>
+                      )}
                     </p>
                   </div>
 
@@ -661,7 +697,7 @@ export function MasterDataUploadPanel() {
                     className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:opacity-60 sm:flex-1"
                   >
                     {savingBatch && <Loader2 className="h-4 w-4 animate-spin" />}
-                    {savingBatch ? 'Creating...' : 'Create Batch'}
+                    {savingBatch ? 'Creating...' : 'Create Campaign'}
                   </button>
                 </div>
               </div>

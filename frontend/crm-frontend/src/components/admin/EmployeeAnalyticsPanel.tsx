@@ -334,7 +334,7 @@ export function EmployeeAnalyticsPanel({
   const [report, setReport] = useState<EmployeeReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [leadTab, setLeadTab] = useState<'touched' | 'not_touched' | 'batches'>('touched');
+  const [leadTab, setLeadTab] = useState<'touched' | 'not_touched' | 'campaigns'>('touched');
 
   const selectedUser = useMemo(
     () => employees.find((e) => e.id === selectedId),
@@ -389,9 +389,9 @@ export function EmployeeAnalyticsPanel({
 
   const assignedRows: MetricItem[] = la
     ? [
-        { label: 'Total leads (assigned)', value: la.totalLeads, note: `${report!.employee.name} · ${la.batchCount} batch(es)` },
-        { label: 'Active (assigned)', value: la.activeLeads, note: 'Status Active in their batches' },
-        { label: 'Won (assigned)', value: la.wonLeads, note: 'Status Lead / Won in their batches' },
+        { label: 'Total leads (assigned)', value: la.totalLeads, note: `${report!.employee.name} · ${la.batchCount} campaign(s)` },
+        { label: 'Active (assigned)', value: la.activeLeads, note: 'Status Active in their campaigns' },
+        { label: 'Won (assigned)', value: la.wonLeads, note: 'Status Lead / Won in their campaigns' },
       ]
     : [];
 
@@ -641,7 +641,7 @@ export function EmployeeAnalyticsPanel({
             </div>
             {la.batchCount === 0 && (
               <p className="relative mt-4 rounded-lg bg-amber-500/15 px-3 py-2 text-xs text-amber-100">
-                No batches assigned — share batches from the Batches page to see lead analytics.
+                No campaigns assigned — share campaigns from the Campaigns page to see lead analytics.
               </p>
             )}
           </div>
@@ -651,7 +651,7 @@ export function EmployeeAnalyticsPanel({
             <KpiCard
               label="Assigned leads"
               value={la.totalLeads}
-              note={`${la.batchCount} batch(es)`}
+              note={`${la.batchCount} campaign(s)`}
               accent="indigo"
               icon={<Users className="h-5 w-5 text-indigo-600" />}
             />
@@ -795,8 +795,8 @@ export function EmployeeAnalyticsPanel({
                 </AnalyticsPanel>
               ) : batchBarSlices.length > 0 ? (
                 <AnalyticsPanel
-                  title="Batch activity"
-                  subtitle="Leads touched per batch (top batches)"
+                  title="Campaign activity"
+                  subtitle="Leads touched per campaign (top campaigns)"
                 >
                   <HorizontalBarChart data={batchBarSlices} />
                 </AnalyticsPanel>
@@ -804,7 +804,7 @@ export function EmployeeAnalyticsPanel({
                 <AnalyticsPanel title="Pipeline snapshot" subtitle="High-level pipeline counts">
                   <FunnelChart
                     items={[
-                      { label: 'Batches', value: la.batchCount, color: '#06b6d4' },
+                      { label: 'Campaigns', value: la.batchCount, color: '#06b6d4' },
                       { label: 'Active leads', value: la.activeLeads, color: '#10b981' },
                       { label: 'Won leads', value: la.wonLeads, color: '#8b5cf6' },
                     ]}
@@ -865,7 +865,7 @@ export function EmployeeAnalyticsPanel({
                 <div className="p-5">
                   <SubSectionHeader
                     title="Lead detail"
-                    subtitle="Worked, untouched, and batch breakdown"
+                    subtitle="Worked, untouched, and campaign breakdown"
                     icon={ListChecks}
                   />
                   <div className="mb-4">
@@ -875,20 +875,20 @@ export function EmployeeAnalyticsPanel({
                       tabs={[
                         { id: 'touched', label: 'Worked leads', count: report.leadActivity.touchedLeads.length },
                         { id: 'not_touched', label: 'Not touched', count: report.leadActivity.notTouchedLeads.length },
-                        { id: 'batches', label: 'By batch', count: report.leadActivity.byBatch.length },
+                        { id: 'campaigns', label: 'By campaign', count: report.leadActivity.byBatch.length },
                       ]}
                     />
                   </div>
 
-                  {leadTab === 'batches' &&
+                  {leadTab === 'campaigns' &&
                     (report.leadActivity.byBatch.length === 0 ? (
-                      <TableEmpty message="No assigned batches with leads" />
+                      <TableEmpty message="No assigned campaigns with leads" />
                     ) : (
                       <ReportTable
                         compact
                         headers={
                           <>
-                            <Th>Batch</Th>
+                            <Th>Campaign</Th>
                             <Th align="right">Total</Th>
                             <Th align="right">Active</Th>
                             <Th align="right">Won</Th>
@@ -934,7 +934,7 @@ export function EmployeeAnalyticsPanel({
                         headers={
                           <>
                             <Th>Lead</Th>
-                            <Th>Batch</Th>
+                            <Th>Campaign</Th>
                             <Th>Status</Th>
                             <Th>Changed fields</Th>
                             <Th align="right">Last activity</Th>
@@ -971,7 +971,7 @@ export function EmployeeAnalyticsPanel({
                         headers={
                           <>
                             <Th>Lead</Th>
-                            <Th>Batch</Th>
+                            <Th>Campaign</Th>
                             <Th align="right">Row</Th>
                           </>
                         }

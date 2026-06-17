@@ -22,7 +22,7 @@ export default function DbAdminBatchTeamPage() {
       batchId={rootId}
       backHref="/db-admin/batches"
       batchViewHref={`/db-admin/batches/${id}`}
-      backLabel="Back to batches"
+      backLabel="Back to campaigns"
     />
   );
 }

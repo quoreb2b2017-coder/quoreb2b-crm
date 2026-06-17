@@ -30,17 +30,17 @@ export class NotificationTriggerService {
         priority: 'high',
       },
       batch_created: {
-        type: 'batch_created',
-        title: '📦 Batch Created',
-        message: 'New batch "Q1 2024" has been created',
+        type: 'campaign_created',
+        title: '📦 Campaign Created',
+        message: 'New campaign "Q1 2024" has been created',
         actionUrl: '/admin/batches',
-        actionLabel: 'View Batch',
+        actionLabel: 'View Campaign',
         priority: 'medium',
       },
       batch_completed: {
-        type: 'batch_completed',
-        title: '✓ Batch Completed',
-        message: 'Batch "Q1 2024" is now complete',
+        type: 'campaign_completed',
+        title: '✓ Campaign Completed',
+        message: 'Campaign "Q1 2024" is now complete',
         actionUrl: '/admin/batches',
         actionLabel: 'View Results',
         priority: 'high',
@@ -122,11 +122,11 @@ export class NotificationTriggerService {
     if (!this.socket) return;
 
     this.socket.emit('notification:receive', {
-      type: 'batch_created',
-      title: '📦 Batch Created',
-      message: `Batch "${batchName}" has been created successfully`,
+      type: 'campaign_created',
+      title: '📦 Campaign Created',
+      message: `Campaign "${batchName}" has been created successfully`,
       actionUrl: '/admin/batches',
-      actionLabel: 'View Batch',
+      actionLabel: 'View Campaign',
       priority: 'medium',
     });
   }
@@ -139,8 +139,8 @@ export class NotificationTriggerService {
 
     this.socket.emit('notification:receive', {
       type: 'warning',
-      title: '🗑️ Batch Deleted',
-      message: `Batch "${batchName}" has been deleted`,
+      title: '🗑️ Campaign Deleted',
+      message: `Campaign "${batchName}" has been deleted`,
       priority: 'medium',
     });
   }
@@ -153,10 +153,10 @@ export class NotificationTriggerService {
 
     this.socket.emit('notification:receive', {
       type: 'info',
-      title: '👥 Batch Shared',
-      message: `Batch "${batchName}" shared with ${userCount} user(s)`,
+      title: '👥 Campaign Shared',
+      message: `Campaign "${batchName}" shared with ${userCount} user(s)`,
       actionUrl: '/admin/batches',
-      actionLabel: 'View Batch',
+      actionLabel: 'View Campaign',
       priority: 'low',
     });
   }

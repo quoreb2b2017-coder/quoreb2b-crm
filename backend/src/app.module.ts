@@ -9,7 +9,7 @@ import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 import { BullModule } from '@nestjs/bullmq';
 import configuration from './config/configuration';
-import { isRedisConfigured, isRedisEnabled } from './config/env';
+import { isRedisEnabled } from './config/env';
 import { buildRedisOptions } from './redis/redis.factory';
 import { DatabaseModule } from './database/database.module';
 import { CacheModule } from './redis/cache.module';
@@ -44,7 +44,6 @@ import { BreakPunchesModule } from './modules/break-punches/break-punches.module
 export class AppModule {
   static register(): DynamicModule {
     const redisEnabled = isRedisEnabled();
-    const redisConfigured = isRedisConfigured();
 
     return {
       module: AppModule,
@@ -77,7 +76,7 @@ export class AppModule {
               }),
             ]
           : []),
-        ...(redisConfigured ? [RedisModule] : []),
+        ...(redisEnabled ? [RedisModule] : []),
         CacheModule,
         DatabaseModule,
         ElasticsearchModule.register(),

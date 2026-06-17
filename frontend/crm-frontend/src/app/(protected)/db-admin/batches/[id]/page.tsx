@@ -34,7 +34,7 @@ export default function DbAdminBatchViewPage() {
       .catch(() => {
         setBatch(null);
         setData(null);
-        setError('Could not load batch. It may have been removed by admin.');
+        setError('Could not load campaign. It may have been removed by admin.');
       })
       .finally(() => setLoading(false));
   }, [id]);
@@ -46,10 +46,8 @@ export default function DbAdminBatchViewPage() {
       router.replace('/db-admin/batches');
     };
     window.addEventListener('crm-data-cleared', onCleared);
-    window.addEventListener('master-data-updated', onCleared);
     return () => {
       window.removeEventListener('crm-data-cleared', onCleared);
-      window.removeEventListener('master-data-updated', onCleared);
     };
   }, [router]);
 
@@ -96,7 +94,7 @@ export default function DbAdminBatchViewPage() {
       sourceBatchId={fromAdmin ? id : undefined}
       allowCreateSubBatch={fromAdmin}
       editable={canEdit}
-      name={batch?.name ?? 'Batch'}
+      name={batch?.name ?? 'Campaign'}
       rowCount={data?.rows.length ?? batch?.rowCount}
       columnCount={data?.headers.length ?? batch?.columnCount}
       sourceFileName={batch?.sourceFileName}

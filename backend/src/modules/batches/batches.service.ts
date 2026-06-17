@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, Logger, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -24,6 +24,7 @@ import {
 import { NotificationTriggerService } from '../notifications/notification-trigger.service';
 import { AppCacheService } from '../../redis/app-cache.service';
 import { cacheTtlSeconds } from '../../redis/cache.util';
+import { MasterDataService } from '../master-data/master-data.service';
 
 import {
   assignedParentRowIndices,
@@ -60,6 +61,8 @@ export class BatchesService {
     private notifications: NotificationTriggerService,
     private cache: AppCacheService,
     private config: ConfigService,
+    @Inject(forwardRef(() => MasterDataService))
+    private masterDataService: MasterDataService,
   ) {}
 
   async create(
@@ -72,7 +75,23 @@ export class BatchesService {
       !roles.includes(SystemRole.ADMIN) &&
       !roles.includes(SystemRole.SUPER_ADMIN);
     if (isDbAdminOnly) {
-      await this.assertDbAdminCreateFromSharedBatch(dto.sourceBatchId, actor.id);
+      const fromMaster = (dto.masterSourceRowIndices?.length ?? 0) > 0;
+      if (fromMaster) {
+        if (dto.sourceBatchId) {
+          throw new BadRequestException(
+            'Create from master file or from an admin-shared campaign, not both',
+          );
+        }
+        const resolved = await this.masterDataService.resolveMasterBatchCreate(
+          dto.masterSourceRowIndices!,
+          actor.id,
+        );
+        dto.headers = resolved.headers;
+        dto.rows = resolved.rows;
+        dto.masterSourceRowIndices = resolved.masterSourceRowIndices;
+      } else {
+        await this.assertDbAdminCreateFromSharedBatch(dto.sourceBatchId, actor.id);
+      }
     }
     const period = currentPeriod();
     const sourceId =
@@ -144,18 +163,18 @@ export class BatchesService {
   ) {
     if (!sourceBatchId || !Types.ObjectId.isValid(sourceBatchId)) {
       throw new ForbiddenException(
-        'Create batches only from an admin batch shared with you (open batch → filter → Create Batch)',
+        'Create campaigns only from an admin campaign shared with you (open campaign → filter → Create Campaign)',
       );
     }
 
     const source = await this.model.findById(sourceBatchId).lean().exec();
     if (!source) {
-      throw new NotFoundException('Source batch not found');
+      throw new NotFoundException('Source campaign not found');
     }
 
     if (source.createdBy?.toString() === actorId) {
       throw new ForbiddenException(
-        'Create new batches from admin-shared batches, not from your own batch view',
+        'Create new campaigns from admin-shared campaigns, not from your own campaign view',
       );
     }
 
@@ -163,7 +182,7 @@ export class BatchesService {
       (u) => u.toString() === actorId,
     );
     if (!isShared) {
-      throw new ForbiddenException('This batch was not shared with you by admin');
+      throw new ForbiddenException('This campaign was not shared with you by admin');
     }
 
     const creator = await this.usersRepository.findById(source.createdBy?.toString() ?? '');
@@ -172,7 +191,7 @@ export class BatchesService {
       creatorRoles.includes(SystemRole.ADMIN) ||
       creatorRoles.includes(SystemRole.SUPER_ADMIN);
     if (!fromAdmin) {
-      throw new ForbiddenException('You can only create batches from data shared by admin');
+      throw new ForbiddenException('You can only create campaigns from data shared by admin');
     }
   }
 
@@ -191,16 +210,30 @@ export class BatchesService {
     });
   }
 
-  async findAll(actorId: string) {
-    if (!Types.ObjectId.isValid(actorId)) return [];
+  async findAll(actorId: string, roles: string[] = []) {
+    const isAdmin =
+      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
+    const cacheKey = isAdmin ? 'batch:list:admin' : `batch:list:${actorId}`;
     return this.cache.wrap(
-      `batch:list:${actorId}`,
+      cacheKey,
       cacheTtlSeconds(this.config, 'short'),
-      () => this.loadAllBatches(actorId),
+      () => (isAdmin ? this.loadAllBatchesForAdmin() : this.loadAllBatches(actorId)),
     );
   }
 
+  private async loadAllBatchesForAdmin() {
+    const batches = await this.model
+      .find()
+      .select('-rows -headers')
+      .sort({ batchYear: -1, batchMonth: -1, createdAt: -1 })
+      .lean()
+      .exec();
+    await this.backfillBatchPeriods(batches);
+    return batches.map((b) => this.toResponseSummary(b as unknown as Batch));
+  }
+
   private async loadAllBatches(actorId: string) {
+    if (!Types.ObjectId.isValid(actorId)) return [];
     const id = new Types.ObjectId(actorId);
     const batches = await this.model
       .find({ $or: [{ createdBy: id }, { sharedWith: id }] })
@@ -251,7 +284,7 @@ export class BatchesService {
 
   private async loadOneBatch(batchId: string, actorId: string) {
     const batch = await this.model.findById(batchId).lean().exec();
-    if (!batch) throw new NotFoundException('Batch not found');
+    if (!batch) throw new NotFoundException('Campaign not found');
     const id = actorId;
     const isOwner = batch.createdBy?.toString() === id;
     const isShared = (batch.sharedWith as Types.ObjectId[])?.some((u) => u.toString() === id);
@@ -261,7 +294,7 @@ export class BatchesService {
 
   async share(batchId: string, dto: ShareBatchDto, actorId: string): Promise<BatchShareResult> {
     const batch = await this.model.findById(batchId).exec();
-    if (!batch) throw new NotFoundException('Batch not found');
+    if (!batch) throw new NotFoundException('Campaign not found');
     if (batch.createdBy?.toString() !== actorId) throw new ForbiddenException('Only creator can share');
 
     const validIds = dto.userIds.filter((id) => Types.ObjectId.isValid(id));
@@ -315,7 +348,7 @@ export class BatchesService {
       const parentHeaders = (batch.headers as string[]) ?? [];
       const parentRows = (batch.rows as string[][]) ?? [];
       if (parentRows.length === 0) {
-        throw new BadRequestException('Batch has no rows to distribute to employees');
+        throw new BadRequestException('Campaign has no rows to distribute to employees');
       }
 
       const childDocs = await this.model
@@ -440,7 +473,7 @@ export class BatchesService {
             message: `"${dist.batchName}" — ${dist.rowCount} unique lead(s), equal share`,
             priority: 'medium',
             actionUrl: '/employee/batches',
-            actionLabel: 'Open my batches',
+            actionLabel: 'Open my campaigns',
             metadata: { batchId: dist.batchId, batchName: dist.batchName, rowCount: dist.rowCount },
           });
         }
@@ -456,13 +489,13 @@ export class BatchesService {
             const recipientRoles = ((o as { roles?: string[] }).roles ?? []) as string[];
             return this.notifications.notifyUser(String((o as { _id: Types.ObjectId })._id), {
               type: 'info',
-              title: 'Batch shared with you',
-              message: `Full batch "${batch.name}" was shared with you`,
+              title: 'Campaign shared with you',
+              message: `Full campaign "${batch.name}" was shared with you`,
               priority: 'medium',
               actionUrl: recipientRoles.includes(SystemRole.EMPLOYEE)
                 ? '/employee/batches'
                 : '/db-admin/batches',
-              actionLabel: 'Open batch library',
+              actionLabel: 'Open campaign library',
               metadata: { batchId, batchName: batch.name },
             });
           }),
@@ -482,7 +515,7 @@ export class BatchesService {
 
   async unshare(batchId: string, userId: string, actorId: string) {
     const batch = await this.model.findById(batchId).exec();
-    if (!batch) throw new NotFoundException('Batch not found');
+    if (!batch) throw new NotFoundException('Campaign not found');
     if (batch.createdBy?.toString() !== actorId) throw new ForbiddenException('Only creator can manage sharing');
     batch.sharedWith = (batch.sharedWith as Types.ObjectId[]).filter(u => u.toString() !== userId);
     await batch.save();
@@ -496,7 +529,7 @@ export class BatchesService {
     actor?: ActivityActor | null,
   ) {
     const batch = await this.model.findById(batchId).exec();
-    if (!batch) throw new NotFoundException('Batch not found');
+    if (!batch) throw new NotFoundException('Campaign not found');
 
     const isOwner = batch.createdBy?.toString() === actorId;
     const isShared = (batch.sharedWith as Types.ObjectId[])?.some(
@@ -504,7 +537,7 @@ export class BatchesService {
     );
 
     if (!isOwner && !isShared) {
-      throw new ForbiddenException('You do not have access to edit this batch');
+      throw new ForbiddenException('You do not have access to edit this campaign');
     }
 
     const oldHeaders = [...((batch.headers as string[]) ?? [])];
@@ -583,7 +616,7 @@ export class BatchesService {
 
   async delete(batchId: string, actorId: string) {
     const batch = await this.model.findById(batchId).exec();
-    if (!batch) throw new NotFoundException('Batch not found');
+    if (!batch) throw new NotFoundException('Campaign not found');
     if (batch.createdBy?.toString() !== actorId) throw new ForbiddenException('Only creator can delete');
     const actorUser = await this.usersRepository.findById(actorId);
     if (actorUser) {

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Batch, BatchSchema } from './schemas/batch.schema';
 import { BatchesController } from './batches.controller';
@@ -8,9 +8,11 @@ import { UsersModule } from '../users/users.module';
 import { ActivityLogsModule } from '../activity-logs/activity-logs.module';
 import { ActivityLog, ActivityLogSchema } from '../activity-logs/schemas/activity-log.schema';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { MasterDataModule } from '../master-data/master-data.module';
 
 @Module({
   imports: [
+    forwardRef(() => MasterDataModule),
     UsersModule,
     ActivityLogsModule,
     NotificationsModule,

@@ -128,7 +128,7 @@ export function BatchExcelView({
         headers: updated.headers,
         rows: updated.rows,
       });
-      toast.success('Batch saved', `${updated.rowCount} rows updated`);
+      toast.success('Campaign saved', `${updated.rowCount} rows updated`);
     } catch (e) {
       toast.error('Save failed', extractApiError(e));
     } finally {
@@ -143,7 +143,7 @@ export function BatchExcelView({
       month: 'short',
       year: 'numeric',
     });
-    setBatchName(`Batch ${now}`);
+    setBatchName(`Campaign ${now}`);
     setBatchDesc('');
     setBatchModal({
       rows: payload.rows,
@@ -167,7 +167,7 @@ export function BatchExcelView({
         sourceBatchId,
         parentSourceRowIndices: batchModal.sourceRowIndices,
       });
-      toast.success('Batch created', `"${batch.name}" — share it with your team from Batches`);
+      toast.success('Campaign created', `"${batch.name}" — share it with your team from Campaigns`);
       setBatchModal(null);
       window.dispatchEvent(
         new CustomEvent('batch-created', {
@@ -182,7 +182,7 @@ export function BatchExcelView({
       afterSubBatchCreated?.();
       router.push(`/db-admin/batches/${batch.id}`);
     } catch (e) {
-      toast.error('Could not create batch', extractApiError(e));
+      toast.error('Could not create campaign', extractApiError(e));
     } finally {
       setSavingBatch(false);
     }
@@ -204,7 +204,7 @@ export function BatchExcelView({
               {editable && batchId && autoSaveStatus === 'saved' && ' · Saved'}
               {editable && batchId && autoSaveStatus === 'error' && ' · Save failed'}
               {dirty && editable && !batchId && ' · Unsaved changes'}
-              {allowCreateSubBatch && ' · Filter rows → Create Batch'}
+              {allowCreateSubBatch && ' · Filter rows → Create Campaign'}
             </p>
           </div>
         </div>
@@ -278,7 +278,7 @@ export function BatchExcelView({
             <div className="pointer-events-auto flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-2xl">
               <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-6">
                 <div className="min-w-0">
-                  <p className="font-semibold text-slate-900">Create batch from admin data</p>
+                  <p className="font-semibold text-slate-900">Create campaign from admin data</p>
                   <div className="mt-1.5 flex flex-wrap gap-2">
                     <span className="inline-flex items-center rounded-full bg-violet-50 px-2.5 py-0.5 text-[11px] font-semibold text-violet-700">
                       {batchModal.rows.length.toLocaleString('en-US')} rows
@@ -302,7 +302,7 @@ export function BatchExcelView({
               <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                    Batch name <span className="text-red-500">*</span>
+                    Campaign name <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -356,7 +356,7 @@ export function BatchExcelView({
                     disabled={savingBatch || !batchName.trim()}
                     className="w-full rounded-xl bg-violet-600 py-2.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50 sm:flex-1"
                   >
-                    {savingBatch ? 'Creating…' : 'Create batch'}
+                    {savingBatch ? 'Creating…' : 'Create campaign'}
                   </button>
                 </div>
               </div>

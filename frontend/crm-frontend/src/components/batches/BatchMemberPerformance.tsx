@@ -202,7 +202,7 @@ export function BatchMemberPerformance({
           </thead>
           <tbody>
             {[
-              ['Batch opens', perf.actionTotals.views],
+              ['Campaign opens', perf.actionTotals.views],
               ['Leads touched', perf.actionTotals.touches],
               ...(perf.actionTotals.touchEvents != null &&
               perf.actionTotals.touchEvents !== perf.actionTotals.touches
@@ -259,7 +259,7 @@ export function BatchMemberPerformance({
               <thead>
                 <tr className="bg-slate-50 text-[10px] text-slate-500">
                   <th className="border-b border-slate-200 px-2 py-1 text-left">Lead</th>
-                  <th className="border-b border-slate-200 px-2 py-1 text-left">Batch</th>
+                  <th className="border-b border-slate-200 px-2 py-1 text-left">Campaign</th>
                   <th className="border-b border-slate-200 px-2 py-1 text-left">Status</th>
                   <th className="border-b border-slate-200 px-2 py-1 text-right">When</th>
                 </tr>

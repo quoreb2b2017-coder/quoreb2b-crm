@@ -175,7 +175,7 @@ export function AnalyticsPage() {
               <KpiCard
                 label="Won / Lead status"
                 value={stats.statusLeads}
-                note={`${stats.wonRate ?? 0}% conversion · ${stats.batchCount ?? 0} batches`}
+                note={`${stats.wonRate ?? 0}% conversion · ${stats.batchCount ?? 0} campaigns`}
                 accent="violet"
                 icon={<Target className="h-5 w-5 text-violet-600" />}
               />
@@ -198,7 +198,7 @@ export function AnalyticsPage() {
               <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
                 <p className="text-xs font-medium text-slate-500">Data sources</p>
                 <p className="mt-1 text-lg font-bold text-slate-900">
-                  Master + {chart.batchCount ?? 0} batches
+                  Master + {chart.batchCount ?? 0} campaigns
                 </p>
                 <p className="text-xs text-slate-400">
                   {(chart.trackedRows ?? chart.totalLeads).toLocaleString('en-US')} rows analyzed
@@ -211,7 +211,7 @@ export function AnalyticsPage() {
           <div className="grid gap-4 xl:grid-cols-2">
             <AnalyticsPanel
               title="Status distribution"
-              subtitle="Share of each lead status across master data & batches"
+              subtitle="Share of each lead status across master data & campaigns"
             >
               {loading && !chart ? (
                 <Skeleton className="mx-auto h-48 w-48 rounded-full" />

@@ -3,18 +3,26 @@
 import './batches.css';
 
 import { WORKSPACE_TIMEZONE } from '@/lib/constants/workspace-timezone';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ChevronRight, FileSpreadsheet, Folder } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState, Fragment } from 'react';
+import { ChevronRight, FileSpreadsheet, Folder, FolderOpen, UserRound } from 'lucide-react';
 import type { BatchRecord } from '@/lib/api/batches.service';
 import {
   CALENDAR_MONTHS,
   buildLibraryYears,
   currentCalendarPeriod,
-  groupBatchesByMonth,
   loadSavedLibraryYears,
   persistSavedLibraryYears,
   pickDefaultMonth,
 } from '@/lib/batches/month-structure';
+import {
+  buildCampaignFolders,
+  countCampaignFoldersInYear,
+  folderKey,
+  groupCampaignFoldersByMonth,
+  isShareSliceDescription,
+  sliceAssigneeName,
+  type CampaignFolder,
+} from '@/lib/batches/batch-tree';
 import { BatchYearToolbar } from '@/components/batches/BatchYearToolbar';
 import { cn } from '@/lib/utils/cn';
 
@@ -37,6 +45,8 @@ export interface BatchMonthExplorerProps {
   subtitle?: string;
   emptyTitle?: string;
   emptyHint?: string;
+  /** Open campaign sheet (month folder → campaign file) */
+  onOpenBatch?: (batch: BatchRecord) => void;
   renderActions: (batch: BatchRecord) => React.ReactNode;
   headerExtra?: React.ReactNode;
 }
@@ -44,10 +54,11 @@ export interface BatchMonthExplorerProps {
 export function BatchMonthExplorer({
   batches,
   loading = false,
-  title = 'Batches',
-  subtitle = 'January–December folders · new batches auto-file by creation month',
-  emptyTitle = 'No batches yet',
-  emptyHint = 'Create a batch from Master Data to see it in the matching month folder',
+  title = 'Campaigns',
+  subtitle = 'January–December folders · new campaigns auto-file by creation month',
+  emptyTitle = 'No campaigns yet',
+  emptyHint = 'Create a campaign from Master Data to see it in the matching month folder',
+  onOpenBatch,
   renderActions,
   headerExtra,
 }: BatchMonthExplorerProps) {
@@ -57,12 +68,32 @@ export function BatchMonthExplorer({
     setSavedYears(loadSavedLibraryYears());
   }, []);
 
+  const campaignFolders = useMemo(() => buildCampaignFolders(batches), [batches]);
   const years = useMemo(() => buildLibraryYears(batches, savedYears), [batches, savedYears]);
   const [year, setYear] = useState(() => currentCalendarPeriod().year);
-  const byMonth = useMemo(() => groupBatchesByMonth(batches, year), [batches, year]);
-  const [selectedMonth, setSelectedMonth] = useState(() =>
-    pickDefaultMonth(groupBatchesByMonth(batches, currentCalendarPeriod().year), currentCalendarPeriod().year),
+  const byMonth = useMemo(
+    () => groupCampaignFoldersByMonth(campaignFolders, year),
+    [campaignFolders, year],
   );
+  const [selectedMonth, setSelectedMonth] = useState(() =>
+    pickDefaultMonth(
+      groupCampaignFoldersByMonth(campaignFolders, currentCalendarPeriod().year),
+      currentCalendarPeriod().year,
+    ),
+  );
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(() => new Set());
+  const [openCampaignPath, setOpenCampaignPath] = useState<string | null>(null);
+
+  const toggleFolder = useCallback((key: string, folderName: string) => {
+    setExpandedFolders((prev) => {
+      const opening = !prev.has(key);
+      const next = new Set(prev);
+      if (opening) next.add(key);
+      else next.delete(key);
+      setOpenCampaignPath(opening ? `/${folderName}` : null);
+      return next;
+    });
+  }, []);
 
   const addYear = (y: number) => {
     if (years.includes(y)) return false;
@@ -107,16 +138,224 @@ export function BatchMonthExplorer({
     };
   }, [focusCalendarPeriod]);
 
+  const renderBatchRow = (
+    b: BatchRecord,
+    rowNum: number | string,
+    opts: { child?: boolean } = {},
+  ) => {
+    const displayName = opts.child ? sliceAssigneeName(b) : b.name;
+
+    return (
+    <tr key={b.id} className={cn(opts.child && 'xl-table-row--child')}>
+      <td className="xl-row-num">{rowNum}</td>
+      <td>
+        <div className={cn('flex items-center gap-2', opts.child && 'xl-child-indent')}>
+          {opts.child ? (
+            <span className="xl-slice-icon" aria-hidden>
+              <UserRound className="h-3.5 w-3.5" />
+            </span>
+          ) : null}
+          <div className="min-w-0">
+            {onOpenBatch ? (
+              <button
+                type="button"
+                onClick={() => onOpenBatch(b)}
+                className={cn(
+                  'text-left transition-colors hover:text-[#217346] hover:underline',
+                  opts.child ? 'xl-slice-name' : 'xl-cell-name',
+                )}
+                title={opts.child ? b.name : `Open ${b.name}`}
+              >
+                {displayName}
+              </button>
+            ) : (
+              <p className={opts.child ? 'xl-slice-name' : 'xl-cell-name'}>{displayName}</p>
+            )}
+            {opts.child ? (
+              <p className="xl-slice-sub">Team slice</p>
+            ) : (
+              b.description &&
+              !isShareSliceDescription(b.description) && (
+                <p className="mt-0.5 text-[10px] leading-snug text-slate-500">{b.description}</p>
+              )
+            )}
+          </div>
+        </div>
+      </td>
+      <td className="text-right xl-cell-mono">{b.rowCount.toLocaleString('en-US')}</td>
+      <td className="max-w-[160px] truncate text-slate-600">{b.sourceFileName ?? '—'}</td>
+      <td className="whitespace-nowrap text-slate-500">{formatDate(b.createdAt)}</td>
+      <td>
+        <div className="flex flex-nowrap items-center justify-center gap-1 whitespace-nowrap">
+          {renderActions(b)}
+        </div>
+      </td>
+    </tr>
+  );
+  };
+
+  const renderFolderToggle = (
+    key: string,
+    name: string,
+    expanded: boolean,
+    childCount: number,
+  ) => (
+    <button
+      type="button"
+      onClick={() => toggleFolder(key, name)}
+      className="xl-folder-toggle"
+      aria-expanded={expanded}
+      aria-label={expanded ? `Collapse ${name}` : `Expand ${name}`}
+    >
+      <span className="xl-folder-chevron" data-expanded={expanded ? 'true' : 'false'}>
+        <ChevronRight className="h-3.5 w-3.5" />
+      </span>
+      {expanded ? (
+        <FolderOpen className="h-4 w-4 shrink-0 text-[#217346]" />
+      ) : (
+        <Folder className="h-4 w-4 shrink-0 text-[#217346]" />
+      )}
+      <span className="min-w-0 flex-1 text-left">
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="xl-cell-name font-semibold text-[#1a5c38]">{name}</span>
+          <span className="xl-folder-count-pill">
+            {childCount} slice{childCount !== 1 ? 's' : ''}
+          </span>
+        </span>
+      </span>
+    </button>
+  );
+
+  const renderFolder = (folder: CampaignFolder, index: number) => {
+    const key = folderKey(folder);
+    const hasChildren = folder.children.length > 0;
+    const expanded = expandedFolders.has(key);
+
+    if (folder.kind === 'orphan-group') {
+      return (
+        <Fragment key={key}>
+          <tr className="xl-table-row--folder">
+            <td className="xl-row-num">{index + 1}</td>
+            <td colSpan={4} className="!p-2">
+              {renderFolderToggle(key, folder.parentName, expanded, folder.children.length)}
+            </td>
+            <td className="text-center">
+              <span className="xl-folder-label">Folder</span>
+            </td>
+          </tr>
+          {expanded &&
+            folder.children.map((child, ci) =>
+              renderBatchRow(child, `${index + 1}.${ci + 1}`, { child: true }),
+            )}
+        </Fragment>
+      );
+    }
+
+    const parent = folder.batch;
+    return (
+      <Fragment key={key}>
+        <tr className={cn(hasChildren && 'xl-table-row--folder')}>
+          <td className="xl-row-num">
+            {hasChildren ? (
+              <button
+                type="button"
+                onClick={() => toggleFolder(key, parent.name)}
+                className="xl-folder-chevron-btn mx-auto"
+                aria-label={expanded ? 'Collapse folder' : 'Expand folder'}
+              >
+                <span className="xl-folder-chevron" data-expanded={expanded ? 'true' : 'false'}>
+                  <ChevronRight className="h-3.5 w-3.5 text-[#217346]" />
+                </span>
+              </button>
+            ) : (
+              index + 1
+            )}
+          </td>
+          <td>
+            {hasChildren ? (
+              <div className="xl-folder-head">
+                <button
+                  type="button"
+                  onClick={() => toggleFolder(key, parent.name)}
+                  className="xl-folder-icon-btn"
+                  aria-label={expanded ? 'Collapse folder' : 'Expand folder'}
+                >
+                  {expanded ? (
+                    <FolderOpen className="h-4 w-4 text-[#217346]" />
+                  ) : (
+                    <Folder className="h-4 w-4 text-[#217346]" />
+                  )}
+                </button>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {onOpenBatch ? (
+                      <button
+                        type="button"
+                        onClick={() => onOpenBatch(parent)}
+                        className="xl-folder-name"
+                        title={`Open ${parent.name}`}
+                      >
+                        {parent.name}
+                      </button>
+                    ) : (
+                      <span className="xl-folder-name">{parent.name}</span>
+                    )}
+                    <span className="xl-folder-count-pill">
+                      {folder.children.length} slice{folder.children.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="min-w-0">
+                {onOpenBatch ? (
+                  <button
+                    type="button"
+                    onClick={() => onOpenBatch(parent)}
+                    className="xl-cell-name text-left transition-colors hover:text-[#217346] hover:underline"
+                    title={`Open ${parent.name}`}
+                  >
+                    {parent.name}
+                  </button>
+                ) : (
+                  <p className="xl-cell-name">{parent.name}</p>
+                )}
+                {parent.description && !isShareSliceDescription(parent.description) && (
+                  <p className="mt-0.5 text-[10px] text-slate-500">{parent.description}</p>
+                )}
+              </div>
+            )}
+          </td>
+          <td className="text-right xl-cell-mono">{parent.rowCount.toLocaleString('en-US')}</td>
+          <td className="max-w-[160px] truncate text-slate-600">{parent.sourceFileName ?? '—'}</td>
+          <td className="whitespace-nowrap text-slate-500">{formatDate(parent.createdAt)}</td>
+          <td>
+            <div className="flex flex-nowrap items-center justify-center gap-1 whitespace-nowrap">
+              {renderActions(parent)}
+            </div>
+          </td>
+        </tr>
+        {expanded &&
+          hasChildren &&
+          folder.children.map((child, ci) =>
+            renderBatchRow(child, `${index + 1}.${ci + 1}`, { child: true }),
+          )}
+      </Fragment>
+    );
+  };
+
   const monthMeta = CALENDAR_MONTHS.find((m) => m.index === selectedMonth)!;
-  const monthBatches = byMonth.get(selectedMonth) ?? [];
-  const totalInYear = Array.from(byMonth.values()).reduce((s, arr) => s + arr.length, 0);
-  const folderPath = `/batches/${year}/${String(selectedMonth).padStart(2, '0')}-${monthMeta.label.toLowerCase()}`;
+  const monthFolders = byMonth.get(selectedMonth) ?? [];
+  const totalInYear = countCampaignFoldersInYear(campaignFolders, year);
+  const folderPath = openCampaignPath
+    ? `/campaigns/${year}/${String(selectedMonth).padStart(2, '0')}-${monthMeta.label.toLowerCase()}${openCampaignPath}`
+    : `/campaigns/${year}/${String(selectedMonth).padStart(2, '0')}-${monthMeta.label.toLowerCase()}`;
 
   if (loading) {
     return (
       <div className="xl-loading">
         <div className="xl-loading-ring" aria-hidden />
-        Loading batch library…
+        Loading campaign library…
       </div>
     );
   }
@@ -210,12 +449,12 @@ export function BatchMonthExplorer({
                 {monthMeta.label} {year}
               </span>
               <span className="text-[11px] text-slate-600">
-                · {monthBatches.length} batch{monthBatches.length !== 1 ? 'es' : ''}
+                · {monthFolders.length} campaign folder{monthFolders.length !== 1 ? 's' : ''}
               </span>
             </div>
           </div>
 
-          {monthBatches.length === 0 ? (
+          {monthFolders.length === 0 ? (
             <div className="xl-empty">
               <div className="xl-empty-icon">
                 <FileSpreadsheet className="h-5 w-5 text-[#217346]" />
@@ -228,10 +467,10 @@ export function BatchMonthExplorer({
               ) : (
                 <>
                   <p className="text-sm font-medium text-slate-700">
-                    No batches in {monthMeta.label} {year}
+                    No campaigns in {monthMeta.label} {year}
                   </p>
                   <p className="mt-1 text-xs text-slate-400">
-                    Batches created in this month are filed here automatically
+                    Campaigns created in this month are filed here automatically
                   </p>
                 </>
               )}
@@ -242,7 +481,7 @@ export function BatchMonthExplorer({
                 <thead>
                   <tr>
                     <th className="w-10 text-center">#</th>
-                    <th className="text-left">Batch name</th>
+                    <th className="text-left">Campaign name</th>
                     <th className="w-20 text-right">Rows</th>
                     <th className="text-left">Source file</th>
                     <th className="w-36 text-left">Created</th>
@@ -250,27 +489,7 @@ export function BatchMonthExplorer({
                   </tr>
                 </thead>
                 <tbody>
-                  {monthBatches.map((b, i) => (
-                    <tr key={b.id}>
-                      <td className="xl-row-num">{i + 1}</td>
-                      <td>
-                        <p className="xl-cell-name">{b.name}</p>
-                        {b.description && (
-                          <p className="mt-0.5 text-[10px] text-slate-500">{b.description}</p>
-                        )}
-                      </td>
-                      <td className="text-right xl-cell-mono">{b.rowCount.toLocaleString('en-US')}</td>
-                      <td className="max-w-[160px] truncate text-slate-600">
-                        {b.sourceFileName ?? '—'}
-                      </td>
-                      <td className="whitespace-nowrap text-slate-500">{formatDate(b.createdAt)}</td>
-                      <td>
-                        <div className="flex flex-nowrap items-center justify-center gap-1 whitespace-nowrap">
-                          {renderActions(b)}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {monthFolders.map((folder, i) => renderFolder(folder, i))}
                 </tbody>
               </table>
             </div>

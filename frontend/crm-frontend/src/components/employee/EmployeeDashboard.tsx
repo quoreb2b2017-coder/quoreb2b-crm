@@ -131,7 +131,7 @@ export function EmployeeDashboard() {
           headerVariant="green"
           columns={2}
           rows={[
-            { label: 'Batches', value: b.total },
+            { label: 'Campaigns', value: b.total },
             { label: 'Total leads', value: b.totalLeads },
             { label: 'Pending', value: w.notTouched, note: 'Not touched this month' },
           ]}
@@ -162,7 +162,7 @@ export function EmployeeDashboard() {
           Lead status breakdown
         </h3>
         {data.statusBreakdown.length === 0 ? (
-          <p className="text-xs text-slate-500">No status data in your batches yet.</p>
+          <p className="text-xs text-slate-500">No status data in your campaigns yet.</p>
         ) : (
           <div className="max-h-44 space-y-3 overflow-auto pr-1">
             {data.statusBreakdown.map((item, i) => (
@@ -179,7 +179,7 @@ export function EmployeeDashboard() {
         )}
         <div className="mt-4 flex flex-wrap gap-4">
           <Link href="/employee/batches" className={dashboardLink}>
-            Open batches →
+            Open campaigns →
           </Link>
           <Link href="/employee/activity-logs" className={dashboardLink}>
             Activity logs →
@@ -189,7 +189,7 @@ export function EmployeeDashboard() {
 
       <div className="dash-section grid gap-4 lg:grid-cols-2">
         <div className={cn(dashboardCard, 'dash-section')}>
-          <div className={dashboardCardHeader}>Recent batches</div>
+          <div className={dashboardCardHeader}>Recent campaigns</div>
           <div className="dash-table-wrap">
             <table className="dash-table w-full text-xs">
               <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
@@ -203,7 +203,7 @@ export function EmployeeDashboard() {
                 {data.recentBatches.length === 0 ? (
                   <tr>
                     <td colSpan={3} className="px-3 py-8 text-center text-slate-400">
-                      No batches assigned yet
+                      No campaigns assigned yet
                     </td>
                   </tr>
                 ) : (

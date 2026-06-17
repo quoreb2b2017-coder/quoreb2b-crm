@@ -79,7 +79,7 @@ export function getProductIdForPath(pathname: string): CompanyProductId | null {
       pathname.startsWith('/admin/master-data-upload') ||
       pathname.startsWith('/admin/bulk-email-verification') ||
       pathname.startsWith('/admin/batches') ||
-      pathname.startsWith('/admin/leads') || pathname.startsWith('/admin/campaigns') ||
+      pathname.startsWith('/admin/leads') || pathname.startsWith('/admin/batches') ||
       pathname.startsWith('/admin/activity-logs') ||
       pathname.startsWith('/admin/attendance') ||
       pathname.startsWith('/admin/leave-apply') ||

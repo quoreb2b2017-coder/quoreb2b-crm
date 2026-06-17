@@ -28,7 +28,7 @@ function BatchViewContent() {
 
   useEffect(() => {
     if (!id) {
-      setError('No batch ID provided.');
+      setError('No campaign ID provided.');
       setLoading(false);
       return;
     }
@@ -43,7 +43,7 @@ function BatchViewContent() {
           rows: b.rows ?? [],
         });
       })
-      .catch(() => setError('Could not load batch. You may not have access.'))
+      .catch(() => setError('Could not load campaign. You may not have access.'))
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -72,7 +72,7 @@ function BatchViewContent() {
     <BatchExcelView
       batchId={id ?? undefined}
       editable={Boolean(id)}
-      name={batch?.name ?? 'Batch'}
+      name={batch?.name ?? 'Campaign'}
       rowCount={data?.rows.length ?? batch?.rowCount}
       columnCount={data?.headers.length ?? batch?.columnCount}
       sourceFileName={batch?.sourceFileName}

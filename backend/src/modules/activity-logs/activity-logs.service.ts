@@ -22,7 +22,9 @@ import {
   type ActivityLogRow,
 } from './employee-report.util';
 import {
+  attendanceRecordForGrossLogin,
   computeNetWorkMinutes,
+  resolveGrossLoginMinutes,
   isDailyWorkQuotaMet,
 } from '../attendance/attendance-work-time.util';
 import { formatStoredTime, formatTime12h } from '../attendance/attendance-late.util';
@@ -560,14 +562,59 @@ export class ActivityLogsService {
       periodEnd: now,
     });
 
+    const todayDateKey =
+      sessionSnap.dailyBreakdown.find((d) => d.isToday)?.date ?? calendarDateKey(now);
+    const [breakToday, todayAttRecord] = await Promise.all([
+      this.breakPunchesService.getToday(userId),
+      this.attendanceService.getDayAttendanceRecord(userId, todayDateKey),
+    ]);
+    const onBreak = Boolean(breakToday.activeType);
+    const todayBreakMinutes = attendanceSnap.todayBreakMinutes ?? 0;
+    const todayWorkBreakMinutesLive =
+      breakToday.tea.usedMinutes + breakToday.lunch.usedMinutes;
+    const todayAllBreakMinutesLive =
+      todayWorkBreakMinutesLive + breakToday.meeting.usedMinutes;
+    const todayBreakMinutesCompleted =
+      breakToday.tea.usedMinutesCompleted +
+      breakToday.lunch.usedMinutesCompleted +
+      breakToday.meeting.usedMinutesCompleted;
+    const breaksForLiveNet =
+      todayWorkBreakMinutesLive > 0 ? todayWorkBreakMinutesLive : todayBreakMinutes;
+
     const attendanceByDate = new Map(
       attendanceSnap.dailyBreakdown.map((row) => [row.date, row]),
     );
 
+    const todayAuth = buildAuthBoundaryForDay(
+      logs as unknown as ActivityLogRow[],
+      todayDateKey,
+      now,
+      sessionId,
+    );
+
+    const grossAttendanceRecord = attendanceRecordForGrossLogin(
+      todayAttRecord ?? undefined,
+      todayAuth.firstLoginAt,
+    );
+
     const dailyBreakdown = sessionSnap.dailyBreakdown.map((day) => {
       const att = attendanceByDate.get(day.date);
-      const grossMinutes = day.totalMinutes;
       const breakMinutes = att?.breakMinutes ?? 0;
+      const grossMinutes = resolveGrossLoginMinutes(
+        day.totalMinutes,
+        day.isToday ? grossAttendanceRecord : undefined,
+        day.date,
+        now,
+        day.isToday
+          ? {
+              onDuty: todayAuth.onDuty,
+              activeBreak: onBreak,
+              punchedBreakMinutes: todayAllBreakMinutesLive,
+            }
+          : {
+              punchedBreakMinutes: breakMinutes,
+            },
+      );
       const netMinutes = computeNetWorkMinutes(grossMinutes, breakMinutes);
       return {
         date: day.date,
@@ -581,37 +628,25 @@ export class ActivityLogsService {
       };
     });
 
-    const todayGrossMinutes = sessionSnap.dailyBreakdown.find((d) => d.isToday)?.totalMinutes ?? 0;
-    const todayBreakMinutes = attendanceSnap.todayBreakMinutes ?? 0;
-    const breakToday = await this.breakPunchesService.getToday(userId);
-    const onBreak = Boolean(breakToday.activeType);
-    const todayBreakMinutesCompleted =
-      breakToday.tea.usedMinutesCompleted +
-      breakToday.lunch.usedMinutesCompleted +
-      breakToday.meeting.usedMinutesCompleted;
-    const todayBreakMinutesLive =
-      breakToday.tea.usedMinutes +
-      breakToday.lunch.usedMinutes +
-      breakToday.meeting.usedMinutes;
-    const breaksForLiveNet = onBreak ? todayBreakMinutesLive : todayBreakMinutes;
+    const todayGrossMinutes =
+      dailyBreakdown.find((d) => d.isToday)?.grossMinutes ??
+      resolveGrossLoginMinutes(
+        sessionSnap.dailyBreakdown.find((d) => d.isToday)?.totalMinutes ?? 0,
+        grossAttendanceRecord,
+        todayDateKey,
+        now,
+        {
+          onDuty: todayAuth.onDuty,
+          activeBreak: onBreak,
+          punchedBreakMinutes: todayAllBreakMinutesLive,
+        },
+      );
     const todayMinutes = computeNetWorkMinutes(todayGrossMinutes, breaksForLiveNet);
-    const todayMinutesAtTarget = computeNetWorkMinutes(todayGrossMinutes, todayBreakMinutes);
+    const todayMinutesAtTarget = computeNetWorkMinutes(todayGrossMinutes, breaksForLiveNet);
     const monthlyMinutes = dailyBreakdown.reduce((sum, row) => sum + row.totalMinutes, 0);
 
     const isTimerRunning = Boolean(sessionSnap.currentSession);
     const currentSession = sessionSnap.currentSession;
-    const todayDateKey =
-      sessionSnap.dailyBreakdown.find((d) => d.isToday)?.date ?? calendarDateKey(now);
-    const todayAuth = buildAuthBoundaryForDay(
-      logs as unknown as ActivityLogRow[],
-      todayDateKey,
-      now,
-      sessionId,
-    );
-    const todayAttRecord = await this.attendanceService.getDayAttendanceRecord(
-      userId,
-      todayDateKey,
-    );
     const todaySessions = listSessionsForIstDay(
       logs as unknown as ActivityLogRow[],
       todayDateKey,
@@ -627,7 +662,7 @@ export class ActivityLogsService {
       todayFormatted: formatDuration(todayMinutes),
       todayMinutesAtTarget,
       todayGrossMinutes,
-      todayBreakMinutes,
+      todayBreakMinutes: breaksForLiveNet,
       todayBreakMinutesCompleted,
       onBreak,
       dailyTargetMinutes: DAILY_NET_WORK_TARGET_MINUTES,
@@ -640,6 +675,12 @@ export class ActivityLogsService {
           : todayAuth.firstLoginAt
             ? formatIstTime12h(todayAuth.firstLoginAt)
             : undefined,
+      todayCheckInAt:
+        todayAttRecord?.checkInTime != null
+          ? new Date(todayAttRecord.checkInTime).toISOString()
+          : todayAuth.firstLoginAt
+            ? todayAuth.firstLoginAt.toISOString()
+            : todaySessions[0]?.loginAt,
       todayLastLogoutTime:
         todayAttRecord?.eodClosed && todayAttRecord.checkOutTime
           ? formatTime12h(formatStoredTime(new Date(todayAttRecord.checkOutTime)))

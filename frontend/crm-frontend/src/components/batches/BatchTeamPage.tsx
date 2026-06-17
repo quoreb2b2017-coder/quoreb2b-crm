@@ -8,7 +8,7 @@ export function BatchTeamPage({
   batchId,
   backHref,
   batchViewHref,
-  backLabel = 'Back to batches',
+  backLabel = 'Back to campaigns',
 }: {
   batchId: string;
   backHref: string;

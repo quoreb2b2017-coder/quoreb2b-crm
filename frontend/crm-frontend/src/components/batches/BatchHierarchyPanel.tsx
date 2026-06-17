@@ -208,7 +208,7 @@ export function BatchHierarchyPanel({
           <p className="text-sm font-semibold text-slate-800">{data.root.name}</p>
           <p className="text-xs text-slate-500">
             {data.root.monthLabel && `${data.root.monthLabel} · `}
-            {data.root.rowCount.toLocaleString('en-US')} rows in this batch tree
+            {data.root.rowCount.toLocaleString('en-US')} rows in this campaign tree
           </p>
         </div>
       )}
@@ -256,7 +256,7 @@ export function BatchHierarchyPanel({
             <div className="overflow-auto border-r border-slate-300 bg-white lg:border-b-0">
               {data.tree.length === 0 && data.directEmployees.length === 0 ? (
                 <p className="py-6 text-center text-sm text-slate-500">
-                  Share this batch to see team members here.
+                  Share this campaign to see team members here.
                 </p>
               ) : (
                 <table className="w-full border-collapse text-xs">

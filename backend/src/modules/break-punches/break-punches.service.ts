@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { BreakPunch } from './schemas/break-punch.schema';
 import { MeetingBreakRequest } from './schemas/meeting-break-request.schema';
-import { BREAK_LIMITS, BREAK_TYPES, type BreakType } from './break-punch.constants';
+import { BREAK_LIMITS, BREAK_TYPES, WORK_DEDUCTIBLE_BREAK_TYPES, type BreakType } from './break-punch.constants';
 import { dateKeyFromUtcDate, todayDateUtc, todayDateKeyIst } from './break-punch-date.util';
 import { AppCacheService } from '../../redis/app-cache.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -81,13 +81,14 @@ export class BreakPunchesService {
     return roles.includes(SystemRole.EMPLOYEE) || roles.includes(SystemRole.DB_ADMIN);
   }
 
-  /** Sum tea + lunch + meeting minutes used per IST date key in range. */
+  /** Sum break minutes per IST date key (default: all types; pass WORK_DEDUCTIBLE_BREAK_TYPES for net work). */
   async getBreakMinutesByDateForUser(
     userId: string,
     start: Date,
     end: Date,
     periodEnd: Date = new Date(),
     completedOnly = false,
+    types: BreakType[] = [...BREAK_TYPES],
   ): Promise<Map<string, number>> {
     const records = await this.breakModel
       .find({
@@ -112,7 +113,7 @@ export class BreakPunchesService {
     for (const [dateKey, sessions] of byDate) {
       const activeOnDate = sessions.find((s) => !s.endedAt) ?? null;
       let total = 0;
-      for (const type of BREAK_TYPES) {
+      for (const type of types) {
         const status = this.buildTypeStatus(type, sessions, activeOnDate, now);
         total += completedOnly ? status.usedMinutesCompleted : status.usedMinutes;
       }

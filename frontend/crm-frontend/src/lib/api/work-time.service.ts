@@ -40,6 +40,8 @@ export interface WorkTimeMe {
   isTimerRunning: boolean;
   /** First LOGIN of today (US Eastern). */
   todayFirstLoginTime?: string;
+  /** First attendance check-in instant (for live gross while break continues). */
+  todayCheckInAt?: string;
   /** Last LOGOUT of today when off duty. */
   todayLastLogoutTime?: string;
   isOnDuty?: boolean;

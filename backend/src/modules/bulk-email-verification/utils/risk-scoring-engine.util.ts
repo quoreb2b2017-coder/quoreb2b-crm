@@ -170,8 +170,14 @@ export function computeRiskScore(signals: VerificationSignals): RiskScoreResult 
     const softMailboxFail =
       signals.smtpResponse.includes('connection_failed') ||
       signals.smtpResponse.includes('connection_timeout') ||
-      signals.smtpResponse.includes('all_mx_failed');
+      signals.smtpResponse.includes('all_mx_failed') ||
+      signals.smtpResponse.includes('SMTP read timeout');
     if (softMailboxFail && !isHardSmtpReject(signals)) {
+      const mxEstimate = mxDeliverableEstimate(signals);
+      if (mxEstimate) {
+        mxEstimate.reasons.unshift('mailbox_unreachable');
+        return mxEstimate;
+      }
       reasons.push('mailbox_unreachable');
       return {
         status: EmailVerificationStatus.LIKELY_VALID,
@@ -243,13 +249,19 @@ export function computeRiskScore(signals: VerificationSignals): RiskScoreResult 
         label: confidenceLabel(signals.smtpCode === 250 ? 98 : 96),
         reasons: ['smtp_accepted'],
       };
-    case EmailVerificationStatus.LIKELY_VALID:
+    case EmailVerificationStatus.LIKELY_VALID: {
+      const mxEstimate = mxDeliverableEstimate(signals);
+      if (mxEstimate) {
+        mxEstimate.reasons.unshift('smtp_likely_valid');
+        return mxEstimate;
+      }
       return {
         status: EmailVerificationStatus.LIKELY_VALID,
         score: 88,
         label: confidenceLabel(88),
         reasons: ['smtp_likely_valid'],
       };
+    }
     case EmailVerificationStatus.RISKY:
       reasons.push('smtp_greylist');
       return {
@@ -267,7 +279,12 @@ export function computeRiskScore(signals: VerificationSignals): RiskScoreResult 
         reasons,
       };
     case EmailVerificationStatus.UNKNOWN:
-    default:
+    default: {
+      const mxEstimate = mxDeliverableEstimate(signals);
+      if (mxEstimate && signals.mxValid) {
+        mxEstimate.reasons.unshift('smtp_inconclusive');
+        return mxEstimate;
+      }
       reasons.push('smtp_inconclusive');
       return {
         status: EmailVerificationStatus.UNKNOWN,
@@ -275,5 +292,6 @@ export function computeRiskScore(signals: VerificationSignals): RiskScoreResult 
         label: confidenceLabel(48),
         reasons,
       };
+    }
   }
 }

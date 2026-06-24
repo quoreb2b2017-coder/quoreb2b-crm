@@ -39,6 +39,9 @@ fi
 echo "==> Pulling latest code..."
 git pull origin main
 
+echo "==> Ensuring Redis is running..."
+bash "$APP_DIR/deploy/ec2/ensure-redis.sh"
+
 echo "==> Building Docker image..."
 cd backend
 docker build -t "$IMAGE_NAME" .

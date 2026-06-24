@@ -864,15 +864,30 @@ export function DbAdminBulkEmailVerificationPanel() {
       return [
         { label: 'Prospects', value: '—' },
         { label: 'Verified', value: '—' },
-        { label: 'Likely valid', value: '—' },
+        { label: 'SMTP confirmed', value: '—' },
         { label: 'Match rate', value: '—' },
       ];
     }
     return [
       { label: 'Prospects', value: selectedBatch.totalProspects },
-      { label: 'Verified', value: selectedBatch.verifiedCount },
-      { label: 'Likely valid', value: selectedBatch.likelyValidCount ?? 0 },
-      { label: 'Match rate', value: `${selectedBatch.successRate}%` },
+      {
+        label: 'Verified',
+        value:
+          (selectedBatch.verifiedCount ?? 0) + (selectedBatch.likelyValidCount ?? 0),
+      },
+      {
+        label: 'SMTP confirmed',
+        value: selectedBatch.verifiedCount ?? 0,
+      },
+      {
+        label: 'Match rate',
+        value: `${Math.round(
+          (((selectedBatch.verifiedCount ?? 0) +
+            (selectedBatch.likelyValidCount ?? 0)) /
+            Math.max(1, selectedBatch.emailsGenerated ?? selectedBatch.totalProspects)) *
+            1000,
+        ) / 10}%`,
+      },
     ];
   }, [selectedBatch]);
 
@@ -1155,7 +1170,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                               </div>
                             ) : batch.status === 'completed' ? (
                               batch.emailsGenerated > 0
-                                ? `${batch.emailsGenerated} contacts · ${batch.verifiedCount} verified · ${batch.likelyValidCount ?? 0} likely`
+                                ? `${batch.emailsGenerated} contacts · ${(batch.verifiedCount ?? 0) + (batch.likelyValidCount ?? 0)} verified`
                                 : '0 contacts — Re-run after reset'
                             ) : (
                               '—'
@@ -1383,17 +1398,10 @@ export function DbAdminBulkEmailVerificationPanel() {
         }
       >
         {selectedBatch?.status === 'completed' &&
-        selectedBatch.verifiedCount === 0 &&
-        (selectedBatch.likelyValidCount ?? 0) > 0 ? (
-          <div className="border-b border-sky-200 bg-sky-50 px-4 py-2.5 text-sm text-sky-900">
-            Live mailbox checks did not complete for this file.{' '}
-            <strong>{selectedBatch.likelyValidCount}</strong> likely valid emails are ready — filter
-            by status or download below.
-          </div>
-        ) : selectedBatch?.status === 'completed' &&
-          selectedBatch.verifiedCount === 0 &&
-          (selectedBatch.likelyValidCount ?? 0) === 0 &&
-          (selectedBatch.emailsGenerated ?? 0) > 0 ? (
+        (selectedBatch.verifiedCount ?? 0) +
+          (selectedBatch.likelyValidCount ?? 0) ===
+          0 &&
+        (selectedBatch.emailsGenerated ?? 0) > 0 ? (
           <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
             Verification finished but no deliverable emails were found. Check that prospects have
             valid company domains or email addresses.

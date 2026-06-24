@@ -14,6 +14,17 @@ export interface ProvidedEmailResolution {
   correctedEmail?: string;
 }
 
+/** True when we should also verify name+domain patterns (not just the uploaded address). */
+export function shouldCrossCheckProvidedPatterns(
+  provided: VerifiableAttempt,
+  patterns: Array<{ email: string }>,
+): boolean {
+  const normalized = provided.candidate.email.trim().toLowerCase();
+  if (!smtpConfirmedAttempt(provided)) return true;
+  if (!patterns.length) return false;
+  return !patterns.some((p) => p.email.trim().toLowerCase() === normalized);
+}
+
 /**
  * Uploaded row had an Email column — verify that address, suggest pattern-based fix when wrong.
  * Row status stays on the provided-email attempt (caller persists provided attempt).

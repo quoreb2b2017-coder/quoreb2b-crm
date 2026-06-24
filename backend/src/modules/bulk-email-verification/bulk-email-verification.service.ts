@@ -94,7 +94,10 @@ export class BulkEmailVerificationService {
           continue;
         }
         providedEmail = syntax.normalizedEmail;
-        domain = syntax.domain;
+        // Keep Company Domain for pattern generation when both columns are present.
+        if (!domain) {
+          domain = syntax.domain;
+        }
       } else if (domain) {
         domain = normalizeDomain(domain);
       }

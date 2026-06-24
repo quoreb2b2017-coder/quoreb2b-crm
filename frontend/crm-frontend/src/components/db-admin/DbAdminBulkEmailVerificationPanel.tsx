@@ -894,9 +894,9 @@ export function DbAdminBulkEmailVerificationPanel() {
         toolbar={
           <div className="flex w-full flex-wrap items-center gap-2">
             <span className="font-medium text-slate-700">
-              Domain only: we generate emails from name + domain and verify (Valid = mailbox confirmed,
-              Likely valid = best pattern). With Email column: we verify your address and suggest a
-              corrected one when needed.
+              Domain only: generate emails from name + domain (Valid = mailbox confirmed, Likely valid =
+              best pattern). Email column: your address is fully verified — if wrong, we suggest the
+              correct pattern-based email.
             </span>
             <span className="text-slate-300">|</span>
             <button type="button" onClick={() => void load({ silent: true })} disabled={loading} className={shellBtn()}>
@@ -1551,7 +1551,7 @@ export function DbAdminBulkEmailVerificationPanel() {
         headers={pendingUpload?.headers ?? [...PROSPECT_HEADERS]}
         rows={pendingUpload?.rows ?? []}
         totalRows={pendingUpload?.rows.length}
-        note="Rows with an Email column are format-checked. Rows with Company Domain get full pattern verification."
+        note="Email column: each address is fully verified (mailbox/MX). Wrong emails get a corrected suggestion from name + domain patterns."
         actions={
           pendingUpload
             ? [

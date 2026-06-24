@@ -28,7 +28,10 @@ import {
   smtpConfirmedAttempt,
   statusRank,
 } from './utils/email-pattern-priority.util';
-import { resolveProvidedEmailVerification } from './utils/provided-email-resolution.util';
+import {
+  resolveProvidedEmailVerification,
+  shouldCrossCheckProvidedPatterns,
+} from './utils/provided-email-resolution.util';
 import { resolvePositiveInt } from './utils/config-numbers.util';
 import { validateEmailSyntax } from './utils/syntax-validation.util';
 import {
@@ -192,7 +195,7 @@ export class BulkEmailVerificationProcessorService implements OnModuleInit {
     );
 
     let patternAttempts: PatternAttempt[] = [];
-    if (!(smtpConfirmedAttempt(providedAttempt) && this.stopOnValid())) {
+    if (shouldCrossCheckProvidedPatterns(providedAttempt, built.patterns)) {
       patternAttempts = await this.verifyPatternCandidates(built, prospect, domainCache, {
         excludeEmail: providedEmail,
       });

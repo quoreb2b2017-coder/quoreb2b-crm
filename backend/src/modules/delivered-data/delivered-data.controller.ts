@@ -23,7 +23,7 @@ export class SuppressionDataController {
   constructor(private suppressionDataService: SuppressionDataService) {}
 
   @Get('campaigns')
-  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.EMPLOYEE)
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.EMPLOYEE, SystemRole.DB_ADMIN)
   listCampaigns() {
     return this.suppressionDataService.listSuppressionCampaigns();
   }

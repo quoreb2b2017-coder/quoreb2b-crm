@@ -8,12 +8,15 @@ export function CheckSuppressionResultPopup({
   duplicateCount,
   duplicateFileName,
   duplicateSourceRole = 'employee',
+  highlightOnSheet = true,
   onDone,
 }: {
   open: boolean;
   duplicateCount: number;
   duplicateFileName?: string | null;
   duplicateSourceRole?: 'employee' | 'db_admin';
+  /** When false, skip "highlighted on sheet" (e.g. DB Admin wizard without grid) */
+  highlightOnSheet?: boolean;
   onDone: () => void;
 }) {
   useEffect(() => {
@@ -56,9 +59,15 @@ export function CheckSuppressionResultPopup({
             <>
               <p className="text-4xl font-black tabular-nums text-amber-900">{duplicateCount}</p>
               <p className="mt-1 text-base font-semibold text-amber-800">duplicate(s) found</p>
-              <p className="mt-2 text-sm text-amber-800">
-                Duplicate contacts are <strong>highlighted in red</strong> on your sheet
-              </p>
+              {highlightOnSheet ? (
+                <p className="mt-2 text-sm text-amber-800">
+                  Duplicate contacts are <strong>highlighted in red</strong> on your sheet
+                </p>
+              ) : (
+                <p className="mt-2 text-sm text-amber-800">
+                  Your extract is unchanged — duplicates are saved separately
+                </p>
+              )}
               {duplicateFileName && (
                 <p className="mt-4 rounded-2xl bg-amber-100/60 px-4 py-2 text-xs text-amber-900">
                   Copy saved as <strong className="font-semibold">{duplicateFileName}</strong> in{' '}

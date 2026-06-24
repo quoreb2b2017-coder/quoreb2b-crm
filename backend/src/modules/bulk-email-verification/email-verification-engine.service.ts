@@ -7,6 +7,7 @@ import { validateDomainDns } from './utils/domain-dns.util';
 import { validateEmailSyntax } from './utils/syntax-validation.util';
 import { isDisposableDomain, initDisposableDomains } from './utils/disposable-email.util';
 import { isRoleBasedEmail } from './utils/role-based-email.util';
+import { isFreeEmailDomain } from './utils/free-email-domain.util';
 import {
   detectCatchAllDomain,
   verifyEmailSmtp,
@@ -123,7 +124,7 @@ export class EmailVerificationEngineService implements OnModuleInit {
     const skipCatchAllProbe =
       this.config.get<string>('BULK_EMAIL_SKIP_CATCH_ALL_PROBE') === 'true';
 
-    if (dns.valid && dns.mxHosts.length && !skipCatchAllProbe && this.port25Reachable) {
+    if (dns.valid && dns.mxHosts.length && !skipCatchAllProbe) {
       const cached = this.catchAllCache.get(dns.domain);
       if (cached !== undefined) {
         isCatchAllDomain = cached;
@@ -160,28 +161,30 @@ export class EmailVerificationEngineService implements OnModuleInit {
     const dns = ctx.dns!;
     const isDisposable = syntax.valid ? isDisposableDomain(syntax.domain) : false;
     const isRoleBased = syntax.valid ? isRoleBasedEmail(syntax.localPart) : false;
+    const isFreeEmail = syntax.valid ? isFreeEmailDomain(syntax.domain) : false;
 
     let smtpStatus = EmailVerificationStatus.INVALID;
     let smtpResponse = 'skipped';
     let smtpCode: number | undefined;
 
     const skipSmtpProbe = this.config.get<string>('BULK_EMAIL_SKIP_SMTP_PROBE') === 'true';
-    const forceSmtpProbe = this.config.get<string>('BULK_EMAIL_FORCE_SMTP_PROBE') === 'true';
 
     const shouldTrySmtp =
       !skipSmtpProbe &&
-      (this.port25Reachable || forceSmtpProbe) &&
       syntax.valid &&
       !isDisposable &&
       dns.valid &&
       dns.mxHosts.length > 0;
 
     if (shouldTrySmtp) {
+      const smtpTimeout = this.port25Reachable
+        ? this.getSmtpTimeoutMs()
+        : Math.min(this.getSmtpTimeoutMs(), 6_000);
       const smtp = await verifyEmailSmtp(
         syntax.normalizedEmail,
         dns.mxHosts,
         this.getSmtpFrom(),
-        this.getSmtpTimeoutMs(),
+        smtpTimeout,
       );
       smtpStatus = smtp.status;
       smtpResponse = smtp.smtpResponse;
@@ -191,14 +194,10 @@ export class EmailVerificationEngineService implements OnModuleInit {
       syntax.valid &&
       !isDisposable &&
       dns.valid &&
-      !shouldTrySmtp
+      skipSmtpProbe
     ) {
       smtpStatus = EmailVerificationStatus.UNKNOWN;
-      smtpResponse = skipSmtpProbe
-        ? 'mx_only:smtp_probe_disabled'
-        : !this.port25Reachable
-          ? 'mx_only:port25_blocked'
-          : 'mx_only:smtp_skipped';
+      smtpResponse = 'mx_only:smtp_probe_disabled';
     } else if (!syntax.valid) {
       smtpResponse = syntax.error ?? 'invalid_syntax';
     } else if (isDisposable) {
@@ -222,6 +221,7 @@ export class EmailVerificationEngineService implements OnModuleInit {
       isCatchAllDomain: Boolean(ctx.isCatchAllDomain),
       isDisposable,
       isRoleBased,
+      isFreeEmail,
       strictMailboxReject:
         this.config.get<string>('BULK_EMAIL_STRICT_MAILBOX_REJECT') === 'true',
       smtpAttempted: shouldTrySmtp,

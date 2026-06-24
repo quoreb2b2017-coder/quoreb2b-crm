@@ -15,28 +15,30 @@ export interface ZeroBounceValidateResult {
 export function mapZeroBounceToInternalStatus(
   zbStatus: string | undefined,
   subStatus?: string,
+  options?: { mxFound?: boolean; freeEmail?: boolean },
 ): EmailVerificationStatus {
   const status = (zbStatus ?? 'unknown').toLowerCase();
   const sub = (subStatus ?? '').toLowerCase();
+  const mxFound = options?.mxFound ?? false;
 
   switch (status) {
     case 'valid':
-      return EmailVerificationStatus.VALID;
+      return options?.freeEmail
+        ? EmailVerificationStatus.RISKY
+        : EmailVerificationStatus.VALID;
     case 'catch-all':
       return EmailVerificationStatus.CATCH_ALL;
     case 'invalid':
-      if (sub === 'possible_typo' || sub === 'mailbox_not_found') {
-        return EmailVerificationStatus.INVALID;
-      }
       return EmailVerificationStatus.INVALID;
     case 'unknown':
+      if (mxFound) return EmailVerificationStatus.LIKELY_VALID;
       return EmailVerificationStatus.UNKNOWN;
     case 'spamtrap':
     case 'abuse':
     case 'do_not_mail':
       return EmailVerificationStatus.RISKY;
     default:
-      return EmailVerificationStatus.UNKNOWN;
+      return mxFound ? EmailVerificationStatus.LIKELY_VALID : EmailVerificationStatus.UNKNOWN;
   }
 }
 

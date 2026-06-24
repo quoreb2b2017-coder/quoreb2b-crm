@@ -1,4 +1,5 @@
 import * as net from 'net';
+import * as tls from 'tls';
 import { randomBytes } from 'crypto';
 import { EmailVerificationStatus } from '../bulk-email-verification.constants';
 import { SMTP_VERIFY_TIMEOUT_MS } from '../bulk-email-verification.constants';
@@ -16,7 +17,9 @@ export interface SmtpVerifyResult {
   isCatchAllDomain?: boolean;
 }
 
-function readResponse(socket: net.Socket, timeoutMs: number): Promise<string> {
+type SmtpSocket = net.Socket | tls.TLSSocket;
+
+function readResponse(socket: SmtpSocket, timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
     let buffer = '';
     const timeout = setTimeout(() => {
@@ -45,7 +48,7 @@ function readResponse(socket: net.Socket, timeoutMs: number): Promise<string> {
 }
 
 async function sendCommand(
-  socket: net.Socket,
+  socket: SmtpSocket,
   command: string,
   timeoutMs: number,
 ): Promise<string> {
@@ -104,7 +107,7 @@ function classifyRcptResponse(rcpt: string, code: number): SmtpVerifyResult {
       };
     }
     return {
-      status: EmailVerificationStatus.UNKNOWN,
+      status: EmailVerificationStatus.INVALID,
       smtpResponse: rcpt,
       smtpCode: code,
     };
@@ -116,8 +119,34 @@ function classifyRcptResponse(rcpt: string, code: number): SmtpVerifyResult {
   };
 }
 
-async function greetAndRcpt(
+async function upgradeStartTls(
   socket: net.Socket,
+  mxHost: string,
+  timeoutMs: number,
+): Promise<SmtpSocket> {
+  const startTls = await sendCommand(socket, 'STARTTLS', timeoutMs);
+  if (parseSmtpCode(startTls) !== 220) {
+    throw new Error(startTls);
+  }
+
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('STARTTLS timeout')), timeoutMs);
+    const secure = tls.connect(
+      { socket, servername: mxHost, rejectUnauthorized: false },
+      () => {
+        clearTimeout(timer);
+        resolve(secure);
+      },
+    );
+    secure.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+
+async function greetAndRcpt(
+  socket: SmtpSocket,
   email: string,
   fromEmail: string,
   mxHost: string,
@@ -133,15 +162,16 @@ async function greetAndRcpt(
   }
 
   const helloDomain = ehloHost(fromEmail, mxHost);
-  let helloOk = false;
+  let activeSocket: SmtpSocket = socket;
+  let ehlo = '';
   try {
-    const ehlo = await sendCommand(socket, `EHLO ${helloDomain}`, timeoutMs);
-    helloOk = parseSmtpCode(ehlo) < 400;
+    ehlo = await sendCommand(activeSocket, `EHLO ${helloDomain}`, timeoutMs);
   } catch {
-    helloOk = false;
+    ehlo = '';
   }
-  if (!helloOk) {
-    const helo = await sendCommand(socket, `HELO ${helloDomain}`, timeoutMs);
+
+  if (parseSmtpCode(ehlo) >= 400) {
+    const helo = await sendCommand(activeSocket, `HELO ${helloDomain}`, timeoutMs);
     if (parseSmtpCode(helo) >= 400) {
       return {
         status: EmailVerificationStatus.UNKNOWN,
@@ -149,9 +179,26 @@ async function greetAndRcpt(
         smtpCode: parseSmtpCode(helo),
       };
     }
+  } else if (/STARTTLS/i.test(ehlo) && !(activeSocket instanceof tls.TLSSocket)) {
+    try {
+      activeSocket = await upgradeStartTls(activeSocket as net.Socket, mxHost, timeoutMs);
+      const ehloTls = await sendCommand(activeSocket, `EHLO ${helloDomain}`, timeoutMs);
+      if (parseSmtpCode(ehloTls) >= 400) {
+        return {
+          status: EmailVerificationStatus.UNKNOWN,
+          smtpResponse: ehloTls,
+          smtpCode: parseSmtpCode(ehloTls),
+        };
+      }
+    } catch (err) {
+      return {
+        status: EmailVerificationStatus.UNKNOWN,
+        smtpResponse: err instanceof Error ? err.message : 'starttls_failed',
+      };
+    }
   }
 
-  const mailFrom = await sendCommand(socket, `MAIL FROM:<${fromEmail}>`, timeoutMs);
+  const mailFrom = await sendCommand(activeSocket, `MAIL FROM:<${fromEmail}>`, timeoutMs);
   if (parseSmtpCode(mailFrom) >= 400) {
     return {
       status: EmailVerificationStatus.UNKNOWN,
@@ -160,9 +207,9 @@ async function greetAndRcpt(
     };
   }
 
-  const rcpt = await sendCommand(socket, `RCPT TO:<${email}>`, timeoutMs);
+  const rcpt = await sendCommand(activeSocket, `RCPT TO:<${email}>`, timeoutMs);
   const code = parseSmtpCode(rcpt);
-  await sendCommand(socket, 'QUIT', timeoutMs).catch(() => undefined);
+  await sendCommand(activeSocket, 'QUIT', timeoutMs).catch(() => undefined);
   return classifyRcptResponse(rcpt, code);
 }
 

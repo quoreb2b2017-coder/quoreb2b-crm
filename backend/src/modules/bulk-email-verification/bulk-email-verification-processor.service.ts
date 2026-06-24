@@ -84,7 +84,7 @@ export class BulkEmailVerificationProcessorService implements OnModuleInit {
     const skipSmtp = this.config.get<string>('BULK_EMAIL_SKIP_SMTP_PROBE') === 'true';
     const stopOnValid = this.stopOnValid();
     this.logger.log(
-      `Bulk email verification: in-house engine (SMTP probe ${skipSmtp ? 'off — MX/DNS' : 'on'}, stop-on-valid ${stopOnValid ? 'on' : 'off'})`,
+      `Bulk email verification: in-house engine (SMTP probe ${skipSmtp ? 'off' : 'on'}, stop-on-valid ${stopOnValid ? 'on' : 'off'})`,
     );
   }
 
@@ -436,19 +436,11 @@ export class BulkEmailVerificationProcessorService implements OnModuleInit {
     if (smtpResponse.includes('smtp_greylist') || smtpResponse.includes('450')) {
       return 'unknown';
     }
-    if (
-      status === EmailVerificationStatus.LIKELY_VALID &&
-      (smtpResponse.includes('mx_pattern') ||
-        smtpResponse.includes('mx_only') ||
-        smtpResponse.includes('port25'))
-    ) {
-      return 'valid';
-    }
     switch (status) {
       case EmailVerificationStatus.VALID:
         return 'valid';
       case EmailVerificationStatus.LIKELY_VALID:
-        return 'valid';
+        return 'unknown';
       case EmailVerificationStatus.CATCH_ALL:
         return 'catch-all';
       case EmailVerificationStatus.INVALID:

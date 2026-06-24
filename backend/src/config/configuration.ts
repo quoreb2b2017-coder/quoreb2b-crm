@@ -73,8 +73,7 @@ export default () => ({
   BULK_EMAIL_DISPOSABLE_DOMAINS_PATH: process.env.BULK_EMAIL_DISPOSABLE_DOMAINS_PATH,
   BULK_EMAIL_MX_ONLY_FALLBACK: process.env.BULK_EMAIL_MX_ONLY_FALLBACK !== 'false',
   BULK_EMAIL_STRICT_MAILBOX_REJECT: process.env.BULK_EMAIL_STRICT_MAILBOX_REJECT === 'true',
-  /** In-house only — no third-party verification API */
+  /** In-house only — SMTP + DNS/MX verification */
   BULK_EMAIL_VERIFICATION_PROVIDER: 'internal',
-  /** false = RCPT TO mailbox check (matches ZeroBounce mailbox layer) */
   BULK_EMAIL_SKIP_SMTP_PROBE: process.env.BULK_EMAIL_SKIP_SMTP_PROBE === 'true',
 });

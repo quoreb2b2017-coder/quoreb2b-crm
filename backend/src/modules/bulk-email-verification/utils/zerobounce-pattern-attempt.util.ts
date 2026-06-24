@@ -1,6 +1,7 @@
 import { EmailVerificationStatus } from '../bulk-email-verification.constants';
 import { isRoleBasedEmail } from './role-based-email.util';
 import { isDisposableDomain } from './disposable-email.util';
+import { isFreeEmailDomain } from './free-email-domain.util';
 import {
   mapZeroBounceToInternalStatus,
   parseMxFound,
@@ -32,19 +33,33 @@ export function patternAttemptFromZeroBounce(
   const domain = email.split('@')[1] ?? '';
   const zbStatus = (zb?.status ?? 'unknown').toLowerCase();
   const subStatus = zb?.sub_status ?? '';
-
-  const status = mapZeroBounceToInternalStatus(zb?.status, subStatus);
   const mxValid = parseMxFound(zb?.mx_found);
-  const confidenceScore = scoreFromZeroBounce(status, zb?.status, mxValid);
+  const freeEmail = Boolean(zb?.free_email) || isFreeEmailDomain(domain);
 
-  const zbValid = zbStatus === 'valid';
-  const zbCatchAll = zbStatus === 'catch-all';
+  let status = mapZeroBounceToInternalStatus(zb?.status, subStatus, {
+    mxFound: mxValid,
+    freeEmail,
+  });
+
+  if (isDisposableDomain(domain)) {
+    status = EmailVerificationStatus.INVALID;
+  } else if (isRoleBasedEmail(localPart) && status === EmailVerificationStatus.VALID) {
+    status = EmailVerificationStatus.RISKY;
+  }
+
+  const confidenceScore =
+    zbStatus === 'valid' && status === EmailVerificationStatus.VALID
+      ? 98
+      : scoreFromZeroBounce(status, zb?.status, mxValid);
+
+  const zbValid = status === EmailVerificationStatus.VALID;
+  const zbCatchAll = status === EmailVerificationStatus.CATCH_ALL;
 
   return {
     candidate,
-    status: zbValid ? EmailVerificationStatus.VALID : status,
+    status,
     confidenceScore: zbValid ? 98 : confidenceScore,
-    mxValid: zbValid ? mxValid : mxValid,
+    mxValid: zbValid || mxValid || zbCatchAll,
     domainExists: zbValid || mxValid || zbCatchAll,
     syntaxValid: zbStatus !== 'invalid' || subStatus === 'mailbox_not_found',
     isDisposable: domain ? isDisposableDomain(domain) : false,

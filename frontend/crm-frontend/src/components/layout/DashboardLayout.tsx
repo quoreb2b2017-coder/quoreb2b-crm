@@ -72,8 +72,7 @@ export function isAdminFullBleedPath(pathname: string) {
     isQcPath(pathname) ||
     isBatchTeamPath(pathname) ||
     isMasterDataSpreadsheetPath(pathname) ||
-    isAdminUsersListPath(pathname) ||
-    isBulkEmailVerificationPath(pathname)
+    isAdminUsersListPath(pathname)
   );
 }
 
@@ -984,15 +983,17 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
             'flex-1 min-h-0 min-w-0 w-full transition-opacity duration-200',
             edgeToEdge ? 'p-0' : 'overflow-auto p-4 sm:p-6',
             contentLocked ? 'flex flex-col overflow-hidden' : 'overflow-y-auto overflow-x-hidden',
-            attendancePage && 'overflow-y-auto',
+            (attendancePage || isBulkEmailVerificationPath(pathname)) && 'overflow-y-auto',
             isNavigating && 'opacity-80',
           )}
         >
           <div
             key={pathname}
             className={cn(
-              'min-h-0 min-w-0 w-full max-w-none flex-1 animate-page-enter',
-              edgeToEdge ? 'flex flex-col self-stretch' : '',
+              'min-w-0 w-full max-w-none animate-page-enter',
+              edgeToEdge && contentLocked && 'min-h-0 flex-1 flex flex-col self-stretch',
+              edgeToEdge && !contentLocked && 'flex flex-col self-stretch',
+              !edgeToEdge && 'min-h-0 flex-1',
               (attendancePage || isBulkEmailVerificationPath(pathname)) && 'attendance-full-bleed',
             )}
           >

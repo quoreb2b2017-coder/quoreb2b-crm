@@ -95,7 +95,7 @@ export class BatchesController {
   @Get(':id')
   @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN, SystemRole.EMPLOYEE)
   findOne(@Param('id') id: string, @CurrentUser() user: JwtUser) {
-    return this.batchesService.findOne(id, user.id ?? user.sub!);
+    return this.batchesService.findOne(id, user.id ?? user.sub!, user.roles ?? []);
   }
 
   @Patch(':id')
@@ -106,19 +106,20 @@ export class BatchesController {
       dto,
       user.id ?? user.sub!,
       actorFromJwt(user),
+      user.roles ?? [],
     );
   }
 
   @Post(':id/share')
   @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
   share(@Param('id') id: string, @Body() dto: ShareBatchDto, @CurrentUser() user: JwtUser) {
-    return this.batchesService.share(id, dto, user.id ?? user.sub!);
+    return this.batchesService.share(id, dto, user.id ?? user.sub!, user.roles ?? []);
   }
 
   @Delete(':id/share/:userId')
   @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
   unshare(@Param('id') id: string, @Param('userId') userId: string, @CurrentUser() user: JwtUser) {
-    return this.batchesService.unshare(id, userId, user.id ?? user.sub!);
+    return this.batchesService.unshare(id, userId, user.id ?? user.sub!, user.roles ?? []);
   }
 
   @Delete(':id')

@@ -301,28 +301,49 @@ export class BatchesService {
     if (updates.length) await Promise.all(updates);
   }
 
-  async findOne(batchId: string, actorId: string) {
+  async findOne(batchId: string, actorId: string, roles: string[] = []) {
+    const isAdmin =
+      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
     return this.cache.wrap(
-      `batch:full:${batchId}:${actorId}`,
+      `batch:full:${batchId}:${actorId}:${isAdmin ? 'admin' : 'user'}`,
       cacheTtlSeconds(this.config, 'medium'),
-      () => this.loadOneBatch(batchId, actorId),
+      () => this.loadOneBatch(batchId, actorId, roles),
     );
   }
 
-  private async loadOneBatch(batchId: string, actorId: string) {
+  private assertBatchAccess(
+    batch: { createdBy?: Types.ObjectId; sharedWith?: Types.ObjectId[] },
+    actorId: string,
+    roles: string[] = [],
+  ): void {
+    const isAdmin =
+      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
+    if (isAdmin) return;
+
+    const isOwner = batch.createdBy?.toString() === actorId;
+    const isShared = (batch.sharedWith as Types.ObjectId[])?.some(
+      (u) => u.toString() === actorId,
+    );
+    if (!isOwner && !isShared) {
+      throw new ForbiddenException('Access denied');
+    }
+  }
+
+  private async loadOneBatch(batchId: string, actorId: string, roles: string[] = []) {
     const batch = await this.model.findById(batchId).lean().exec();
     if (!batch) throw new NotFoundException('Campaign not found');
-    const id = actorId;
-    const isOwner = batch.createdBy?.toString() === id;
-    const isShared = (batch.sharedWith as Types.ObjectId[])?.some((u) => u.toString() === id);
-    if (!isOwner && !isShared) throw new ForbiddenException('Access denied');
+    this.assertBatchAccess(batch, actorId, roles);
     return this.toResponse(batch as unknown as Batch);
   }
 
-  async share(batchId: string, dto: ShareBatchDto, actorId: string): Promise<BatchShareResult> {
+  async share(batchId: string, dto: ShareBatchDto, actorId: string, roles: string[] = []) {
     const batch = await this.model.findById(batchId).exec();
     if (!batch) throw new NotFoundException('Campaign not found');
-    if (batch.createdBy?.toString() !== actorId) throw new ForbiddenException('Only creator can share');
+    const isAdmin =
+      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
+    if (!isAdmin && batch.createdBy?.toString() !== actorId) {
+      throw new ForbiddenException('Only creator can share');
+    }
 
     const validIds = dto.userIds.filter((id) => Types.ObjectId.isValid(id));
     const existing = (batch.sharedWith as Types.ObjectId[]).map((u) => u.toString());
@@ -544,10 +565,14 @@ export class BatchesService {
     };
   }
 
-  async unshare(batchId: string, userId: string, actorId: string) {
+  async unshare(batchId: string, userId: string, actorId: string, roles: string[] = []) {
     const batch = await this.model.findById(batchId).exec();
     if (!batch) throw new NotFoundException('Campaign not found');
-    if (batch.createdBy?.toString() !== actorId) throw new ForbiddenException('Only creator can manage sharing');
+    const isAdmin =
+      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
+    if (!isAdmin && batch.createdBy?.toString() !== actorId) {
+      throw new ForbiddenException('Only creator can manage sharing');
+    }
     batch.sharedWith = (batch.sharedWith as Types.ObjectId[]).filter(u => u.toString() !== userId);
     await batch.save();
     return this.toResponse(batch);
@@ -558,24 +583,22 @@ export class BatchesService {
     dto: UpdateBatchDto,
     actorId: string,
     actor?: ActivityActor | null,
+    roles: string[] = [],
   ) {
     const batch = await this.model.findById(batchId).exec();
     if (!batch) throw new NotFoundException('Campaign not found');
 
-    const isOwner = batch.createdBy?.toString() === actorId;
-    const isShared = (batch.sharedWith as Types.ObjectId[])?.some(
-      (u) => u.toString() === actorId,
-    );
+    this.assertBatchAccess(batch, actorId, roles);
 
-    if (!isOwner && !isShared) {
-      throw new ForbiddenException('You do not have access to edit this campaign');
-    }
+    const isAdmin =
+      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
+    const isOwner = batch.createdBy?.toString() === actorId;
 
     const oldHeaders = [...((batch.headers as string[]) ?? [])];
     const oldRows = (batch.rows as string[][])?.map((r) => [...r]) ?? [];
 
-    if (dto.name != null && isOwner) batch.name = dto.name;
-    if (dto.campaignChannel != null && isOwner) {
+    if (dto.name != null && (isOwner || isAdmin)) batch.name = dto.name;
+    if (dto.campaignChannel != null && (isOwner || isAdmin)) {
       batch.campaignChannel = dto.campaignChannel;
     }
     if (dto.headers != null) batch.headers = dto.headers;

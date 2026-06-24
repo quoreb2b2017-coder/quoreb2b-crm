@@ -17,7 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { ExcelPreviewGrid } from '@/components/admin/ExcelPreviewGrid';
+import { CampaignExtractPreview } from '@/components/db-admin/CampaignExtractPreview';
 import { CheckSuppressionResultPopup } from '@/components/employee/CheckSuppressionResultPopup';
 import { batchesService } from '@/lib/api/batches.service';
 import { suppressionDataService } from '@/lib/api/suppression-data.service';
@@ -91,6 +91,9 @@ export function DbAdminCampaignWizard({
     }),
     [batchName, headers, rows, sourceFileName],
   );
+
+  const modalWidth =
+    step === 'suppression' ? 'max-w-lg' : step === 'extract' ? 'max-w-4xl' : 'max-w-3xl';
 
   useEffect(() => {
     if (!open) return;
@@ -230,7 +233,6 @@ export function DbAdminCampaignWizard({
   if (!open) return null;
 
   const stepIndex = STEPS.findIndex((s) => s.id === step);
-  const modalWidth = step === 'suppression' ? 'max-w-lg' : 'max-w-3xl';
 
   return (
     <>
@@ -288,14 +290,39 @@ export function DbAdminCampaignWizard({
           <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
             {step === 'extract' && (
               <div className="space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-800 ring-1 ring-violet-100">
-                    {rows.length.toLocaleString()} contacts extracted
-                  </span>
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                    {headers.length} columns
-                  </span>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-xl border border-violet-100 bg-gradient-to-br from-violet-50 to-white p-3.5 sm:p-4">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-violet-600">
+                      Contacts
+                    </p>
+                    <p className="mt-1 text-2xl font-black tabular-nums text-violet-900">
+                      {rows.length.toLocaleString()}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-violet-700">Ready for campaign</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white p-3.5 sm:p-4">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                      Columns
+                    </p>
+                    <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">
+                      {headers.length}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">From master file</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white p-3.5 sm:p-4 sm:col-span-1">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                      Source
+                    </p>
+                    <p
+                      className="mt-1 truncate text-sm font-semibold text-slate-800"
+                      title={previewData.fileName}
+                    >
+                      {previewData.fileName}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-slate-500">Master data extract</p>
+                  </div>
                 </div>
+
                 <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 space-y-3">
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700">
@@ -321,9 +348,8 @@ export function DbAdminCampaignWizard({
                     />
                   </div>
                 </div>
-                <div className="h-[min(280px,40vh)] overflow-hidden rounded-xl border border-slate-200 shadow-sm">
-                  <ExcelPreviewGrid data={previewData} fillHeight editable={false} />
-                </div>
+
+                <CampaignExtractPreview headers={headers} rows={rows} />
               </div>
             )}
 

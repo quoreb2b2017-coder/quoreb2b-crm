@@ -1,7 +1,7 @@
 'use client';
 
 import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { RefreshCw, Database, Layers, Users } from 'lucide-react';
 import { WelcomeBanner } from '@/components/dashboard/WelcomeBanner';
@@ -34,23 +34,26 @@ export function DbAdminDashboard() {
   const [data, setData] = useState<DbAdminDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const hasDataRef = useRef(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent || !hasDataRef.current) setLoading(true);
     setError('');
     try {
-      setData(await fetchDbAdminDashboard());
+      const next = await fetchDbAdminDashboard();
+      setData(next);
+      hasDataRef.current = true;
     } catch (e) {
       setError(extractApiError(e, 'Could not load dashboard'));
-      setData(null);
+      if (!opts?.silent) setData(null);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    load();
-    const onRefresh = () => load();
+    void load();
+    const onRefresh = () => void load({ silent: true });
     window.addEventListener('master-data-updated', onRefresh);
     return () => window.removeEventListener('master-data-updated', onRefresh);
   }, [load]);
@@ -71,7 +74,7 @@ export function DbAdminDashboard() {
         <p className="rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
         <button
           type="button"
-          onClick={load}
+          onClick={() => void load()}
           className="inline-flex items-center gap-2 border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50"
         >
           <RefreshCw className="h-4 w-4" />
@@ -94,7 +97,7 @@ export function DbAdminDashboard() {
           toolbar={
             <button
               type="button"
-              onClick={load}
+              onClick={() => void load({ silent: true })}
               disabled={loading}
               className={cn(
                 dashboardRefreshBtn,

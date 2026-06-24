@@ -92,16 +92,23 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     };
 
     loadPendingRequests();
-    const intervalId = window.setInterval(loadPendingRequests, 30000);
+    const intervalId = window.setInterval(() => {
+      if (!document.hidden) void loadPendingRequests();
+    }, 30000);
     const onMasterDataUpdated = () => {
-      loadPendingRequests();
+      void loadPendingRequests();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void loadPendingRequests();
     };
     window.addEventListener('master-data-updated', onMasterDataUpdated);
+    document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
       window.removeEventListener('master-data-updated', onMasterDataUpdated);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [activeProductId, showPicker]);
 

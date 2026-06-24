@@ -50,6 +50,22 @@ export class BulkEmailVerificationService {
     private cache: AppCacheService,
   ) {}
 
+  private bustEvCaches(options?: { batchId?: string; actorId?: string; allLists?: boolean }) {
+    if (options?.allLists !== false) {
+      void this.cache.delByPrefix('ev:batches:');
+      void this.cache.delByPrefix('ev:analytics:');
+    }
+    if (options?.batchId) {
+      if (options.actorId) {
+        void this.cache.del(`ev:batch:${options.batchId}:${options.actorId}`);
+        void this.cache.del(`ev:diagnostics:${options.batchId}:${options.actorId}`);
+      } else {
+        void this.cache.delByPrefix(`ev:batch:${options.batchId}:`);
+        void this.cache.delByPrefix(`ev:diagnostics:${options.batchId}:`);
+      }
+    }
+  }
+
   async createBatch(dto: CreateEmailVerificationBatchDto, actor: ActivityActor) {
     const normalizedRows: Array<{
       firstName: string;
@@ -184,6 +200,7 @@ export class BulkEmailVerificationService {
     });
 
     const saved = await this.batchModel.findById(batch._id).lean().exec();
+    this.bustEvCaches({ actorId: actor.id });
     return {
       ...this.serializeBatch(saved),
       message:
@@ -279,6 +296,8 @@ export class BulkEmailVerificationService {
         ? `Resuming from row ${resume.processedCount + 1} of ${batch.totalProspects} (${resume.pendingIds.length} remaining).`
         : `Verification started for ${resume.pendingIds.length} prospect(s).`;
 
+      this.bustEvCaches({ batchId, actorId: actor.id });
+
       return {
         ...this.serializeBatch(
           await this.batchModel.findById(batch._id).lean().exec(),
@@ -357,6 +376,7 @@ export class BulkEmailVerificationService {
     }
 
     await this.clearBatchResults(batch._id);
+    this.bustEvCaches({ batchId: id, actorId: actor.id });
 
     return {
       ...this.serializeBatch(await this.batchModel.findById(batch._id).lean().exec()),
@@ -395,6 +415,7 @@ export class BulkEmailVerificationService {
       this.prospectModel.deleteMany({ batchId: batch._id }),
     ]);
     await this.batchModel.deleteOne({ _id: batch._id });
+    this.bustEvCaches({ batchId: id, actorId: actor.id });
     return { deleted: true, id };
   }
 
@@ -1025,6 +1046,8 @@ export class BulkEmailVerificationService {
     } catch {
       /* audit only */
     }
+
+    this.bustEvCaches({ batchId });
   }
 
   async markBatchFailed(batchId: string, errorMessage: string): Promise<void> {
@@ -1035,6 +1058,7 @@ export class BulkEmailVerificationService {
       { _id: batchOid },
       { $set: { status: BatchStatus.FAILED, errorMessage } },
     );
+    this.bustEvCaches({ batchId });
   }
 
   private toObjectId(value: string, label: string): Types.ObjectId {

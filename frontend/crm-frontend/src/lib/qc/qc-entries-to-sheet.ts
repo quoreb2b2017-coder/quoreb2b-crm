@@ -9,11 +9,19 @@ export interface QcSpreadsheet {
 const ADMIN_ONLY_META = ['Employee', 'QC Status'];
 const STATUS_HEADER = 'QC Status';
 
-function qcStatusLabel(entry: { state: string; qcDecision?: string; qcDecisionLabel?: string }): string {
+function qcStatusLabel(entry: {
+  state: string;
+  qcDecision?: string;
+  qcDecisionLabel?: string;
+  returnedToEmployee?: boolean;
+}): string {
+  if (entry.returnedToEmployee && entry.qcDecision === 'tbd') return 'TBD';
+  if (entry.returnedToEmployee && entry.qcDecision === 'disqualified') return 'Disqualified';
   if (entry.qcDecisionLabel) return entry.qcDecisionLabel;
   if (entry.qcDecision === 'qualified') return 'Qualified';
   if (entry.state === 'merged') return 'Merged';
   if (entry.state === 'rejected') return 'Rejected';
+  if (entry.state === 'pending') return 'Pending review';
   return 'Pending';
 }
 

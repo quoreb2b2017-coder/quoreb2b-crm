@@ -5,8 +5,11 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { AppCacheService } from '../../redis/app-cache.service';
+import { cacheTtlSeconds } from '../../redis/cache.util';
 import { Batch } from '../batches/schemas/batch.schema';
 import { resolveRootBatchId } from '../batches/batch-root.util';
 import { resolveBatchPeriod } from '../batches/batch-month.util';
@@ -65,7 +68,13 @@ export class QcService {
   constructor(
     @InjectModel(QcEntry.name) private qcEntryModel: Model<QcEntry>,
     @InjectModel(Batch.name) private batchModel: Model<Batch>,
+    private config: ConfigService,
+    private cache: AppCacheService,
   ) {}
+
+  private bustQcCaches(): void {
+    void this.cache.delByPrefix('qc:');
+  }
 
   /** Queue QC when an assigned employee updates lead status (never touches master file). */
   async enqueueFromBatchUpdate(params: {
@@ -141,6 +150,7 @@ export class QcService {
         );
       }
     }
+    this.bustQcCaches();
   }
 
   async getMyEntries(userId: string, query: QcListQueryDto): Promise<QcEntryResponse[]> {
@@ -186,6 +196,21 @@ export class QcService {
 
   /** Pending + merged for folder views; admin excludes TBD/DQ routed to employee. */
   private async listTreeEntries(filter: {
+    employeeId?: string;
+    adminMode?: boolean;
+  }): Promise<QcEntryResponse[]> {
+    const cacheKey = filter.adminMode
+      ? 'qc:tree:admin'
+      : `qc:tree:employee:${filter.employeeId ?? 'unknown'}`;
+
+    return this.cache.wrap(
+      cacheKey,
+      cacheTtlSeconds(this.config, 'short'),
+      async () => this.loadTreeEntries(filter),
+    );
+  }
+
+  private async loadTreeEntries(filter: {
     employeeId?: string;
     adminMode?: boolean;
   }): Promise<QcEntryResponse[]> {
@@ -328,6 +353,7 @@ export class QcService {
       },
     );
 
+    this.bustQcCaches();
     return {
       readyBatchId: readyBatch._id.toString(),
       name: readyBatch.name,
@@ -347,6 +373,7 @@ export class QcService {
       { _id: { $in: entryIds.map((id) => new Types.ObjectId(id)) }, state: 'pending' },
       { $set: { state: 'rejected' } },
     );
+    this.bustQcCaches();
     return { rejected: result.modifiedCount };
   }
 
@@ -392,12 +419,63 @@ export class QcService {
     entry.returnedToEmployee = true;
     await entry.save();
 
+    this.bustQcCaches();
     return {
       decision,
       decisionLabel: QC_DECISION_LABELS[decision],
       routed: 'employee_my_qc' as const,
       employeeId: entry.employeeId.toString(),
       employeeName: entry.employeeName,
+    };
+  }
+
+  /** Employee sends corrected lead back to admin All QC queue */
+  async resubmitEntry(userId: string, entryId: string) {
+    if (!Types.ObjectId.isValid(entryId)) {
+      throw new BadRequestException('Invalid QC entry id');
+    }
+
+    const entry = await this.qcEntryModel.findOne({
+      _id: new Types.ObjectId(entryId),
+      employeeId: new Types.ObjectId(userId),
+      state: 'pending',
+      returnedToEmployee: true,
+      qcDecision: { $in: ['tbd', 'disqualified'] },
+    });
+    if (!entry) {
+      throw new BadRequestException(
+        'Lead not found or not eligible for resubmit (TBD / Disqualified only)',
+      );
+    }
+
+    const batch = await this.batchModel.findById(entry.batchId).lean().exec();
+    const update: Record<string, unknown> = {
+      returnedToEmployee: false,
+    };
+    if (batch?.rows?.length && entry.rowIndex >= 0 && entry.rowIndex < batch.rows.length) {
+      const headers = (batch.headers as string[]) ?? entry.headers ?? [];
+      const row = (batch.rows as string[][])[entry.rowIndex] ?? [];
+      const compact = compactRowDataPoints(headers, row);
+      if (compact.headers.length > 0) {
+        update.headers = compact.headers;
+        update.rowData = compact.rowData;
+      }
+      const statusValue = readRowStatus(headers, row);
+      if (statusValue) update.statusValue = statusValue;
+    }
+
+    await this.qcEntryModel.updateOne(
+      { _id: entry._id },
+      { $set: update, $unset: { qcDecision: '' } },
+    );
+
+    this.bustQcCaches();
+    return {
+      resubmitted: true,
+      entryId: entry._id.toString(),
+      campaignName: entry.campaignName,
+      batchId: entry.batchId.toString(),
+      rowIndex: entry.rowIndex,
     };
   }
 
@@ -437,14 +515,23 @@ export class QcService {
   }
 
   async pendingCountForEmployee(userId: string): Promise<number> {
-    return this.qcEntryModel.countDocuments({
-      employeeId: new Types.ObjectId(userId),
-      state: 'pending',
-    });
+    return this.cache.wrap(
+      `qc:count:employee:${userId}`,
+      cacheTtlSeconds(this.config, 'live'),
+      () =>
+        this.qcEntryModel.countDocuments({
+          employeeId: new Types.ObjectId(userId),
+          state: 'pending',
+        }),
+    );
   }
 
   async pendingCountForAdmin(): Promise<number> {
-    return this.qcEntryModel.countDocuments({ state: 'pending' });
+    return this.cache.wrap(
+      'qc:count:admin',
+      cacheTtlSeconds(this.config, 'live'),
+      () => this.qcEntryModel.countDocuments({ state: 'pending' }),
+    );
   }
 
   private resolveChannel(
@@ -837,6 +924,7 @@ export class QcService {
         $or: [{ batchId: { $in: batchIds } }, { rootBatchId: { $in: batchIds } }],
       })
       .exec();
+    this.bustQcCaches();
     return result.deletedCount ?? 0;
   }
 
@@ -845,6 +933,7 @@ export class QcService {
     this.assertAdmin(roles);
     const entriesResult = await this.qcEntryModel.deleteMany({}).exec();
     const readyResult = await this.batchModel.deleteMany({ batchKind: 'qc_ready' }).exec();
+    this.bustQcCaches();
     return {
       cleared: true,
       deletedEntries: entriesResult.deletedCount ?? 0,

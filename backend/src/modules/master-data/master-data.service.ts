@@ -1124,6 +1124,7 @@ export class MasterDataService {
     void this.cache.delByPrefix('suppression:');
     void this.cache.delByPrefix('delivered:');
     void this.cache.delByPrefix('qc:');
+    void this.cache.delByPrefix('ev:');
 
     this.logger.log(
       `CRM data cleared (users kept): batches=${deletedBatches}, uploadRequests=${deletedUploadRequests}, master=${hadMasterData}`,

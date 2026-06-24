@@ -5,7 +5,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { SystemRole } from '../../common/constants/roles.constant';
-import { QcListQueryDto, QcMergeDto, QcRejectDto, QcDecisionDto } from './dto/qc.dto';
+import { QcListQueryDto, QcMergeDto, QcRejectDto, QcDecisionDto, QcResubmitDto } from './dto/qc.dto';
 
 interface JwtUser {
   id: string;
@@ -83,6 +83,13 @@ export class QcController {
       user.roles ?? [],
       dto,
     );
+  }
+
+  /** Employee resubmits TBD / Disqualified lead to admin All QC after fixing campaign row */
+  @Post('resubmit')
+  @Roles(SystemRole.EMPLOYEE, SystemRole.DB_ADMIN)
+  resubmit(@Body() dto: QcResubmitDto, @CurrentUser() user: JwtUser) {
+    return this.qcService.resubmitEntry(user.id ?? user.sub!, dto.entryId);
   }
 
   @Get('ready')

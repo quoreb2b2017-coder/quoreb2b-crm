@@ -142,6 +142,17 @@ export const qcService = {
     return unwrap(res);
   },
 
+  async resubmit(entryId: string): Promise<{
+    resubmitted: boolean;
+    entryId: string;
+    campaignName: string;
+    batchId: string;
+    rowIndex: number;
+  }> {
+    const res = await apiClient.post('/qc/resubmit', { entryId });
+    return unwrap(res);
+  },
+
   async getReadyTree(): Promise<QcTreeNode[]> {
     const res = await apiClient.get('/qc/ready/tree');
     const tree = unwrap<QcTreeNode[]>(res);

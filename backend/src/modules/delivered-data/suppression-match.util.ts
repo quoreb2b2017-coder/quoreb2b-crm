@@ -55,10 +55,28 @@ export function extractRowCheckKey(
   mode: SuppressionCheckMode,
 ): string {
   const idx = findSuppressionColumnIndex(headers, mode);
-  if (idx < 0) return '';
-  const cell = String(row[idx] ?? '').trim();
-  if (!cell) return '';
-  return normalizeCheckValue(cell, mode);
+  if (idx >= 0) {
+    const cell = String(row[idx] ?? '').trim();
+    if (cell) return normalizeCheckValue(cell, mode);
+  }
+
+  for (const cell of row) {
+    const raw = String(cell ?? '').trim();
+    if (!raw) continue;
+    if (mode === 'email') {
+      if (!raw.includes('@')) continue;
+      const key = normalizeCheckValue(raw, mode);
+      if (key) return key;
+      continue;
+    }
+    const key = normalizeCheckValue(raw, mode);
+    if (!key) continue;
+    if (raw.includes('@') || (raw.includes('.') && !/\s/.test(raw))) {
+      return key;
+    }
+  }
+
+  return '';
 }
 
 export function buildSuppressionKeySet(

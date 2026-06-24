@@ -62,3 +62,8 @@ export class QcDecisionDto {
   @IsIn(QC_DECISIONS)
   decision: string;
 }
+
+export class QcResubmitDto {
+  @IsMongoId()
+  entryId: string;
+}

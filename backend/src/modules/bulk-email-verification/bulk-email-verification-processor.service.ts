@@ -643,7 +643,9 @@ export class BulkEmailVerificationProcessorService implements OnModuleInit {
           },
         );
 
-        await this.bulkService.onBatchProgressUpdated(batchId);
+        if (processedSoFar >= total) {
+          await this.bulkService.onBatchProgressUpdated(batchId);
+        }
       }
     });
   }

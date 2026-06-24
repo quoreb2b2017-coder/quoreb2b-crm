@@ -4,7 +4,8 @@ import '@/components/batches/batches.css';
 import './qc-shared.css';
 
 import Link from 'next/link';
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowRight,
   ChevronRight,
@@ -31,8 +32,22 @@ import {
   employeeLeadSummary,
   entriesToSuppressionPayload,
 } from '@/lib/qc/qc-entries-to-sheet';
-import { CheckSuppressionModal } from '@/components/employee/CheckSuppressionModal';
-import { CheckSuppressionResultPopup } from '@/components/employee/CheckSuppressionResultPopup';
+
+const CheckSuppressionModal = dynamic(
+  () =>
+    import('@/components/employee/CheckSuppressionModal').then((m) => ({
+      default: m.CheckSuppressionModal,
+    })),
+  { ssr: false },
+);
+
+const CheckSuppressionResultPopup = dynamic(
+  () =>
+    import('@/components/employee/CheckSuppressionResultPopup').then((m) => ({
+      default: m.CheckSuppressionResultPopup,
+    })),
+  { ssr: false },
+);
 
 interface QcWorkspaceProps {
   mode: 'employee' | 'admin';
@@ -66,6 +81,7 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(() => new Set());
   const [showAllMonths, setShowAllMonths] = useState(false);
   const [clearingQc, setClearingQc] = useState(false);
+  const hasLoadedRef = useRef(false);
 
   const toggleMonth = useCallback((monthIndex: number) => {
     setExpandedMonths((prev) => {
@@ -85,10 +101,11 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
     });
   }, []);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent || !hasLoadedRef.current) setLoading(true);
     try {
       setTree(isAdmin ? await qcService.getAllTree() : await qcService.getMyTree());
+      hasLoadedRef.current = true;
     } catch {
       toast.error('Could not load QC data');
     } finally {
@@ -294,7 +311,7 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
             <p className="text-[10px] text-white/75">
               {isAdmin
                 ? 'Review leads · click row for QC Status · Qualified → Ready QC'
-                : 'Your leads — TBD / Disqualified from admin appear here'}
+                : 'TBD / Disqualified — fix on campaign, then click row to resubmit'}
             </p>
           </div>
         </div>
@@ -598,7 +615,8 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
               loading={loading}
               toolbar={!isAdmin ? excelToolbar : undefined}
               duplicateRowIndices={duplicateIndicesForSheet(displayEntries)}
-              onDecisionApplied={() => void load()}
+              onDecisionApplied={() => void load({ silent: true })}
+              onResubmitApplied={() => void load({ silent: true })}
               emptyMessage="Mark a lead as Lead / Won / Active on assigned campaign"
             />
           </div>

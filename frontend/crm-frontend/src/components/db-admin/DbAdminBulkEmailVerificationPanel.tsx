@@ -31,6 +31,7 @@ import {
   type VerificationAnalytics,
 } from '@/lib/api/bulk-email-verification.service';
 import { extractApiError } from '@/lib/api/errors';
+import { useCrmDataCleared } from '@/hooks/useCrmDataCleared';
 import { toast } from '@/stores/toast.store';
 import { AttendanceFullBleed } from '@/components/attendance/AttendanceFullBleed';
 import { ExcelSheetShell } from '@/components/attendance/ExcelSheetShell';
@@ -361,6 +362,7 @@ export function DbAdminBulkEmailVerificationPanel() {
   const [pendingUpload, setPendingUpload] = useState<PendingUpload | null>(null);
   const [filePreview, setFilePreview] = useState<FilePreview | null>(null);
   const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null);
+  const hasLoadedRef = useRef(false);
 
   const selectedBatch = useMemo(
     () => batches.find((b) => b.id === selectedBatchId) ?? null,
@@ -432,8 +434,8 @@ export function DbAdminBulkEmailVerificationPanel() {
     }
   }, [selectedMonthBatches, selectedBatchId]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent || !hasLoadedRef.current) setLoading(true);
     setLoadError('');
     try {
       const [stats, list] = await Promise.all([
@@ -442,10 +444,11 @@ export function DbAdminBulkEmailVerificationPanel() {
       ]);
       setAnalytics(stats);
       setBatches(list);
+      hasLoadedRef.current = true;
     } catch (err) {
       const msg = extractApiError(err, 'Could not load verification data');
       setLoadError(msg);
-      toast.error('Load failed', msg);
+      if (!opts?.silent) toast.error('Load failed', msg);
     } finally {
       setLoading(false);
     }
@@ -502,6 +505,14 @@ export function DbAdminBulkEmailVerificationPanel() {
     load();
   }, [load]);
 
+  useCrmDataCleared(() => {
+    setSelectedBatchId(null);
+    setRecords([]);
+    setRecordTotal(0);
+    setDiagnostics(null);
+    void load({ silent: true });
+  });
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void loadRecords();
@@ -539,12 +550,21 @@ export function DbAdminBulkEmailVerificationPanel() {
   }, [selectedBatchId, selectedBatchStatus]);
 
   useEffect(() => {
-    const timer = setInterval(() => {
+    const tick = () => {
+      if (document.hidden) return;
       const processing = batchesRef.current.filter((b) => b.status === 'processing');
       if (!processing.length) return;
       void Promise.all(processing.map((b) => refreshBatch(b.id)));
-    }, 2500);
-    return () => clearInterval(timer);
+    };
+    const timer = setInterval(tick, 5000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [refreshBatch]);
 
   const prospectsToPreviewRows = (prospects: ProspectRow[]) =>
@@ -655,19 +675,31 @@ export function DbAdminBulkEmailVerificationPanel() {
 
   const deleteBatch = async (batch: EmailVerificationBatch) => {
     if (!window.confirm(`Remove "${batch.sourceFileName}"?`)) return;
+    const deletedId = batch.id;
     try {
-      await bulkEmailVerificationService.deleteBatch(batch.id);
+      await bulkEmailVerificationService.deleteBatch(deletedId);
+      setBatches((prev) => prev.filter((b) => b.id !== deletedId));
+      if (selectedBatchId === deletedId) {
+        setSelectedBatchId(null);
+        setRecords([]);
+        setRecordTotal(0);
+        setDiagnostics(null);
+      }
       toast.success('Removed', 'Job deleted.');
-      await load();
+      void load({ silent: true });
     } catch (err) {
       toast.error('Delete failed', extractApiError(err));
+      void load({ silent: true });
     }
   };
 
   const resetBatch = async (batchId: string) => {
     try {
       await bulkEmailVerificationService.resetBatch(batchId);
-      await load();
+      setRecords([]);
+      setRecordTotal(0);
+      setDiagnostics(null);
+      void load({ silent: true });
     } catch (err) {
       toast.error('Reset failed', extractApiError(err));
     }
@@ -879,7 +911,7 @@ export function DbAdminBulkEmailVerificationPanel() {
               Upload prospects, then verify from the month folder below.
             </span>
             <span className="text-slate-300">|</span>
-            <button type="button" onClick={load} disabled={loading} className={shellBtn()}>
+            <button type="button" onClick={() => void load({ silent: true })} disabled={loading} className={shellBtn()}>
               <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
               Refresh
             </button>

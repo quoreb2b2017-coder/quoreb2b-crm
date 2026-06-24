@@ -7,6 +7,7 @@ import {
   NotFoundException,
   forwardRef,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { CreateSuppressionCampaignDto } from './dto/create-suppression-campaign.dto';
 import { UploadSuppressionCampaignDto } from './dto/upload-suppression-campaign.dto';
 import { CheckSuppressionDto } from './dto/check-suppression.dto';
@@ -16,6 +17,7 @@ import { MasterDataService } from '../master-data/master-data.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { ActivityActor } from '../activity-logs/activity-user.util';
 import { AppCacheService } from '../../redis/app-cache.service';
+import { cacheTtlSeconds } from '../../redis/cache.util';
 import { currentPeriod } from '../batches/batch-month.util';
 import { detectCampaignChannel } from '../qc/qc-channel.util';
 import { SystemRole } from '../../common/constants/roles.constant';
@@ -27,6 +29,7 @@ import {
   buildSuppressionKeySet,
   extractRowCheckKey,
   parseManualCheckValues,
+  type SuppressionCheckMode,
 } from './suppression-match.util';
 
 const DUPLICATE_PREVIEW_LIMIT = 100;
@@ -42,6 +45,7 @@ export class SuppressionDataService {
     @Inject(forwardRef(() => MasterDataService))
     private masterDataService: MasterDataService,
     private activityLogs: ActivityLogsService,
+    private config: ConfigService,
     private cache: AppCacheService,
   ) {}
 
@@ -52,6 +56,22 @@ export class SuppressionDataService {
   private bustCaches() {
     void this.cache.delByPrefix('suppression:');
     void this.cache.delByPrefix('batch:');
+  }
+
+  private async loadSuppressionKeySet(
+    campaignId: string,
+    versionKey: string,
+    headers: string[],
+    rows: string[][],
+    mode: SuppressionCheckMode,
+  ): Promise<Set<string>> {
+    const cacheKey = `suppression:keys:${campaignId}:${mode}:${versionKey}`;
+    const keys = await this.cache.wrap(
+      cacheKey,
+      cacheTtlSeconds(this.config, 'long'),
+      async () => [...buildSuppressionKeySet(headers, rows, mode)],
+    );
+    return new Set(keys);
   }
 
   async listSuppressionCampaigns() {
@@ -271,7 +291,14 @@ export class SuppressionDataService {
       throw new BadRequestException('Selected suppression campaign has no delivered data yet');
     }
 
-    const suppressionKeys = buildSuppressionKeySet(supHeaders, supRows, dto.checkMode);
+    const versionKey = `${String(campaign._id)}:${campaign.rowCount ?? supRows.length}`;
+    const suppressionKeys = await this.loadSuppressionKeySet(
+      dto.suppressionCampaignId,
+      versionKey,
+      supHeaders,
+      supRows,
+      dto.checkMode,
+    );
 
     let sourceHeaders: string[] = [];
     let sourceRows: string[][] = [];

@@ -6,6 +6,7 @@ import { ExcelSheetShell } from '@/components/attendance/ExcelSheetShell';
 import type { QcEntry } from '@/lib/api/qc.service';
 import { qcEntriesToSpreadsheet } from '@/lib/qc/qc-entries-to-sheet';
 import { QcDecisionMenu, type QcDecisionChoice } from '@/components/qc/QcDecisionMenu';
+import { QcResubmitMenu } from '@/components/qc/QcResubmitMenu';
 import { qcService } from '@/lib/api/qc.service';
 import { toast } from '@/stores/toast.store';
 import { extractApiError } from '@/lib/api/errors';
@@ -20,6 +21,7 @@ interface QcExcelSheetProps {
   compact?: boolean;
   duplicateRowIndices?: number[];
   onDecisionApplied?: () => void;
+  onResubmitApplied?: () => void;
 }
 
 export function QcExcelSheet({
@@ -32,25 +34,34 @@ export function QcExcelSheet({
   compact = false,
   duplicateRowIndices,
   onDecisionApplied,
+  onResubmitApplied,
 }: QcExcelSheetProps) {
   const sheet = useMemo(
     () => qcEntriesToSpreadsheet(entries, { isAdmin }),
     [entries, isAdmin],
   );
 
+  const entriesById = useMemo(
+    () => new Map(entries.map((e) => [e.id, e])),
+    [entries],
+  );
+
   const entryByDisplayRow = useMemo(() => {
     const map = new Map<number, QcEntry>();
     sheet.entryIdsByRow.forEach((id, idx) => {
-      const entry = entries.find((e) => e.id === id);
+      const entry = entriesById.get(id);
       if (entry) map.set(idx, entry);
     });
     return map;
-  }, [sheet.entryIdsByRow, entries]);
+  }, [sheet.entryIdsByRow, entriesById]);
 
-  const dataResetKey = useMemo(
-    () => entries.map((e) => `${e.id}:${e.updatedAt}:${e.qcDecision ?? ''}`).join('|'),
-    [entries],
-  );
+  const dataResetKey = useMemo(() => {
+    let maxUpdated = '';
+    for (const e of entries) {
+      if (e.updatedAt > maxUpdated) maxUpdated = e.updatedAt;
+    }
+    return `${title}:${entries.length}:${maxUpdated}`;
+  }, [title, entries]);
 
   const [menu, setMenu] = useState<{
     x: number;
@@ -58,6 +69,7 @@ export function QcExcelSheet({
     entry: QcEntry;
   } | null>(null);
   const [deciding, setDeciding] = useState(false);
+  const [resubmitting, setResubmitting] = useState(false);
 
   const canDecide = useCallback(
     (entry: QcEntry) =>
@@ -65,15 +77,56 @@ export function QcExcelSheet({
     [isAdmin],
   );
 
+  const canResubmit = useCallback(
+    (entry: QcEntry) =>
+      !isAdmin &&
+      entry.state === 'pending' &&
+      entry.returnedToEmployee &&
+      (entry.qcDecision === 'tbd' || entry.qcDecision === 'disqualified'),
+    [isAdmin],
+  );
+
+  const returnedRowIndices = useMemo(
+    () =>
+      sheet.entryIdsByRow
+        .map((id, idx) => {
+          const entry = entriesById.get(id);
+          return entry && canResubmit(entry) ? idx : -1;
+        })
+        .filter((idx) => idx >= 0),
+    [sheet.entryIdsByRow, entriesById, canResubmit],
+  );
+
   const handleRowClick = useCallback(
     (displayRowIndex: number, event: React.MouseEvent) => {
-      if (!isAdmin) return;
       const entry = entryByDisplayRow.get(displayRowIndex);
-      if (!entry || !canDecide(entry)) return;
+      if (!entry) return;
+      if (isAdmin) {
+        if (!canDecide(entry)) return;
+        setMenu({ x: event.clientX, y: event.clientY, entry });
+        return;
+      }
+      if (!canResubmit(entry)) return;
       setMenu({ x: event.clientX, y: event.clientY, entry });
     },
-    [isAdmin, entryByDisplayRow, canDecide],
+    [isAdmin, entryByDisplayRow, canDecide, canResubmit],
   );
+
+  const applyResubmit = async () => {
+    if (!menu) return;
+    setResubmitting(true);
+    try {
+      const res = await qcService.resubmit(menu.entry.id);
+      toast.success('Resubmitted', `Sent to admin All QC — ${res.campaignName}`);
+      setMenu(null);
+      onResubmitApplied?.();
+      onDecisionApplied?.();
+    } catch (e) {
+      toast.error('Could not resubmit', extractApiError(e));
+    } finally {
+      setResubmitting(false);
+    }
+  };
 
   const applyDecision = async (decision: QcDecisionChoice) => {
     if (!menu) return;
@@ -116,7 +169,7 @@ export function QcExcelSheet({
         hint={
           isAdmin
             ? 'Click a pending row → set QC Status (Qualified / TBD / Disqualified)'
-            : 'QC Status shows admin review — TBD / Disqualified return here'
+            : 'TBD / Disqualified — click row → fix campaign → Resubmit to admin QC'
         }
         className={compact ? 'flex-shrink-0' : 'min-h-[min(70vh,720px)] flex-1'}
       >
@@ -135,20 +188,37 @@ export function QcExcelSheet({
             editable={false}
             fillHeight
             duplicateRowIndices={duplicateRowIndices}
-            onDisplayRowClick={isAdmin ? handleRowClick : undefined}
+            markedRowIndices={!isAdmin ? returnedRowIndices : undefined}
+            onDisplayRowClick={
+              isAdmin || returnedRowIndices.length > 0 ? handleRowClick : undefined
+            }
           />
         </div>
       </ExcelSheetShell>
 
-      <QcDecisionMenu
-        open={Boolean(menu)}
-        x={menu?.x ?? 0}
-        y={menu?.y ?? 0}
-        leadLabel={menu?.entry.leadLabel ?? menu?.entry.statusValue}
-        loading={deciding}
-        onSelect={(d) => void applyDecision(d)}
-        onClose={() => !deciding && setMenu(null)}
-      />
+      {isAdmin ? (
+        <QcDecisionMenu
+          open={Boolean(menu)}
+          x={menu?.x ?? 0}
+          y={menu?.y ?? 0}
+          leadLabel={menu?.entry.leadLabel ?? menu?.entry.statusValue}
+          loading={deciding}
+          onSelect={(d) => void applyDecision(d)}
+          onClose={() => !deciding && setMenu(null)}
+        />
+      ) : (
+        <QcResubmitMenu
+          open={Boolean(menu)}
+          x={menu?.x ?? 0}
+          y={menu?.y ?? 0}
+          leadLabel={menu?.entry.leadLabel ?? menu?.entry.statusValue}
+          batchId={menu?.entry.batchId ?? ''}
+          qcStatus={menu?.entry.qcDecisionLabel}
+          loading={resubmitting}
+          onResubmit={() => void applyResubmit()}
+          onClose={() => !resubmitting && setMenu(null)}
+        />
+      )}
     </>
   );
 }

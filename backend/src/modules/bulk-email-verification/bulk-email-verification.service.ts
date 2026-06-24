@@ -99,14 +99,17 @@ export class BulkEmailVerificationService {
         const syntax = validateEmailSyntax(rawEmail);
         if (syntax.valid) {
           providedEmail = syntax.normalizedEmail;
-          if (!domain) {
+          if (!domain || !isValidDomainFormat(domain)) {
             domain = syntax.domain;
           }
         } else {
           invalidEmailCount += 1;
           providedEmail = rawEmail;
-          if (!domain) {
-            domain = extractLooseEmailDomain(rawEmail);
+          if (!domain || !isValidDomainFormat(domain)) {
+            const loose = extractLooseEmailDomain(rawEmail);
+            if (loose && isValidDomainFormat(loose)) {
+              domain = loose;
+            }
           }
         }
       } else if (domain) {

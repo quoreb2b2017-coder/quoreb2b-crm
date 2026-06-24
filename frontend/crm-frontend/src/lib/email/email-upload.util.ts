@@ -23,45 +23,46 @@ export function sanitizeEmailInput(raw: string): string {
   return s.toLowerCase().trim();
 }
 
-export function domainFromEmailAddress(email: string): string {
-  const s = sanitizeEmailInput(email);
-  const at = s.lastIndexOf('@');
-  if (at < 1 || at >= s.length - 1) return '';
-  return s
-    .slice(at + 1)
+export function normalizeDomainField(raw: string): string {
+  let d = String(raw ?? '')
     .trim()
     .toLowerCase()
-    .replace(/^www\./, '')
-    .replace(/\.$/, '');
-}
-
-export function domainFromCompanyField(value: string): string {
-  let d = value
-    .trim()
-    .toLowerCase()
+    .replace(/^mailto:/, '')
     .replace(/^https?:\/\//, '')
     .replace(/^www\./, '')
     .split('/')[0]
-    .split('?')[0];
+    .split('?')[0]
+    .split('#')[0];
 
   if (d.includes('@')) {
     d = d.split('@').pop() ?? d;
   }
 
-  d = d.replace(/\.$/, '');
-  if (!d || !d.includes('.')) return '';
-  if (!/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(d)) return '';
-  return d;
+  return d.replace(/\.$/, '').replace(/\.+$/, '');
+}
+
+export function isValidDomainFormat(domain: string): boolean {
+  const d = normalizeDomainField(domain);
+  if (!d || d.length > 253 || !d.includes('.')) return false;
+  return /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(d);
+}
+
+export function domainFromEmailAddress(email: string): string {
+  return normalizeDomainField(sanitizeEmailInput(email).split('@').pop() ?? '');
+}
+
+export function domainFromCompanyField(value: string): string {
+  const d = normalizeDomainField(value);
+  return isValidDomainFormat(d) ? d : '';
 }
 
 function headerKey(h: string): string {
   return h.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+/** Exact header match only — avoids "Company Domain" being read as "Company Name". */
 export function matchHeader(h: string, keys: string[]): boolean {
-  const n = headerKey(h);
-  if (keys.includes(n)) return true;
-  return keys.some((k) => k.length >= 4 && (n.endsWith(k) || n.startsWith(k)));
+  return keys.includes(headerKey(h));
 }
 
 export const EMAIL_HEADER_KEYS = [
@@ -80,7 +81,14 @@ export const EMAIL_HEADER_KEYS = [
 
 export const FIRST_NAME_HEADER_KEYS = ['firstname', 'first', 'fname', 'givenname'];
 export const LAST_NAME_HEADER_KEYS = ['lastname', 'last', 'lname', 'surname', 'familyname'];
-export const COMPANY_HEADER_KEYS = ['companyname', 'company', 'organization', 'organisation', 'org', 'employer'];
+export const COMPANY_HEADER_KEYS = [
+  'companyname',
+  'company',
+  'organization',
+  'organisation',
+  'org',
+  'employer',
+];
 export const DOMAIN_HEADER_KEYS = [
   'companydomain',
   'domain',
@@ -91,3 +99,18 @@ export const DOMAIN_HEADER_KEYS = [
   'url',
   'site',
 ];
+
+export function resolveProspectDomain(
+  domainRaw: string,
+  companyName: string,
+  emailRaw: string,
+): string {
+  let domain = domainRaw ? normalizeDomainField(domainRaw) : '';
+  if (!isValidDomainFormat(domain) && companyName) {
+    domain = domainFromCompanyField(companyName);
+  }
+  if (!isValidDomainFormat(domain) && emailRaw) {
+    domain = domainFromEmailAddress(emailRaw);
+  }
+  return isValidDomainFormat(domain) ? domain : '';
+}

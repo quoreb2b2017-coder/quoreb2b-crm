@@ -41,9 +41,8 @@ import {
   EMAIL_HEADER_KEYS,
   FIRST_NAME_HEADER_KEYS,
   LAST_NAME_HEADER_KEYS,
-  domainFromCompanyField,
-  domainFromEmailAddress,
   matchHeader,
+  resolveProspectDomain,
   sanitizeEmailInput,
 } from '@/lib/email/email-upload.util';
 
@@ -140,7 +139,7 @@ function mapRowsToProspects(headers: string[], rows: string[][]): ProspectRow[] 
   }
   if (idx.domain < 0 && idx.email < 0) {
     throw new Error(
-      'Add Company Domain or Email — need First Name, Last Name, and one of those (Company Name optional)',
+      'Add Company Domain and/or Email — need First Name, Last Name, plus domain or email',
     );
   }
 
@@ -150,14 +149,9 @@ function mapRowsToProspects(headers: string[], rows: string[][]): ProspectRow[] 
       const lastName = (row[idx.lastName] ?? '').trim();
       const companyName = idx.companyName >= 0 ? (row[idx.companyName] ?? '').trim() : '';
       const emailRaw = idx.email >= 0 ? sanitizeEmailInput(row[idx.email] ?? '') : '';
-      let domain = idx.domain >= 0 ? (row[idx.domain] ?? '').trim() : '';
-      if (!domain && companyName) {
-        domain = domainFromCompanyField(companyName);
-      }
-      if (emailRaw) {
-        const fromEmail = domainFromEmailAddress(emailRaw);
-        if (!domain) domain = fromEmail;
-      }
+      const domainRaw = idx.domain >= 0 ? (row[idx.domain] ?? '').trim() : '';
+      const domain = resolveProspectDomain(domainRaw, companyName, emailRaw);
+
       const prospect: ProspectRow = {
         firstName,
         lastName,
@@ -167,13 +161,7 @@ function mapRowsToProspects(headers: string[], rows: string[][]): ProspectRow[] 
       if (emailRaw) prospect.email = emailRaw;
       return prospect;
     })
-    .filter((r) => {
-      if (!r.firstName || !r.lastName) return false;
-      if (r.email && !r.domain) {
-        r.domain = domainFromEmailAddress(r.email);
-      }
-      return Boolean(r.domain);
-    });
+    .filter((r) => r.firstName && r.lastName && r.domain);
 }
 
 function batchPeriod(batch: EmailVerificationBatch) {
@@ -1536,11 +1524,12 @@ export function DbAdminBulkEmailVerificationPanel() {
       <SpreadsheetPreviewModal
         isOpen={Boolean(pendingUpload)}
         onClose={() => !uploading && setPendingUpload(null)}
+        alignTop
         title={pendingUpload ? `${pendingUpload.fileName} — review before upload` : 'Preview'}
         headers={pendingUpload?.headers ?? [...PROSPECT_HEADERS]}
         rows={pendingUpload?.rows ?? []}
         totalRows={pendingUpload?.rows.length}
-        note="Email column: each address is fully verified (mailbox/MX). Wrong emails get a corrected suggestion from name + domain patterns."
+        note="First Name, Last Name, Company Name, Company Domain, and Email can all be present — domain is used for patterns; Email is fully verified."
         actions={
           pendingUpload
             ? [

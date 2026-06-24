@@ -28,6 +28,8 @@ export interface SpreadsheetPreviewModalProps {
   banner?: React.ReactNode;
   note?: string;
   actions?: SpreadsheetPreviewAction[];
+  /** Pin modal near top of viewport (better on long scroll pages). */
+  alignTop?: boolean;
 }
 
 export function SpreadsheetPreviewModal({
@@ -42,6 +44,7 @@ export function SpreadsheetPreviewModal({
   banner,
   note,
   actions,
+  alignTop = false,
 }: SpreadsheetPreviewModalProps) {
   const tableRef = useRef<HTMLDivElement>(null);
   const canExport = useCanExportSpreadsheet();
@@ -56,9 +59,17 @@ export function SpreadsheetPreviewModal({
   return (
     <>
       <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div
+        className={cn(
+          'fixed inset-0 z-[60] overflow-y-auto p-4',
+          alignTop ? 'pt-6 pb-8' : 'flex items-center justify-center',
+        )}
+      >
         <div
-          className="flex max-h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+          className={cn(
+            'mx-auto flex w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl',
+            alignTop ? 'max-h-[min(88vh,calc(100vh-3rem))]' : 'max-h-[88vh]',
+          )}
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-start justify-between border-b border-slate-200 px-6 py-4">

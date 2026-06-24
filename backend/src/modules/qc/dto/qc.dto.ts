@@ -9,7 +9,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-import { QC_CAMPAIGN_CHANNELS } from '../qc.constants';
+import { QC_CAMPAIGN_CHANNELS, QC_DECISIONS } from '../qc.constants';
 
 export class QcListQueryDto {
   @IsOptional() @IsInt() @Min(2000)
@@ -53,4 +53,12 @@ export class QcRejectDto {
   @IsArray()
   @IsMongoId({ each: true })
   entryIds: string[];
+}
+
+export class QcDecisionDto {
+  @IsMongoId()
+  entryId: string;
+
+  @IsIn(QC_DECISIONS)
+  decision: string;
 }

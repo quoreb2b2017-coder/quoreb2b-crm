@@ -106,11 +106,22 @@ export default function AdminBatchesPage() {
   };
 
   const handleDelete = async (batch: BatchRecord) => {
-    if (!confirm(`Delete campaign "${batch.name}"? This cannot be undone.`)) return;
+    const isRootCampaign = !batch.sourceBatchId;
+    const msg = isRootCampaign
+      ? `Delete campaign "${batch.name}"?\n\nContacts will return to Master Data as available rows (no longer in Campaigns). Related sub-campaigns and QC data will also be removed.`
+      : `Delete sub-campaign "${batch.name}"?\n\nThis slice will be removed. Master Data is unchanged.`;
+    if (!confirm(msg)) return;
     setDeleting(batch.id);
     try {
-      await batchesService.delete(batch.id);
-      toast.success('Campaign deleted', `"${batch.name}" removed`);
+      const result = await batchesService.delete(batch.id);
+      if (result.restoredToMaster && (result.masterRowsRestored ?? 0) > 0) {
+        toast.success(
+          'Campaign deleted',
+          `${result.masterRowsRestored?.toLocaleString()} contacts returned to Master Data`,
+        );
+      } else {
+        toast.success('Campaign deleted', `"${batch.name}" removed`);
+      }
       await loadBatches();
     } catch (e) {
       toast.error('Delete failed', extractApiError(e));

@@ -5,7 +5,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { SystemRole } from '../../common/constants/roles.constant';
-import { QcListQueryDto, QcMergeDto, QcRejectDto } from './dto/qc.dto';
+import { QcListQueryDto, QcMergeDto, QcRejectDto, QcDecisionDto } from './dto/qc.dto';
 
 interface JwtUser {
   id: string;
@@ -72,6 +72,17 @@ export class QcController {
   @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
   reject(@Body() dto: QcRejectDto, @CurrentUser() user: JwtUser) {
     return this.qcService.rejectEntries(user.roles ?? [], dto.entryIds);
+  }
+
+  @Post('decision')
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
+  setDecision(@Body() dto: QcDecisionDto, @CurrentUser() user: JwtUser) {
+    const name = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email;
+    return this.qcService.applyDecision(
+      { id: user.id ?? user.sub!, email: user.email, name },
+      user.roles ?? [],
+      dto,
+    );
   }
 
   @Get('ready')

@@ -232,5 +232,18 @@ export const batchesService = {
   unshare: (id: string, userId: string) =>
     apiClient.delete(`/batches/${id}/share/${userId}`).then(r => unwrap<BatchRecord>(r)),
 
-  delete: (id: string) => apiClient.delete(`/batches/${id}`).then(r => unwrap<{ deleted: boolean }>(r)),
+  delete: (id: string) =>
+    apiClient.delete(`/batches/${id}`).then((r) => {
+      const result = unwrap<{
+        deleted: boolean;
+        deletedBatchCount?: number;
+        masterRowsRestored?: number;
+        restoredToMaster?: boolean;
+        qcEntriesRemoved?: number;
+      }>(r);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('master-data-updated'));
+      }
+      return result;
+    }),
 };

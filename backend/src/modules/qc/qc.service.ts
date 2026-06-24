@@ -15,8 +15,8 @@ import { QcEntry } from './schemas/qc-entry.schema';
 import { detectCampaignChannel, toQcCampaignChannel } from './qc-channel.util';
 import { readRowStatus, statusChangedInColumns, isLeadMarkedForQc } from './qc-status.util';
 import { compactRowDataPoints, buildMergedQcSheet, appendMergedQcSheet, appendQcSheets } from './qc-row.util';
-import { QcCampaignChannel, QC_CHANNEL_LABELS } from './qc.constants';
-import type { QcListQueryDto, QcMergeDto } from './dto/qc.dto';
+import { QcCampaignChannel, QC_CHANNEL_LABELS, QcDecision, QC_DECISION_LABELS } from './qc.constants';
+import type { QcListQueryDto, QcMergeDto, QcDecisionDto } from './dto/qc.dto';
 import { SystemRole } from '../../common/constants/roles.constant';
 
 export interface QcEntryResponse {
@@ -38,6 +38,9 @@ export interface QcEntryResponse {
   rowData: string[];
   changedColumns: string[];
   state: string;
+  qcDecision?: string;
+  qcDecisionLabel?: string;
+  returnedToEmployee?: boolean;
   mergedReadyBatchId?: string;
   createdAt: string;
   updatedAt: string;
@@ -177,19 +180,37 @@ export class QcService {
 
   async getAllTree(roles: string[]): Promise<QcTreeNode[]> {
     this.assertAdmin(roles);
-    const entries = await this.listTreeEntries({});
+    const entries = await this.listTreeEntries({ adminMode: true });
     return this.buildPendingTree(entries, true);
   }
 
-  /** Pending + merged entries for My QC / All QC folder views (grouped by campaign). */
+  /** Pending + merged for folder views; admin excludes TBD/DQ routed to employee. */
   private async listTreeEntries(filter: {
     employeeId?: string;
+    adminMode?: boolean;
   }): Promise<QcEntryResponse[]> {
     const query: Record<string, unknown> = {
       state: { $in: ['pending', 'merged'] },
     };
     if (filter.employeeId) {
       query.employeeId = new Types.ObjectId(filter.employeeId);
+      query.$or = [
+        { state: 'merged' },
+        { state: 'pending', returnedToEmployee: { $ne: true } },
+        {
+          state: 'pending',
+          returnedToEmployee: true,
+          qcDecision: { $in: ['tbd', 'disqualified'] },
+        },
+      ];
+    } else if (filter.adminMode) {
+      query.$nor = [
+        {
+          state: 'pending',
+          returnedToEmployee: true,
+          qcDecision: { $in: ['tbd', 'disqualified'] },
+        },
+      ];
     }
 
     const rows = await this.qcEntryModel.find(query).sort({ updatedAt: -1 }).lean().exec();
@@ -301,6 +322,7 @@ export class QcService {
       {
         $set: {
           state: 'merged',
+          qcDecision: 'qualified',
           mergedReadyBatchId: readyBatch._id,
         },
       },
@@ -326,6 +348,57 @@ export class QcService {
       { $set: { state: 'rejected' } },
     );
     return { rejected: result.modifiedCount };
+  }
+
+  /** Super Admin sets Qualified → Ready QC; TBD / Disqualified → employee My QC */
+  async applyDecision(
+    actor: { id: string; email?: string; name?: string },
+    roles: string[],
+    dto: QcDecisionDto,
+  ) {
+    this.assertAdmin(roles);
+    const decision = dto.decision as QcDecision;
+    if (!['qualified', 'tbd', 'disqualified'].includes(decision)) {
+      throw new BadRequestException('Invalid QC decision');
+    }
+
+    const entry = await this.qcEntryModel.findOne({
+      _id: new Types.ObjectId(dto.entryId),
+      state: 'pending',
+      returnedToEmployee: { $ne: true },
+    });
+    if (!entry) {
+      throw new BadRequestException('QC entry not found or already reviewed');
+    }
+
+    if (decision === 'qualified') {
+      const channel = entry.campaignChannel as QcCampaignChannel;
+      const mergeResult = await this.mergeToReady(actor, roles, {
+        entryIds: [dto.entryId],
+        channel,
+        year: entry.batchYear ?? new Date().getFullYear(),
+        month: entry.batchMonth ?? new Date().getMonth() + 1,
+        name: entry.campaignName,
+      });
+      return {
+        decision,
+        decisionLabel: QC_DECISION_LABELS[decision],
+        routed: 'ready_qc' as const,
+        merge: mergeResult,
+      };
+    }
+
+    entry.qcDecision = decision;
+    entry.returnedToEmployee = true;
+    await entry.save();
+
+    return {
+      decision,
+      decisionLabel: QC_DECISION_LABELS[decision],
+      routed: 'employee_my_qc' as const,
+      employeeId: entry.employeeId.toString(),
+      employeeName: entry.employeeName,
+    };
   }
 
   async listReadyBatches(roles: string[], query: QcListQueryDto) {
@@ -418,6 +491,11 @@ export class QcService {
       rowData: (doc.rowData as string[]) ?? [],
       changedColumns: (doc.changedColumns as string[]) ?? [],
       state: String(doc.state ?? 'pending'),
+      qcDecision: doc.qcDecision as string | undefined,
+      qcDecisionLabel: doc.qcDecision
+        ? QC_DECISION_LABELS[doc.qcDecision as QcDecision]
+        : undefined,
+      returnedToEmployee: Boolean(doc.returnedToEmployee),
       mergedReadyBatchId: doc.mergedReadyBatchId
         ? String(doc.mergedReadyBatchId)
         : undefined,
@@ -749,5 +827,16 @@ export class QcService {
       createdAt: String((batch as Record<string, unknown>).createdAt ?? ''),
       createdByName: batch.createdByName,
     };
+  }
+
+  /** Remove QC queue entries when campaign batches are deleted */
+  async deleteEntriesForBatches(batchIds: Types.ObjectId[]): Promise<number> {
+    if (!batchIds.length) return 0;
+    const result = await this.qcEntryModel
+      .deleteMany({
+        $or: [{ batchId: { $in: batchIds } }, { rootBatchId: { $in: batchIds } }],
+      })
+      .exec();
+    return result.deletedCount ?? 0;
   }
 }

@@ -52,7 +52,12 @@ export class SuppressionDataController {
   }
 
   @Post('check')
-  @Roles(SystemRole.EMPLOYEE, SystemRole.DB_ADMIN)
+  @Roles(
+    SystemRole.EMPLOYEE,
+    SystemRole.DB_ADMIN,
+    SystemRole.SUPER_ADMIN,
+    SystemRole.ADMIN,
+  )
   checkSuppression(
     @Body() dto: CheckSuppressionDto,
     @CurrentUser() user: Parameters<typeof actorFromJwt>[0],

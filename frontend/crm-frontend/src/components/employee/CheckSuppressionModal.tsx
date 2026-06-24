@@ -25,6 +25,8 @@ export interface CheckSuppressionModalProps {
   defaultSourceKind: SuppressionSourceKind;
   defaultSourceId?: string;
   baseFileName?: string;
+  /** When set, checks these rows inline (e.g. All QC sheet) instead of batch / My Data */
+  inlineSource?: { headers: string[]; rows: string[][] };
   onComplete?: (result: {
     duplicateCount: number;
     duplicateFileId: string | null;
@@ -40,6 +42,7 @@ export function CheckSuppressionModal({
   defaultSourceKind,
   defaultSourceId,
   baseFileName,
+  inlineSource,
   onComplete,
 }: CheckSuppressionModalProps) {
   const [campaigns, setCampaigns] = useState<Array<{ id: string; name: string; rowCount: number }>>(
@@ -63,7 +66,7 @@ export function CheckSuppressionModal({
     try {
       const [campaignList, batchList] = await Promise.all([
         suppressionDataService.listCampaigns(),
-        batchesService.list(),
+        inlineSource ? Promise.resolve([]) : batchesService.list(),
       ]);
       const mapped = Array.isArray(campaignList)
         ? campaignList.map((c) => ({ id: c.id, name: c.name, rowCount: c.rowCount }))
@@ -79,7 +82,7 @@ export function CheckSuppressionModal({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [inlineSource]);
 
   useEffect(() => {
     if (!open) return;
@@ -97,9 +100,16 @@ export function CheckSuppressionModal({
       const result = await suppressionDataService.checkSuppression({
         suppressionCampaignId,
         checkMode,
-        sourceRequestId:
-          sourceKind === 'my_data' && defaultSourceId ? defaultSourceId : undefined,
-        sourceBatchId: sourceKind === 'batch' ? sourceBatchId || defaultSourceId : undefined,
+        ...(inlineSource
+          ? {
+              sourceHeaders: inlineSource.headers,
+              sourceRows: inlineSource.rows,
+            }
+          : {
+              sourceRequestId:
+                sourceKind === 'my_data' && defaultSourceId ? defaultSourceId : undefined,
+              sourceBatchId: sourceKind === 'batch' ? sourceBatchId || defaultSourceId : undefined,
+            }),
         baseFileName,
       });
       onComplete?.({
@@ -123,8 +133,12 @@ export function CheckSuppressionModal({
 
   const canSubmit =
     suppressionCampaignId &&
-    !((sourceKind === 'batch' && !sourceBatchId && !defaultSourceId) ||
-      (sourceKind === 'my_data' && !defaultSourceId));
+    (inlineSource
+      ? inlineSource.rows.length > 0
+      : !(
+          (sourceKind === 'batch' && !sourceBatchId && !defaultSourceId) ||
+          (sourceKind === 'my_data' && !defaultSourceId)
+        ));
 
   if (!open) return null;
 
@@ -202,54 +216,65 @@ export function CheckSuppressionModal({
                 )}
               </div>
 
-              {/* Your data */}
-              <div>
-                <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                  Your data
-                </label>
-                <div className="grid grid-cols-2 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setSourceKind('my_data')}
-                    className={cn(
-                      'flex items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-medium transition',
-                      sourceKind === 'my_data'
-                        ? 'border-indigo-500 bg-indigo-50 text-indigo-800'
-                        : 'border-slate-200 text-slate-600 hover:bg-slate-50',
-                    )}
-                  >
-                    <FileSpreadsheet className="h-3.5 w-3.5 shrink-0" />
-                    My Data
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSourceKind('batch')}
-                    className={cn(
-                      'flex items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-medium transition',
-                      sourceKind === 'batch'
-                        ? 'border-indigo-500 bg-indigo-50 text-indigo-800'
-                        : 'border-slate-200 text-slate-600 hover:bg-slate-50',
-                    )}
-                  >
-                    <Briefcase className="h-3.5 w-3.5 shrink-0" />
-                    Campaign
-                  </button>
+              {inlineSource ? (
+                <div className="rounded-lg border border-emerald-100 bg-emerald-50/80 px-3 py-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+                    QC sheet
+                  </p>
+                  <p className="mt-0.5 text-xs font-medium text-slate-700">
+                    {inlineSource.rows.length.toLocaleString()} contact
+                    {inlineSource.rows.length !== 1 ? 's' : ''} in current view
+                  </p>
                 </div>
-                {sourceKind === 'batch' && (
-                  <select
-                    value={sourceBatchId}
-                    onChange={(e) => setSourceBatchId(e.target.value)}
-                    className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-                  >
-                    <option value="">Select campaign…</option>
-                    {batches.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.name} ({b.rowCount} contacts)
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
+              ) : (
+                <div>
+                  <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                    Your data
+                  </label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setSourceKind('my_data')}
+                      className={cn(
+                        'flex items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-medium transition',
+                        sourceKind === 'my_data'
+                          ? 'border-indigo-500 bg-indigo-50 text-indigo-800'
+                          : 'border-slate-200 text-slate-600 hover:bg-slate-50',
+                      )}
+                    >
+                      <FileSpreadsheet className="h-3.5 w-3.5 shrink-0" />
+                      My Data
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSourceKind('batch')}
+                      className={cn(
+                        'flex items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-medium transition',
+                        sourceKind === 'batch'
+                          ? 'border-indigo-500 bg-indigo-50 text-indigo-800'
+                          : 'border-slate-200 text-slate-600 hover:bg-slate-50',
+                      )}
+                    >
+                      <Briefcase className="h-3.5 w-3.5 shrink-0" />
+                      Campaign
+                    </button>
+                  </div>
+                  {sourceKind === 'batch' && (
+                    <select
+                      value={sourceBatchId}
+                      onChange={(e) => setSourceBatchId(e.target.value)}
+                      className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                    >
+                      <option value="">Select campaign…</option>
+                      {batches.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name} ({b.rowCount} contacts)
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
 
               {/* Match by */}
               <div>

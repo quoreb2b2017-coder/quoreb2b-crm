@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
-import { QcCampaignChannel, QcEntryState } from '../qc.constants';
+import { QcCampaignChannel, QcEntryState, QcDecision } from '../qc.constants';
 
 @Schema({ timestamps: true })
 export class QcEntry extends Document {
@@ -54,6 +54,13 @@ export class QcEntry extends Document {
 
   @Prop({ default: 'pending', enum: ['pending', 'merged', 'rejected'], index: true })
   state: QcEntryState;
+
+  @Prop({ enum: ['qualified', 'tbd', 'disqualified'], index: true })
+  qcDecision?: QcDecision;
+
+  /** TBD / Disqualified — visible on employee My QC */
+  @Prop({ default: false, index: true })
+  returnedToEmployee?: boolean;
 
   @Prop({ type: Types.ObjectId, ref: 'Batch' })
   mergedReadyBatchId?: Types.ObjectId;

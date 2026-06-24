@@ -16,7 +16,7 @@ import {
   periodFromDate,
   resolveBatchPeriod,
 } from './batch-month.util';
-import { resolveRootBatchId } from './batch-root.util';
+import { collectBatchTree, resolveRootBatchId } from './batch-root.util';
 import {
   buildMasterBatchCoverage,
   type MasterBatchCoverageResult,
@@ -660,10 +660,57 @@ export class BatchesService {
     }
   }
 
-  async delete(batchId: string, actorId: string) {
+  async delete(batchId: string, actorId: string, roles: string[] = []) {
     const batch = await this.model.findById(batchId).exec();
     if (!batch) throw new NotFoundException('Campaign not found');
-    if (batch.createdBy?.toString() !== actorId) throw new ForbiddenException('Only creator can delete');
+
+    const isAdmin =
+      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
+    if (!isAdmin && batch.createdBy?.toString() !== actorId) {
+      throw new ForbiddenException('Only creator can delete');
+    }
+
+    const rootId = await resolveRootBatchId(this.model, batchId);
+    const isRootDelete = rootId === batchId;
+    const rootBatch =
+      isRootDelete ? batch : await this.model.findById(rootId).exec();
+    if (!rootBatch) throw new NotFoundException('Campaign not found');
+
+    const rootKind = rootBatch.batchKind ?? 'standard';
+    if (rootKind === 'qc_ready') {
+      throw new BadRequestException('Ready QC files cannot be deleted from Campaigns');
+    }
+
+    const tree = await collectBatchTree(this.model, isRootDelete ? rootId : batchId);
+    const batchIds = tree.map((b) => b._id as Types.ObjectId);
+    const batchIdStrings = batchIds.map((id) => id.toString());
+
+    const qcEntriesRemoved = await this.qcService.deleteEntriesForBatches(batchIds);
+
+    let readyQcRemoved = 0;
+    if (isRootDelete) {
+      const readyResult = await this.model
+        .deleteMany({
+          batchKind: 'qc_ready',
+          sourceBatchId: new Types.ObjectId(rootId),
+        })
+        .exec();
+      readyQcRemoved = readyResult.deletedCount ?? 0;
+    }
+
+    if (rootKind === 'suppression' || rootKind === 'delivered') {
+      await this.model
+        .deleteMany({ batchKind: 'separation', sourceBatchId: rootBatch._id })
+        .exec();
+    }
+
+    const deleteResult = await this.model.deleteMany({ _id: { $in: batchIds } }).exec();
+    const deletedBatchCount = deleteResult.deletedCount ?? batchIds.length;
+
+    const masterRowsRestored = isRootDelete
+      ? (rootBatch.masterSourceRowIndices?.length ?? rootBatch.rowCount ?? 0)
+      : 0;
+
     const actorUser = await this.usersRepository.findById(actorId);
     if (actorUser) {
       await this.activityLogs.logWithActor(
@@ -682,19 +729,28 @@ export class BatchesService {
           metadata: {
             batchId,
             batchName: batch.name,
+            rootBatchId: rootId,
             rowCount: batch.rowCount,
+            deletedBatchCount,
+            masterRowsRestored,
+            qcEntriesRemoved,
+            readyQcRemoved,
+            restoredToMaster: isRootDelete && masterRowsRestored > 0,
           },
         },
       );
     }
-    if (batch.batchKind === 'suppression') {
-      await this.model
-        .deleteMany({ batchKind: 'separation', sourceBatchId: batch._id })
-        .exec();
-    }
-    await batch.deleteOne();
-    void this.bustBatchCaches(actorId, batchId);
-    return { deleted: true };
+
+    void this.bustBatchCaches(actorId, rootId);
+    return {
+      deleted: true,
+      deletedBatchCount,
+      masterRowsRestored,
+      restoredToMaster: isRootDelete,
+      qcEntriesRemoved,
+      readyQcRemoved,
+      batchIds: batchIdStrings,
+    };
   }
 
   async getSuppressionBatchCoverage(

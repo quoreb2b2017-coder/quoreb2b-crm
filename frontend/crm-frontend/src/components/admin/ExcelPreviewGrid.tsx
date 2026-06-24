@@ -56,6 +56,8 @@ interface ExcelPreviewGridProps {
   duplicateRowIndices?: number[];
   /** Source row indices marked by employee (lead worked) */
   markedRowIndices?: number[];
+  /** Read-only row click (e.g. QC decision menu) */
+  onDisplayRowClick?: (displayRowIndex: number, event: React.MouseEvent) => void;
 }
 
 export function ExcelPreviewGrid({
@@ -72,6 +74,7 @@ export function ExcelPreviewGrid({
   onLeadCellFocus,
   duplicateRowIndices,
   markedRowIndices,
+  onDisplayRowClick,
 }: ExcelPreviewGridProps) {
   const editable = editableProp ?? Boolean(onDataChange);
   const canExport = useCanExportSpreadsheet();
@@ -649,6 +652,7 @@ export function ExcelPreviewGrid({
                   <tr
                     key={`${sourceRow}-${displayRowIndex}`}
                     className={cn(
+                      onDisplayRowClick && !editable && 'cursor-pointer',
                       isDuplicate && 'bg-red-100 hover:bg-red-50',
                       !isDuplicate && isMarked && 'bg-[#e2efda] hover:bg-[#d4e8cc]',
                       !isDuplicate && !isMarked && inBatch && 'bg-[#fff8e6] hover:bg-[#fff3d6]',
@@ -662,6 +666,11 @@ export function ExcelPreviewGrid({
                           : inBatch
                             ? `Already in campaign: ${batchRefs!.map((b) => b.name).join(', ')}`
                             : undefined
+                    }
+                    onClick={
+                      onDisplayRowClick && !editable
+                        ? (e) => onDisplayRowClick(displayRowIndex, e)
+                        : undefined
                     }
                   >
                     <td

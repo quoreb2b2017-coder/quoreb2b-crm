@@ -12,6 +12,7 @@ import {
   Folder,
   FolderOpen,
   Layers,
+  ShieldAlert,
   UserRound,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
@@ -27,7 +28,10 @@ import {
   flattenQcTree,
   groupEntriesByEmployee,
   employeeLeadSummary,
+  entriesToSuppressionPayload,
 } from '@/lib/qc/qc-entries-to-sheet';
+import { CheckSuppressionModal } from '@/components/employee/CheckSuppressionModal';
+import { CheckSuppressionResultPopup } from '@/components/employee/CheckSuppressionResultPopup';
 
 interface QcWorkspaceProps {
   mode: 'employee' | 'admin';
@@ -49,9 +53,13 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
   const [tree, setTree] = useState<QcTreeNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPath, setSelectedPath] = useState<string[]>([]);
-  const [merging, setMerging] = useState(false);
   const [showAll, setShowAll] = useState(true);
   const [filterEmployeeId, setFilterEmployeeId] = useState<string | null>(null);
+  const [checkOpen, setCheckOpen] = useState(false);
+  const [duplicateHighlightRows, setDuplicateHighlightRows] = useState<number[]>([]);
+  const [duplicateCount, setDuplicateCount] = useState(0);
+  const [resultOpen, setResultOpen] = useState(false);
+  const [duplicateFileName, setDuplicateFileName] = useState<string | null>(null);
   const [year, setYear] = useState(() => currentCalendarPeriod().year);
   const [expandedMonths, setExpandedMonths] = useState<Set<number>>(() => new Set());
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(() => new Set());
@@ -139,12 +147,12 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
   );
 
   const pendingEntries = useMemo(
-    () => displayEntries.filter((e) => e.state === 'pending'),
+    () => displayEntries.filter((e) => e.state === 'pending' && !e.returnedToEmployee),
     [displayEntries],
   );
 
-  const pendingCount = useMemo(
-    () => allEntries.filter((e) => e.state === 'pending').length,
+  const reviewableCount = useMemo(
+    () => allEntries.filter((e) => e.state === 'pending' && !e.returnedToEmployee).length,
     [allEntries],
   );
 
@@ -152,6 +160,13 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
     () => allEntries.filter((e) => e.state === 'merged').length,
     [allEntries],
   );
+
+  const selectPath = (path: string[]) => {
+    setSelectedPath(path);
+    setShowAll(false);
+    setFilterEmployeeId(null);
+    setDuplicateHighlightRows([]);
+  };
 
   const mergeBreakdown = useMemo(
     () => employeeLeadSummary(groupEntriesByEmployee(pendingEntries)),
@@ -165,59 +180,29 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
     return selectedNode?.label ?? 'QC leads';
   }, [showAll, selectedPath, selectedNode, isAdmin]);
 
-  const mergeChannel = pendingEntries[0]?.campaignChannel;
-  const mergeCampaignKey =
-    pendingEntries[0]?.rootBatchId ?? pendingEntries[0]?.campaignName;
-  const mergeCampaignName = pendingEntries[0]?.campaignName;
-  const mergeYear = pendingEntries[0]?.batchYear ?? year;
-  const mergeMonth = pendingEntries[0]?.batchMonth ?? new Date().getMonth() + 1;
+  const pendingCount = reviewableCount;
 
-  const selectPath = (path: string[]) => {
-    setSelectedPath(path);
-    setShowAll(false);
-    setFilterEmployeeId(null);
-  };
+  const suppressionPayload = useMemo(
+    () => entriesToSuppressionPayload(displayEntries),
+    [displayEntries],
+  );
 
-  const handleMerge = async () => {
-    if (!isAdmin || pendingEntries.length === 0 || !mergeChannel || !mergeCampaignName) return;
-    const mixedChannel = pendingEntries.some((e) => e.campaignChannel !== mergeChannel);
-    if (mixedChannel) {
-      toast.error('Cannot mix VOIP and GPS — filter to one campaign type');
-      return;
-    }
-    const mixedCampaign = pendingEntries.some(
-      (e) => (e.rootBatchId ?? e.campaignName) !== mergeCampaignKey,
+  const duplicateIdsForView = useMemo(() => {
+    const dupIds = new Set(
+      duplicateHighlightRows
+        .map((i) => displayEntries[i]?.id)
+        .filter(Boolean) as string[],
     );
-    if (mixedCampaign) {
-      toast.error('Merge one campaign at a time — select a single campaign folder');
-      return;
-    }
-    const mergePath = [...selectedPath];
-    setMerging(true);
-    try {
-      const res = await qcService.merge({
-        entryIds: pendingEntries.map((e) => e.id),
-        channel: mergeChannel,
-        year: mergeYear,
-        month: mergeMonth,
-        name: mergeCampaignName,
-      });
-      toast.success(
-        res.isNewFile
-          ? `Created ${res.campaignName} — ${res.mergedCount} lead(s)${mergeBreakdown ? ` (${mergeBreakdown})` : ''}`
-          : `Added ${res.mergedCount} lead(s) to ${res.campaignName} — ${res.rowCount} contacts total${mergeBreakdown ? ` (${mergeBreakdown})` : ''}`,
-      );
-      setShowAll(false);
-      setSelectedPath(mergePath);
-      setFilterEmployeeId(null);
-      await load();
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Merge failed';
-      toast.error(msg);
-    } finally {
-      setMerging(false);
-    }
-  };
+    return dupIds;
+  }, [duplicateHighlightRows, displayEntries]);
+
+  const duplicateIndicesForSheet = useCallback(
+    (sheetEntries: QcEntry[]) =>
+      sheetEntries
+        .map((e, idx) => (duplicateIdsForView.has(e.id) ? idx : -1))
+        .filter((idx) => idx >= 0),
+    [duplicateIdsForView],
+  );
 
   const excelToolbar = (
     <div className="flex flex-wrap items-center gap-2">
@@ -237,17 +222,20 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
       >
         Show all ({allEntries.length})
       </button>
-      {isAdmin && pendingEntries.length > 0 && (
+      {isAdmin && displayEntries.length > 0 && (
         <button
           type="button"
-          disabled={merging}
-          onClick={() => void handleMerge()}
-          className="rounded-md bg-violet-600 px-2.5 py-1 text-xs font-bold text-white shadow-sm hover:bg-violet-700 disabled:opacity-50"
+          onClick={() => setCheckOpen(true)}
+          className="inline-flex items-center gap-1 rounded-md bg-[#217346] px-2.5 py-1 text-xs font-bold text-white shadow-sm hover:bg-[#1a5c38]"
         >
-          {merging
-            ? 'Merging…'
-            : `Merge ${pendingEntries.length} pending → ${mergeCampaignName ?? 'campaign'}`}
+          <ShieldAlert className="h-3.5 w-3.5" />
+          Check suppression
         </button>
+      )}
+      {isAdmin && (
+        <span className="text-[11px] font-medium text-slate-600">
+          Click row → Qualified / TBD / Disqualified
+        </span>
       )}
       {mergedCount > 0 && (
         <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
@@ -276,8 +264,8 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
             </h1>
             <p className="text-[10px] text-white/75">
               {isAdmin
-                ? 'Pending + merged by campaign · Jan–Dec folders'
-                : 'Your marked leads — pending & merged by campaign'}
+                ? 'Review leads · click row for QC Status · Qualified → Ready QC'
+                : 'Your leads — TBD / Disqualified from admin appear here'}
             </p>
           </div>
         </div>
@@ -562,10 +550,12 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
                   key={group.employeeId}
                   title={`${group.employeeName} — ${group.entries.length} lead${group.entries.length !== 1 ? 's' : ''}`}
                   entries={group.entries}
-                  isAdmin={false}
+                  isAdmin
                   loading={loading}
                   compact
                   emptyMessage="No leads"
+                  duplicateRowIndices={duplicateIndicesForSheet(group.entries)}
+                  onDecisionApplied={() => void load()}
                 />
               ))}
             </div>
@@ -573,14 +563,49 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
             <QcExcelSheet
               title={sheetTitle}
               entries={displayEntries}
-              isAdmin={isAdmin && Boolean(filterEmployeeId)}
+              isAdmin={isAdmin}
               loading={loading}
               toolbar={!isAdmin ? excelToolbar : undefined}
+              duplicateRowIndices={duplicateIndicesForSheet(displayEntries)}
+              onDecisionApplied={() => void load()}
               emptyMessage="Mark a lead as Lead / Won / Active on assigned campaign"
             />
           )}
         </div>
       </div>
+
+      {isAdmin && (
+        <>
+          <CheckSuppressionModal
+            open={checkOpen}
+            onClose={() => setCheckOpen(false)}
+            defaultSourceKind="batch"
+            baseFileName={sheetTitle}
+            inlineSource={
+              displayEntries.length > 0
+                ? { headers: suppressionPayload.headers, rows: suppressionPayload.rows }
+                : undefined
+            }
+            onComplete={(result) => {
+              if (result.duplicateCount < 0) {
+                toast.error('Suppression check failed', result.duplicateFileName ?? 'Unknown error');
+                return;
+              }
+              setDuplicateCount(result.duplicateCount);
+              setDuplicateHighlightRows(result.duplicateSourceIndices ?? []);
+              setDuplicateFileName(result.duplicateFileName);
+              setResultOpen(true);
+            }}
+          />
+          <CheckSuppressionResultPopup
+            open={resultOpen}
+            duplicateCount={duplicateCount}
+            duplicateFileName={duplicateFileName}
+            highlightOnSheet
+            onDone={() => setResultOpen(false)}
+          />
+        </>
+      )}
     </div>
   );
 }

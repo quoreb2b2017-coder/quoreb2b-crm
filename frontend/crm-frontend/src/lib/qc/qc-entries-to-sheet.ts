@@ -9,9 +9,11 @@ export interface QcSpreadsheet {
 const ADMIN_ONLY_META = ['Employee', 'QC Status'];
 const STATUS_HEADER = 'QC Status';
 
-function qcStatusLabel(state: string): string {
-  if (state === 'merged') return 'Merged';
-  if (state === 'rejected') return 'Rejected';
+function qcStatusLabel(entry: { state: string; qcDecision?: string; qcDecisionLabel?: string }): string {
+  if (entry.qcDecisionLabel) return entry.qcDecisionLabel;
+  if (entry.qcDecision === 'qualified') return 'Qualified';
+  if (entry.state === 'merged') return 'Merged';
+  if (entry.state === 'rejected') return 'Rejected';
   return 'Pending';
 }
 
@@ -65,13 +67,23 @@ export function qcEntriesToSpreadsheet(
   for (const entry of entries) {
     const dataCells = dataHeaders.map((h) => cellForHeader(entry, h));
     const row = isAdmin
-      ? [entry.employeeName ?? '', qcStatusLabel(entry.state), ...dataCells]
-      : [qcStatusLabel(entry.state), ...dataCells];
+      ? [entry.employeeName ?? '', qcStatusLabel(entry), ...dataCells]
+      : [qcStatusLabel(entry), ...dataCells];
     rows.push(row);
     entryIdsByRow.push(entry.id);
   }
 
   return { headers, rows, entryIdsByRow };
+}
+
+/** Headers + rows for suppression check (data columns only). */
+export function entriesToSuppressionPayload(entries: QcEntry[]): {
+  headers: string[];
+  rows: string[][];
+} {
+  const dataHeaders = collectDataHeaders(entries);
+  const rows = entries.map((entry) => dataHeaders.map((h) => cellForHeader(entry, h)));
+  return { headers: dataHeaders, rows };
 }
 
 /** Group QC entries by employee (admin separate sheets). */

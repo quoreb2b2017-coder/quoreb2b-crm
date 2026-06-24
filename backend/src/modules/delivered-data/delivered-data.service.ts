@@ -245,7 +245,10 @@ export class SuppressionDataService {
   ) {
     const isEmployee = roles.includes(SystemRole.EMPLOYEE);
     const isDbAdmin = roles.includes(SystemRole.DB_ADMIN);
-    if (!isEmployee && !isDbAdmin) {
+    const isAdmin =
+      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
+    const hasInlineSource = Boolean(dto.sourceRows?.length && dto.sourceHeaders?.length);
+    if (!isEmployee && !isDbAdmin && !(isAdmin && hasInlineSource)) {
       throw new ForbiddenException('Only employees and DB admins can check suppression');
     }
     if (

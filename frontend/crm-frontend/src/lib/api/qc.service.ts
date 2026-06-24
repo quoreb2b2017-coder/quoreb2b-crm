@@ -21,6 +21,9 @@ export interface QcEntry {
   rowData: string[];
   changedColumns: string[];
   state: string;
+  qcDecision?: string;
+  qcDecisionLabel?: string;
+  returnedToEmployee?: boolean;
   mergedReadyBatchId?: string;
   createdAt: string;
   updatedAt: string;
@@ -122,6 +125,21 @@ export const qcService = {
   async reject(entryIds: string[]): Promise<{ rejected: number }> {
     const res = await apiClient.post('/qc/reject', { entryIds });
     return unwrap<{ rejected: number }>(res);
+  },
+
+  async setDecision(
+    entryId: string,
+    decision: 'qualified' | 'tbd' | 'disqualified',
+  ): Promise<{
+    decision: string;
+    decisionLabel: string;
+    routed: 'ready_qc' | 'employee_my_qc';
+    employeeId?: string;
+    employeeName?: string;
+    merge?: QcMergeResult;
+  }> {
+    const res = await apiClient.post('/qc/decision', { entryId, decision });
+    return unwrap(res);
   },
 
   async getReadyTree(): Promise<QcTreeNode[]> {

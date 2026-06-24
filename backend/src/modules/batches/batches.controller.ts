@@ -124,6 +124,6 @@ export class BatchesController {
   @Delete(':id')
   @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
   delete(@Param('id') id: string, @CurrentUser() user: JwtUser) {
-    return this.batchesService.delete(id, user.id ?? user.sub!);
+    return this.batchesService.delete(id, user.id ?? user.sub!, user.roles ?? []);
   }
 }

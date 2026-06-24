@@ -13,10 +13,14 @@ import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
 import { AttendanceFullBleed } from '@/components/attendance/AttendanceFullBleed';
 import { ExcelSheetShell } from '@/components/attendance/ExcelSheetShell';
-import { MasterDataDuplicatePreviewModal } from '@/components/master-data/MasterDataDuplicatePreviewModal';
 import { MasterDataUploadMonthExplorer } from '@/components/master-data/MasterDataUploadMonthExplorer';
 import { MasterDataUploadRequestList } from '@/components/master-data/MasterDataUploadRequestList';
 import { SpreadsheetPreviewModal } from '@/components/spreadsheet/SpreadsheetPreviewModal';
+import {
+  resolveDuplicatesOpenPath,
+  uploadRequestFilePath,
+  uploadRequestDuplicatesPath,
+} from '@/lib/master-data/upload-request-nav';
 import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
 import { cn } from '@/lib/utils/cn';
 
@@ -37,12 +41,6 @@ export function EmployeeMyDataPanel() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [filter, setFilter] = useState<MasterDataUploadRequestStatus | 'all'>('all');
-  const [duplicateRequest, setDuplicateRequest] = useState<{
-    fileName: string;
-    duplicateCount: number;
-    headers: string[];
-    rows: string[][];
-  } | null>(null);
   const [pendingUpload, setPendingUpload] = useState<SpreadsheetData | null>(null);
 
   const load = useCallback(async () => {
@@ -77,12 +75,11 @@ export function EmployeeMyDataPanel() {
         await load();
 
         if (result.duplicateCount > 0) {
-          setDuplicateRequest({
-            fileName: parsed.fileName,
-            duplicateCount: result.duplicateCount,
-            headers: result.templateHeaders,
-            rows: result.duplicatePreviewRows,
-          });
+          if (result.duplicateFileId) {
+            router.push(uploadRequestFilePath('employee', result.duplicateFileId));
+          } else if (result.request) {
+            router.push(uploadRequestDuplicatesPath('employee', result.request.id));
+          }
         }
 
         if (result.request) {
@@ -112,7 +109,7 @@ export function EmployeeMyDataPanel() {
         setUploading(false);
       }
     },
-    [load],
+    [load, router],
   );
 
   const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -139,7 +136,11 @@ export function EmployeeMyDataPanel() {
   };
 
   const openRequestInExcel = (request: MasterDataUploadRequest) => {
-    router.push(`/employee/my-data/${request.id}`);
+    router.push(uploadRequestFilePath('employee', request.id));
+  };
+
+  const openDuplicates = (request: MasterDataUploadRequest) => {
+    router.push(resolveDuplicatesOpenPath('employee', request, requests));
   };
 
   return (
@@ -222,6 +223,7 @@ export function EmployeeMyDataPanel() {
               </div>
             }
             onViewFile={openRequestInExcel}
+            onViewDuplicates={openDuplicates}
           />
         )}
       />
@@ -255,14 +257,6 @@ export function EmployeeMyDataPanel() {
         }
       />
 
-      <MasterDataDuplicatePreviewModal
-        isOpen={Boolean(duplicateRequest)}
-        onClose={() => setDuplicateRequest(null)}
-        title={duplicateRequest ? `${duplicateRequest.fileName} — duplicate preview` : 'Duplicate preview'}
-        duplicateCount={duplicateRequest?.duplicateCount ?? 0}
-        headers={duplicateRequest?.headers ?? []}
-        rows={duplicateRequest?.rows ?? []}
-      />
     </AttendanceFullBleed>
   );
 }

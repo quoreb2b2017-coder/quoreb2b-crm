@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Loader2, Save, ShieldAlert } from 'lucide-react';
 import { ExcelPreviewGrid } from '@/components/admin/ExcelPreviewGrid';
 import { masterDataService, type MasterDataUploadRequestStatus } from '@/lib/api/master-data.service';
@@ -9,7 +10,7 @@ import { useDebouncedAutoSave } from '@/hooks/useDebouncedAutoSave';
 import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
 import { CheckSuppressionModal } from '@/components/employee/CheckSuppressionModal';
-import { CheckSuppressionResultPopup } from '@/components/employee/CheckSuppressionResultPopup';
+import { handleSuppressionCheckComplete } from '@/lib/master-data/handle-suppression-result';
 
 const STATUS_HINT: Partial<Record<MasterDataUploadRequestStatus, string>> = {
   pending_db_admin: 'Waiting for DB Admin approval — view only',
@@ -42,13 +43,10 @@ export function EmployeeMyDataExcelView({
   onClose,
   closeLabel = 'Back to My Data',
 }: EmployeeMyDataExcelViewProps) {
+  const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [checkOpen, setCheckOpen] = useState(false);
-  const [resultOpen, setResultOpen] = useState(false);
-  const [resultCount, setResultCount] = useState(0);
-  const [resultFileName, setResultFileName] = useState<string | null>(null);
-  const [resultSourceRole, setResultSourceRole] = useState<'employee' | 'db_admin'>('employee');
   const [duplicateHighlightRows, setDuplicateHighlightRows] = useState<number[]>([]);
   const [markedLeadRows, setMarkedLeadRows] = useState<number[]>([]);
   const dataRef = useRef(data);
@@ -187,26 +185,14 @@ export function EmployeeMyDataExcelView({
         defaultSourceId={requestId}
         baseFileName={fileName}
         onComplete={(result) => {
-          if (result.duplicateCount < 0) {
-            toast.error('Check failed', result.duplicateFileName ?? 'Could not check suppression');
-            return;
-          }
-          setResultCount(result.duplicateCount);
-          setResultFileName(result.duplicateFileName);
-          setResultSourceRole(result.duplicateSourceRole ?? 'employee');
           if (result.duplicateSourceIndices?.length) {
             setDuplicateHighlightRows(result.duplicateSourceIndices);
           }
-          setResultOpen(true);
+          handleSuppressionCheckComplete(router, 'employee', result, {
+            highlightOnly: !result.duplicateFileId,
+            sourceRole: result.duplicateSourceRole,
+          });
         }}
-      />
-
-      <CheckSuppressionResultPopup
-        open={resultOpen}
-        duplicateCount={resultCount}
-        duplicateFileName={resultFileName}
-        duplicateSourceRole={resultSourceRole}
-        onDone={() => setResultOpen(false)}
       />
     </div>
   );

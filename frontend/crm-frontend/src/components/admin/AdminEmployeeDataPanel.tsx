@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { RefreshCw, Users, X } from 'lucide-react';
 import {
   masterDataService,
@@ -9,10 +10,12 @@ import {
 } from '@/lib/api/master-data.service';
 import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
-import { MasterDataDuplicatePreviewModal } from '@/components/master-data/MasterDataDuplicatePreviewModal';
 import { MasterDataUploadMonthExplorer } from '@/components/master-data/MasterDataUploadMonthExplorer';
 import { MasterDataUploadRequestList } from '@/components/master-data/MasterDataUploadRequestList';
-import { SpreadsheetPreviewModal } from '@/components/spreadsheet/SpreadsheetPreviewModal';
+import {
+  resolveDuplicatesOpenPath,
+  uploadRequestFilePath,
+} from '@/lib/master-data/upload-request-nav';
 import { cn } from '@/lib/utils/cn';
 
 const FILTERS: Array<MasterDataUploadRequestStatus | 'all'> = [
@@ -25,20 +28,13 @@ const FILTERS: Array<MasterDataUploadRequestStatus | 'all'> = [
 ];
 
 export function AdminEmployeeDataPanel() {
+  const router = useRouter();
   const [requests, setRequests] = useState<MasterDataUploadRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<MasterDataUploadRequestStatus | 'all'>('all');
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
-  const [duplicateRequest, setDuplicateRequest] = useState<MasterDataUploadRequest | null>(null);
   const [rejectTarget, setRejectTarget] = useState<MasterDataUploadRequest | null>(null);
   const [rejectReason, setRejectReason] = useState('');
-  const [filePreview, setFilePreview] = useState<{
-    title: string;
-    headers: string[];
-    rows: string[][];
-    totalRows: number;
-  } | null>(null);
-  const [viewFileLoadingId, setViewFileLoadingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -111,25 +107,12 @@ export function AdminEmployeeDataPanel() {
     }
   };
 
-  const viewRequestFile = async (request: MasterDataUploadRequest) => {
-    setViewFileLoadingId(request.id);
-    try {
-      const detail = await masterDataService.getUploadRequest(request.id);
-      const rows =
-        detail.workRows?.length && request.status === 'active'
-          ? detail.workRows
-          : detail.rows;
-      setFilePreview({
-        title: `${detail.fileName} — ${request.submittedByEmail ?? 'employee'}`,
-        headers: detail.headers,
-        rows,
-        totalRows: rows.length,
-      });
-    } catch (err) {
-      toast.error('Could not load file', extractApiError(err, 'Load failed'));
-    } finally {
-      setViewFileLoadingId(null);
-    }
+  const openRequestFile = (request: MasterDataUploadRequest) => {
+    router.push(uploadRequestFilePath('admin_employee', request.id));
+  };
+
+  const openDuplicates = (request: MasterDataUploadRequest) => {
+    router.push(resolveDuplicatesOpenPath('admin_employee', request, requests));
   };
 
   const remove = async (request: MasterDataUploadRequest) => {
@@ -189,7 +172,7 @@ export function AdminEmployeeDataPanel() {
         emptyFolderMessage="No employee files in this month."
         statusColumnLabel="Status"
         showSubmittedBy
-        onOpenRequest={(request) => void viewRequestFile(request)}
+        onOpenRequest={openRequestFile}
         renderDetails={(monthRequests, meta) => (
           <MasterDataUploadRequestList
             title={`${meta.monthLabel} ${meta.year}`}
@@ -205,9 +188,8 @@ export function AdminEmployeeDataPanel() {
               setRejectTarget(request);
               setRejectReason('');
             }}
-            onViewDuplicates={(request) => setDuplicateRequest(request)}
-            onViewFile={(request) => void viewRequestFile(request)}
-            viewFileLoadingId={viewFileLoadingId}
+            onViewDuplicates={openDuplicates}
+            onViewFile={openRequestFile}
             onDelete={remove}
             allowDeleteApproved
             toolbar={
@@ -285,24 +267,6 @@ export function AdminEmployeeDataPanel() {
         </>
       )}
 
-      <MasterDataDuplicatePreviewModal
-        isOpen={Boolean(duplicateRequest)}
-        onClose={() => setDuplicateRequest(null)}
-        title={duplicateRequest ? `${duplicateRequest.fileName} — duplicates` : 'Duplicates'}
-        duplicateCount={duplicateRequest?.duplicateCount ?? 0}
-        headers={duplicateRequest?.headers ?? []}
-        rows={duplicateRequest?.duplicatePreviewRows ?? []}
-      />
-
-      <SpreadsheetPreviewModal
-        isOpen={Boolean(filePreview)}
-        onClose={() => setFilePreview(null)}
-        title={filePreview?.title ?? 'File'}
-        headers={filePreview?.headers ?? []}
-        rows={filePreview?.rows ?? []}
-        totalRows={filePreview?.totalRows}
-        actions={[{ label: 'Close', onClick: () => setFilePreview(null), variant: 'secondary' }]}
-      />
     </div>
   );
 }

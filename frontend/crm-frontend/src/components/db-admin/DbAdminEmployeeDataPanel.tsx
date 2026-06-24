@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { RefreshCw, X } from 'lucide-react';
 import {
   masterDataService,
@@ -10,10 +11,12 @@ import {
 import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
 import { AttendanceFullBleed } from '@/components/attendance/AttendanceFullBleed';
-import { MasterDataDuplicatePreviewModal } from '@/components/master-data/MasterDataDuplicatePreviewModal';
 import { MasterDataUploadMonthExplorer } from '@/components/master-data/MasterDataUploadMonthExplorer';
 import { MasterDataUploadRequestList } from '@/components/master-data/MasterDataUploadRequestList';
-import { SpreadsheetPreviewModal } from '@/components/spreadsheet/SpreadsheetPreviewModal';
+import {
+  resolveDuplicatesOpenPath,
+  uploadRequestFilePath,
+} from '@/lib/master-data/upload-request-nav';
 import { cn } from '@/lib/utils/cn';
 
 const FILTERS: Array<MasterDataUploadRequestStatus | 'all'> = [
@@ -30,20 +33,13 @@ interface DbAdminEmployeeDataPanelProps {
 }
 
 export function DbAdminEmployeeDataPanel({ onRequestsChanged }: DbAdminEmployeeDataPanelProps) {
+  const router = useRouter();
   const [requests, setRequests] = useState<MasterDataUploadRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<MasterDataUploadRequestStatus | 'all'>('pending_db_admin');
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
-  const [duplicateRequest, setDuplicateRequest] = useState<MasterDataUploadRequest | null>(null);
   const [rejectTarget, setRejectTarget] = useState<MasterDataUploadRequest | null>(null);
   const [rejectReason, setRejectReason] = useState('');
-  const [filePreview, setFilePreview] = useState<{
-    title: string;
-    headers: string[];
-    rows: string[][];
-    totalRows: number;
-  } | null>(null);
-  const [viewFileLoadingId, setViewFileLoadingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -124,25 +120,12 @@ export function DbAdminEmployeeDataPanel({ onRequestsChanged }: DbAdminEmployeeD
     }
   };
 
-  const viewRequestFile = async (request: MasterDataUploadRequest) => {
-    setViewFileLoadingId(request.id);
-    try {
-      const detail = await masterDataService.getUploadRequest(request.id);
-      const rows =
-        request.status === 'active' && detail.workRows?.length
-          ? detail.workRows
-          : detail.rows;
-      setFilePreview({
-        title: `${detail.fileName} — ${request.submittedByEmail ?? 'employee'}`,
-        headers: detail.headers,
-        rows,
-        totalRows: rows.length,
-      });
-    } catch (err) {
-      toast.error('Could not load file', extractApiError(err, 'Load failed'));
-    } finally {
-      setViewFileLoadingId(null);
-    }
+  const openRequestFile = (request: MasterDataUploadRequest) => {
+    router.push(uploadRequestFilePath('db_admin_employee', request.id));
+  };
+
+  const openDuplicates = (request: MasterDataUploadRequest) => {
+    router.push(resolveDuplicatesOpenPath('db_admin_employee', request, requests));
   };
 
   return (
@@ -155,7 +138,7 @@ export function DbAdminEmployeeDataPanel({ onRequestsChanged }: DbAdminEmployeeD
         emptyFolderMessage="No employee files in this month folder."
         statusColumnLabel="Workflow status"
         showSubmittedBy
-        onOpenRequest={(request) => void viewRequestFile(request)}
+        onOpenRequest={openRequestFile}
         renderDetails={(monthRequests, meta) => (
           <MasterDataUploadRequestList
             title={`${meta.monthLabel} ${meta.year} — employee files`}
@@ -172,9 +155,8 @@ export function DbAdminEmployeeDataPanel({ onRequestsChanged }: DbAdminEmployeeD
               setRejectReason('');
             }}
             onForward={forward}
-            onViewDuplicates={(request) => setDuplicateRequest(request)}
-            onViewFile={(request) => void viewRequestFile(request)}
-            viewFileLoadingId={viewFileLoadingId}
+            onViewDuplicates={openDuplicates}
+            onViewFile={openRequestFile}
             toolbar={
               <div className="flex w-full flex-wrap items-center gap-2">
                 <span className="text-sm font-medium text-slate-700">
@@ -267,25 +249,6 @@ export function DbAdminEmployeeDataPanel({ onRequestsChanged }: DbAdminEmployeeD
           </div>
         </>
       )}
-
-      <MasterDataDuplicatePreviewModal
-        isOpen={Boolean(duplicateRequest)}
-        onClose={() => setDuplicateRequest(null)}
-        title={duplicateRequest ? `${duplicateRequest.fileName} — duplicate preview` : 'Duplicate preview'}
-        duplicateCount={duplicateRequest?.duplicateCount ?? 0}
-        headers={duplicateRequest?.headers ?? []}
-        rows={duplicateRequest?.duplicatePreviewRows ?? []}
-      />
-
-      <SpreadsheetPreviewModal
-        isOpen={Boolean(filePreview)}
-        onClose={() => setFilePreview(null)}
-        title={filePreview?.title ?? 'Uploaded file'}
-        headers={filePreview?.headers ?? []}
-        rows={filePreview?.rows ?? []}
-        totalRows={filePreview?.totalRows}
-        actions={[{ label: 'Close', onClick: () => setFilePreview(null), variant: 'secondary' }]}
-      />
     </AttendanceFullBleed>
   );
 }

@@ -59,6 +59,11 @@ export function isMasterDataSpreadsheetPath(pathname: string) {
   );
 }
 
+/** Bulk email verification — full width spreadsheet-style panel */
+export function isBulkEmailVerificationPath(pathname: string) {
+  return /^\/(admin|db-admin)\/bulk-email-verification$/.test(pathname);
+}
+
 /** Pages that fill the content area edge-to-edge (no side padding) */
 export function isAdminFullBleedPath(pathname: string) {
   return (
@@ -67,7 +72,8 @@ export function isAdminFullBleedPath(pathname: string) {
     isQcPath(pathname) ||
     isBatchTeamPath(pathname) ||
     isMasterDataSpreadsheetPath(pathname) ||
-    isAdminUsersListPath(pathname)
+    isAdminUsersListPath(pathname) ||
+    isBulkEmailVerificationPath(pathname)
   );
 }
 
@@ -114,7 +120,8 @@ export function isAdminEdgeToEdgePath(pathname: string) {
     isPanelSettingsPath(pathname) ||
     isAttendancePath(pathname) ||
     isLeaveApplyPath(pathname) ||
-    isPersonalNotesPath(pathname)
+    isPersonalNotesPath(pathname) ||
+    isBulkEmailVerificationPath(pathname)
   );
 }
 
@@ -986,7 +993,7 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
             className={cn(
               'min-h-0 min-w-0 w-full max-w-none flex-1 animate-page-enter',
               edgeToEdge ? 'flex flex-col self-stretch' : '',
-              attendancePage && 'attendance-full-bleed',
+              (attendancePage || isBulkEmailVerificationPath(pathname)) && 'attendance-full-bleed',
             )}
           >
             {children}

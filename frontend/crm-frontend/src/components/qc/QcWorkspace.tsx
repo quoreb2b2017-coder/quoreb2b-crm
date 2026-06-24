@@ -5,6 +5,7 @@ import './qc-shared.css';
 
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
+import { useRouter } from 'next/navigation';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowRight,
@@ -32,19 +33,12 @@ import {
   employeeLeadSummary,
   entriesToSuppressionPayload,
 } from '@/lib/qc/qc-entries-to-sheet';
+import { handleSuppressionCheckComplete } from '@/lib/master-data/handle-suppression-result';
 
 const CheckSuppressionModal = dynamic(
   () =>
     import('@/components/employee/CheckSuppressionModal').then((m) => ({
       default: m.CheckSuppressionModal,
-    })),
-  { ssr: false },
-);
-
-const CheckSuppressionResultPopup = dynamic(
-  () =>
-    import('@/components/employee/CheckSuppressionResultPopup').then((m) => ({
-      default: m.CheckSuppressionResultPopup,
     })),
   { ssr: false },
 );
@@ -65,6 +59,7 @@ function isPathActive(path: string[], selectedPath: string[]): boolean {
 }
 
 export function QcWorkspace({ mode }: QcWorkspaceProps) {
+  const router = useRouter();
   const isAdmin = mode === 'admin';
   const [tree, setTree] = useState<QcTreeNode[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,9 +68,6 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
   const [filterEmployeeId, setFilterEmployeeId] = useState<string | null>(null);
   const [checkOpen, setCheckOpen] = useState(false);
   const [duplicateHighlightRows, setDuplicateHighlightRows] = useState<number[]>([]);
-  const [duplicateCount, setDuplicateCount] = useState(0);
-  const [resultOpen, setResultOpen] = useState(false);
-  const [duplicateFileName, setDuplicateFileName] = useState<string | null>(null);
   const [year, setYear] = useState(() => currentCalendarPeriod().year);
   const [expandedMonths, setExpandedMonths] = useState<Set<number>>(() => new Set());
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(() => new Set());
@@ -648,22 +640,12 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
                 : undefined
             }
             onComplete={(result) => {
-              if (result.duplicateCount < 0) {
-                toast.error('Suppression check failed', result.duplicateFileName ?? 'Unknown error');
-                return;
-              }
-              setDuplicateCount(result.duplicateCount);
               setDuplicateHighlightRows(result.duplicateSourceIndices ?? []);
-              setDuplicateFileName(result.duplicateFileName);
-              setResultOpen(true);
+              handleSuppressionCheckComplete(router, 'db_admin', result, {
+                highlightOnly: !result.duplicateFileId,
+                sourceRole: result.duplicateSourceRole,
+              });
             }}
-          />
-          <CheckSuppressionResultPopup
-            open={resultOpen}
-            duplicateCount={duplicateCount}
-            duplicateFileName={duplicateFileName}
-            highlightOnSheet
-            onDone={() => setResultOpen(false)}
           />
         </>
       )}

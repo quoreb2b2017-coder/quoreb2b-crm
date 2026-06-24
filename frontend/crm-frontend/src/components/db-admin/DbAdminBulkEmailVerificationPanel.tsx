@@ -22,13 +22,11 @@ import { parseSpreadsheetFile } from '@/lib/spreadsheet/parse-spreadsheet';
 import { downloadSpreadsheetXlsx } from '@/lib/spreadsheet/export-spreadsheet';
 import {
   bulkEmailVerificationService,
-  type BatchDiagnostics,
   type EmailVerificationBatch,
   type BatchStatus,
   type EmailVerificationRecord,
   type EmailVerificationStatus,
   type ProspectRow,
-  type VerificationAnalytics,
 } from '@/lib/api/bulk-email-verification.service';
 import { extractApiError } from '@/lib/api/errors';
 import { useCrmDataCleared } from '@/hooks/useCrmDataCleared';
@@ -211,6 +209,29 @@ function formatStatus(status: EmailVerificationStatus) {
   return status.replace(/_/g, ' ');
 }
 
+/** User-facing check result — hides raw SMTP / port-25 diagnostics. */
+function friendlyCheckLabel(
+  response: string | null | undefined,
+  status: EmailVerificationStatus,
+): string {
+  if (status === 'valid') return 'Confirmed';
+  if (status === 'likely_valid') return 'Likely';
+  if (status === 'catch_all') return 'Catch-all';
+  if (status === 'risky') return 'Risky';
+  if (status === 'invalid') return 'Invalid';
+  if (!response) return '—';
+  const r = response.toLowerCase();
+  if (r.includes('format_only') || r.includes('provided')) return 'Format OK';
+  if (r.includes('port25') || r.includes('smtp_probe_disabled') || r.includes('mx_only')) {
+    return 'Pattern match';
+  }
+  if (r.includes('no_mx') || r.includes('domain_not_found') || r.includes('dns_error')) {
+    return 'No mail server';
+  }
+  if (r.includes('disposable')) return 'Disposable';
+  return '—';
+}
+
 function shellBtn(className?: string) {
   return cn(
     'inline-flex items-center gap-1.5 border border-[#c6c6c6] bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-[#fafafa] disabled:opacity-50',
@@ -340,7 +361,6 @@ export function DbAdminBulkEmailVerificationPanel() {
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
 
-  const [analytics, setAnalytics] = useState<VerificationAnalytics | null>(null);
   const [batches, setBatches] = useState<EmailVerificationBatch[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
   const [selectedYear, setSelectedYear] = useState(currentYear);
@@ -358,7 +378,6 @@ export function DbAdminBulkEmailVerificationPanel() {
   );
   const [minScore, setMinScore] = useState<number | ''>('');
   const [loadError, setLoadError] = useState('');
-  const [diagnostics, setDiagnostics] = useState<BatchDiagnostics | null>(null);
   const [pendingUpload, setPendingUpload] = useState<PendingUpload | null>(null);
   const [filePreview, setFilePreview] = useState<FilePreview | null>(null);
   const [previewLoadingId, setPreviewLoadingId] = useState<string | null>(null);
@@ -438,11 +457,7 @@ export function DbAdminBulkEmailVerificationPanel() {
     if (!opts?.silent || !hasLoadedRef.current) setLoading(true);
     setLoadError('');
     try {
-      const [stats, list] = await Promise.all([
-        bulkEmailVerificationService.getAnalytics(),
-        bulkEmailVerificationService.listBatches(),
-      ]);
-      setAnalytics(stats);
+      const list = await bulkEmailVerificationService.listBatches();
       setBatches(list);
       hasLoadedRef.current = true;
     } catch (err) {
@@ -509,7 +524,6 @@ export function DbAdminBulkEmailVerificationPanel() {
     setSelectedBatchId(null);
     setRecords([]);
     setRecordTotal(0);
-    setDiagnostics(null);
     void load({ silent: true });
   });
 
@@ -519,35 +533,6 @@ export function DbAdminBulkEmailVerificationPanel() {
     }, 150);
     return () => window.clearTimeout(timer);
   }, [loadRecords]);
-
-  const selectedBatchStatus = useMemo(
-    () => batches.find((b) => b.id === selectedBatchId)?.status,
-    [batches, selectedBatchId],
-  );
-
-  useEffect(() => {
-    if (!selectedBatchId) {
-      setDiagnostics(null);
-      return;
-    }
-    if (selectedBatchStatus !== 'completed' && selectedBatchStatus !== 'failed') {
-      setDiagnostics(null);
-      return;
-    }
-    let cancelled = false;
-    bulkEmailVerificationService
-      .getBatchDiagnostics(selectedBatchId)
-      .then((data) => {
-        if (!cancelled) setDiagnostics(data);
-      })
-      .catch((err) => {
-        if (!cancelled) setDiagnostics(null);
-        console.warn('Diagnostics unavailable:', extractApiError(err));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedBatchId, selectedBatchStatus]);
 
   useEffect(() => {
     const tick = () => {
@@ -683,7 +668,6 @@ export function DbAdminBulkEmailVerificationPanel() {
         setSelectedBatchId(null);
         setRecords([]);
         setRecordTotal(0);
-        setDiagnostics(null);
       }
       toast.success('Removed', 'Job deleted.');
       void load({ silent: true });
@@ -698,7 +682,6 @@ export function DbAdminBulkEmailVerificationPanel() {
       await bulkEmailVerificationService.resetBatch(batchId);
       setRecords([]);
       setRecordTotal(0);
-      setDiagnostics(null);
       void load({ silent: true });
     } catch (err) {
       toast.error('Reset failed', extractApiError(err));
@@ -874,21 +857,21 @@ export function DbAdminBulkEmailVerificationPanel() {
     if (!selectedBatch) {
       return [
         { label: 'Prospects', value: '—' },
-        { label: 'SMTP confirmed', value: '—' },
+        { label: 'Verified', value: '—' },
         { label: 'Likely valid', value: '—' },
         { label: 'Match rate', value: '—' },
       ];
     }
     return [
       { label: 'Prospects', value: selectedBatch.totalProspects },
-      { label: 'SMTP confirmed', value: selectedBatch.verifiedCount },
+      { label: 'Verified', value: selectedBatch.verifiedCount },
       { label: 'Likely valid', value: selectedBatch.likelyValidCount ?? 0 },
       { label: 'Match rate', value: `${selectedBatch.successRate}%` },
     ];
   }, [selectedBatch]);
 
   return (
-    <AttendanceFullBleed className="gap-4 px-4 py-4 sm:px-5">
+    <AttendanceFullBleed className="gap-3 py-3">
       <input
         ref={inputRef}
         type="file"
@@ -904,7 +887,7 @@ export function DbAdminBulkEmailVerificationPanel() {
       <ExcelSheetShell
         title="Email Finder & Verification"
         loading={loading}
-        hint="Domain = verify emails · Email column = format scan only (all Valid)"
+        hint="Upload prospects, then verify from the month folder below"
         toolbar={
           <div className="flex w-full flex-wrap items-center gap-2">
             <span className="font-medium text-slate-700">
@@ -936,59 +919,35 @@ export function DbAdminBulkEmailVerificationPanel() {
         }
       >
         {loadError ? (
-          <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-900">
+          <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
             {loadError}
           </div>
         ) : null}
-        {analytics ? (
-          <div className="border-b border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs text-emerald-900">
-            <strong>In-house verification engine</strong> — checks multiple patterns per person in the
-            backend, saves <strong>one best email</strong> only (valid → likely → catch-all → highest
-            score). Disposable list: {analytics.disposableDomainsLoaded ?? 0} domains. Queue:{' '}
-            <code>{analytics.queueBackend ?? 'in-process'}</code>.
-          </div>
-        ) : null}
 
-        <div className="overflow-x-auto bg-white">
+        <div className="bg-white">
           {selectedBatch ? (
-            <p className="border-b border-[#e0e0e0] bg-[#fafafa] px-3 py-1.5 text-[11px] text-slate-600">
-              Stats for:{' '}
+            <p className="border-b border-[#e0e0e0] bg-[#fafafa] px-4 py-2 text-xs text-slate-600">
+              Stats for{' '}
               <span className="font-semibold text-slate-800">{selectedBatch.sourceFileName}</span>
               {selectedBatch.status === 'processing' ? (
                 <span className="ml-2 text-sky-700">(updating…)</span>
               ) : null}
             </p>
           ) : (
-            <p className="border-b border-[#e0e0e0] bg-[#fafafa] px-3 py-1.5 text-[11px] text-slate-500">
+            <p className="border-b border-[#e0e0e0] bg-[#fafafa] px-4 py-2 text-xs text-slate-500">
               Select a file in the month folder below to see its stats.
             </p>
           )}
-          <table className="w-full min-w-full border-collapse text-[13px]">
-            <thead>
-              <tr>
-                {metrics.map((m) => (
-                  <th
-                    key={m.label}
-                    className="border border-[#c6c6c6] bg-[#f2f2f2] px-3 py-2 text-left text-xs font-semibold text-slate-700"
-                  >
-                    {m.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                {metrics.map((m) => (
-                  <td
-                    key={m.label}
-                    className="border border-[#e0e0e0] px-3 py-2 text-sm font-semibold text-slate-900"
-                  >
-                    {m.value}
-                  </td>
-                ))}
-              </tr>
-            </tbody>
-          </table>
+          <div className="grid grid-cols-2 divide-x divide-[#e0e0e0] border-b border-[#e0e0e0] sm:grid-cols-4">
+            {metrics.map((m) => (
+              <div key={m.label} className="px-4 py-4 text-center sm:text-left">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  {m.label}
+                </p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">{m.value}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </ExcelSheetShell>
 
@@ -1020,8 +979,8 @@ export function DbAdminBulkEmailVerificationPanel() {
           </div>
         }
       >
-        <div className="flex min-h-0 overflow-hidden bg-white">
-          <aside className="w-[220px] shrink-0 border-r border-[#d4d4d4]">
+        <div className="grid min-h-[320px] grid-cols-1 overflow-hidden bg-white lg:grid-cols-[minmax(200px,260px)_1fr]">
+          <aside className="border-b border-[#d4d4d4] lg:border-b-0 lg:border-r">
             <div className="border-b border-[#d4d4d4] bg-[#f2f2f2] px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
               {selectedYear} folders
             </div>
@@ -1188,7 +1147,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                               </div>
                             ) : batch.status === 'completed' ? (
                               batch.emailsGenerated > 0
-                                ? `${batch.emailsGenerated} contacts · ${batch.verifiedCount} SMTP OK · ${batch.likelyValidCount ?? 0} likely`
+                                ? `${batch.emailsGenerated} contacts · ${batch.verifiedCount} verified · ${batch.likelyValidCount ?? 0} likely`
                                 : '0 contacts — Re-run after reset'
                             ) : (
                               '—'
@@ -1415,37 +1374,21 @@ export function DbAdminBulkEmailVerificationPanel() {
           </div>
         }
       >
-        {diagnostics &&
-        selectedBatch?.status === 'completed' &&
-        diagnostics.verifiedCount === 0 ? (
-          <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-950">
-            <p className="font-semibold">0 SMTP OK — this is not an SMTP password problem</p>
-            <p className="mt-1 text-amber-900">
-              Verification does not log in with a password. It only checks if the remote mail server
-              accepts each email address (port 25). Your <code>BULK_EMAIL_SMTP_FROM</code> is just
-              the sender address in that check.
-            </p>
-            <ul className="mt-2 list-disc space-y-1 pl-4">
-              {diagnostics.hints.map((hint) => (
-                <li key={hint}>{hint}</li>
-              ))}
-            </ul>
-            {diagnostics.topSmtpResponses.length > 0 ? (
-              <p className="mt-2 font-medium">
-                Server responses:{' '}
-                {diagnostics.topSmtpResponses
-                  .map((r) => `${r.response} (${r.count})`)
-                  .join(' · ')}
-              </p>
-            ) : null}
-            <p className="mt-2">
-              Port 25 from API server:{' '}
-              {diagnostics.port25.reachable ? (
-                <span className="text-emerald-800">OK</span>
-              ) : (
-                <span className="text-red-800">{diagnostics.port25.message}</span>
-              )}
-            </p>
+        {selectedBatch?.status === 'completed' &&
+        selectedBatch.verifiedCount === 0 &&
+        (selectedBatch.likelyValidCount ?? 0) > 0 ? (
+          <div className="border-b border-sky-200 bg-sky-50 px-4 py-2.5 text-sm text-sky-900">
+            Live mailbox checks did not complete for this file.{' '}
+            <strong>{selectedBatch.likelyValidCount}</strong> likely valid emails are ready — filter
+            by status or download below.
+          </div>
+        ) : selectedBatch?.status === 'completed' &&
+          selectedBatch.verifiedCount === 0 &&
+          (selectedBatch.likelyValidCount ?? 0) === 0 &&
+          (selectedBatch.emailsGenerated ?? 0) > 0 ? (
+          <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+            Verification finished but no deliverable emails were found. Check that prospects have
+            valid company domains or email addresses.
           </div>
         ) : null}
 
@@ -1460,7 +1403,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                   'Best email',
                   'Corrected',
                   'Status',
-                  'ZB',
+                  'Result',
                   'Score',
                 ].map(
                   (label) => (
@@ -1557,7 +1500,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                           </span>
                         </td>
                         <td className="border border-[#e0e0e0] px-3 py-2 text-xs text-slate-600">
-                          {r.smtpResponse?.split('|')[0] ?? '—'}
+                          {friendlyCheckLabel(r.smtpResponse, r.verificationStatus)}
                         </td>
                         <td className="border border-[#e0e0e0] px-3 py-2 font-semibold tabular-nums text-slate-900">
                           {r.confidenceScore}
@@ -1603,7 +1546,7 @@ export function DbAdminBulkEmailVerificationPanel() {
         headers={pendingUpload?.headers ?? [...PROSPECT_HEADERS]}
         rows={pendingUpload?.rows ?? []}
         totalRows={pendingUpload?.rows.length}
-        note="Email column → format check only (marked Valid). Company Domain → full SMTP/pattern verify. Valid contacts only."
+        note="Rows with an Email column are format-checked. Rows with Company Domain get full pattern verification."
         actions={
           pendingUpload
             ? [

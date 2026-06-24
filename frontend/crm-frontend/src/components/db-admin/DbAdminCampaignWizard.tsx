@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { CampaignExtractPreview } from '@/components/db-admin/CampaignExtractPreview';
-import { CheckSuppressionResultPopup } from '@/components/employee/CheckSuppressionResultPopup';
+import { handleSuppressionCheckComplete } from '@/lib/master-data/handle-suppression-result';
 import { batchesService } from '@/lib/api/batches.service';
 import { suppressionDataService } from '@/lib/api/suppression-data.service';
 import { usersService } from '@/lib/api/users.service';
@@ -69,7 +69,6 @@ export function DbAdminCampaignWizard({
   const [checking, setChecking] = useState(false);
   const [suppressionDone, setSuppressionDone] = useState(false);
   const [duplicateCount, setDuplicateCount] = useState(0);
-  const [resultOpen, setResultOpen] = useState(false);
   const [duplicateFileName, setDuplicateFileName] = useState<string | null>(null);
 
   const [users, setUsers] = useState<Array<{ id: string; name: string; email: string }>>([]);
@@ -176,7 +175,12 @@ export function DbAdminCampaignWizard({
       setDuplicateCount(result.duplicateCount);
       setDuplicateFileName(result.duplicateFileName);
       setSuppressionDone(true);
-      setResultOpen(true);
+      handleSuppressionCheckComplete(router, 'db_admin', {
+        duplicateCount: result.duplicateCount,
+        duplicateFileId: result.duplicateFileId,
+        duplicateFileName: result.duplicateFileName,
+        duplicateSourceIndices: result.duplicateSourceIndices,
+      }, { sourceRole: result.duplicateSourceRole });
     } catch (e) {
       toast.error('Suppression check failed', extractApiError(e));
     } finally {
@@ -667,15 +671,6 @@ export function DbAdminCampaignWizard({
           </div>
         </div>
       </div>
-
-      <CheckSuppressionResultPopup
-        open={resultOpen}
-        duplicateCount={duplicateCount}
-        duplicateFileName={duplicateFileName}
-        duplicateSourceRole="db_admin"
-        highlightOnSheet={false}
-        onDone={() => setResultOpen(false)}
-      />
     </>
   );
 }

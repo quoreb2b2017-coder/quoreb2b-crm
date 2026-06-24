@@ -79,7 +79,7 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
   const [year, setYear] = useState(() => currentCalendarPeriod().year);
   const [expandedMonths, setExpandedMonths] = useState<Set<number>>(() => new Set());
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(() => new Set());
-  const [showAllMonths, setShowAllMonths] = useState(false);
+  const [showAllMonths, setShowAllMonths] = useState(true);
   const [clearingQc, setClearingQc] = useState(false);
   const hasLoadedRef = useRef(false);
 
@@ -176,6 +176,17 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
     [allEntries],
   );
 
+  const employeeActionCount = useMemo(
+    () =>
+      allEntries.filter(
+        (e) =>
+          e.state === 'pending' &&
+          e.returnedToEmployee &&
+          (e.qcDecision === 'tbd' || e.qcDecision === 'disqualified'),
+      ).length,
+    [allEntries],
+  );
+
   const mergedCount = useMemo(
     () => allEntries.filter((e) => e.state === 'merged').length,
     [allEntries],
@@ -200,7 +211,8 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
     return selectedNode?.label ?? 'QC leads';
   }, [showAll, selectedPath, selectedNode, isAdmin]);
 
-  const pendingCount = reviewableCount;
+  const pendingCount = isAdmin ? reviewableCount : employeeActionCount;
+  const pendingLabel = isAdmin ? 'pending' : 'to fix';
 
   const suppressionPayload = useMemo(
     () => entriesToSuppressionPayload(displayEntries),
@@ -316,8 +328,8 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="qc-stat-pill !border-white/30 !bg-white/15 !text-white">
-            {allEntries.length} total · {pendingCount} pending
+          <span className="qc-stat-pill qc-stat-pill--titlebar">
+            {allEntries.length} total · {pendingCount} {pendingLabel}
           </span>
           {isAdmin && (
             <>
@@ -391,9 +403,8 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {CALENDAR_MONTHS.map((cal, mi) => {
-                    const monthNode =
-                      monthNodes.find((n) => n.month === cal.index) ?? monthNodes[mi];
+                  {CALENDAR_MONTHS.map((cal) => {
+                    const monthNode = monthNodes.find((n) => n.month === cal.index);
                     const campaigns = monthNode?.children ?? [];
                     const monthCount = monthNode?.count ?? 0;
                     const hasLeads = monthCount > 0;
@@ -446,6 +457,7 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
                                   'qc-month-label',
                                   hasLeads ? cal.accent : 'text-slate-500',
                                 )}
+                                title={cal.label}
                               >
                                 {cal.short}
                               </span>

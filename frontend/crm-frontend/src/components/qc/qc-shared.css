@@ -50,6 +50,16 @@
   color: #145c36;
 }
 
+/** High-contrast stats on the green QC title bar */
+.qc-stat-pill--titlebar {
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  background: #fff;
+  color: #145c36;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.6875rem;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
 .qc-toolbar-bar {
   border: 1px solid #d4d4d4;
   background: linear-gradient(180deg, #fafafa 0%, #f3f3f3 100%);

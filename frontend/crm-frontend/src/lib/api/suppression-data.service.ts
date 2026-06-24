@@ -55,8 +55,17 @@ export interface CheckSuppressionResult {
 
 export const suppressionDataService = {
   listCampaigns: async () => {
-    const { data } = await apiClient.get('/suppression-data/campaigns');
-    return unwrap<SuppressionCampaignSummary[]>({ data });
+    try {
+      const { data } = await apiClient.get('/suppression-data/campaigns');
+      return unwrap<SuppressionCampaignSummary[]>({ data });
+    } catch (err) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 403 || status === 404) {
+        const { data } = await apiClient.get('/batches/suppression-campaigns');
+        return unwrap<SuppressionCampaignSummary[]>({ data });
+      }
+      throw err;
+    }
   },
 
   createCampaign: async (payload: {

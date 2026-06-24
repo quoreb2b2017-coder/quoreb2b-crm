@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Globe,
   Loader2,
+  RefreshCw,
   Search,
   ShieldAlert,
   ShieldCheck,
@@ -346,13 +347,24 @@ export function DbAdminCampaignWizard({
 
                 <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
                   <div>
-                    <label
-                      htmlFor="suppression-campaign-select"
-                      className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500"
-                    >
-                      Suppression campaign
-                    </label>
-                    <div className="relative">
+                    <div className="flex items-center justify-between gap-2">
+                      <label
+                        htmlFor="suppression-campaign-select"
+                        className="block text-xs font-bold uppercase tracking-wide text-slate-500"
+                      >
+                        Suppression campaign
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => void loadCampaigns()}
+                        disabled={loadingCampaigns}
+                        className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-violet-700 hover:bg-violet-50 disabled:opacity-50"
+                      >
+                        <RefreshCw className={cn('h-3 w-3', loadingCampaigns && 'animate-spin')} />
+                        Reload
+                      </button>
+                    </div>
+                    <div className="relative mt-1.5">
                       <select
                         id="suppression-campaign-select"
                         value={suppressionCampaignId}
@@ -390,7 +402,10 @@ export function DbAdminCampaignWizard({
                       </p>
                     )}
                     {campaignsError && (
-                      <p className="mt-1.5 text-xs text-red-600">{campaignsError}</p>
+                      <p className="mt-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-xs text-red-700">
+                        {campaignsError}. Click <strong>Reload</strong> after backend is updated, or
+                        ask admin to create suppression campaigns.
+                      </p>
                     )}
                     {!loadingCampaigns && campaigns.length === 0 && !campaignsError && (
                       <p className="mt-1.5 text-xs text-amber-700">
@@ -403,7 +418,10 @@ export function DbAdminCampaignWizard({
                     <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">
                       Match by
                     </p>
-                    <div className="grid grid-cols-2 gap-2">
+                    <p className="mb-2 text-[11px] text-slate-500">
+                      Choose domain or email column for duplicate matching
+                    </p>
+                    <div className="grid grid-cols-2 gap-2" role="group" aria-label="Match by">
                       <button
                         type="button"
                         onClick={() => {

@@ -46,6 +46,12 @@ export class BatchesController {
     return this.batchesService.findAll(user.id ?? user.sub!, user.roles ?? []);
   }
 
+  @Get('suppression-campaigns')
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN, SystemRole.EMPLOYEE)
+  listSuppressionCampaigns() {
+    return this.batchesService.listSuppressionBatchesForAdmin();
+  }
+
   @Get(':id/hierarchy')
   @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
   getHierarchy(@Param('id') id: string, @CurrentUser() user: JwtUser) {

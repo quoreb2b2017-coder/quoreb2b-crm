@@ -35,6 +35,17 @@ import { AttendanceFullBleed } from '@/components/attendance/AttendanceFullBleed
 import { ExcelSheetShell } from '@/components/attendance/ExcelSheetShell';
 import { cn } from '@/lib/utils/cn';
 import { useAuthStore } from '@/store/auth.store';
+import {
+  COMPANY_HEADER_KEYS,
+  DOMAIN_HEADER_KEYS,
+  EMAIL_HEADER_KEYS,
+  FIRST_NAME_HEADER_KEYS,
+  LAST_NAME_HEADER_KEYS,
+  domainFromCompanyField,
+  domainFromEmailAddress,
+  matchHeader,
+  sanitizeEmailInput,
+} from '@/lib/email/email-upload.util';
 
 const ACCEPT = '.csv,.xlsx,.xls';
 
@@ -115,37 +126,13 @@ const DEFAULT_STATUS_FILTERS: EmailVerificationStatus[] = [
   'catch_all',
 ];
 
-function normalizeHeader(h: string) {
-  return h.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
-function domainFromEmailAddress(email: string): string {
-  const at = email.lastIndexOf('@');
-  if (at < 1 || at >= email.length - 1) return '';
-  return email.slice(at + 1).trim().toLowerCase();
-}
-
 function mapRowsToProspects(headers: string[], rows: string[][]): ProspectRow[] {
   const idx = {
-    firstName: headers.findIndex((h) =>
-      ['firstname', 'first', 'fname'].includes(normalizeHeader(h)),
-    ),
-    lastName: headers.findIndex((h) =>
-      ['lastname', 'last', 'lname', 'surname'].includes(normalizeHeader(h)),
-    ),
-    companyName: headers.findIndex((h) =>
-      ['companyname', 'company', 'organization', 'org'].includes(normalizeHeader(h)),
-    ),
-    domain: headers.findIndex((h) =>
-      ['companydomain', 'domain', 'website', 'companywebsite', 'emaildomain'].includes(
-        normalizeHeader(h),
-      ),
-    ),
-    email: headers.findIndex((h) =>
-      ['email', 'emailaddress', 'emailid', 'workemail', 'businessemail', 'e-mail'].includes(
-        normalizeHeader(h),
-      ),
-    ),
+    firstName: headers.findIndex((h) => matchHeader(h, FIRST_NAME_HEADER_KEYS)),
+    lastName: headers.findIndex((h) => matchHeader(h, LAST_NAME_HEADER_KEYS)),
+    companyName: headers.findIndex((h) => matchHeader(h, COMPANY_HEADER_KEYS)),
+    domain: headers.findIndex((h) => matchHeader(h, DOMAIN_HEADER_KEYS)),
+    email: headers.findIndex((h) => matchHeader(h, EMAIL_HEADER_KEYS)),
   };
 
   if (idx.firstName < 0 || idx.lastName < 0) {
@@ -162,8 +149,11 @@ function mapRowsToProspects(headers: string[], rows: string[][]): ProspectRow[] 
       const firstName = (row[idx.firstName] ?? '').trim();
       const lastName = (row[idx.lastName] ?? '').trim();
       const companyName = idx.companyName >= 0 ? (row[idx.companyName] ?? '').trim() : '';
-      const emailRaw = idx.email >= 0 ? (row[idx.email] ?? '').trim().toLowerCase() : '';
+      const emailRaw = idx.email >= 0 ? sanitizeEmailInput(row[idx.email] ?? '') : '';
       let domain = idx.domain >= 0 ? (row[idx.domain] ?? '').trim() : '';
+      if (!domain && companyName) {
+        domain = domainFromCompanyField(companyName);
+      }
       if (emailRaw) {
         const fromEmail = domainFromEmailAddress(emailRaw);
         if (!domain) domain = fromEmail;

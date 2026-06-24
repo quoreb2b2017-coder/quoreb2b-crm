@@ -1,4 +1,5 @@
 import * as validator from 'validator';
+import { sanitizeEmailInput } from './email-input-sanitize.util';
 
 const INVALID_LOCAL_CHARS = /[^\w.!#$%&'*+/=?^`{|}~-]/;
 
@@ -11,7 +12,7 @@ export interface SyntaxValidationResult {
 }
 
 export function validateEmailSyntax(email: string): SyntaxValidationResult {
-  const trimmed = email.trim().toLowerCase();
+  const trimmed = sanitizeEmailInput(email);
   if (!trimmed) {
     return {
       valid: false,

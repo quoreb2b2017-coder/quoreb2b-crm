@@ -34,6 +34,7 @@ import {
 } from './utils/provided-email-resolution.util';
 import { resolvePositiveInt } from './utils/config-numbers.util';
 import { validateEmailSyntax } from './utils/syntax-validation.util';
+import { sanitizeEmailInput } from './utils/email-input-sanitize.util';
 import {
   mapWithConcurrency,
   runWithConcurrency,
@@ -143,7 +144,7 @@ export class BulkEmailVerificationProcessorService implements OnModuleInit {
     };
     let generatedDelta = 0;
 
-    const raw = prospect.providedEmail!.trim();
+    const raw = sanitizeEmailInput(prospect.providedEmail!);
     const syntax = validateEmailSyntax(raw);
     const providedEmail = (syntax.normalizedEmail || raw.toLowerCase()).trim();
 

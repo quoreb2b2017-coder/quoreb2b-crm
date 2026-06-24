@@ -28,6 +28,11 @@ import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { NotificationTriggerService } from '../notifications/notification-trigger.service';
 import { isValidDomainFormat, normalizeDomain } from './utils/email-patterns.util';
 import { validateEmailSyntax } from './utils/syntax-validation.util';
+import {
+  domainFromCompanyField,
+  extractLooseEmailDomain,
+  sanitizeEmailInput,
+} from './utils/email-input-sanitize.util';
 import { getOutboundSmtpPortStatus } from './utils/smtp-connectivity.util';
 import { AppCacheService } from '../../redis/app-cache.service';
 import { cacheTtlSeconds } from '../../redis/cache.util';
@@ -82,27 +87,38 @@ export class BulkEmailVerificationService {
       const lastName = row.lastName.trim();
       const companyName = (row.companyName ?? '').trim();
       const rawDomain = (row.domain ?? '').trim();
-      const rawEmail = (row.email ?? '').trim();
+      const rawEmail = sanitizeEmailInput(row.email ?? '');
 
       let domain = rawDomain ? normalizeDomain(rawDomain) : '';
+      if (!domain && companyName) {
+        domain = domainFromCompanyField(companyName);
+      }
       let providedEmail: string | undefined;
 
       if (rawEmail) {
         const syntax = validateEmailSyntax(rawEmail);
-        if (!syntax.valid) {
+        if (syntax.valid) {
+          providedEmail = syntax.normalizedEmail;
+          if (!domain) {
+            domain = syntax.domain;
+          }
+        } else {
           invalidEmailCount += 1;
-          continue;
-        }
-        providedEmail = syntax.normalizedEmail;
-        // Keep Company Domain for pattern generation when both columns are present.
-        if (!domain) {
-          domain = syntax.domain;
+          providedEmail = rawEmail;
+          if (!domain) {
+            domain = extractLooseEmailDomain(rawEmail);
+          }
         }
       } else if (domain) {
         domain = normalizeDomain(domain);
       }
 
       if (!firstName || !lastName || !domain) {
+        missingDomainOrEmail += 1;
+        continue;
+      }
+
+      if (!isValidDomainFormat(domain)) {
         missingDomainOrEmail += 1;
         continue;
       }
@@ -118,26 +134,19 @@ export class BulkEmailVerificationService {
 
     if (!normalizedRows.length) {
       throw new BadRequestException(
-        'No valid rows. Each row needs First Name, Last Name, and Company Domain or Email.',
-      );
-    }
-
-    if (invalidEmailCount > 0) {
-      throw new BadRequestException(
-        `Invalid email format on ${invalidEmailCount} row(s).`,
+        'No valid rows. Each row needs First Name, Last Name, and a valid Company Domain or Email (e.g. name@company.com).',
       );
     }
 
     if (missingDomainOrEmail > 0) {
-      throw new BadRequestException(
-        `${missingDomainOrEmail} row(s) missing domain or email (with first and last name).`,
+      this.logger.warn(
+        `Batch upload skipped ${missingDomainOrEmail} row(s) missing name, domain, or valid email domain.`,
       );
     }
 
-    const invalidDomains = normalizedRows.filter((r) => !isValidDomainFormat(r.domain));
-    if (invalidDomains.length > 0) {
-      throw new BadRequestException(
-        `Invalid domain format on ${invalidDomains.length} row(s). Example: company.com`,
+    if (invalidEmailCount > 0) {
+      this.logger.warn(
+        `Batch upload includes ${invalidEmailCount} row(s) with non-standard email format — they will verify as invalid.`,
       );
     }
 

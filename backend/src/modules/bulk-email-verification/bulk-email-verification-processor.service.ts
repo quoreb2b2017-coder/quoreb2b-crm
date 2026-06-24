@@ -25,8 +25,10 @@ import {
 } from './utils/email-correction.util';
 import {
   pickBestVerifiedAttempt,
+  smtpConfirmedAttempt,
   statusRank,
 } from './utils/email-pattern-priority.util';
+import { resolveProvidedEmailVerification } from './utils/provided-email-resolution.util';
 import { resolvePositiveInt } from './utils/config-numbers.util';
 import { validateEmailSyntax } from './utils/syntax-validation.util';
 import {
@@ -110,11 +112,12 @@ export class BulkEmailVerificationProcessorService implements OnModuleInit {
   }
 
   /**
-   * Upload had Email column — treat as correct; only check address format (no SMTP / patterns).
+   * Row includes Email column — verify that address; if wrong, suggest best generated pattern.
    */
-  private async processProvidedEmailOnly(
+  private async processProvidedEmailProspect(
     batch: EmailVerificationBatch,
     prospect: EmailVerificationProspect,
+    domainCache: Map<string, DomainContext>,
   ): Promise<{
     generatedDelta: number;
     counters: {
@@ -138,49 +141,111 @@ export class BulkEmailVerificationProcessorService implements OnModuleInit {
 
     const raw = prospect.providedEmail!.trim();
     const syntax = validateEmailSyntax(raw);
-    const email = syntax.normalizedEmail || raw.toLowerCase();
+    const providedEmail = (syntax.normalizedEmail || raw.toLowerCase()).trim();
 
-    const attempt: PatternAttempt = syntax.valid
-      ? {
-          candidate: { email, patternType: 'provided' },
-          status: EmailVerificationStatus.VALID,
-          confidenceScore: 98,
-          mxValid: false,
-          domainExists: true,
-          syntaxValid: true,
-          isDisposable: false,
-          isRoleBased: false,
-          isCatchAllDomain: false,
-          smtpResponse: 'format_only:provided_trusted|verify_mode:provided_format',
-          zerobounceStatus: 'valid',
-          zerobounceSubStatus: 'format_check',
-        }
-      : {
-          candidate: { email, patternType: 'provided' },
-          status: EmailVerificationStatus.INVALID,
-          confidenceScore: 5,
-          mxValid: false,
-          domainExists: false,
-          syntaxValid: false,
-          isDisposable: false,
-          isRoleBased: false,
-          isCatchAllDomain: false,
-          smtpResponse: `format_only:${syntax.error ?? 'invalid_format'}|verify_mode:provided_format`,
-          zerobounceStatus: 'invalid',
-          zerobounceSubStatus: syntax.error ?? 'invalid_format',
-        };
+    const built = await this.buildProspectPatterns(prospect, domainCache);
+
+    if (!syntax.valid) {
+      const invalidAttempt: PatternAttempt = {
+        candidate: { email: providedEmail, patternType: 'provided' },
+        status: EmailVerificationStatus.INVALID,
+        confidenceScore: 5,
+        mxValid: false,
+        domainExists: false,
+        syntaxValid: false,
+        isDisposable: false,
+        isRoleBased: false,
+        isCatchAllDomain: false,
+        smtpResponse: `invalid_format:${syntax.error ?? 'invalid_syntax'}`,
+        zerobounceStatus: 'invalid',
+        zerobounceSubStatus: syntax.error ?? 'invalid_format',
+      };
+
+      const patternAttempts = await this.verifyPatternCandidates(built, prospect, domainCache, {
+        excludeEmail: providedEmail,
+      });
+      const resolution = resolveProvidedEmailVerification(
+        invalidAttempt,
+        patternAttempts,
+        prospect,
+      );
+
+      if (
+        await this.persistWithRetry(batch, prospect, invalidAttempt, {
+          generatedEmail: providedEmail,
+          recommendedEmail: resolution.recommendedEmail,
+          correctedEmail: resolution.correctedEmail,
+        })
+      ) {
+        generatedDelta = 1;
+        this.countStatus(invalidAttempt.status, counters);
+      }
+      return { generatedDelta, counters };
+    }
+
+    const emailDomain = syntax.domain || prospect.domain;
+    const domainContext = await this.getCachedDomainContext(emailDomain, domainCache);
+    const providedVerified = await this.engine.verifyEmail(providedEmail, domainContext);
+    const providedAttempt = this.toPatternAttempt(
+      { email: providedEmail, patternType: 'provided' },
+      providedVerified,
+    );
+
+    let patternAttempts: PatternAttempt[] = [];
+    if (!(smtpConfirmedAttempt(providedAttempt) && this.stopOnValid())) {
+      patternAttempts = await this.verifyPatternCandidates(built, prospect, domainCache, {
+        excludeEmail: providedEmail,
+      });
+    }
+
+    const resolution = resolveProvidedEmailVerification(
+      providedAttempt,
+      patternAttempts,
+      prospect,
+    );
+
+    const patternsChecked = patternAttempts.length;
+    const attemptWithMeta: PatternAttempt = {
+      ...providedAttempt,
+      smtpResponse: `${providedAttempt.smtpResponse}|patterns_checked:${patternsChecked}|verify_mode:provided_full`,
+    };
 
     if (
-      await this.persistWithRetry(batch, prospect, attempt, {
-        generatedEmail: email,
-        recommendedEmail: email,
+      await this.persistWithRetry(batch, prospect, attemptWithMeta, {
+        generatedEmail: providedEmail,
+        recommendedEmail: resolution.recommendedEmail,
+        correctedEmail: resolution.correctedEmail,
       })
     ) {
       generatedDelta = 1;
-      this.countStatus(attempt.status, counters);
+      this.countStatus(providedAttempt.status, counters);
     }
 
     return { generatedDelta, counters };
+  }
+
+  private async verifyPatternCandidates(
+    built: ProspectPatternsBuild,
+    prospect: EmailVerificationProspect,
+    domainCache: Map<string, DomainContext>,
+    options?: { excludeEmail?: string },
+  ): Promise<PatternAttempt[]> {
+    if (built.errorAttempt) return [];
+
+    const exclude = options?.excludeEmail?.trim().toLowerCase();
+    const patterns = built.patterns.filter(
+      (candidate) => !exclude || candidate.email.toLowerCase() !== exclude,
+    );
+    if (!patterns.length) return [];
+
+    return mapWithConcurrency(patterns, this.patternConcurrency(), async (candidate) => {
+      const ctx =
+        candidate.patternType.includes('domain_corrected') && built.correctedDomainContext
+          ? built.correctedDomainContext
+          : built.domainContext;
+      const verified = await this.engine.verifyEmail(candidate.email, ctx);
+      return this.toPatternAttempt(candidate, verified);
+    });
   }
 
   private async buildProspectPatterns(
@@ -335,7 +400,7 @@ export class BulkEmailVerificationProcessorService implements OnModuleInit {
     smtpResponse: string,
   ): string {
     if (smtpResponse.includes('mailbox_check_failed')) return 'invalid';
-    if (smtpResponse.includes('smtp_ip_blocked_mx_pattern')) return 'valid';
+    if (smtpResponse.includes('smtp_ip_blocked_mx_pattern')) return 'unknown';
     if (smtpResponse.includes('smtp_greylist') || smtpResponse.includes('450')) {
       return 'unknown';
     }
@@ -512,7 +577,7 @@ export class BulkEmailVerificationProcessorService implements OnModuleInit {
     };
   }> {
     if (prospect.providedEmail?.trim()) {
-      return this.processProvidedEmailOnly(batch, prospect);
+      return this.processProvidedEmailProspect(batch, prospect, domainCache);
     }
 
     const built = await this.buildProspectPatterns(prospect, domainCache);

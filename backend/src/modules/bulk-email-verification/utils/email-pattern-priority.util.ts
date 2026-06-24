@@ -72,11 +72,17 @@ export function statusRank(status: EmailVerificationStatus): number {
   return STATUS_RANK[status] ?? 0;
 }
 
-const DELIVERABLE = new Set<EmailVerificationStatus>([
+export const DELIVERABLE_STATUSES = new Set<EmailVerificationStatus>([
   EmailVerificationStatus.VALID,
   EmailVerificationStatus.LIKELY_VALID,
   EmailVerificationStatus.CATCH_ALL,
 ]);
+
+const DELIVERABLE = DELIVERABLE_STATUSES;
+
+export function isDeliverableStatus(status: EmailVerificationStatus): boolean {
+  return DELIVERABLE_STATUSES.has(status);
+}
 
 export type VerifiableAttempt = {
   candidate: { email: string; patternType: string };
@@ -86,7 +92,7 @@ export type VerifiableAttempt = {
   isCatchAllDomain?: boolean;
 };
 
-function smtpConfirmedAttempt<T extends VerifiableAttempt>(a: T): boolean {
+export function smtpConfirmedAttempt<T extends VerifiableAttempt>(a: T): boolean {
   const r = a.smtpResponse.toLowerCase();
   return (
     a.status === EmailVerificationStatus.VALID &&

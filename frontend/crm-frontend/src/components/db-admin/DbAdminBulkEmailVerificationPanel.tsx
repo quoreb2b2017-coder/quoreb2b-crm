@@ -214,14 +214,17 @@ function friendlyCheckLabel(
   response: string | null | undefined,
   status: EmailVerificationStatus,
 ): string {
+  const r = (response ?? '').toLowerCase();
   if (status === 'valid') return 'Confirmed';
   if (status === 'likely_valid') return 'Likely';
+  if (r.includes('verify_mode:provided_full') || r.includes('provided')) {
+    if (status === 'invalid') return 'Incorrect';
+  }
   if (status === 'catch_all') return 'Catch-all';
   if (status === 'risky') return 'Risky';
   if (status === 'invalid') return 'Invalid';
   if (!response) return '—';
-  const r = response.toLowerCase();
-  if (r.includes('format_only') || r.includes('provided')) return 'Format OK';
+  if (r.includes('format_only')) return 'Format OK';
   if (r.includes('port25') || r.includes('smtp_probe_disabled') || r.includes('mx_only')) {
     return 'Pattern match';
   }
@@ -887,11 +890,13 @@ export function DbAdminBulkEmailVerificationPanel() {
       <ExcelSheetShell
         title="Email Finder & Verification"
         loading={loading}
-        hint="Upload prospects, then verify from the month folder below"
+        hint="Domain only → generate & verify patterns · Email column → verify your address & suggest fix if wrong"
         toolbar={
           <div className="flex w-full flex-wrap items-center gap-2">
             <span className="font-medium text-slate-700">
-              Upload prospects, then verify from the month folder below.
+              Domain only: we generate emails from name + domain and verify (Valid = mailbox confirmed,
+              Likely valid = best pattern). With Email column: we verify your address and suggest a
+              corrected one when needed.
             </span>
             <span className="text-slate-300">|</span>
             <button type="button" onClick={() => void load({ silent: true })} disabled={loading} className={shellBtn()}>

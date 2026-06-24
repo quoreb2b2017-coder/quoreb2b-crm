@@ -103,9 +103,9 @@ export function computeRiskScore(signals: VerificationSignals): RiskScoreResult 
   if (signals.mxValid && isSmtpIpBlocked(signals.smtpResponse)) {
     reasons.push('smtp_ip_blocked_mx_pattern');
     return {
-      status: EmailVerificationStatus.VALID,
-      score: 90,
-      label: confidenceLabel(90),
+      status: EmailVerificationStatus.LIKELY_VALID,
+      score: 82,
+      label: confidenceLabel(82),
       reasons,
     };
   }

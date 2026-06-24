@@ -290,13 +290,13 @@ export class SuppressionDataService {
     }
 
     const matchingRows: string[][] = [];
-    const remainingRows: string[][] = [];
-    for (const row of sourceRows) {
+    const duplicateSourceIndices: number[] = [];
+    for (let i = 0; i < sourceRows.length; i++) {
+      const row = sourceRows[i];
       const key = extractRowCheckKey(row, sourceHeaders, dto.checkMode);
       if (key && suppressionKeys.has(key)) {
         matchingRows.push(row);
-      } else {
-        remainingRows.push(row);
+        duplicateSourceIndices.push(i);
       }
     }
 
@@ -308,7 +308,6 @@ export class SuppressionDataService {
     let duplicateFile: Awaited<
       ReturnType<MasterDataService['createSuppressionDuplicateFile']>
     > | null = null;
-    let removedFromSourceCount = 0;
 
     if (matchingRows.length > 0 && sourceHeaders.length) {
       const stem = baseFileName.replace(/\.(xlsx|xls|csv)$/i, '');
@@ -319,26 +318,6 @@ export class SuppressionDataService {
         rows: matchingRows,
         sourceRole: duplicateSourceRole,
       });
-    }
-
-    if (matchingRows.length > 0) {
-      if (dto.sourceBatchId) {
-        await this.batchesService.update(
-          dto.sourceBatchId,
-          { headers: sourceHeaders, rows: remainingRows },
-          actor.id,
-          actor,
-        );
-        removedFromSourceCount = matchingRows.length;
-      } else if (dto.sourceRequestId) {
-        await this.masterDataService.stripSuppressionDuplicatesFromRequest(
-          dto.sourceRequestId,
-          actor.id,
-          roles,
-          remainingRows,
-        );
-        removedFromSourceCount = matchingRows.length;
-      }
     }
 
     try {
@@ -370,8 +349,7 @@ export class SuppressionDataService {
       duplicateFileId: duplicateFile?.id ?? null,
       duplicateFileName: duplicateFile?.fileName ?? null,
       duplicateSourceRole,
-      removedFromSourceCount,
-      remainingRowCount: remainingRows.length,
+      duplicateSourceIndices,
     };
   }
 }

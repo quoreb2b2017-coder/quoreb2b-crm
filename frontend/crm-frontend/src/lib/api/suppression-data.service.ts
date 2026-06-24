@@ -50,8 +50,7 @@ export interface CheckSuppressionResult {
   duplicateFileId: string | null;
   duplicateFileName: string | null;
   duplicateSourceRole: 'employee' | 'db_admin';
-  removedFromSourceCount: number;
-  remainingRowCount: number;
+  duplicateSourceIndices: number[];
 }
 
 export const suppressionDataService = {
@@ -98,15 +97,10 @@ export const suppressionDataService = {
   }): Promise<CheckSuppressionResult> => {
     const { data } = await apiClient.post('/suppression-data/check', payload);
     const result = unwrap<CheckSuppressionResult>({ data });
-    if (result.duplicateFileId || result.removedFromSourceCount > 0) {
+    if (result.duplicateFileId) {
       dispatchUpdated();
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('master-data-updated'));
-        if (payload.sourceBatchId) {
-          window.dispatchEvent(
-            new CustomEvent('batch-data-updated', { detail: { batchId: payload.sourceBatchId } }),
-          );
-        }
       }
     }
     return result;

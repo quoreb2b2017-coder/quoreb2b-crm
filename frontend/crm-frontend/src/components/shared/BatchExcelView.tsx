@@ -40,7 +40,6 @@ export interface BatchExcelViewProps {
   /** Employee: check rows against admin suppression campaigns */
   enableCheckSuppression?: boolean;
   checkSuppressionBatchId?: string;
-  onSuppressionComplete?: () => void;
 }
 
 export function BatchExcelView({
@@ -62,7 +61,6 @@ export function BatchExcelView({
   teamHref,
   enableCheckSuppression = false,
   checkSuppressionBatchId,
-  onSuppressionComplete,
 }: BatchExcelViewProps) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -80,7 +78,8 @@ export function BatchExcelView({
   const [resultCount, setResultCount] = useState(0);
   const [resultFileName, setResultFileName] = useState<string | null>(null);
   const [resultSourceRole, setResultSourceRole] = useState<'employee' | 'db_admin'>('employee');
-  const [resultRemovedCount, setResultRemovedCount] = useState(0);
+  const [duplicateHighlightRows, setDuplicateHighlightRows] = useState<number[]>([]);
+  const [markedLeadRows, setMarkedLeadRows] = useState<number[]>([]);
   const sharedBy = createdByName ?? createdByEmail;
   const { trackBatchOpen, trackLeadTouch } = useLeadActivityTracker(batchId, name);
 
@@ -283,11 +282,16 @@ export function BatchExcelView({
             onLeadCellFocus={
               editable && batchId
                 ? (sourceRow, col) => {
+                    setMarkedLeadRows((prev) =>
+                      prev.includes(sourceRow) ? prev : [...prev, sourceRow],
+                    );
                     const row = data.rows[sourceRow];
                     if (row) trackLeadTouch(data.headers, row, sourceRow, col);
                   }
                 : undefined
             }
+            duplicateRowIndices={duplicateHighlightRows}
+            markedRowIndices={markedLeadRows}
           />
         )}
       </div>
@@ -406,9 +410,8 @@ export function BatchExcelView({
               setResultCount(result.duplicateCount);
               setResultFileName(result.duplicateFileName);
               setResultSourceRole(result.duplicateSourceRole ?? 'employee');
-              setResultRemovedCount(result.removedFromSourceCount ?? 0);
-              if ((result.removedFromSourceCount ?? 0) > 0) {
-                onSuppressionComplete?.();
+              if (result.duplicateSourceIndices?.length) {
+                setDuplicateHighlightRows(result.duplicateSourceIndices);
               }
               setResultOpen(true);
             }}
@@ -418,7 +421,6 @@ export function BatchExcelView({
             duplicateCount={resultCount}
             duplicateFileName={resultFileName}
             duplicateSourceRole={resultSourceRole}
-            removedFromSourceCount={resultRemovedCount}
             onDone={() => setResultOpen(false)}
           />
         </>

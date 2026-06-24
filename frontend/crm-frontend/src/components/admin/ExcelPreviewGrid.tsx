@@ -52,6 +52,10 @@ interface ExcelPreviewGridProps {
   fillHeight?: boolean;
   /** Fired when user focuses or edits a data row (lead tracking) */
   onLeadCellFocus?: (sourceRowIndex: number, colIndex: number) => void;
+  /** Source row indices to highlight as suppression duplicates */
+  duplicateRowIndices?: number[];
+  /** Source row indices marked by employee (lead worked) */
+  markedRowIndices?: number[];
 }
 
 export function ExcelPreviewGrid({
@@ -66,6 +70,8 @@ export function ExcelPreviewGrid({
   onCreateBatch,
   fillHeight,
   onLeadCellFocus,
+  duplicateRowIndices,
+  markedRowIndices,
 }: ExcelPreviewGridProps) {
   const editable = editableProp ?? Boolean(onDataChange);
   const canExport = useCanExportSpreadsheet();
@@ -97,6 +103,16 @@ export function ExcelPreviewGrid({
   const batchedSet = useMemo(
     () => new Set(Object.keys(batchedByRow ?? {}).map((k) => Number(k))),
     [batchedByRow],
+  );
+
+  const duplicateSet = useMemo(
+    () => new Set(duplicateRowIndices ?? []),
+    [duplicateRowIndices],
+  );
+
+  const markedSet = useMemo(
+    () => new Set(markedRowIndices ?? []),
+    [markedRowIndices],
   );
 
   const { rows: displayRows, sourceIndices } = useMemo(() => {
@@ -627,26 +643,44 @@ export function ExcelPreviewGrid({
                 const batchRefs =
                   sourceRow != null ? batchedByRow?.[String(sourceRow)] : undefined;
                 const inBatch = Boolean(batchRefs?.length);
+                const isDuplicate = sourceRow != null && duplicateSet.has(sourceRow);
+                const isMarked = sourceRow != null && markedSet.has(sourceRow);
                 return (
                   <tr
                     key={`${sourceRow}-${displayRowIndex}`}
                     className={cn(
-                      inBatch ? 'bg-[#fff8e6] hover:bg-[#fff3d6]' : 'hover:bg-[#e7f3ff]/60',
+                      isDuplicate && 'bg-red-100 hover:bg-red-50',
+                      !isDuplicate && isMarked && 'bg-[#e2efda] hover:bg-[#d4e8cc]',
+                      !isDuplicate && !isMarked && inBatch && 'bg-[#fff8e6] hover:bg-[#fff3d6]',
+                      !isDuplicate && !isMarked && !inBatch && 'hover:bg-[#e7f3ff]/60',
                     )}
                     title={
-                      inBatch
-                        ? `Already in campaign: ${batchRefs!.map((b) => b.name).join(', ')}`
-                        : undefined
+                      isDuplicate
+                        ? 'Suppression duplicate — highlighted'
+                        : isMarked
+                          ? 'Lead marked'
+                          : inBatch
+                            ? `Already in campaign: ${batchRefs!.map((b) => b.name).join(', ')}`
+                            : undefined
                     }
                   >
                     <td
                       className={cn(
                         'sticky left-0 z-10 w-10 border border-[#e0e0e0] text-center text-[11px]',
-                        inBatch ? 'bg-[#ffefb8] text-amber-900' : 'bg-[#f2f2f2] text-slate-500',
+                        isDuplicate && 'bg-red-200 text-red-900',
+                        !isDuplicate && isMarked && 'bg-[#c6e0b4] text-[#217346] font-semibold',
+                        !isDuplicate && !isMarked && inBatch && 'bg-[#ffefb8] text-amber-900',
+                        !isDuplicate && !isMarked && !inBatch && 'bg-[#f2f2f2] text-slate-500',
                       )}
                     >
                       <span className="block leading-tight">{displayRowIndex + 1}</span>
-                      {inBatch && (
+                      {isDuplicate && (
+                        <span className="block text-[8px] font-bold uppercase text-red-800">Dup</span>
+                      )}
+                      {!isDuplicate && isMarked && (
+                        <span className="block text-[8px] font-bold uppercase text-[#217346]">Lead</span>
+                      )}
+                      {!isDuplicate && !isMarked && inBatch && (
                         <span className="block text-[8px] font-bold uppercase text-amber-800">
                           Batch
                         </span>

@@ -30,7 +30,7 @@ export interface CheckSuppressionModalProps {
     duplicateFileId: string | null;
     duplicateFileName: string | null;
     duplicateSourceRole?: 'employee' | 'db_admin';
-    removedFromSourceCount?: number;
+    duplicateSourceIndices?: number[];
   }) => void;
 }
 
@@ -107,7 +107,7 @@ export function CheckSuppressionModal({
         duplicateFileId: result.duplicateFileId,
         duplicateFileName: result.duplicateFileName,
         duplicateSourceRole: result.duplicateSourceRole,
-        removedFromSourceCount: result.removedFromSourceCount,
+        duplicateSourceIndices: result.duplicateSourceIndices,
       });
       onClose();
     } catch (e) {

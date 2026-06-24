@@ -49,7 +49,8 @@ export function EmployeeMyDataExcelView({
   const [resultCount, setResultCount] = useState(0);
   const [resultFileName, setResultFileName] = useState<string | null>(null);
   const [resultSourceRole, setResultSourceRole] = useState<'employee' | 'db_admin'>('employee');
-  const [resultRemovedCount, setResultRemovedCount] = useState(0);
+  const [duplicateHighlightRows, setDuplicateHighlightRows] = useState<number[]>([]);
+  const [markedLeadRows, setMarkedLeadRows] = useState<number[]>([]);
   const dataRef = useRef(data);
 
   useEffect(() => {
@@ -165,6 +166,17 @@ export function EmployeeMyDataExcelView({
           editable={editable}
           fillHeight
           onDataChange={editable ? handleDataChange : undefined}
+          onLeadCellFocus={
+            editable
+              ? (sourceRow) => {
+                  setMarkedLeadRows((prev) =>
+                    prev.includes(sourceRow) ? prev : [...prev, sourceRow],
+                  );
+                }
+              : undefined
+          }
+          duplicateRowIndices={duplicateHighlightRows}
+          markedRowIndices={markedLeadRows}
         />
       </div>
 
@@ -182,7 +194,9 @@ export function EmployeeMyDataExcelView({
           setResultCount(result.duplicateCount);
           setResultFileName(result.duplicateFileName);
           setResultSourceRole(result.duplicateSourceRole ?? 'employee');
-          setResultRemovedCount(result.removedFromSourceCount ?? 0);
+          if (result.duplicateSourceIndices?.length) {
+            setDuplicateHighlightRows(result.duplicateSourceIndices);
+          }
           setResultOpen(true);
         }}
       />
@@ -192,7 +206,6 @@ export function EmployeeMyDataExcelView({
         duplicateCount={resultCount}
         duplicateFileName={resultFileName}
         duplicateSourceRole={resultSourceRole}
-        removedFromSourceCount={resultRemovedCount}
         onDone={() => setResultOpen(false)}
       />
     </div>

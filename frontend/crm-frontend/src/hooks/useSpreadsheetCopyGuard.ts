@@ -17,10 +17,10 @@ export function useCanExportSpreadsheet(): boolean {
   return canExportSpreadsheet(roles, panel);
 }
 
-/** Restriction banner in XL UI — employees only (not DB Admin). */
+/** Restriction banner in XL UI — employees & DB admins (not Super Admin). */
 export function useShowSpreadsheetRestrictionHint(): boolean {
   const panel = useAuthStore((s) => s.panel);
-  return panel === 'employee';
+  return panel === 'employee' || panel === 'db_admin';
 }
 
 function isEditableField(node: EventTarget | null): boolean {

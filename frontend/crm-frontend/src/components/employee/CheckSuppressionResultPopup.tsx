@@ -8,14 +8,12 @@ export function CheckSuppressionResultPopup({
   duplicateCount,
   duplicateFileName,
   duplicateSourceRole = 'employee',
-  removedFromSourceCount = 0,
   onDone,
 }: {
   open: boolean;
   duplicateCount: number;
   duplicateFileName?: string | null;
   duplicateSourceRole?: 'employee' | 'db_admin';
-  removedFromSourceCount?: number;
   onDone: () => void;
 }) {
   useEffect(() => {
@@ -58,16 +56,13 @@ export function CheckSuppressionResultPopup({
             <>
               <p className="text-4xl font-black tabular-nums text-amber-900">{duplicateCount}</p>
               <p className="mt-1 text-base font-semibold text-amber-800">duplicate(s) found</p>
+              <p className="mt-2 text-sm text-amber-800">
+                Duplicate rows are <strong>highlighted in red</strong> on your sheet
+              </p>
               {duplicateFileName && (
                 <p className="mt-4 rounded-2xl bg-amber-100/60 px-4 py-2 text-xs text-amber-900">
-                  Saved as <strong className="font-semibold">{duplicateFileName}</strong> in{' '}
+                  Copy saved as <strong className="font-semibold">{duplicateFileName}</strong> in{' '}
                   {saveDestination}
-                </p>
-              )}
-              {removedFromSourceCount > 0 && (
-                <p className="mt-2 text-xs text-amber-800">
-                  Removed {removedFromSourceCount} duplicate row
-                  {removedFromSourceCount === 1 ? '' : 's'} from your source file
                 </p>
               )}
             </>

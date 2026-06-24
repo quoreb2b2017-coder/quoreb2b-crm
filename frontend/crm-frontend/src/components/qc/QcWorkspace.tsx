@@ -13,6 +13,7 @@ import {
   FolderOpen,
   Layers,
   ShieldAlert,
+  Trash2,
   UserRound,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
@@ -63,6 +64,8 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
   const [year, setYear] = useState(() => currentCalendarPeriod().year);
   const [expandedMonths, setExpandedMonths] = useState<Set<number>>(() => new Set());
   const [expandedCampaigns, setExpandedCampaigns] = useState<Set<string>>(() => new Set());
+  const [showAllMonths, setShowAllMonths] = useState(false);
+  const [clearingQc, setClearingQc] = useState(false);
 
   const toggleMonth = useCallback((monthIndex: number) => {
     setExpandedMonths((prev) => {
@@ -204,6 +207,32 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
     [duplicateIdsForView],
   );
 
+  const handleClearQc = async () => {
+    if (
+      !confirm(
+        'Delete all QC data?\n\nThis removes every pending lead in All QC and every file in Ready QC. User logins are not affected.',
+      )
+    ) {
+      return;
+    }
+    setClearingQc(true);
+    try {
+      const result = await qcService.clearAll();
+      toast.success(
+        'QC cleared',
+        `${result.deletedEntries} queue entries · ${result.deletedReadyBatches} Ready QC file(s) removed`,
+      );
+      setSelectedPath([]);
+      setShowAll(true);
+      setFilterEmployeeId(null);
+      void load();
+    } catch {
+      toast.error('Could not clear QC data');
+    } finally {
+      setClearingQc(false);
+    }
+  };
+
   const excelToolbar = (
     <div className="flex flex-wrap items-center gap-2">
       <button
@@ -274,35 +303,55 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
             {allEntries.length} total · {pendingCount} pending
           </span>
           {isAdmin && (
-            <Link href="/admin/qc/ready" className="qc-link-ready !border-white/40 !bg-white/15 !text-white">
-              Ready QC
-              <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
+            <>
+              <button
+                type="button"
+                disabled={clearingQc}
+                onClick={() => void handleClearQc()}
+                className="inline-flex items-center gap-1 rounded-md border border-red-300/60 bg-red-500/20 px-2 py-1 text-[11px] font-bold text-white hover:bg-red-500/35 disabled:opacity-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {clearingQc ? 'Clearing…' : 'Clear QC'}
+              </button>
+              <Link href="/admin/qc/ready" className="qc-link-ready !border-white/40 !bg-white/15 !text-white">
+                Ready QC
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </>
           )}
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[minmax(280px,34%)_minmax(0,1fr)]">
-        <div className="qc-pending-folders flex max-h-[min(70vh,720px)] min-h-0 flex-col border-b border-[#c6c6c6] lg:border-b-0 lg:border-r">
-          <div className="qc-folder-panel-head flex items-center justify-between px-2.5 py-1.5">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">
-              Jan – Dec folders
+      <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[minmax(168px,200px)_minmax(0,1fr)] xl:grid-cols-[minmax(188px,220px)_minmax(0,1fr)]">
+        <div className="qc-pending-folders flex max-h-[min(52vh,480px)] min-h-0 flex-col border-b border-[#c6c6c6] lg:max-h-none lg:border-b-0 lg:border-r">
+          <div className="qc-folder-panel-head flex items-center justify-between gap-1 px-2 py-1">
+            <p className="text-[9px] font-bold uppercase tracking-wider text-slate-600">
+              Folders
             </p>
-            {years.length > 1 && (
-              <select
-                value={year}
-                onChange={(e) => setYear(Number(e.target.value))}
-                className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-bold text-slate-700"
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setShowAllMonths((v) => !v)}
+                className="rounded px-1.5 py-0.5 text-[9px] font-semibold text-violet-700 hover:bg-violet-50"
               >
-                {years.map((y) => (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
-                ))}
-              </select>
-            )}
+                {showAllMonths ? 'Active only' : 'All months'}
+              </button>
+              {years.length > 1 && (
+                <select
+                  value={year}
+                  onChange={(e) => setYear(Number(e.target.value))}
+                  className="rounded border border-slate-200 bg-white px-1 py-0.5 text-[9px] font-bold text-slate-700"
+                >
+                  {years.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
           </div>
-          <div className="min-h-0 flex-1 overflow-auto p-1.5">
+          <div className="min-h-0 flex-1 overflow-auto p-1">
             {loading ? (
               <p className="py-6 text-center text-[11px] text-slate-400">Loading folders…</p>
             ) : tree.length === 0 ? (
@@ -316,12 +365,12 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
                 </p>
               </div>
             ) : (
-              <table className="xl-table w-full">
+              <table className="xl-table w-full qc-folder-table">
                 <thead>
                   <tr>
-                    <th className="w-7">#</th>
-                    <th>Month / Campaign</th>
-                    <th className="w-10 text-right">Leads</th>
+                    <th className="qc-folder-th-num hidden sm:table-cell">#</th>
+                    <th>Month</th>
+                    <th className="w-8 text-right">#</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -331,6 +380,7 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
                     const campaigns = monthNode?.children ?? [];
                     const monthCount = monthNode?.count ?? 0;
                     const hasLeads = monthCount > 0;
+                    if (!showAllMonths && !hasLeads) return null;
                     const yearKey = yearNode?.key ?? '';
                     const monthKey = monthNode?.key ?? `m-${cal.index}`;
                     const monthPath = yearKey ? [yearKey, monthKey] : [monthKey];
@@ -349,9 +399,9 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
                             selectPath(monthPath);
                           }}
                         >
-                          <td className="xl-row-num">{cal.index}</td>
+                          <td className="xl-row-num hidden sm:table-cell">{cal.index}</td>
                           <td>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1">
                               <span
                                 className={cn(
                                   'qc-month-chevron',
@@ -488,24 +538,21 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto p-2">
+        <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden p-1.5 lg:p-2">
           {isAdmin && (
-            <div className="qc-toolbar-bar flex-shrink-0 rounded-lg px-3 py-2">
+            <div className="qc-toolbar-bar flex-shrink-0 rounded-lg px-2.5 py-1.5">
               {excelToolbar}
             </div>
           )}
 
           {isAdmin && employeeGroups.length > 0 && (
-            <div className="flex-shrink-0 rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm">
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                Leads per employee ({baseEntries.length} total)
-              </p>
-              <div className="flex flex-wrap gap-1.5">
+            <div className="flex-shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-1.5 shadow-sm">
+              <div className="flex flex-wrap gap-1">
                 <button
                   type="button"
                   onClick={() => setFilterEmployeeId(null)}
                   className={cn(
-                    'qc-employee-chip rounded-lg px-2.5 py-1 text-xs font-semibold ring-1',
+                    'qc-employee-chip rounded-md px-2 py-0.5 text-[11px] font-semibold ring-1',
                     !filterEmployeeId
                       ? 'bg-slate-900 text-white ring-slate-900'
                       : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50',
@@ -519,7 +566,7 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
                     type="button"
                     onClick={() => setFilterEmployeeId(g.employeeId)}
                     className={cn(
-                      'qc-employee-chip inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold ring-1',
+                      'qc-employee-chip inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold ring-1',
                       filterEmployeeId === g.employeeId
                         ? 'bg-violet-600 text-white ring-violet-600'
                         : 'bg-violet-50 text-violet-900 ring-violet-200 hover:bg-violet-100',
@@ -543,23 +590,7 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
             </div>
           )}
 
-          {isAdmin && !filterEmployeeId && employeeGroups.length > 1 ? (
-            <div className="flex flex-col gap-3">
-              {employeeGroups.map((group) => (
-                <QcExcelSheet
-                  key={group.employeeId}
-                  title={`${group.employeeName} — ${group.entries.length} lead${group.entries.length !== 1 ? 's' : ''}`}
-                  entries={group.entries}
-                  isAdmin
-                  loading={loading}
-                  compact
-                  emptyMessage="No leads"
-                  duplicateRowIndices={duplicateIndicesForSheet(group.entries)}
-                  onDecisionApplied={() => void load()}
-                />
-              ))}
-            </div>
-          ) : (
+          <div className="min-h-0 flex-1 overflow-hidden">
             <QcExcelSheet
               title={sheetTitle}
               entries={displayEntries}
@@ -570,7 +601,7 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
               onDecisionApplied={() => void load()}
               emptyMessage="Mark a lead as Lead / Won / Active on assigned campaign"
             />
-          )}
+          </div>
         </div>
       </div>
 

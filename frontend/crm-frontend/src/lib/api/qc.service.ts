@@ -162,4 +162,13 @@ export const qcService = {
     const res = await apiClient.get(`/qc/ready/${batchId}`);
     return unwrap<QcReadyBatchDetail>(res);
   },
+
+  async clearAll(): Promise<{
+    cleared: boolean;
+    deletedEntries: number;
+    deletedReadyBatches: number;
+  }> {
+    const res = await apiClient.delete('/qc/all');
+    return unwrap(res);
+  },
 };

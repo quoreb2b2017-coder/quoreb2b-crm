@@ -839,4 +839,16 @@ export class QcService {
       .exec();
     return result.deletedCount ?? 0;
   }
+
+  /** Super Admin clears All QC + Ready QC */
+  async purgeAll(roles: string[]) {
+    this.assertAdmin(roles);
+    const entriesResult = await this.qcEntryModel.deleteMany({}).exec();
+    const readyResult = await this.batchModel.deleteMany({ batchKind: 'qc_ready' }).exec();
+    return {
+      cleared: true,
+      deletedEntries: entriesResult.deletedCount ?? 0,
+      deletedReadyBatches: readyResult.deletedCount ?? 0,
+    };
+  }
 }

@@ -19,8 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Validate GitHub secrets
-        id: validate
+      - name: Check deploy secrets
+        id: secrets
         run: |
           set -euo pipefail
           missing=()
@@ -36,44 +36,49 @@ jobs:
 
           if [ "${#missing[@]}" -gt 0 ]; then
             {
-              echo "## Deploy blocked — missing GitHub Actions secrets"
+              echo "## Deploy skipped — EC2 secrets not configured"
               echo ""
-              echo "Add these in the repo:"
-              echo "**Settings → Secrets and variables → Actions → New repository secret**"
+              echo "CI still passes. To enable auto-deploy on push to \`main\`, add:"
               echo ""
-              echo "| Secret | Example value |"
-              echo "|--------|----------------|"
-              echo "| \`EC2_HOST\` | \`13.232.248.18\` (public IPv4 only) |"
+              echo "| Secret | Value |"
+              echo "|--------|--------|"
+              echo "| \`EC2_HOST\` | \`13.232.248.18\` |"
               echo "| \`EC2_USER\` | \`ubuntu\` |"
-              echo "| \`EC2_SSH_PRIVATE_KEY\` | Full \`crm-key.pem\` file (BEGIN/END lines included) |"
+              echo "| \`EC2_SSH_PRIVATE_KEY\` | Full \`crm-key.pem\` (BEGIN/END lines included) |"
               echo ""
-              echo "**Missing now:** ${missing[*]}"
+              echo "**Missing:** ${missing[*]}"
               echo ""
-              echo "After saving secrets, re-run this workflow from the Actions tab."
-              echo "See \`DEPLOY_EC2_VERCEL.md\` section **A8** for full setup."
+              echo "**Deploy now from your PC:**"
+              echo "\`\`\`bash"
+              echo "bash deploy/ec2/ssh-deploy-from-local.sh /path/to/crm-key.pem"
+              echo "\`\`\`"
+              echo ""
+              echo "See \`DEPLOY_EC2_VERCEL.md\` section **A8**."
             } >> "$GITHUB_STEP_SUMMARY"
 
-            for name in "${missing[@]}"; do
-              echo "::error::Missing secret $name"
-            done
-            exit 1
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Deploy skipped — missing secrets: ${missing[*]}"
+            exit 0
           fi
 
-          echo "Secrets present. Target: ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}"
-          echo "Target host configured." >> "$GITHUB_STEP_SUMMARY"
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+          echo "Secrets present. Target: ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Setup SSH agent
+        if: steps.secrets.outputs.configured == 'true'
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
 
       - name: Add EC2 host key
+        if: steps.secrets.outputs.configured == 'true'
         run: |
           set -euo pipefail
           install -m 700 -d ~/.ssh
           ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: Test SSH connection
+        if: steps.secrets.outputs.configured == 'true'
         run: |
           set -euo pipefail
           if ! ssh -o BatchMode=yes \
@@ -84,16 +89,17 @@ jobs:
             {
               echo "## SSH connection failed"
               echo ""
-              echo "1. AWS Security Group → Inbound → **SSH (22)** from \`0.0.0.0/0\` (GitHub uses dynamic IPs)"
+              echo "1. AWS Security Group → Inbound → **SSH (22)** from \`0.0.0.0/0\`"
               echo "2. \`EC2_SSH_PRIVATE_KEY\` = full \`crm-key.pem\` contents"
-              echo "3. \`EC2_HOST\` = public IPv4 only (no \`https://\`, no spaces)"
-              echo "4. EC2 instance running, \`ubuntu\` user allowed"
+              echo "3. \`EC2_HOST\` = public IPv4 only (no \`https://\`)"
+              echo "4. EC2 instance running"
             } >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::SSH failed — see job summary for checklist"
+            echo "::error::SSH failed — see job summary"
             exit 1
           fi
 
       - name: Deploy on EC2
+        if: steps.secrets.outputs.configured == 'true'
         run: |
           set -euo pipefail
           ssh -o BatchMode=yes \

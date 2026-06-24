@@ -11,6 +11,7 @@ import {
   FileSpreadsheet,
   Folder,
   FolderOpen,
+  Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import {
@@ -52,6 +53,7 @@ export function QcReadyWorkspace() {
   const [loadingBatch, setLoadingBatch] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [expandedMonths, setExpandedMonths] = useState<Set<number>>(() => new Set());
+  const [clearingQc, setClearingQc] = useState(false);
 
   const toggleMonth = useCallback((monthIndex: number) => {
     setExpandedMonths((prev) => {
@@ -120,6 +122,31 @@ export function QcReadyWorkspace() {
     }
   }, [openFromQuery, loading, loadBatch]);
 
+  const handleClearQc = async () => {
+    if (
+      !confirm(
+        'Delete all QC data?\n\nRemoves All QC queue entries and every Ready QC file. User logins stay.',
+      )
+    ) {
+      return;
+    }
+    setClearingQc(true);
+    try {
+      const result = await qcService.clearAll();
+      setSelectedBatchId(null);
+      setBatchDetail(null);
+      await loadTree();
+      toast.success(
+        'QC cleared',
+        `${result.deletedEntries} entries · ${result.deletedReadyBatches} Ready QC file(s) removed`,
+      );
+    } catch {
+      toast.error('Could not clear QC data');
+    } finally {
+      setClearingQc(false);
+    }
+  };
+
   const handleDownload = async () => {
     if (!batchDetail) return;
     setDownloading(true);
@@ -165,6 +192,15 @@ export function QcReadyWorkspace() {
           </div>
         </div>
         <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            disabled={clearingQc}
+            onClick={() => void handleClearQc()}
+            className="inline-flex items-center gap-1 rounded border border-red-300/50 bg-red-500/20 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-red-500/35 disabled:opacity-50"
+          >
+            <Trash2 className="h-3 w-3" />
+            {clearingQc ? 'Clearing…' : 'Clear QC'}
+          </button>
           <label className="text-[10px] font-medium text-white/90">Year</label>
           <select
             value={year}

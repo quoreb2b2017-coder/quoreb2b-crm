@@ -92,7 +92,8 @@ export function MasterDataClearConfirmModal({
                   Clear master file?
                 </h2>
                 <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                  All master contacts and every campaign will be permanently removed.
+                  All CRM data will be removed — master file, campaigns, QC, uploads, activity.
+                  User login accounts are kept.
                 </p>
               </div>
               <button

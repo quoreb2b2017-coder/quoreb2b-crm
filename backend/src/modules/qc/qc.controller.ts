@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { QcService } from './qc.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -101,5 +101,12 @@ export class QcController {
   @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
   getReadyBatch(@CurrentUser() user: JwtUser, @Param('batchId') batchId: string) {
     return this.qcService.getReadyBatch(user.roles ?? [], batchId);
+  }
+
+  /** Delete all QC queue entries and Ready QC files (login accounts unchanged). */
+  @Delete('all')
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
+  clearAll(@CurrentUser() user: JwtUser) {
+    return this.qcService.purgeAll(user.roles ?? []);
   }
 }

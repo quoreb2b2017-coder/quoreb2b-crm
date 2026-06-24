@@ -37,6 +37,29 @@ import { cacheTtlSeconds } from '../../redis/cache.util';
 const MAX_TOTAL_ROWS = 50000;
 const DUPLICATE_PREVIEW_LIMIT = 100;
 
+/** CRM collections wiped on admin clear — user login accounts are kept. */
+const CRM_OPERATIONAL_COLLECTIONS = [
+  'batches',
+  'master_data',
+  'master_data_upload_requests',
+  'qcentries',
+  'activitylogs',
+  'notifications',
+  'attendances',
+  'leaves',
+  'breakpunches',
+  'meetingbreakrequests',
+  'refreshtokens',
+  'personal_notes',
+  'suppression_data',
+  'leads',
+  'campaigns',
+  'companies',
+  'email_verification_batches',
+  'email_verification_records',
+  'email_verification_prospects',
+] as const;
+
 @Injectable()
 export class MasterDataService {
   private readonly logger = new Logger(MasterDataService.name);
@@ -1072,17 +1095,12 @@ export class MasterDataService {
   async clear(user?: ActivityActor) {
     const pendingRequests = await this.uploadRequestModel.find({}, { _id: 1 }).lean().exec();
     const requestIds = pendingRequests.map((doc) => doc._id.toString());
-    const deletedRequests = await this.uploadRequestModel.deleteMany({}).exec();
     await this.notifications.deleteByUploadRequestIds(requestIds);
 
-    const deletedBatches = await this.batchesService.purgeAll();
-    const masterDelete = await this.masterDataModel.deleteMany({}).exec();
-    const nativeMaster = await this.masterDataModel.db
-      .collection('master_data')
-      .deleteMany({});
-
-    const hadMasterData =
-      (masterDelete.deletedCount ?? 0) > 0 || (nativeMaster.deletedCount ?? 0) > 0;
+    const purgedCollections = await this.purgeOperationalCollections();
+    const deletedBatches = purgedCollections.batches ?? 0;
+    const deletedUploadRequests = purgedCollections.master_data_upload_requests ?? 0;
+    const hadMasterData = (purgedCollections.master_data ?? 0) > 0;
 
     if (user) {
       await this.activityLogs.logWithActor(user, {
@@ -1092,24 +1110,53 @@ export class MasterDataService {
         metadata: {
           clearedAt: new Date().toISOString(),
           deletedBatches,
-          deletedUploadRequests: deletedRequests.deletedCount ?? 0,
+          deletedUploadRequests,
           hadMasterData,
+          purgedCollections,
         },
       });
     }
 
     void this.bustMasterCaches();
+    void this.cache.delByPrefix('batch:');
+    void this.cache.delByPrefix('dashboard:');
+    void this.cache.delByPrefix('analytics:');
+    void this.cache.delByPrefix('suppression:');
+    void this.cache.delByPrefix('delivered:');
+    void this.cache.delByPrefix('qc:');
 
     this.logger.log(
-      `Master data cleared: master=${hadMasterData}, batches=${deletedBatches}, uploadRequests=${deletedRequests.deletedCount ?? 0}`,
+      `CRM data cleared (users kept): batches=${deletedBatches}, uploadRequests=${deletedUploadRequests}, master=${hadMasterData}`,
     );
 
     return {
       cleared: true,
       deletedBatches,
-      deletedUploadRequests: deletedRequests.deletedCount ?? 0,
+      deletedUploadRequests,
       hadMasterData,
+      purgedCollections,
+      usersKept: true,
     };
+  }
+
+  private async purgeOperationalCollections(): Promise<Record<string, number>> {
+    const db = this.masterDataModel.db;
+    const counts: Record<string, number> = {};
+    const existing = new Set((await db.listCollections()).map((c) => c.name));
+
+    for (const name of CRM_OPERATIONAL_COLLECTIONS) {
+      if (!existing.has(name)) continue;
+      try {
+        const res = await db.collection(name).deleteMany({});
+        counts[name] = res.deletedCount ?? 0;
+      } catch (err) {
+        this.logger.warn(
+          `purge ${name}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    return counts;
   }
 
   private toResponse(doc: MasterDataRecord) {

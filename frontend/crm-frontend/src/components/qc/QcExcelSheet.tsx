@@ -101,13 +101,19 @@ export function QcExcelSheet({
     (displayRowIndex: number, event: React.MouseEvent) => {
       const entry = entryByDisplayRow.get(displayRowIndex);
       if (!entry) return;
+      const row = event.currentTarget as HTMLElement;
+      const rect = row.getBoundingClientRect();
+      const anchor = {
+        x: Math.min(Math.max(rect.left + 24, 16), window.innerWidth - 16),
+        y: rect.bottom,
+      };
       if (isAdmin) {
         if (!canDecide(entry)) return;
-        setMenu({ x: event.clientX, y: event.clientY, entry });
+        setMenu({ ...anchor, entry });
         return;
       }
       if (!canResubmit(entry)) return;
-      setMenu({ x: event.clientX, y: event.clientY, entry });
+      setMenu({ ...anchor, entry });
     },
     [isAdmin, entryByDisplayRow, canDecide, canResubmit],
   );

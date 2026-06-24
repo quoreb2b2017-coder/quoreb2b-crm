@@ -81,8 +81,9 @@ export class BulkEmailVerificationProcessorService implements OnModuleInit {
 
   onModuleInit(): void {
     const skipSmtp = this.config.get<string>('BULK_EMAIL_SKIP_SMTP_PROBE') === 'true';
+    const stopOnValid = this.stopOnValid();
     this.logger.log(
-      `Bulk email verification: in-house engine (SMTP probe ${skipSmtp ? 'off — MX/DNS' : 'on'})`,
+      `Bulk email verification: in-house engine (SMTP probe ${skipSmtp ? 'off — MX/DNS' : 'on'}, stop-on-valid ${stopOnValid ? 'on' : 'off'})`,
     );
   }
 
@@ -172,16 +173,20 @@ export class BulkEmailVerificationProcessorService implements OnModuleInit {
         patternAttempts,
         prospect,
       );
+      const rowAttempt: PatternAttempt = {
+        ...resolution.rowAttempt,
+        smtpResponse: `${resolution.rowAttempt.smtpResponse}|verify_mode:provided_full`,
+      };
 
       if (
-        await this.persistWithRetry(batch, prospect, invalidAttempt, {
+        await this.persistWithRetry(batch, prospect, rowAttempt, {
           generatedEmail: providedEmail,
           recommendedEmail: resolution.recommendedEmail,
           correctedEmail: resolution.correctedEmail,
         })
       ) {
         generatedDelta = 1;
-        this.countStatus(invalidAttempt.status, counters);
+        this.countStatus(rowAttempt.status, counters);
       }
       return { generatedDelta, counters };
     }
@@ -208,20 +213,20 @@ export class BulkEmailVerificationProcessorService implements OnModuleInit {
     );
 
     const patternsChecked = patternAttempts.length;
-    const attemptWithMeta: PatternAttempt = {
-      ...providedAttempt,
-      smtpResponse: `${providedAttempt.smtpResponse}|patterns_checked:${patternsChecked}|verify_mode:provided_full`,
+    const rowAttempt: PatternAttempt = {
+      ...resolution.rowAttempt,
+      smtpResponse: `${resolution.rowAttempt.smtpResponse}|patterns_checked:${patternsChecked}|verify_mode:provided_full`,
     };
 
     if (
-      await this.persistWithRetry(batch, prospect, attemptWithMeta, {
+      await this.persistWithRetry(batch, prospect, rowAttempt, {
         generatedEmail: providedEmail,
         recommendedEmail: resolution.recommendedEmail,
         correctedEmail: resolution.correctedEmail,
       })
     ) {
       generatedDelta = 1;
-      this.countStatus(providedAttempt.status, counters);
+      this.countStatus(rowAttempt.status, counters);
     }
 
     return { generatedDelta, counters };
@@ -241,14 +246,34 @@ export class BulkEmailVerificationProcessorService implements OnModuleInit {
     );
     if (!patterns.length) return [];
 
-    return mapWithConcurrency(patterns, this.patternConcurrency(), async (candidate) => {
-      const ctx =
-        candidate.patternType.includes('domain_corrected') && built.correctedDomainContext
-          ? built.correctedDomainContext
-          : built.domainContext;
-      const verified = await this.engine.verifyEmail(candidate.email, ctx);
-      return this.toPatternAttempt(candidate, verified);
-    });
+    const attempts: PatternAttempt[] = [];
+    const concurrency = this.patternConcurrency();
+    const stopOnValid = this.stopOnValid();
+
+    for (let offset = 0; offset < patterns.length; offset += concurrency) {
+      const wave = patterns.slice(offset, offset + concurrency);
+      const waveAttempts = await Promise.all(
+        wave.map(async (candidate) => {
+          const ctx =
+            candidate.patternType.includes('domain_corrected') && built.correctedDomainContext
+              ? built.correctedDomainContext
+              : built.domainContext;
+          const verified = await this.engine.verifyEmail(candidate.email, ctx);
+          return this.toPatternAttempt(candidate, verified);
+        }),
+      );
+      attempts.push(...waveAttempts);
+
+      const best = pickBestVerifiedAttempt(attempts, {
+        firstName: prospect.firstName,
+        lastName: prospect.lastName,
+      });
+      if (stopOnValid && best && smtpConfirmedAttempt(best)) {
+        break;
+      }
+    }
+
+    return attempts;
   }
 
   private async buildProspectPatterns(
@@ -606,19 +631,7 @@ export class BulkEmailVerificationProcessorService implements OnModuleInit {
       return { generatedDelta, counters };
     }
 
-    const attempts = await mapWithConcurrency(
-      built.patterns,
-      this.patternConcurrency(),
-      async (candidate) => {
-        const ctx =
-          candidate.patternType.includes('domain_corrected') &&
-          built.correctedDomainContext
-            ? built.correctedDomainContext
-            : built.domainContext;
-        const verified = await this.engine.verifyEmail(candidate.email, ctx);
-        return this.toPatternAttempt(candidate, verified);
-      },
-    );
+    const attempts = await this.verifyPatternCandidates(built, prospect, domainCache);
 
     return this.finalizeProspect(batch, prospect, built, attempts);
   }
@@ -639,6 +652,16 @@ export class BulkEmailVerificationProcessorService implements OnModuleInit {
       .exec();
 
     const domainCache = new Map<string, DomainContext>();
+    const uniqueDomains = [
+      ...new Set(
+        prospects
+          .map((p) => normalizeDomain(p.domain))
+          .filter((d): d is string => Boolean(d)),
+      ),
+    ];
+    await runWithConcurrency(uniqueDomains, 12, async (domain) => {
+      await this.getCachedDomainContext(domain, domainCache);
+    });
 
     await runWithConcurrency(prospects, this.prospectConcurrency(), async (prospect) => {
       let generatedDelta = 0;

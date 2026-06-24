@@ -425,7 +425,7 @@ export class BulkEmailVerificationService {
   async exportPassedEmails(
     batchId: string,
     actor: ActivityActor,
-    minScore = 95,
+    minScore = 85,
     strict = true,
   ) {
     await this.findOwnedBatch(batchId, actor);

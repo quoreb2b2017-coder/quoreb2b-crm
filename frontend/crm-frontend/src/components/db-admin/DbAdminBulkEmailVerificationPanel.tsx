@@ -215,7 +215,10 @@ function friendlyCheckLabel(
   status: EmailVerificationStatus,
 ): string {
   const r = (response ?? '').toLowerCase();
-  if (status === 'valid') return 'Confirmed';
+  if (status === 'valid') {
+    if (r.includes('mx_deliverable') || r.includes('mx_only')) return 'Domain verified';
+    return 'Mailbox confirmed';
+  }
   if (status === 'likely_valid') return 'Likely';
   if (r.includes('verify_mode:provided_full') || r.includes('provided')) {
     if (status === 'invalid') return 'Incorrect';
@@ -894,9 +897,9 @@ export function DbAdminBulkEmailVerificationPanel() {
         toolbar={
           <div className="flex w-full flex-wrap items-center gap-2">
             <span className="font-medium text-slate-700">
-              Domain only: generate emails from name + domain (Valid = mailbox confirmed, Likely valid =
-              best pattern). Email column: your address is fully verified — if wrong, we suggest the
-              correct pattern-based email.
+              Domain only: generate emails from name + domain. Verified = mailbox confirmed (SMTP) or
+              domain has mail (MX). Email column: your address is fully checked — wrong uploads get a
+              corrected pattern.
             </span>
             <span className="text-slate-300">|</span>
             <button type="button" onClick={() => void load({ silent: true })} disabled={loading} className={shellBtn()}>

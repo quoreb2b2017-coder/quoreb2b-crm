@@ -128,7 +128,7 @@ export class BulkEmailVerificationController {
     @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
     @Res() res: Response,
   ) {
-    const score = minScore != null ? parseInt(minScore, 10) : 95;
+    const score = minScore != null ? parseInt(minScore, 10) : 85;
     const result = await this.service.exportPassedEmails(
       id,
       actorFromJwt(user),

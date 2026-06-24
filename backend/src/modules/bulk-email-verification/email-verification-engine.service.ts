@@ -49,6 +49,7 @@ export class EmailVerificationEngineService implements OnModuleInit {
   private readonly catchAllCache = new Map<string, boolean>();
   private port25Reachable = true;
   private mxOnlyFallbackEnabled = true;
+  private port25LastCheckedMs = 0;
 
   constructor(
     private config: ConfigService,
@@ -97,6 +98,19 @@ export class EmailVerificationEngineService implements OnModuleInit {
     return resolvePositiveInt(this.config.get('BULK_EMAIL_DNS_NEGATIVE_CACHE_TTL_MS'), 300_000);
   }
 
+  private async refreshPort25Reachability(): Promise<void> {
+    const now = Date.now();
+    if (now - this.port25LastCheckedMs < 60_000) return;
+    this.port25LastCheckedMs = now;
+    const port25 = await getOutboundSmtpPortStatus(this.getSmtpTimeoutMs(), 0);
+    if (port25.reachable !== this.port25Reachable) {
+      this.port25Reachable = port25.reachable;
+      this.logger.log(
+        `Outbound port 25 reachability updated: ${port25.reachable} (${port25.message})`,
+      );
+    }
+  }
+
   async resolveDomainContext(domain: string): Promise<DomainContext> {
     const dns = await validateDomainDns(
       domain,
@@ -131,6 +145,8 @@ export class EmailVerificationEngineService implements OnModuleInit {
     email: string,
     domainContext?: DomainContext,
   ): Promise<EmailVerificationEngineResult> {
+    await this.refreshPort25Reachability();
+
     const syntax = validateEmailSyntax(email);
     const domain =
       domainContext?.domain ??

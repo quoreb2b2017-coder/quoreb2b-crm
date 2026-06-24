@@ -45,6 +45,29 @@ function isMxOnlyWithoutMailboxCheck(signals: VerificationSignals): boolean {
   );
 }
 
+/**
+ * ZeroBounce-style deliverable when MX exists but RCPT could not run (port 25 blocked / IP listed).
+ * Not a mailbox proof — syntax + MX + pattern estimate.
+ */
+function mxDeliverableEstimate(signals: VerificationSignals): RiskScoreResult | null {
+  if (
+    !signals.syntaxValid ||
+    !signals.domainExists ||
+    !signals.mxValid ||
+    signals.isDisposable ||
+    signals.isCatchAllDomain ||
+    signals.isRoleBased
+  ) {
+    return null;
+  }
+  return {
+    status: EmailVerificationStatus.VALID,
+    score: 88,
+    label: confidenceLabel(88),
+    reasons: ['mx_deliverable'],
+  };
+}
+
 /** True when we ran (or tried) RCPT TO and mailbox looks bad — ZeroBounce "Mailbox: invalid". */
 function mailboxCheckFailed(signals: VerificationSignals): boolean {
   if (isMxOnlyWithoutMailboxCheck(signals)) return false;
@@ -101,6 +124,11 @@ export function computeRiskScore(signals: VerificationSignals): RiskScoreResult 
   }
 
   if (signals.mxValid && isSmtpIpBlocked(signals.smtpResponse)) {
+    const mxEstimate = mxDeliverableEstimate(signals);
+    if (mxEstimate) {
+      mxEstimate.reasons.unshift('smtp_ip_blocked');
+      return mxEstimate;
+    }
     reasons.push('smtp_ip_blocked_mx_pattern');
     return {
       status: EmailVerificationStatus.LIKELY_VALID,
@@ -172,11 +200,16 @@ export function computeRiskScore(signals: VerificationSignals): RiskScoreResult 
   }
 
   if (isMxOnlyWithoutMailboxCheck(signals)) {
+    const mxEstimate = mxDeliverableEstimate(signals);
+    if (mxEstimate) {
+      mxEstimate.reasons.unshift('mx_only');
+      return mxEstimate;
+    }
     reasons.push('mx_only');
     return {
       status: EmailVerificationStatus.LIKELY_VALID,
-      score: 82,
-      label: confidenceLabel(82),
+      score: 72,
+      label: confidenceLabel(72),
       reasons,
     };
   }

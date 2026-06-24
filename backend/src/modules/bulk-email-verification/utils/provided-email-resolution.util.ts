@@ -1,17 +1,20 @@
 import { EmailVerificationStatus } from '../bulk-email-verification.constants';
 import {
-  isDeliverableStatus,
+  pickCorrectedEmail,
+  pickRecommendedEmail,
+} from './email-correction.util';
+import {
   pickBestVerifiedAttempt,
   smtpConfirmedAttempt,
   statusRank,
   type VerifiableAttempt,
 } from './email-pattern-priority.util';
 
-export interface ProvidedEmailResolution {
-  /** Email to use in exports / recommended column */
+export interface ProvidedEmailResolution<T extends VerifiableAttempt> {
   recommendedEmail: string;
-  /** Set when uploaded email is wrong but a generated pattern is better */
   correctedEmail?: string;
+  /** Drives verificationStatus / score on the saved row (recommended email, not upload-only). */
+  rowAttempt: T;
 }
 
 /** True when we should also verify name+domain patterns (not just the uploaded address). */
@@ -26,51 +29,76 @@ export function shouldCrossCheckProvidedPatterns(
 }
 
 /**
- * Uploaded row had an Email column — verify that address, suggest pattern-based fix when wrong.
- * Row status stays on the provided-email attempt (caller persists provided attempt).
+ * Uploaded row had an Email column.
+ * Row status always reflects the recommended email (Valid = SMTP 250, Likely valid = MX/pattern).
  */
 export function resolveProvidedEmailVerification<T extends VerifiableAttempt>(
   provided: T,
   patternAttempts: T[],
   prospect?: { firstName: string; lastName: string },
-): ProvidedEmailResolution {
-  const providedEmail = provided.candidate.email.trim().toLowerCase();
-  const bestPattern = pickBestVerifiedAttempt(patternAttempts, prospect);
+): ProvidedEmailResolution<T> {
+  const providedEmail = provided.candidate.email.trim();
+  const providedNorm = providedEmail.toLowerCase();
 
-  if (smtpConfirmedAttempt(provided)) {
-    return { recommendedEmail: providedEmail };
+  const best = pickBestVerifiedAttempt(patternAttempts, prospect);
+  if (!best) {
+    return { recommendedEmail: providedEmail, rowAttempt: provided };
   }
 
-  const providedRank = statusRank(provided.status);
-  const patternRank = bestPattern ? statusRank(bestPattern.status) : -1;
+  const bestRank = statusRank(best.status);
+  const primaryRank = statusRank(provided.status);
+
+  const correctedEmail =
+    pickCorrectedEmail(
+      providedEmail,
+      best.candidate.email,
+      best.confidenceScore,
+      provided.confidenceScore,
+      bestRank,
+      primaryRank,
+    ) ??
+    (best.candidate.email.trim().toLowerCase() !== providedNorm
+      ? best.candidate.email
+      : undefined);
+
+  const recommendedEmail = pickRecommendedEmail(
+    providedEmail,
+    best.candidate.email,
+    bestRank,
+  );
+
+  const recommendedNorm = recommendedEmail.trim().toLowerCase();
+  const recommendsDifferentEmail = recommendedNorm !== providedNorm;
 
   if (
-    bestPattern &&
-    isDeliverableStatus(bestPattern.status) &&
-    (patternRank > providedRank ||
-      (!isDeliverableStatus(provided.status) && isDeliverableStatus(bestPattern.status)) ||
-      (smtpConfirmedAttempt(bestPattern) && !smtpConfirmedAttempt(provided)))
+    smtpConfirmedAttempt(provided) &&
+    !recommendsDifferentEmail &&
+    !correctedEmail
   ) {
-    const suggested = bestPattern.candidate.email;
-    if (suggested.toLowerCase() !== providedEmail) {
-      return {
-        recommendedEmail: suggested,
-        correctedEmail: suggested,
-      };
-    }
+    return { recommendedEmail: providedEmail, rowAttempt: provided };
   }
 
-  if (isDeliverableStatus(provided.status)) {
-    return { recommendedEmail: providedEmail };
-  }
-
-  if (bestPattern && isDeliverableStatus(bestPattern.status)) {
-    const suggested = bestPattern.candidate.email;
+  if (recommendsDifferentEmail || correctedEmail) {
     return {
-      recommendedEmail: suggested,
-      correctedEmail: suggested.toLowerCase() !== providedEmail ? suggested : undefined,
+      recommendedEmail,
+      correctedEmail:
+        correctedEmail && correctedEmail.trim().toLowerCase() !== providedNorm
+          ? correctedEmail
+          : undefined,
+      rowAttempt: best,
     };
   }
 
-  return { recommendedEmail: providedEmail };
+  if (provided.status === EmailVerificationStatus.INVALID && bestRank > primaryRank) {
+    return {
+      recommendedEmail: best.candidate.email,
+      correctedEmail:
+        best.candidate.email.trim().toLowerCase() !== providedNorm
+          ? best.candidate.email
+          : undefined,
+      rowAttempt: best,
+    };
+  }
+
+  return { recommendedEmail: providedEmail, rowAttempt: provided };
 }

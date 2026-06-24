@@ -15,6 +15,30 @@ export interface SmtpVerifyResult {
   isCatchAllDomain?: boolean;
 }
 
+const STATUS_PRIORITY: Record<EmailVerificationStatus, number> = {
+  [EmailVerificationStatus.VALID]: 50,
+  [EmailVerificationStatus.LIKELY_VALID]: 40,
+  [EmailVerificationStatus.INVALID]: 30,
+  [EmailVerificationStatus.RISKY]: 20,
+  [EmailVerificationStatus.CATCH_ALL]: 15,
+  [EmailVerificationStatus.UNKNOWN]: 10,
+};
+
+function statusPriority(status: EmailVerificationStatus): number {
+  return STATUS_PRIORITY[status] ?? 0;
+}
+
+function pickBestSmtpResult(results: SmtpVerifyResult[]): SmtpVerifyResult {
+  if (!results.length) {
+    return { status: EmailVerificationStatus.UNKNOWN, smtpResponse: 'all_mx_failed' };
+  }
+
+  const sorted = [...results].sort(
+    (a, b) => statusPriority(b.status) - statusPriority(a.status),
+  );
+  return sorted[0];
+}
+
 /** Read until the final line of a multiline SMTP reply (e.g. "250 OK" not "250-"). */
 function readResponse(socket: net.Socket, timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -166,32 +190,12 @@ export async function verifyEmailSmtp(
     return { status: EmailVerificationStatus.INVALID, smtpResponse: 'no_mx' };
   }
 
-  let lastUnknown: SmtpVerifyResult | null = null;
-
-  for (const host of mxHosts.slice(0, 3)) {
-    const result = await verifyOnHost(host, email, fromEmail, timeout);
-    if (
-      result.status === EmailVerificationStatus.VALID ||
-      result.status === EmailVerificationStatus.LIKELY_VALID
-    ) {
-      return result;
-    }
-    if (result.status === EmailVerificationStatus.INVALID) {
-      return result;
-    }
-    if (result.status === EmailVerificationStatus.RISKY) {
-      lastUnknown = result;
-      continue;
-    }
-    lastUnknown = result;
-  }
-
-  return (
-    lastUnknown ?? {
-      status: EmailVerificationStatus.UNKNOWN,
-      smtpResponse: 'all_mx_failed',
-    }
+  const hosts = mxHosts.slice(0, 3);
+  const results = await Promise.all(
+    hosts.map((host) => verifyOnHost(host, email, fromEmail, timeout)),
   );
+
+  return pickBestSmtpResult(results);
 }
 
 export async function detectCatchAllDomain(

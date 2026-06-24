@@ -52,7 +52,7 @@ export default () => ({
   ),
   BULK_EMAIL_SYNC_MAX_ROWS: parseInt(process.env.BULK_EMAIL_SYNC_MAX_ROWS || '200', 10),
   BULK_EMAIL_SMTP_TIMEOUT_MS: parseInt(
-    process.env.BULK_EMAIL_SMTP_TIMEOUT_MS || '5000',
+    process.env.BULK_EMAIL_SMTP_TIMEOUT_MS || '4000',
     10,
   ),
   BULK_EMAIL_STOP_ON_VALID: process.env.BULK_EMAIL_STOP_ON_VALID !== 'false',

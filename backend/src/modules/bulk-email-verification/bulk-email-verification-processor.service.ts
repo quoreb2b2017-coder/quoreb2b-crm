@@ -436,11 +436,19 @@ export class BulkEmailVerificationProcessorService implements OnModuleInit {
     if (smtpResponse.includes('smtp_greylist') || smtpResponse.includes('450')) {
       return 'unknown';
     }
+    if (
+      status === EmailVerificationStatus.LIKELY_VALID &&
+      (smtpResponse.includes('mx_pattern') ||
+        smtpResponse.includes('mx_only') ||
+        smtpResponse.includes('port25'))
+    ) {
+      return 'valid';
+    }
     switch (status) {
       case EmailVerificationStatus.VALID:
         return 'valid';
       case EmailVerificationStatus.LIKELY_VALID:
-        return 'unknown';
+        return 'valid';
       case EmailVerificationStatus.CATCH_ALL:
         return 'catch-all';
       case EmailVerificationStatus.INVALID:

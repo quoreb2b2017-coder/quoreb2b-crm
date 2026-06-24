@@ -27,8 +27,9 @@ export interface RiskScoreResult {
 
 export function confidenceLabel(score: number): string {
   if (score >= 95) return 'Highly Likely Valid';
-  if (score >= 80) return 'Valid';
-  if (score >= 60) return 'Risky';
+  if (score >= 85) return 'Valid';
+  if (score >= 70) return 'Likely Valid';
+  if (score >= 55) return 'Uncertain';
   return 'Invalid';
 }
 
@@ -37,7 +38,7 @@ export function isHardSmtpReject(signals: VerificationSignals): boolean {
   return isDefinitiveMailboxReject(signals.smtpResponse, signals.smtpCode);
 }
 
-/** SMTP 250 mailbox confirmed — only tier that counts as Valid. */
+/** SMTP 250 mailbox confirmed — only tier that counts as Verified. */
 export function isSmtpMailboxConfirmed(signals: VerificationSignals): boolean {
   return (
     signals.smtpStatus === EmailVerificationStatus.VALID &&
@@ -50,7 +51,17 @@ export function isSmtpMailboxConfirmed(signals: VerificationSignals): boolean {
 function isMxOnlyWithoutMailboxCheck(signals: VerificationSignals): boolean {
   return (
     signals.smtpResponse.includes('mx_only') ||
-    signals.smtpResponse.includes('smtp_probe_disabled')
+    signals.smtpResponse.includes('smtp_probe_disabled') ||
+    signals.smtpResponse.includes('port25_blocked')
+  );
+}
+
+function softMailboxUnreachable(signals: VerificationSignals): boolean {
+  return (
+    signals.smtpResponse.includes('connection_failed') ||
+    signals.smtpResponse.includes('connection_timeout') ||
+    signals.smtpResponse.includes('all_mx_failed') ||
+    signals.smtpResponse.includes('SMTP read timeout')
   );
 }
 
@@ -62,21 +73,54 @@ function mailboxCheckFailed(signals: VerificationSignals): boolean {
 
   if (signals.smtpStatus === EmailVerificationStatus.INVALID) return true;
 
-  return (
-    signals.smtpResponse.includes('connection_failed') ||
-    signals.smtpResponse.includes('connection_timeout') ||
-    signals.smtpResponse.includes('all_mx_failed') ||
-    signals.smtpResponse.includes('SMTP read timeout')
-  );
+  return softMailboxUnreachable(signals);
 }
 
-function softMailboxUnreachable(signals: VerificationSignals): boolean {
-  return (
-    signals.smtpResponse.includes('connection_failed') ||
-    signals.smtpResponse.includes('connection_timeout') ||
-    signals.smtpResponse.includes('all_mx_failed') ||
-    signals.smtpResponse.includes('SMTP read timeout')
-  );
+/** MX exists but SMTP layer could not confirm mailbox (port 25 blocked, IP blocklist, timeout). */
+function mxPatternEstimate(signals: VerificationSignals): RiskScoreResult | null {
+  if (!signals.mxValid) return null;
+
+  if (isMxOnlyWithoutMailboxCheck(signals)) {
+    return {
+      status: EmailVerificationStatus.LIKELY_VALID,
+      score: 82,
+      label: confidenceLabel(82),
+      reasons: ['mx_valid', 'mx_pattern_estimate'],
+    };
+  }
+
+  if (isSmtpIpBlocked(signals.smtpResponse)) {
+    return {
+      status: EmailVerificationStatus.LIKELY_VALID,
+      score: 80,
+      label: confidenceLabel(80),
+      reasons: ['mx_valid', 'smtp_ip_blocked', 'mx_pattern_estimate'],
+    };
+  }
+
+  if (softMailboxUnreachable(signals)) {
+    return {
+      status: EmailVerificationStatus.LIKELY_VALID,
+      score: 78,
+      label: confidenceLabel(78),
+      reasons: ['mx_valid', 'mailbox_unreachable', 'mx_pattern_estimate'],
+    };
+  }
+
+  if (
+    signals.smtpStatus === EmailVerificationStatus.UNKNOWN &&
+    signals.smtpAttempted &&
+    !isHardSmtpReject(signals)
+  ) {
+    return {
+      status: EmailVerificationStatus.LIKELY_VALID,
+      score: 76,
+      label: confidenceLabel(76),
+      reasons: ['mx_valid', 'smtp_inconclusive', 'mx_pattern_estimate'],
+    };
+  }
+
+  return null;
 }
 
 export function computeRiskScore(signals: VerificationSignals): RiskScoreResult {
@@ -165,15 +209,9 @@ export function computeRiskScore(signals: VerificationSignals): RiskScoreResult 
   }
 
   if (mailboxCheckFailed(signals)) {
-    if (softMailboxUnreachable(signals) && !isHardSmtpReject(signals)) {
-      reasons.push('mailbox_unreachable');
-      return {
-        status: EmailVerificationStatus.UNKNOWN,
-        score: 46,
-        label: confidenceLabel(46),
-        reasons,
-      };
-    }
+    const estimate = mxPatternEstimate(signals);
+    if (estimate) return estimate;
+
     reasons.push('mailbox_check_failed');
     return {
       status: EmailVerificationStatus.INVALID,
@@ -183,25 +221,8 @@ export function computeRiskScore(signals: VerificationSignals): RiskScoreResult 
     };
   }
 
-  if (signals.mxValid && isSmtpIpBlocked(signals.smtpResponse)) {
-    reasons.push('smtp_ip_blocked');
-    return {
-      status: EmailVerificationStatus.UNKNOWN,
-      score: 44,
-      label: confidenceLabel(44),
-      reasons,
-    };
-  }
-
-  if (isMxOnlyWithoutMailboxCheck(signals)) {
-    reasons.push('mx_only', 'mailbox_not_checked');
-    return {
-      status: EmailVerificationStatus.UNKNOWN,
-      score: 52,
-      label: confidenceLabel(52),
-      reasons,
-    };
-  }
+  const estimate = mxPatternEstimate(signals);
+  if (estimate) return estimate;
 
   if (signals.isRoleBased) {
     reasons.push('role_based');
@@ -265,6 +286,14 @@ export function computeRiskScore(signals: VerificationSignals): RiskScoreResult 
       };
     case EmailVerificationStatus.UNKNOWN:
     default:
+      if (signals.mxValid) {
+        return {
+          status: EmailVerificationStatus.LIKELY_VALID,
+          score: 76,
+          label: confidenceLabel(76),
+          reasons: ['mx_valid', 'mx_pattern_estimate'],
+        };
+      }
       reasons.push('smtp_inconclusive');
       return {
         status: EmailVerificationStatus.UNKNOWN,

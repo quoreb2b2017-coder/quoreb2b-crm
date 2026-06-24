@@ -26,6 +26,7 @@ function readResponse(socket: net.Socket, timeoutMs: number): Promise<string> {
 
     const onData = (chunk: Buffer) => {
       buffer += chunk.toString('utf8');
+      socket.setTimeout(timeoutMs);
       const lines = buffer.split(/\r?\n/).filter((l) => l.length > 0);
       const last = lines[lines.length - 1];
       if (last && /^\d{3} /.test(last)) {
@@ -89,6 +90,13 @@ function classifyRcptResponse(rcpt: string, code: number): SmtpVerifyResult {
   }
   if (code === 550 || code === 551 || code === 553) {
     if (isDefinitiveMailboxReject(rcpt, code)) {
+      return {
+        status: EmailVerificationStatus.INVALID,
+        smtpResponse: rcpt,
+        smtpCode: code,
+      };
+    }
+    if (/\b(5\.1\.[0-3]|5\.2\.1|5\.2\.2)\b/.test(rcpt)) {
       return {
         status: EmailVerificationStatus.INVALID,
         smtpResponse: rcpt,

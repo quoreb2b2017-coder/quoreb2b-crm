@@ -2,15 +2,51 @@ import { punchInInstantMs } from '@/lib/attendance/live-punch-time';
 
 const MAX_DAY_MINUTES = 24 * 60;
 
+const LOGOUT_CONTINUING_BREAK_TYPES = new Set(['tea', 'lunch', 'meeting']);
+
+export interface BreakSessionLike {
+  startedAt: string;
+  endedAt?: string | null;
+  type?: string;
+}
+
 export interface GrossLoginOptions {
   onDuty?: boolean;
   activeBreak?: boolean;
-  punchedBreakMinutes?: number;
+  checkOutAt?: string | null;
+  breakSessions?: BreakSessionLike[];
+}
+
+function resolveGrossLoginEndMs(
+  nowMs: number,
+  onDuty: boolean,
+  activeBreak: boolean,
+  checkOutAt?: string | null,
+  breakSessions: BreakSessionLike[] = [],
+): number {
+  if (onDuty || activeBreak) return nowMs;
+
+  if (!checkOutAt) return 0;
+
+  let endMs = new Date(checkOutAt).getTime();
+  const checkoutMs = endMs;
+
+  for (const session of breakSessions) {
+    if (session.type && !LOGOUT_CONTINUING_BREAK_TYPES.has(session.type)) continue;
+    const startMs = new Date(session.startedAt).getTime();
+    if (startMs > checkoutMs) continue;
+    if (!session.endedAt) continue;
+    const sessionEndMs = new Date(session.endedAt).getTime();
+    if (sessionEndMs > endMs) {
+      endMs = sessionEndMs;
+    }
+  }
+  return endMs;
 }
 
 /**
- * Gross login spans first check-in → now (on duty) or through break gaps,
- * so tea/lunch/meeting time stays inside login time even after break ends.
+ * Live clock runs ONLY while on duty or during an active tea/lunch/approved meeting punch.
+ * Logout pauses immediately; only an active break punch keeps time running after logout.
  */
 export function resolveGrossLoginMinutes(
   sessionGrossMinutes: number,
@@ -22,16 +58,40 @@ export function resolveGrossLoginMinutes(
 
   const onDuty = opts.onDuty ?? false;
   const activeBreak = opts.activeBreak ?? false;
-  const punchedBreakMinutes = opts.punchedBreakMinutes ?? 0;
-  // Active tea/lunch/meeting always extends login span (even before minutes accrue).
-  const includeBreakGaps =
-    onDuty || activeBreak || punchedBreakMinutes > 0;
-  if (!includeBreakGaps) return sessionGrossMinutes;
 
-  const inMs = punchInInstantMs(checkInAt, nowMs);
+  if (!onDuty && !activeBreak) {
+    const endMs = resolveGrossLoginEndMs(
+      nowMs,
+      false,
+      false,
+      opts.checkOutAt,
+      opts.breakSessions ?? [],
+    );
+    if (endMs <= 0) return sessionGrossMinutes;
+    const checkoutMs = opts.checkOutAt ? new Date(opts.checkOutAt).getTime() : 0;
+    if (!checkoutMs || endMs <= checkoutMs) {
+      return sessionGrossMinutes;
+    }
+    const inMs = punchInInstantMs(checkInAt, endMs);
+    const spanMinutes = Math.min(
+      MAX_DAY_MINUTES,
+      Math.max(0, Math.floor((endMs - inMs) / 60_000)),
+    );
+    return Math.max(sessionGrossMinutes, spanMinutes);
+  }
+
+  const endMs = resolveGrossLoginEndMs(
+    nowMs,
+    onDuty,
+    activeBreak,
+    opts.checkOutAt,
+    opts.breakSessions ?? [],
+  );
+
+  const inMs = punchInInstantMs(checkInAt, endMs);
   const spanMinutes = Math.min(
     MAX_DAY_MINUTES,
-    Math.max(0, Math.floor((nowMs - inMs) / 60_000)),
+    Math.max(0, Math.floor((endMs - inMs) / 60_000)),
   );
   return Math.max(sessionGrossMinutes, spanMinutes);
 }

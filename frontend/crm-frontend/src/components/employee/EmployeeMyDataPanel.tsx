@@ -87,13 +87,20 @@ export function EmployeeMyDataPanel() {
 
         if (result.request) {
           window.dispatchEvent(new CustomEvent('master-data-updated'));
+          const merged = result.mergedAddedRows ?? result.pendingRows;
           toast.success(
-            'Upload sent to DB Admin',
-            `${result.pendingRows} row(s) saved in this month's folder`,
+            'Merged to master file',
+            `${merged} row(s) added${result.duplicateFileName ? ` · duplicates saved as ${result.duplicateFileName}` : ''}`,
+          );
+        } else if (result.duplicateFileName) {
+          window.dispatchEvent(new CustomEvent('master-data-updated'));
+          toast.info(
+            'Duplicates saved',
+            `${result.duplicateCount} duplicate row(s) in ${result.duplicateFileName}`,
           );
         } else {
           toast.info(
-            'No new rows to submit',
+            'No new rows',
             result.duplicateCount > 0
               ? `${result.duplicateCount} duplicate row(s) were found`
               : 'All rows were empty or duplicates',

@@ -72,6 +72,9 @@ export interface MasterDataUploadRequestSubmitResult {
   pendingRows: number;
   missingValueCount: number;
   templateHeaders: string[];
+  mergedAddedRows?: number;
+  duplicateFileId?: string | null;
+  duplicateFileName?: string | null;
 }
 
 function unwrap<T>(response: { data: unknown }): T {
@@ -131,7 +134,11 @@ export const masterDataService = {
       headers: payload.headers,
       rows: payload.rows,
     });
-    return unwrap<MasterDataUploadRequestSubmitResult>({ data });
+    const result = unwrap<MasterDataUploadRequestSubmitResult>({ data });
+    if (typeof window !== 'undefined' && (result.request || result.duplicateFileId)) {
+      window.dispatchEvent(new CustomEvent('master-data-updated'));
+    }
+    return result;
   },
 
   createEmployeeUploadRequest: async (
@@ -143,7 +150,11 @@ export const masterDataService = {
       headers: payload.headers,
       rows: payload.rows,
     });
-    return unwrap<MasterDataUploadRequestSubmitResult>({ data });
+    const result = unwrap<MasterDataUploadRequestSubmitResult>({ data });
+    if (typeof window !== 'undefined' && (result.request || result.duplicateFileId)) {
+      window.dispatchEvent(new CustomEvent('master-data-updated'));
+    }
+    return result;
   },
 
   getUploadRequests: async (
@@ -154,6 +165,16 @@ export const masterDataService = {
   },
 
   getEmployeeUploadRequestsForDbAdmin: async (
+    status?: MasterDataUploadRequestStatus | 'all',
+  ): Promise<MasterDataUploadRequest[]> => {
+    const { data } = await apiClient.get(
+      `/master-data/upload-requests/employee/inbox${statusQuery(status)}`,
+    );
+    return unwrap<MasterDataUploadRequest[]>({ data });
+  },
+
+  /** Super Admin + DB Admin employee inbox */
+  getEmployeeUploadRequestsInbox: async (
     status?: MasterDataUploadRequestStatus | 'all',
   ): Promise<MasterDataUploadRequest[]> => {
     const { data } = await apiClient.get(

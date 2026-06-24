@@ -163,7 +163,7 @@ export function AttendanceDailyExcelGrid({
                   )}
                   title={
                     label.startsWith('Login')
-                      ? 'Active logged-in time today (pauses on logout) — target 9h'
+                      ? 'Login time (pauses on logout; tea/lunch/approved meeting keep running) — target 9h'
                       : label.startsWith('Working')
                         ? 'Net working time after breaks — matches dashboard — target 7h 45m'
                         : undefined

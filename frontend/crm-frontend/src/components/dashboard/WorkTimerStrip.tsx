@@ -84,10 +84,10 @@ export function WorkTimerStrip({ className }: WorkTimerStripProps) {
               {todayLiveFormatted}
             </p>
             <p className="mt-0.5 text-[10px] text-white/50">
-              {!isRunning
-                ? 'Paused · all sessions today'
+              {!isRunning && !onBreak
+                ? 'Paused · logged out or idle'
                 : onBreak
-                  ? `On break · session ${liveFormatted}`
+                  ? `On break · ${isRunning ? `session ${liveFormatted}` : 'timer running'}`
                   : `Live · this session ${liveFormatted}`}
             </p>
           </div>

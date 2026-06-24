@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsIn,
   IsInt,
   IsMongoId,
   IsNotEmpty,
@@ -45,6 +46,11 @@ export class CreateBatchDto {
   @IsInt({ each: true })
   @Min(0, { each: true })
   parentSourceRowIndices?: number[];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  campaignChannel?: string;
 }
 
 export class ShareBatchDto {
@@ -61,4 +67,9 @@ export class UpdateBatchDto {
 
   @IsOptional() @IsArray() @ArrayMaxSize(50000) @IsArray({ each: true })
   rows?: string[][];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  campaignChannel?: string;
 }

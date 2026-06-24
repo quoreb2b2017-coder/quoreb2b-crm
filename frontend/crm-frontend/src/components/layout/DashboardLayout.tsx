@@ -32,6 +32,10 @@ export function isBatchesListPath(pathname: string) {
   return /^\/(admin|db-admin|employee)\/batches$/.test(pathname);
 }
 
+export function isQcPath(pathname: string) {
+  return /^\/(admin|employee)\/qc(\/ready)?$/.test(pathname);
+}
+
 /** Batch team / activity page */
 export function isBatchTeamPath(pathname: string) {
   return /\/batches\/[^/]+\/team$/.test(pathname);
@@ -60,6 +64,7 @@ export function isAdminFullBleedPath(pathname: string) {
   return (
     isBatchExcelViewPath(pathname) ||
     isBatchesListPath(pathname) ||
+    isQcPath(pathname) ||
     isBatchTeamPath(pathname) ||
     isMasterDataSpreadsheetPath(pathname) ||
     isAdminUsersListPath(pathname)
@@ -263,6 +268,8 @@ const iconMap: Record<string, React.ReactNode> = {
   'db admin upload requests': Icons.upload,
   'my batches':         Icons.logs,
   'my campaigns':       Icons.logs,
+  'my qc':              Icons.leads,
+  'all qc':             Icons.leads,
   'attendance':         Icons.attendance,
   'leave requests':     Icons.leave,
   'leave apply':        Icons.leave,

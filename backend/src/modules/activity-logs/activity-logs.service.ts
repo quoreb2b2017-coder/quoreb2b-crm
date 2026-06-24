@@ -27,6 +27,7 @@ import {
   resolveGrossLoginMinutes,
   isDailyWorkQuotaMet,
 } from '../attendance/attendance-work-time.util';
+import { buildSessionWorkMetricsByDay } from '../attendance/session-work-metrics.util';
 import { formatStoredTime, formatTime12h } from '../attendance/attendance-late.util';
 import { DAILY_NET_WORK_TARGET_MINUTES } from '../attendance/attendance-shift.constants';
 import type { BatchLeadSnapshot } from './lead-activity-report.util';
@@ -564,10 +565,13 @@ export class ActivityLogsService {
 
     const todayDateKey =
       sessionSnap.dailyBreakdown.find((d) => d.isToday)?.date ?? calendarDateKey(now);
-    const [breakToday, todayAttRecord] = await Promise.all([
+    const { start: monthStart, end: monthEnd } = monthBounds(year, month);
+    const [breakToday, todayAttRecord, breakSessionsByDate] = await Promise.all([
       this.breakPunchesService.getToday(userId),
       this.attendanceService.getDayAttendanceRecord(userId, todayDateKey),
+      this.breakPunchesService.getBreakSessionsByDateForUser(userId, monthStart, monthEnd),
     ]);
+    const todayBreakSessions = breakSessionsByDate.get(todayDateKey) ?? [];
     const onBreak = Boolean(breakToday.activeType);
     const todayBreakMinutes = attendanceSnap.todayBreakMinutes ?? 0;
     const todayWorkBreakMinutesLive =
@@ -581,10 +585,6 @@ export class ActivityLogsService {
     const breaksForLiveNet =
       todayWorkBreakMinutesLive > 0 ? todayWorkBreakMinutesLive : todayBreakMinutes;
 
-    const attendanceByDate = new Map(
-      attendanceSnap.dailyBreakdown.map((row) => [row.date, row]),
-    );
-
     const todayAuth = buildAuthBoundaryForDay(
       logs as unknown as ActivityLogRow[],
       todayDateKey,
@@ -597,32 +597,31 @@ export class ActivityLogsService {
       todayAuth.firstLoginAt,
     );
 
+    const workMetricsByDay = buildSessionWorkMetricsByDay({
+      logs: logs as unknown as ActivityLogRow[],
+      periodEnd: now,
+      sessionId,
+      todayAttRecord: todayAttRecord ?? undefined,
+      onBreak,
+      todayWorkBreakMinutesLive,
+      attendanceBreakByDate: new Map(
+        attendanceSnap.dailyBreakdown.map((row) => [row.date, row.breakMinutes]),
+      ),
+      breakSessionsByDate,
+    });
+
     const dailyBreakdown = sessionSnap.dailyBreakdown.map((day) => {
-      const att = attendanceByDate.get(day.date);
-      const breakMinutes = att?.breakMinutes ?? 0;
-      const grossMinutes = resolveGrossLoginMinutes(
-        day.totalMinutes,
-        day.isToday ? grossAttendanceRecord : undefined,
-        day.date,
-        now,
-        day.isToday
-          ? {
-              onDuty: todayAuth.onDuty,
-              activeBreak: onBreak,
-              punchedBreakMinutes: todayAllBreakMinutesLive,
-            }
-          : {
-              punchedBreakMinutes: breakMinutes,
-            },
-      );
-      const netMinutes = computeNetWorkMinutes(grossMinutes, breakMinutes);
+      const metrics = workMetricsByDay.get(day.date);
+      const grossMinutes = metrics?.grossMinutes ?? 0;
+      const breakMinutesForDay = metrics?.breakMinutes ?? 0;
+      const netMinutes = metrics?.netMinutes ?? 0;
       return {
         date: day.date,
         dayLabel: day.dayLabel,
         totalMinutes: netMinutes,
         totalFormatted: formatDuration(netMinutes),
         grossMinutes,
-        breakMinutes,
+        breakMinutes: breakMinutesForDay,
         dailyTargetMet: isDailyWorkQuotaMet(netMinutes),
         isToday: day.isToday,
       };
@@ -636,9 +635,12 @@ export class ActivityLogsService {
         todayDateKey,
         now,
         {
-          onDuty: todayAuth.onDuty,
+          onDuty:
+            todayAttRecord?.checkOutTime && !onBreak
+              ? false
+              : todayAuth.onDuty,
           activeBreak: onBreak,
-          punchedBreakMinutes: todayAllBreakMinutesLive,
+          breakSessions: todayBreakSessions,
         },
       );
     const todayMinutes = computeNetWorkMinutes(todayGrossMinutes, breaksForLiveNet);
@@ -687,7 +689,18 @@ export class ActivityLogsService {
           : todayAuth.lastLogoutAt
             ? formatIstTime12h(todayAuth.lastLogoutAt)
             : undefined,
-      isOnDuty: todayAttRecord?.eodClosed ? false : todayAuth.onDuty,
+      todayLastLogoutAt:
+        todayAttRecord?.eodClosed && todayAttRecord.checkOutTime
+          ? new Date(todayAttRecord.checkOutTime).toISOString()
+          : todayAuth.lastLogoutAt
+            ? todayAuth.lastLogoutAt.toISOString()
+            : todayAttRecord?.checkOutTime && !todayAuth.onDuty
+              ? new Date(todayAttRecord.checkOutTime).toISOString()
+              : undefined,
+      isOnDuty:
+        todayAttRecord?.eodClosed || todayAttRecord?.checkOutTime
+          ? false
+          : todayAuth.onDuty,
       todaySessions,
     };
   }

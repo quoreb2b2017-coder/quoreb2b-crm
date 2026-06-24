@@ -123,6 +123,35 @@ export class BreakPunchesService {
     return result;
   }
 
+  /** Raw break sessions grouped by IST date — for post-logout gross login extension. */
+  async getBreakSessionsByDateForUser(
+    userId: string,
+    start: Date,
+    end: Date,
+  ): Promise<Map<string, Array<{ startedAt: Date; endedAt?: Date | null; type: string }>>> {
+    const records = await this.breakModel
+      .find({
+        userId: new Types.ObjectId(userId),
+        date: { $gte: start, $lte: end },
+      })
+      .sort({ startedAt: 1 })
+      .lean()
+      .exec();
+
+    const byDate = new Map<string, Array<{ startedAt: Date; endedAt?: Date | null; type: string }>>();
+    for (const r of records) {
+      const key = dateKeyFromUtcDate(r.date);
+      const list = byDate.get(key) ?? [];
+      list.push({
+        startedAt: new Date(r.startedAt),
+        endedAt: r.endedAt ? new Date(r.endedAt) : null,
+        type: r.type,
+      });
+      byDate.set(key, list);
+    }
+    return byDate;
+  }
+
   private async invalidateWorkTimeCaches(userId: string) {
     await Promise.all([
       this.cache.delByPrefix(`act:worktime:${userId}:`),

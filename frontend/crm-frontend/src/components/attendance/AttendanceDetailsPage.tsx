@@ -18,6 +18,8 @@ import { formatMonthYearLabel } from '@/lib/attendance/month-year';
 import { ALL_MONTH_INDICES, sumYearlyByMonths } from '@/lib/attendance/yearly-analytics';
 import { buildAttendancePeriodStats } from '@/lib/attendance/build-period-stats';
 import { buildUserPaidLeaveStats } from '@/lib/attendance/build-paid-leave-stats';
+import { mergeWorkTimeIntoMonthlyAnalytics } from '@/lib/attendance/merge-work-time-analytics';
+import { workTimeService } from '@/lib/api/work-time.service';
 import {
   EditAttendanceDayModal,
   type EditAttendanceDayRow,
@@ -98,13 +100,16 @@ export function AttendanceDetailsPage() {
     if (!userId || isRollup) return;
     setMonthlyLoading(true);
     try {
-      const monthlyRes = await attendanceService.getMonthlyAnalytics(
-        userId,
-        selectedMonth,
-        selectedYear,
-        true,
-      );
-      setMonthly(monthlyRes);
+      const [monthlyRes, workTimeRes] = await Promise.all([
+        attendanceService.getMonthlyAnalytics(
+          userId,
+          selectedMonth,
+          selectedYear,
+          true,
+        ),
+        workTimeService.getUserWorkTime(userId).catch(() => null),
+      ]);
+      setMonthly(mergeWorkTimeIntoMonthlyAnalytics(monthlyRes, workTimeRes));
     } catch (error) {
       console.error('Failed to fetch monthly attendance:', error);
     } finally {

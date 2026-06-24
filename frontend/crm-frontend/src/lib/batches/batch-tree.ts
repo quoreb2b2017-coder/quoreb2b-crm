@@ -94,7 +94,7 @@ export function groupCampaignFoldersByMonth(
   folders: CampaignFolder[],
   year: number,
 ): Map<number, CampaignFolder[]> {
-  const map = createEmptyMonthMap<CampaignFolder[]>();
+  const map = createEmptyMonthMap<CampaignFolder>();
   for (const folder of folders) {
     const anchor = folderAnchor(folder);
     if (!anchor) continue;

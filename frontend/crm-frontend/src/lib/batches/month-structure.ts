@@ -94,7 +94,7 @@ export function getAvailableYears(batches: BatchRecord[]): number[] {
 }
 
 /** Selecting a year always exposes Jan–Dec (empty folders included). */
-export function createEmptyMonthMap<T = BatchRecord[]>(): Map<number, T[]> {
+export function createEmptyMonthMap<T = BatchRecord>(): Map<number, T[]> {
   const map = new Map<number, T[]>();
   for (let m = 1; m <= 12; m++) map.set(m, []);
   return map;

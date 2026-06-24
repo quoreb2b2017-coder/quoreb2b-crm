@@ -21,6 +21,8 @@ export interface BatchRecord {
   monthLabel?: string;
   folderKey?: string;
   sourceBatchId?: string;
+  campaignChannel?: 'voip' | 'gps' | 'email' | 'other' | string;
+  batchKind?: string;
 }
 
 export interface BatchHierarchyUser {
@@ -209,7 +211,15 @@ export const batchesService = {
       .get(`/batches/${batchId}/hierarchy/members/${userId}/performance`)
       .then((r) => unwrap<BatchMemberPerformance>(r)),
 
-  update: (id: string, payload: { headers: string[]; rows: string[][]; name?: string }) =>
+  update: (
+    id: string,
+    payload: {
+      headers?: string[];
+      rows?: string[][];
+      name?: string;
+      campaignChannel?: string;
+    },
+  ) =>
     apiClient.patch(`/batches/${id}`, payload).then(r => {
       const result = unwrap<BatchRecord>(r);
       if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('master-data-updated'));

@@ -209,15 +209,20 @@ export function DbAdminMasterDataUploadPanel() {
 
       if (result.request) {
         toast.success(
-          'Upload request sent',
-          `${result.pendingRows} row(s) waiting for Super Admin approval`,
+          'Added to master file',
+          `${result.mergedAddedRows ?? result.pendingRows} row(s) merged${result.duplicateFileName ? ` · duplicates in ${result.duplicateFileName}` : ''}`,
+        );
+      } else if (result.duplicateFileName) {
+        toast.info(
+          'Duplicates saved',
+          `${result.duplicateCount} duplicate row(s) in ${result.duplicateFileName}`,
         );
       } else {
         toast.info(
-          'No new rows to request',
+          'No new rows',
           result.duplicateCount > 0
             ? `${result.duplicateCount} duplicate row(s) were found`
-            : 'All rows were empty or already handled',
+            : 'All rows were empty or already in master file',
         );
       }
     } catch (err) {

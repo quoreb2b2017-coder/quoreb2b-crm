@@ -104,6 +104,9 @@ export default function EmployeeBatchViewPage() {
       editable={canEdit}
       onDataChange={canEdit ? setData : undefined}
       onClose={() => router.push('/employee/batches')}
+      enableCheckSuppression
+      checkSuppressionBatchId={id}
+      onSuppressionComplete={loadBatch}
     />
   );
 }

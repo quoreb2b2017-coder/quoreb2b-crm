@@ -129,6 +129,13 @@ export class ActivityLogsController {
     return this.activityLogsService.getMyWorkTime(user.id, user.sessionId);
   }
 
+  @Get('work-time/user/:userId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
+  getUserWorkTime(@Param('userId') userId: string) {
+    return this.activityLogsService.getMyWorkTime(userId);
+  }
+
   @Get('work-time/team')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)

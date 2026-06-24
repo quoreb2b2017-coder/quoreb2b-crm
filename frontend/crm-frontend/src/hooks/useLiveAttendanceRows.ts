@@ -41,10 +41,7 @@ export function useLiveAttendanceRows(rows: AttendanceDailyRow[], enabled = fals
 
     return rows.map((row) => {
       const dateKey = row.date.slice(0, 10);
-      const isTodayLive =
-        dateKey === todayKey &&
-        data &&
-        (isLiveDuty || isRunning || data.isOnDuty || onBreak || (row.checkInTime && !row.checkOutTime));
+      const isTodayLive = dateKey === todayKey && Boolean(isLiveDuty);
 
       if (isTodayLive) {
         const workBreaks =
@@ -64,16 +61,19 @@ export function useLiveAttendanceRows(rows: AttendanceDailyRow[], enabled = fals
         };
       }
 
-      const workBreaks = row.breakMinutes ?? 0;
-      const gross = resolveGrossFromRow(row);
-      const net = computeNetWorkMinutes(gross, workBreaks);
+      const gross =
+        row.grossWorkDurationMinutes ??
+        resolveGrossFromRow(row);
+      const net =
+        row.workDurationMinutes ??
+        computeNetWorkMinutes(gross, row.breakMinutes ?? 0);
       return {
         ...row,
         grossWorkDurationMinutes: gross,
         workDurationMinutes: net,
-        breakMinutes: resolveEffectiveBreakMinutes(gross, workBreaks),
-        dailyGrossTargetMet: isDailyGrossQuotaMet(gross),
-        dailyTargetMet: isDailyNetQuotaMet(net),
+        breakMinutes: row.breakMinutes ?? resolveEffectiveBreakMinutes(gross, row.breakMinutes ?? 0),
+        dailyGrossTargetMet: row.dailyGrossTargetMet ?? isDailyGrossQuotaMet(gross),
+        dailyTargetMet: row.dailyTargetMet ?? isDailyNetQuotaMet(net),
       };
     });
   }, [
@@ -89,7 +89,7 @@ export function useLiveAttendanceRows(rows: AttendanceDailyRow[], enabled = fals
     workBreakMinutesLive,
   ]);
 
-  const sessionLive = Boolean(enabled && data && (isLiveDuty || isRunning || data.isOnDuty || onBreak));
+  const sessionLive = Boolean(enabled && isLiveDuty);
 
   return {
     rows: liveRows,

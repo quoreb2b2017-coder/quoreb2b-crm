@@ -21,10 +21,17 @@ import {
   buildMasterBatchCoverage,
   type MasterBatchCoverageResult,
 } from './master-batch-coverage.util';
+import {
+  buildDeliveredBatchCoverage,
+  type DeliveredBatchCoverageResult,
+} from './delivered-batch-coverage.util';
+import { mergeAppendSheets } from '../master-data/master-data-merge.util';
 import { NotificationTriggerService } from '../notifications/notification-trigger.service';
 import { AppCacheService } from '../../redis/app-cache.service';
 import { cacheTtlSeconds } from '../../redis/cache.util';
 import { MasterDataService } from '../master-data/master-data.service';
+import { QcService } from '../qc/qc.service';
+import { detectCampaignChannel } from '../qc/qc-channel.util';
 
 import {
   assignedParentRowIndices,
@@ -50,6 +57,9 @@ export interface BatchShareResult {
 
 const MAX_LEAD_LOGS_PER_SAVE = 200;
 
+const SUPPRESSION_BATCH_KINDS = ['suppression', 'delivered'] as const;
+const SUPPRESSION_DUPLICATE_KINDS = ['suppression_duplicates', 'delivered_duplicates'] as const;
+
 @Injectable()
 export class BatchesService {
   private readonly logger = new Logger(BatchesService.name);
@@ -63,6 +73,8 @@ export class BatchesService {
     private config: ConfigService,
     @Inject(forwardRef(() => MasterDataService))
     private masterDataService: MasterDataService,
+    @Inject(forwardRef(() => QcService))
+    private qcService: QcService,
   ) {}
 
   async create(
@@ -99,6 +111,14 @@ export class BatchesService {
         ? new Types.ObjectId(dto.sourceBatchId)
         : undefined;
 
+    let parentChannel: string | undefined;
+    if (sourceId) {
+      const parent = await this.model.findById(sourceId).select('campaignChannel name').lean().exec();
+      parentChannel = parent?.campaignChannel ?? detectCampaignChannel(parent?.name);
+    }
+    const campaignChannel =
+      dto.campaignChannel ?? parentChannel ?? detectCampaignChannel(dto.name);
+
     const batch = await this.model.create({
       name: dto.name,
       description: dto.description,
@@ -110,6 +130,8 @@ export class BatchesService {
       sourceBatchId: sourceId,
       batchMonth: period.batchMonth,
       batchYear: period.batchYear,
+      campaignChannel,
+      batchKind: 'standard',
       masterSourceRowIndices: dto.masterSourceRowIndices?.length
         ? [...new Set(dto.masterSourceRowIndices)]
         : [],
@@ -223,7 +245,7 @@ export class BatchesService {
 
   private async loadAllBatchesForAdmin() {
     const batches = await this.model
-      .find()
+      .find({ $or: [{ batchKind: { $exists: false } }, { batchKind: 'standard' }] })
       .select('-rows -headers')
       .sort({ batchYear: -1, batchMonth: -1, createdAt: -1 })
       .lean()
@@ -236,7 +258,12 @@ export class BatchesService {
     if (!Types.ObjectId.isValid(actorId)) return [];
     const id = new Types.ObjectId(actorId);
     const batches = await this.model
-      .find({ $or: [{ createdBy: id }, { sharedWith: id }] })
+      .find({
+        $and: [
+          { $or: [{ createdBy: id }, { sharedWith: id }] },
+          { $or: [{ batchKind: { $exists: false } }, { batchKind: 'standard' }] },
+        ],
+      })
       .select('-rows -headers')
       .sort({ batchYear: -1, batchMonth: -1, createdAt: -1 })
       .lean()
@@ -413,6 +440,10 @@ export class BatchesService {
             parentSourceRowIndices: slice.parentSourceRowIndices,
             batchMonth: period.batchMonth,
             batchYear: period.batchYear,
+            campaignChannel:
+              (batch as Batch).campaignChannel ??
+              detectCampaignChannel(batch.name),
+            batchKind: 'standard',
             createdBy: new Types.ObjectId(actorId),
             createdByEmail: sharer?.email,
             createdByName: sharerName,
@@ -544,12 +575,27 @@ export class BatchesService {
     const oldRows = (batch.rows as string[][])?.map((r) => [...r]) ?? [];
 
     if (dto.name != null && isOwner) batch.name = dto.name;
+    if (dto.campaignChannel != null && isOwner) {
+      batch.campaignChannel = dto.campaignChannel;
+    }
     if (dto.headers != null) batch.headers = dto.headers;
     if (dto.rows != null) {
       const newHeaders = dto.headers ?? oldHeaders;
       const changes = diffBatchLeadRows(oldHeaders, oldRows, newHeaders, dto.rows);
       if (changes.length > 0 && actor?.id) {
         void this.logLeadUpdates(actor, batchId, String(batch.name), changes);
+        // Assigned employee edits stay on this batch only — never write back to master file.
+        void this.qcService.enqueueFromBatchUpdate({
+          batch,
+          actorId: actor.id,
+          actorName: [actor.firstName, actor.lastName].filter(Boolean).join(' ') || actor.email,
+          actorRoles: actor.roles ?? [],
+          oldHeaders,
+          oldRows,
+          newHeaders,
+          newRows: dto.rows,
+          changes,
+        });
       }
       batch.rows = dto.rows;
       batch.rowCount = dto.rows.length;
@@ -641,10 +687,452 @@ export class BatchesService {
         },
       );
     }
+    if (batch.batchKind === 'suppression') {
+      await this.model
+        .deleteMany({ batchKind: 'separation', sourceBatchId: batch._id })
+        .exec();
+    }
     await batch.deleteOne();
     void this.bustBatchCaches(actorId, batchId);
     return { deleted: true };
   }
+
+  async getSuppressionBatchCoverage(
+    suppressionHeaders: string[],
+    suppressionRows: string[][],
+  ): Promise<DeliveredBatchCoverageResult> {
+    const cacheKey = `suppression:coverage:${suppressionRows.length}:${suppressionHeaders.length}`;
+    return this.cache.wrap(cacheKey, cacheTtlSeconds(this.config, 'long'), async () => {
+      const batches = await this.model
+        .find({
+          $or: [
+            { batchKind: { $in: [...SUPPRESSION_BATCH_KINDS] } },
+            {
+              batchKind: 'standard',
+              suppressionSourceRowIndices: { $exists: true, $not: { $size: 0 } },
+            },
+          ],
+        })
+        .select('name headers rows suppressionSourceRowIndices deliveredSourceRowIndices')
+        .lean()
+        .exec();
+      return buildDeliveredBatchCoverage(suppressionHeaders, suppressionRows, batches);
+    });
+  }
+
+  /** @deprecated */
+  getDeliveredBatchCoverage = this.getSuppressionBatchCoverage.bind(this);
+
+  async listSuppressionBatchesForAdmin() {
+    return this.listSuppressionCampaignsByChannel();
+  }
+
+  /** One canonical suppression campaign per channel (largest row count wins). */
+  async listSuppressionCampaignsByChannel() {
+    const batches = await this.model
+      .find({ batchKind: { $in: [...SUPPRESSION_BATCH_KINDS] } })
+      .select('-rows -headers')
+      .sort({ rowCount: -1, updatedAt: -1, createdAt: -1 })
+      .lean()
+      .exec();
+    await this.backfillBatchPeriods(batches);
+
+    const byChannel = new Map<string, (typeof batches)[number]>();
+    for (const batch of batches) {
+      const key = (batch.campaignChannel ?? 'other').trim().toLowerCase();
+      if (!byChannel.has(key)) byChannel.set(key, batch);
+    }
+
+    const canonical = [...byChannel.values()].sort((a, b) =>
+      String(a.name ?? '').localeCompare(String(b.name ?? ''), undefined, { sensitivity: 'base' }),
+    );
+    return canonical.map((b) => this.toResponseSummary(b as unknown as Batch));
+  }
+
+  async findSuppressionCampaignByChannel(campaignChannel: string) {
+    const key = (campaignChannel ?? '').trim().toLowerCase();
+    if (!key) return null;
+
+    const batches = await this.model
+      .find({
+        batchKind: { $in: [...SUPPRESSION_BATCH_KINDS] },
+        campaignChannel: { $exists: true, $ne: null },
+      })
+      .sort({ rowCount: -1, updatedAt: -1, createdAt: -1 })
+      .lean()
+      .exec();
+
+    const match = batches.find(
+      (b) => (b.campaignChannel ?? 'other').trim().toLowerCase() === key,
+    );
+    if (!match) return null;
+    return this.toResponseSummary(match as unknown as Batch);
+  }
+
+  /** @deprecated */
+  listDeliveredBatchesForAdmin = this.listSuppressionBatchesForAdmin.bind(this);
+
+  async listSeparationBatchesForAdmin() {
+    const batches = await this.model
+      .find({ batchKind: 'separation' })
+      .select('-rows -headers')
+      .sort({ batchYear: -1, batchMonth: -1, createdAt: -1 })
+      .lean()
+      .exec();
+    await this.backfillBatchPeriods(batches);
+    return batches.map((b) => this.toResponseSummary(b as unknown as Batch));
+  }
+
+  async createSuppressionKindBatch(
+    actor: { id: string; email?: string; name?: string },
+    params: {
+      name: string;
+      description?: string;
+      headers: string[];
+      rows: string[][];
+      batchKind:
+        | 'standard'
+        | 'suppression'
+        | 'suppression_duplicates'
+        | 'separation'
+        | 'delivered'
+        | 'delivered_duplicates';
+      suppressionSourceRowIndices?: number[];
+      sourceBatchId?: string;
+      sourceFileName?: string;
+      batchMonth?: number;
+      batchYear?: number;
+      campaignChannel?: string;
+    },
+  ) {
+    const period =
+      params.batchMonth && params.batchYear
+        ? { batchMonth: params.batchMonth, batchYear: params.batchYear }
+        : currentPeriod();
+
+    const normalizedKind =
+      params.batchKind === 'delivered'
+        ? 'suppression'
+        : params.batchKind === 'delivered_duplicates'
+          ? 'suppression_duplicates'
+          : params.batchKind;
+
+    const sourceId =
+      params.sourceBatchId && Types.ObjectId.isValid(params.sourceBatchId)
+        ? new Types.ObjectId(params.sourceBatchId)
+        : undefined;
+
+    const campaignChannel =
+      params.campaignChannel ?? detectCampaignChannel(params.name);
+
+    const batch = await this.model.create({
+      name: params.name,
+      description: params.description,
+      headers: params.headers,
+      rows: params.rows,
+      rowCount: params.rows.length,
+      columnCount: params.headers.length,
+      sourceFileName: params.sourceFileName,
+      sourceBatchId: sourceId,
+      batchMonth: period.batchMonth,
+      batchYear: period.batchYear,
+      batchKind: normalizedKind,
+      suppressionSourceRowIndices: params.suppressionSourceRowIndices?.length
+        ? [...new Set(params.suppressionSourceRowIndices)]
+        : [],
+      campaignChannel,
+      createdBy: new Types.ObjectId(actor.id),
+      createdByEmail: actor.email,
+      createdByName: actor.name,
+      sharedWith: [],
+    });
+
+    void this.bustBatchCaches(actor.id, batch._id.toString());
+    return this.toResponseSummary(batch as unknown as Batch);
+  }
+
+  /** @deprecated */
+  createDeliveredKindBatch = this.createSuppressionKindBatch.bind(this);
+
+  async getSuppressionCampaignById(campaignId: string) {
+    if (!Types.ObjectId.isValid(campaignId)) {
+      throw new NotFoundException('Suppression campaign not found');
+    }
+    const batch = await this.model.findById(campaignId).exec();
+    if (!batch) {
+      throw new NotFoundException('Suppression campaign not found');
+    }
+    const kind = batch.batchKind ?? 'standard';
+    if (!SUPPRESSION_BATCH_KINDS.includes(kind as (typeof SUPPRESSION_BATCH_KINDS)[number])) {
+      throw new BadRequestException('Not a suppression campaign');
+    }
+    return batch;
+  }
+
+  async updateSuppressionCampaignRows(
+    campaignId: string,
+    params: { headers: string[]; rows: string[][]; sourceFileName?: string },
+  ) {
+    const batch = await this.getSuppressionCampaignById(campaignId);
+    batch.headers = params.headers;
+    batch.rows = params.rows;
+    batch.rowCount = params.rows.length;
+    batch.columnCount = params.headers.length;
+    if (params.sourceFileName) {
+      batch.sourceFileName = params.sourceFileName;
+    }
+    await batch.save();
+    void this.bustBatchCaches(undefined, campaignId);
+    return this.toResponse(batch as unknown as Batch);
+  }
+
+  async appendSeparationRows(
+    suppressionCampaignId: string,
+    params: { headers: string[]; rows: string[][]; sourceFileName?: string },
+  ) {
+    if (!params.rows.length) return null;
+    const separation = await this.model
+      .findOne({ batchKind: 'separation', sourceBatchId: new Types.ObjectId(suppressionCampaignId) })
+      .exec();
+    if (!separation) return null;
+
+    const merged = mergeAppendSheets(
+      { headers: separation.headers ?? [], rows: separation.rows ?? [] },
+      { headers: params.headers, rows: params.rows },
+    );
+    separation.headers = merged.headers;
+    separation.rows = merged.rows;
+    separation.rowCount = merged.rows.length;
+    separation.columnCount = merged.headers.length;
+    if (params.sourceFileName) {
+      separation.sourceFileName = params.sourceFileName;
+    }
+    await separation.save();
+    void this.bustBatchCaches(undefined, separation._id.toString());
+    return this.toResponseSummary(separation as unknown as Batch);
+  }
+
+  /** Create or append to a standard campaign from suppression file (channel-aware). */
+  async upsertSuppressionCampaign(
+    actor: { id: string; email?: string; name?: string },
+    params: {
+      name: string;
+      description?: string;
+      headers: string[];
+      rows: string[][];
+      suppressionSourceRowIndices: number[];
+      campaignChannel: string;
+      sourceFileName?: string;
+      batchMonth: number;
+      batchYear: number;
+    },
+  ) {
+    const existing = await this.model
+      .findOne({
+        batchKind: 'standard',
+        name: params.name.trim(),
+        campaignChannel: params.campaignChannel,
+        batchMonth: params.batchMonth,
+        batchYear: params.batchYear,
+      })
+      .exec();
+
+    if (existing) {
+      const merged = mergeAppendSheets(
+        { headers: existing.headers, rows: existing.rows },
+        { headers: params.headers, rows: params.rows },
+      );
+      existing.headers = merged.headers;
+      existing.rows = merged.rows;
+      existing.rowCount = merged.rows.length;
+      existing.columnCount = merged.headers.length;
+      const prev = (existing.suppressionSourceRowIndices as number[]) ?? [];
+      existing.suppressionSourceRowIndices = [
+        ...new Set([...prev, ...params.suppressionSourceRowIndices]),
+      ];
+      if (params.description?.trim()) {
+        existing.description = params.description.trim();
+      }
+      await existing.save();
+      void this.bustBatchCaches(actor.id, existing._id.toString());
+      return this.toResponseSummary(existing as unknown as Batch);
+    }
+
+    return this.createSuppressionKindBatch(actor, {
+      name: params.name.trim(),
+      description: params.description?.trim(),
+      headers: params.headers,
+      rows: params.rows,
+      batchKind: 'standard',
+      suppressionSourceRowIndices: params.suppressionSourceRowIndices,
+      sourceFileName: params.sourceFileName,
+      batchMonth: params.batchMonth,
+      batchYear: params.batchYear,
+      campaignChannel: params.campaignChannel,
+    });
+  }
+
+  /** Separation campaign — paired with suppression campaign; append if already exists. */
+  async upsertSeparationCampaign(
+    actor: { id: string; email?: string; name?: string },
+    params: {
+      campaignBatchId: string;
+      campaignName: string;
+      description?: string;
+      headers: string[];
+      rows: string[][];
+      campaignChannel: string;
+      sourceFileName?: string;
+      batchMonth: number;
+      batchYear: number;
+    },
+  ) {
+    const separationName = `Separation — ${params.campaignName}`;
+    const sourceId = Types.ObjectId.isValid(params.campaignBatchId)
+      ? new Types.ObjectId(params.campaignBatchId)
+      : undefined;
+
+    const existing = sourceId
+      ? await this.model
+          .findOne({ batchKind: 'separation', sourceBatchId: sourceId })
+          .exec()
+      : await this.model
+          .findOne({
+            batchKind: 'separation',
+            name: separationName,
+            campaignChannel: params.campaignChannel,
+            batchMonth: params.batchMonth,
+            batchYear: params.batchYear,
+          })
+          .exec();
+
+    if (existing) {
+      const merged = mergeAppendSheets(
+        { headers: existing.headers, rows: existing.rows },
+        { headers: params.headers, rows: params.rows },
+      );
+      existing.headers = merged.headers;
+      existing.rows = merged.rows;
+      existing.rowCount = merged.rows.length;
+      existing.columnCount = merged.headers.length;
+      await existing.save();
+      void this.bustBatchCaches(actor.id, existing._id.toString());
+      return this.toResponseSummary(existing as unknown as Batch);
+    }
+
+    return this.createSuppressionKindBatch(actor, {
+      name: separationName,
+      description: params.description?.trim(),
+      headers: params.headers,
+      rows: params.rows.map((row) => [...row]),
+      batchKind: 'separation',
+      sourceBatchId: params.campaignBatchId,
+      sourceFileName: params.sourceFileName,
+      batchMonth: params.batchMonth,
+      batchYear: params.batchYear,
+      campaignChannel: params.campaignChannel,
+    });
+  }
+
+  async appendSuppressionDuplicates(
+    actor: { id: string; email?: string; name?: string },
+    headers: string[],
+    duplicateRows: string[][],
+    period = currentPeriod(),
+    sourceFileName?: string,
+  ) {
+    if (!duplicateRows.length) return null;
+
+    const existing = await this.model
+      .findOne({
+        batchKind: { $in: [...SUPPRESSION_DUPLICATE_KINDS] },
+        batchMonth: period.batchMonth,
+        batchYear: period.batchYear,
+      })
+      .exec();
+
+    if (existing) {
+      const merged = mergeAppendSheets(
+        { headers: existing.headers, rows: existing.rows },
+        { headers, rows: duplicateRows },
+      );
+      existing.headers = merged.headers;
+      existing.rows = merged.rows;
+      existing.rowCount = merged.rows.length;
+      existing.columnCount = merged.headers.length;
+      await existing.save();
+      void this.bustBatchCaches(actor.id, existing._id.toString());
+      return this.toResponseSummary(existing as unknown as Batch);
+    }
+
+    const shortMonth = monthLabel(period.batchMonth).slice(0, 3);
+    return this.createSuppressionKindBatch(actor, {
+      name: `Duplicates — ${shortMonth} ${period.batchYear}`,
+      headers,
+      rows: duplicateRows,
+      batchKind: 'suppression_duplicates',
+      sourceFileName,
+      batchMonth: period.batchMonth,
+      batchYear: period.batchYear,
+    });
+  }
+
+  /** @deprecated */
+  appendDeliveredDuplicates = this.appendSuppressionDuplicates.bind(this);
+
+  async getSuppressionRowKeys(): Promise<Set<string>> {
+    const batches = await this.model
+      .find({
+        $or: [
+          { batchKind: { $in: [...SUPPRESSION_BATCH_KINDS] } },
+          {
+            batchKind: 'standard',
+            suppressionSourceRowIndices: { $exists: true, $not: { $size: 0 } },
+          },
+        ],
+      })
+      .select('rows')
+      .lean()
+      .exec();
+    const keys = new Set<string>();
+    for (const batch of batches) {
+      for (const row of batch.rows ?? []) {
+        keys.add(row.map((cell) => String(cell ?? '').trim()).join('\u001f'));
+      }
+    }
+    return keys;
+  }
+
+  /** @deprecated */
+  getDeliveredRowKeys = this.getSuppressionRowKeys.bind(this);
+
+  /** Remove suppression / separation batches (suppression data clear) */
+  async purgeSuppressionBatches(): Promise<number> {
+    const result = await this.model
+      .deleteMany({
+        $or: [
+          {
+            batchKind: {
+              $in: [
+                ...SUPPRESSION_BATCH_KINDS,
+                ...SUPPRESSION_DUPLICATE_KINDS,
+                'separation',
+              ],
+            },
+          },
+          {
+            batchKind: 'standard',
+            suppressionSourceRowIndices: { $exists: true, $not: { $size: 0 } },
+          },
+        ],
+      })
+      .exec();
+    void this.bustBatchCaches();
+    return result.deletedCount ?? 0;
+  }
+
+  /** @deprecated */
+  purgeDeliveredBatches = this.purgeSuppressionBatches.bind(this);
 
   /** Remove every batch (admin master-data clear / full CRM data purge) */
   async purgeAll(): Promise<number> {
@@ -685,6 +1173,8 @@ export class BatchesService {
       status: doc.status ?? 'active',
       sourceFileName: doc.sourceFileName,
       sourceBatchId: doc.sourceBatchId?.toString?.() ?? (doc.sourceBatchId as string | undefined),
+      campaignChannel: doc.campaignChannel,
+      batchKind: doc.batchKind ?? 'standard',
       createdAt: (doc.createdAt as Date)?.toISOString?.() ?? String(doc.createdAt ?? ''),
       updatedAt: (doc.updatedAt as Date)?.toISOString?.() ?? String(doc.updatedAt ?? ''),
       ...period,
@@ -709,6 +1199,8 @@ export class BatchesService {
       status: doc.status,
       sourceFileName: doc.sourceFileName,
       sourceBatchId: doc.sourceBatchId?.toString?.() ?? (doc.sourceBatchId as string | undefined),
+      campaignChannel: doc.campaignChannel,
+      batchKind: doc.batchKind ?? 'standard',
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
       ...period,
@@ -721,5 +1213,7 @@ export class BatchesService {
     void this.cache.delByPrefix('dashboard:');
     void this.cache.delByPrefix('analytics:');
     void this.cache.delByPrefix('master:');
+    void this.cache.delByPrefix('suppression:');
+    void this.cache.delByPrefix('delivered:');
   }
 }

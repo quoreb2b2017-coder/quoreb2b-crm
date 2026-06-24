@@ -44,6 +44,8 @@ export interface WorkTimeMe {
   todayCheckInAt?: string;
   /** Last LOGOUT of today when off duty. */
   todayLastLogoutTime?: string;
+  /** ISO instant of last logout — used to pause gross time when off duty. */
+  todayLastLogoutAt?: string;
   isOnDuty?: boolean;
   todaySessions?: TodaySessionRow[];
   currentSession: {
@@ -69,6 +71,11 @@ function unwrap<T>(response: { data: unknown }): T {
 export const workTimeService = {
   async getMyWorkTime(): Promise<WorkTimeMe> {
     const res = await apiClient.get('activity-logs/work-time/me');
+    return unwrap<WorkTimeMe>(res);
+  },
+
+  async getUserWorkTime(userId: string): Promise<WorkTimeMe> {
+    const res = await apiClient.get(`activity-logs/work-time/user/${userId}`);
     return unwrap<WorkTimeMe>(res);
   },
 

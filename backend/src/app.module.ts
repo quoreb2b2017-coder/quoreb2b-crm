@@ -31,6 +31,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { ActivityLogsModule } from './modules/activity-logs/activity-logs.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { MasterDataModule } from './modules/master-data/master-data.module';
+import { SuppressionDataModule } from './modules/delivered-data/delivered-data.module';
 import { EventsModule } from './events/events.module';
 import { HealthModule } from './health/health.module';
 import { BatchesModule } from './modules/batches/batches.module';
@@ -39,6 +40,7 @@ import { LeaveModule } from './modules/leave/leave.module';
 import { BulkEmailVerificationModule } from './modules/bulk-email-verification/bulk-email-verification.module';
 import { PersonalNotesModule } from './modules/personal-notes/personal-notes.module';
 import { BreakPunchesModule } from './modules/break-punches/break-punches.module';
+import { QcModule } from './modules/qc/qc.module';
 
 @Module({})
 export class AppModule {
@@ -96,11 +98,13 @@ export class AppModule {
         ActivityLogsModule,
         SettingsModule,
         MasterDataModule,
+        SuppressionDataModule,
         BatchesModule,
         AttendanceModule,
         LeaveModule,
         PersonalNotesModule,
         BreakPunchesModule,
+        QcModule,
         BulkEmailVerificationModule.register(),
         EventsModule,
         HealthModule,

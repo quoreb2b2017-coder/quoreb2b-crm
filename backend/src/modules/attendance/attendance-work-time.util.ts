@@ -61,6 +61,7 @@ export function computeDayWorkMinutes(
   record: AttendanceRecordLike | undefined,
   dateKey: string,
   periodEnd: Date,
+  allowLiveToday = true,
 ): number {
   if (!record) return 0;
 
@@ -72,6 +73,7 @@ export function computeDayWorkMinutes(
   }
 
   if (
+    allowLiveToday &&
     record.checkInTime &&
     !record.checkOutTime &&
     isToday &&
@@ -117,14 +119,53 @@ export function attendanceRecordForGrossLogin(
   };
 }
 
+/** Break types that keep gross login time running after logout until the break ends. */
+export const LOGOUT_CONTINUING_BREAK_TYPES = new Set(['tea', 'lunch', 'meeting']);
+
+export interface BreakSessionLike {
+  startedAt: Date;
+  endedAt?: Date | null;
+  type?: string;
+}
+
 /**
- * Gross login spans first check-in → now (on duty), checkout (off duty after breaks),
- * or through an active break — so tea/lunch/meeting gaps count inside login time.
+ * Gross login spans first check-in → now (on duty), checkout (off duty),
+ * or through tea/lunch/approved meeting — paused on logout otherwise.
  */
 export interface GrossLoginOptions {
   onDuty?: boolean;
   activeBreak?: boolean;
   punchedBreakMinutes?: number;
+  breakSessions?: BreakSessionLike[];
+}
+
+/** End instant for gross login span — live clock ONLY while on duty or active break. */
+export function resolveGrossLoginEndMs(
+  periodEnd: Date,
+  onDuty: boolean,
+  activeBreak: boolean,
+  checkOutTime?: Date | null,
+  breakSessions: BreakSessionLike[] = [],
+): number {
+  const now = periodEnd.getTime();
+  if (onDuty || activeBreak) return now;
+
+  if (!checkOutTime) return 0;
+
+  let endMs = checkOutTime.getTime();
+  const checkoutMs = endMs;
+
+  for (const session of breakSessions) {
+    if (session.type && !LOGOUT_CONTINUING_BREAK_TYPES.has(session.type)) continue;
+    const startMs = new Date(session.startedAt).getTime();
+    if (startMs > checkoutMs) continue;
+    if (!session.endedAt) continue;
+    const sessionEndMs = new Date(session.endedAt).getTime();
+    if (sessionEndMs > endMs) {
+      endMs = sessionEndMs;
+    }
+  }
+  return endMs;
 }
 
 export function resolveGrossLoginMinutes(
@@ -138,16 +179,38 @@ export function resolveGrossLoginMinutes(
     return sessionGrossMinutes;
   }
 
-  const onDuty = opts.onDuty ?? isOnDutyRecord(record, dateKey);
+  const onDuty =
+    opts.onDuty !== undefined ? opts.onDuty : isOnDutyRecord(record, dateKey);
   const activeBreak = opts.activeBreak ?? false;
-  const punchedBreakMinutes = opts.punchedBreakMinutes ?? 0;
-  const includeBreakGaps = onDuty || activeBreak || punchedBreakMinutes > 0;
-  if (!includeBreakGaps) return sessionGrossMinutes;
 
-  let endMs = periodEnd.getTime();
-  if (!onDuty && !activeBreak && record.checkOutTime) {
-    endMs = record.checkOutTime.getTime();
+  if (!onDuty && !activeBreak) {
+    const endMs = resolveGrossLoginEndMs(
+      periodEnd,
+      false,
+      false,
+      record.checkOutTime,
+      opts.breakSessions ?? [],
+    );
+    if (endMs <= 0) return sessionGrossMinutes;
+    const checkoutMs = record.checkOutTime?.getTime() ?? 0;
+    if (!checkoutMs || endMs <= checkoutMs) {
+      return sessionGrossMinutes;
+    }
+    const inMs = attendanceStoredInstantMs(record.checkInTime, endMs);
+    const spanMinutes = Math.min(
+      MAX_MINUTES_PER_DAY,
+      Math.max(0, Math.round((endMs - inMs) / 60000)),
+    );
+    return Math.max(sessionGrossMinutes, spanMinutes);
   }
+
+  const endMs = resolveGrossLoginEndMs(
+    periodEnd,
+    onDuty,
+    activeBreak,
+    record.checkOutTime,
+    opts.breakSessions ?? [],
+  );
 
   const inMs = attendanceStoredInstantMs(record.checkInTime, endMs);
   const spanMinutes = Math.min(
@@ -205,6 +268,7 @@ export function buildAttendanceWorkTimeSnapshot(
   workBreakMinutesByDate: Map<string, number> = new Map(),
   hasActiveBreakToday = false,
   allBreakMinutesByDate?: Map<string, number>,
+  breakSessionsByDate: Map<string, BreakSessionLike[]> = new Map(),
 ): AttendanceWorkTimeSnapshot {
   const todayKey = todayDateKey();
   const allBreaks = allBreakMinutesByDate ?? workBreakMinutesByDate;
@@ -225,13 +289,19 @@ export function buildAttendanceWorkTimeSnapshot(
   const breakByDay = new Map<string, number>();
 
   for (const [dateKey, record] of byDay.entries()) {
-    const rawGross = computeDayWorkMinutes(record, dateKey, periodEnd);
+    const rawGross = computeDayWorkMinutes(
+      record,
+      dateKey,
+      periodEnd,
+      isOnDutyRecord(record, dateKey),
+    );
     const workBreaks = workBreakMinutesByDate.get(dateKey) ?? 0;
     const allBreakMins = allBreaks.get(dateKey) ?? 0;
     const gross = resolveGrossLoginMinutes(rawGross, record, dateKey, periodEnd, {
       onDuty: isOnDutyRecord(record, dateKey),
       activeBreak: hasActiveBreakToday && dateKey === todayKey,
       punchedBreakMinutes: allBreakMins,
+      breakSessions: breakSessionsByDate.get(dateKey) ?? [],
     });
     const net = computeNetWorkMinutes(gross, workBreaks);
     grossByDay.set(dateKey, gross);
@@ -243,13 +313,19 @@ export function buildAttendanceWorkTimeSnapshot(
   }
 
   if (!dayTotals.has(todayKey)) {
-    const rawGross = computeDayWorkMinutes(todayRecord, todayKey, periodEnd);
+    const rawGross = computeDayWorkMinutes(
+      todayRecord,
+      todayKey,
+      periodEnd,
+      isOnDutyRecord(todayRecord, todayKey),
+    );
     const workBreaks = workBreakMinutesByDate.get(todayKey) ?? 0;
     const allBreakMins = allBreaks.get(todayKey) ?? 0;
     const gross = resolveGrossLoginMinutes(rawGross, todayRecord, todayKey, periodEnd, {
       onDuty: isOnDutyRecord(todayRecord, todayKey),
       activeBreak: hasActiveBreakToday,
       punchedBreakMinutes: allBreakMins,
+      breakSessions: breakSessionsByDate.get(todayKey) ?? [],
     });
     grossByDay.set(todayKey, gross);
     breakByDay.set(todayKey, workBreaks);

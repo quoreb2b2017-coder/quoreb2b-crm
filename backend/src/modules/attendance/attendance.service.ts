@@ -41,6 +41,7 @@ import {
   isDailyWorkQuotaMet,
   isOnDutyRecord,
 } from './attendance-work-time.util';
+import { buildSessionWorkMetricsByDay } from './session-work-metrics.util';
 import { BreakPunchesService } from '../break-punches/break-punches.service';
 import { WORK_DEDUCTIBLE_BREAK_TYPES } from '../break-punches/break-punch.constants';
 import { ActivityLog } from '../activity-logs/schemas/activity-log.schema';
@@ -493,9 +494,13 @@ export class AttendanceService {
   }
 
   async getAttendanceAnalytics(dto: AttendanceAnalyticsDto) {
+    const now = new Date();
+    const year = dto.year || now.getFullYear();
+    const month = dto.month || now.getMonth() + 1;
+    const isCurrentMonth = year === now.getFullYear() && month === now.getMonth() + 1;
     return this.cache.wrap(
       `att:analytics:${stableHash(dto)}`,
-      cacheTtlSeconds(this.config, 'medium'),
+      cacheTtlSeconds(this.config, isCurrentMonth ? 'short' : 'medium'),
       () => this.loadAttendanceAnalytics(dto),
     );
   }
@@ -527,20 +532,22 @@ export class AttendanceService {
         )
       : new Map<string, number>();
 
-    const allBreakMinutesByDate = dto.userId
-      ? await this.breakPunchesService.getBreakMinutesByDateForUser(
-          dto.userId,
-          startDate,
-          endDate,
-          periodEnd,
-        )
-      : new Map<string, number>();
-
     const todayKey = todayDateKey();
     let hasActiveBreakToday = false;
+    let todayWorkBreakMinutesLive = 0;
+    let breakSessionsByDate = new Map<
+      string,
+      Array<{ startedAt: Date; endedAt?: Date | null; type: string }>
+    >();
     if (dto.userId) {
-      const breakToday = await this.breakPunchesService.getToday(dto.userId);
+      const [breakToday, sessionsByDate] = await Promise.all([
+        this.breakPunchesService.getToday(dto.userId),
+        this.breakPunchesService.getBreakSessionsByDateForUser(dto.userId, startDate, endDate),
+      ]);
       hasActiveBreakToday = Boolean(breakToday.activeType);
+      todayWorkBreakMinutesLive =
+        breakToday.tea.usedMinutes + breakToday.lunch.usedMinutes;
+      breakSessionsByDate = sessionsByDate;
     }
 
     let sessionGrossByDay = new Map<string, number>();
@@ -568,6 +575,31 @@ export class AttendanceService {
     const recordByDay = new Map<string, (typeof records)[0]>();
     for (const r of records) {
       recordByDay.set(toDateKey(new Date(r.date)), r);
+    }
+
+    let workMetricsByDay = new Map<
+      string,
+      { grossMinutes: number; netMinutes: number; breakMinutes: number }
+    >();
+    if (dto.userId && sessionLogs.length > 0) {
+      const attendanceSnap = await this.getWorkTimeSnapshot(
+        dto.userId,
+        year,
+        month,
+        periodEnd,
+      );
+      workMetricsByDay = buildSessionWorkMetricsByDay({
+        logs: sessionLogs,
+        periodEnd,
+        sessionId: activeSessionId,
+        todayAttRecord: recordByDay.get(todayKey) ?? undefined,
+        onBreak: hasActiveBreakToday,
+        todayWorkBreakMinutesLive,
+        attendanceBreakByDate: new Map(
+          attendanceSnap.dailyBreakdown.map((row) => [row.date, row.breakMinutes]),
+        ),
+        breakSessionsByDate,
+      });
     }
 
     const analytics = {
@@ -609,36 +641,57 @@ export class AttendanceService {
       const dateObj = new Date(Date.UTC(year, month - 1, day));
       const dayOfWeek = dateObj.getUTCDay();
       const breakMinutes = breakMinutesByDate.get(dateKey) ?? 0;
-      const allBreakMins = allBreakMinutesByDate.get(dateKey) ?? 0;
+      const metrics = workMetricsByDay.get(dateKey);
+
+      let grossMinutes: number;
+      let netMinutes: number;
+      let breakForNet: number;
+
+      if (metrics) {
+        grossMinutes = metrics.grossMinutes;
+        netMinutes = metrics.netMinutes;
+        breakForNet = metrics.breakMinutes;
+      } else {
+        const authBounds =
+          useSessionActiveTime && sessionLogs.length > 0
+            ? buildAuthBoundaryForDay(sessionLogs, dateKey, periodEnd, activeSessionId)
+            : null;
+        const onDutyToday =
+          dateKey === todayKey &&
+          (dayRecord?.checkOutTime && !hasActiveBreakToday
+            ? false
+            : Boolean(
+                authBounds?.onDuty ?? isOnDutyRecord(dayRecord, dateKey),
+              ));
+        const baseGross = useSessionActiveTime
+          ? (sessionGrossByDay.get(dateKey) ?? 0)
+          : computeDayWorkMinutes(dayRecord, dateKey, periodEnd, onDutyToday);
+        const grossRecord = attendanceRecordForGrossLogin(
+          dayRecord,
+          authBounds?.firstLoginAt ?? undefined,
+        );
+        grossMinutes = resolveGrossLoginMinutes(
+          baseGross,
+          grossRecord,
+          dateKey,
+          periodEnd,
+          {
+            onDuty: onDutyToday,
+            activeBreak: dateKey === todayKey && hasActiveBreakToday,
+            breakSessions: breakSessionsByDate.get(dateKey) ?? [],
+          },
+        );
+        breakForNet =
+          dateKey === todayKey && todayWorkBreakMinutesLive > 0
+            ? todayWorkBreakMinutesLive
+            : breakMinutes;
+        netMinutes = computeNetWorkMinutes(grossMinutes, breakForNet);
+      }
+
       const authBounds =
         useSessionActiveTime && sessionLogs.length > 0
           ? buildAuthBoundaryForDay(sessionLogs, dateKey, periodEnd, activeSessionId)
           : null;
-      const baseGross = useSessionActiveTime
-        ? (sessionGrossByDay.get(dateKey) ?? 0)
-        : computeDayWorkMinutes(dayRecord, dateKey, periodEnd);
-      const onDutyToday =
-        dateKey === todayKey &&
-        Boolean(
-          authBounds?.onDuty ??
-            isOnDutyRecord(dayRecord, dateKey),
-        );
-      const grossRecord = attendanceRecordForGrossLogin(
-        dayRecord,
-        authBounds?.firstLoginAt ?? undefined,
-      );
-      const grossMinutes = resolveGrossLoginMinutes(
-        baseGross,
-        grossRecord,
-        dateKey,
-        periodEnd,
-        {
-          onDuty: onDutyToday,
-          activeBreak: dateKey === todayKey && hasActiveBreakToday,
-          punchedBreakMinutes: allBreakMins,
-        },
-      );
-      const netMinutes = computeNetWorkMinutes(grossMinutes, breakMinutes);
       const workHours = Math.round((netMinutes / 60) * 100) / 100;
 
       const { checkInTime, checkOutTime } = this.resolveDayCheckInOut(dayRecord, authBounds);
@@ -657,7 +710,7 @@ export class AttendanceService {
         checkInTime,
         checkOutTime,
         grossWorkDurationMinutes: grossMinutes,
-        breakMinutes,
+        breakMinutes: breakForNet,
         workDurationMinutes: netMinutes,
         workDurationFormatted: formatWorkDurationFromMinutes(netMinutes),
         grossWorkDurationFormatted: formatWorkDurationFromMinutes(grossMinutes),
@@ -829,7 +882,7 @@ export class AttendanceService {
       })
       .lean()
       .exec();
-    const [workBreakMinutesByDate, allBreakMinutesByDate] = await Promise.all([
+    const [workBreakMinutesByDate, allBreakMinutesByDate, breakSessionsByDate] = await Promise.all([
       this.breakPunchesService.getBreakMinutesByDateForUser(
         userId,
         start,
@@ -839,6 +892,7 @@ export class AttendanceService {
         WORK_DEDUCTIBLE_BREAK_TYPES,
       ),
       this.breakPunchesService.getBreakMinutesByDateForUser(userId, start, end, periodEnd),
+      this.breakPunchesService.getBreakSessionsByDateForUser(userId, start, end),
     ]);
     const breakToday = await this.breakPunchesService.getToday(userId);
     const hasActiveBreakToday = Boolean(breakToday.activeType);
@@ -850,6 +904,7 @@ export class AttendanceService {
       workBreakMinutesByDate,
       hasActiveBreakToday,
       allBreakMinutesByDate,
+      breakSessionsByDate,
     );
   }
 

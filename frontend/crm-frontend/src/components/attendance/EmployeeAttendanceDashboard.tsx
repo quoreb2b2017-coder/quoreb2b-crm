@@ -13,6 +13,8 @@ import { formatMonthYearLabel } from '@/lib/attendance/month-year';
 import { ALL_MONTH_INDICES, sumYearlyByMonths } from '@/lib/attendance/yearly-analytics';
 import { buildAttendancePeriodStats } from '@/lib/attendance/build-period-stats';
 import { buildMyPaidLeaveStats } from '@/lib/attendance/build-paid-leave-stats';
+import { mergeWorkTimeIntoMonthlyAnalytics } from '@/lib/attendance/merge-work-time-analytics';
+import { workTimeService } from '@/lib/api/work-time.service';
 import { periodViewDescription } from '@/lib/attendance/period-labels';
 import { AttendanceDailyExcelGrid } from '@/components/attendance/AttendanceDailyExcelGrid';
 import { AttendanceRollupSummarySheet } from '@/components/attendance/AttendanceRollupSummarySheet';
@@ -60,13 +62,16 @@ export function EmployeeAttendanceDashboard({
     if (!user?.id || isRollup) return;
     setMonthlyLoading(true);
     try {
-      const monthly = await attendanceService.getMonthlyAnalytics(
-        user.id,
-        selectedMonth,
-        selectedYear,
-        true,
-      );
-      setMonthlyData(monthly);
+      const [monthly, workTime] = await Promise.all([
+        attendanceService.getMonthlyAnalytics(
+          user.id,
+          selectedMonth,
+          selectedYear,
+          true,
+        ),
+        workTimeService.getMyWorkTime().catch(() => null),
+      ]);
+      setMonthlyData(mergeWorkTimeIntoMonthlyAnalytics(monthly, workTime));
     } catch (error) {
       console.error('Failed to fetch monthly:', error);
     } finally {

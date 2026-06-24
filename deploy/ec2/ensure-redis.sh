@@ -35,6 +35,17 @@ REDIS_PASSWORD="$(read_env_var REDIS_PASSWORD "$ENV_FILE")"
 REDIS_PORT="$(read_env_var REDIS_PORT "$ENV_FILE")"
 REDIS_PORT="${REDIS_PORT:-6379}"
 
+host_redis_ping() {
+  if ! command -v redis-cli >/dev/null 2>&1; then
+    return 1
+  fi
+  if [ -n "$REDIS_PASSWORD" ]; then
+    [ "$(redis-cli -h 127.0.0.1 -p "$REDIS_PORT" -a "$REDIS_PASSWORD" --no-auth-warning ping 2>/dev/null)" = "PONG" ]
+  else
+    [ "$(redis-cli -h 127.0.0.1 -p "$REDIS_PORT" ping 2>/dev/null)" = "PONG" ]
+  fi
+}
+
 redis_responds() {
   docker ps --format '{{.Names}}' | grep -qx "$REDIS_CONTAINER" \
     && [ "$(redis_cli_ping "$REDIS_PASSWORD")" = "PONG" ]
@@ -57,6 +68,11 @@ start_redis_container() {
     "$REDIS_IMAGE" \
     "${cmd[@]}"
 }
+
+if host_redis_ping; then
+  echo "==> Redis already running on 127.0.0.1:$REDIS_PORT (system service)"
+  exit 0
+fi
 
 if redis_responds; then
   echo "==> Redis already running ($REDIS_CONTAINER)"

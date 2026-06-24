@@ -60,7 +60,8 @@ docker run -d \
 echo "==> Waiting for API..."
 for i in $(seq 1 30); do
   if curl -sf http://127.0.0.1:4000/api/v1/health >/dev/null; then
-    curl -sf http://127.0.0.1:4000/api/v1/health | head -c 500
+    echo ""
+    curl -sf http://127.0.0.1:4000/api/v1/health | python3 -m json.tool 2>/dev/null || curl -sf http://127.0.0.1:4000/api/v1/health
     echo ""
     echo "Deploy done. Logs: docker logs -f $CONTAINER_NAME"
     exit 0

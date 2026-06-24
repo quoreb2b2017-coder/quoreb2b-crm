@@ -186,8 +186,21 @@ export async function pingRedis(config: ConfigService): Promise<{
   version?: string;
   versionOk?: boolean;
 }> {
-  const client = createRedisClient(config, 'RedisHealth');
+  const password = config.get<string>('REDIS_PASSWORD');
+  const client = new Redis({
+    host: config.get<string>('REDIS_HOST', 'localhost'),
+    port: config.get<number>('REDIS_PORT', 6379),
+    password: password?.trim() ? password : undefined,
+    db: config.get<number>('REDIS_DB', 0),
+    maxRetriesPerRequest: 1,
+    connectTimeout: 5_000,
+    retryStrategy: () => null,
+    enableOfflineQueue: false,
+    lazyConnect: true,
+  });
+  attachRedisErrorHandler(client, 'RedisHealth');
   try {
+    await client.connect();
     const pong = await client.ping();
     const version = (await readRedisServerVersion(client)) ?? 'unknown';
     return {

@@ -6,7 +6,7 @@ export const PROSPECT_CHUNK_SIZE = parseInt(
   10,
 );
 
-export const SMTP_VERIFY_TIMEOUT_MS = 4_000;
+export const SMTP_VERIFY_TIMEOUT_MS = 10_000;
 
 export const DOMAIN_MX_CACHE_TTL_MS = 60 * 60 * 1000;
 

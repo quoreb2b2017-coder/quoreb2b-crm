@@ -52,7 +52,7 @@ export default () => ({
   ),
   BULK_EMAIL_SYNC_MAX_ROWS: parseInt(process.env.BULK_EMAIL_SYNC_MAX_ROWS || '200', 10),
   BULK_EMAIL_SMTP_TIMEOUT_MS: parseInt(
-    process.env.BULK_EMAIL_SMTP_TIMEOUT_MS || '4000',
+    process.env.BULK_EMAIL_SMTP_TIMEOUT_MS || '10000',
     10,
   ),
   BULK_EMAIL_STOP_ON_VALID: process.env.BULK_EMAIL_STOP_ON_VALID !== 'false',
@@ -69,7 +69,7 @@ export default () => ({
     10,
   ),
   BULK_EMAIL_MAX_PATTERNS: parseInt(process.env.BULK_EMAIL_MAX_PATTERNS || '12', 10),
-  BULK_EMAIL_SKIP_CATCH_ALL_PROBE: process.env.BULK_EMAIL_SKIP_CATCH_ALL_PROBE !== 'false',
+  BULK_EMAIL_SKIP_CATCH_ALL_PROBE: process.env.BULK_EMAIL_SKIP_CATCH_ALL_PROBE === 'true',
   BULK_EMAIL_DISPOSABLE_DOMAINS_PATH: process.env.BULK_EMAIL_DISPOSABLE_DOMAINS_PATH,
   BULK_EMAIL_MX_ONLY_FALLBACK: process.env.BULK_EMAIL_MX_ONLY_FALLBACK !== 'false',
   BULK_EMAIL_STRICT_MAILBOX_REJECT: process.env.BULK_EMAIL_STRICT_MAILBOX_REJECT === 'true',

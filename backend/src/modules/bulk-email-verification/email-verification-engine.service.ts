@@ -121,7 +121,7 @@ export class EmailVerificationEngineService implements OnModuleInit {
     let isCatchAllDomain = false;
 
     const skipCatchAllProbe =
-      this.config.get<string>('BULK_EMAIL_SKIP_CATCH_ALL_PROBE') !== 'false';
+      this.config.get<string>('BULK_EMAIL_SKIP_CATCH_ALL_PROBE') === 'true';
 
     if (dns.valid && dns.mxHosts.length && this.port25Reachable && !skipCatchAllProbe) {
       const cached = this.catchAllCache.get(dns.domain);

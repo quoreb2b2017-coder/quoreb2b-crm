@@ -100,14 +100,6 @@ export function smtpConfirmedAttempt<T extends VerifiableAttempt>(a: T): boolean
   );
 }
 
-/** Valid via MX + pattern estimate when SMTP probe could not run (port 25 / IP block). */
-export function mxDeliverableAttempt<T extends VerifiableAttempt>(a: T): boolean {
-  return (
-    a.status === EmailVerificationStatus.VALID &&
-    a.smtpResponse.toLowerCase().includes('mx_deliverable')
-  );
-}
-
 function sortAttempts<T extends VerifiableAttempt>(
   pool: T[],
   firstName: string,
@@ -117,8 +109,8 @@ function sortAttempts<T extends VerifiableAttempt>(
     const byStatus = statusRank(b.status) - statusRank(a.status);
     if (byStatus !== 0) return byStatus;
 
-    const aSmtp = smtpConfirmedAttempt(a) ? 2 : mxDeliverableAttempt(a) ? 1 : 0;
-    const bSmtp = smtpConfirmedAttempt(b) ? 2 : mxDeliverableAttempt(b) ? 1 : 0;
+    const aSmtp = smtpConfirmedAttempt(a) ? 1 : 0;
+    const bSmtp = smtpConfirmedAttempt(b) ? 1 : 0;
     if (bSmtp !== aSmtp) return bSmtp - aSmtp;
 
     const byScore = b.confidenceScore - a.confidenceScore;

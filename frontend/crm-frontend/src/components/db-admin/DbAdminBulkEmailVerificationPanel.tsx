@@ -206,10 +206,13 @@ function friendlyCheckLabel(
 ): string {
   const r = (response ?? '').toLowerCase();
   if (status === 'valid') {
-    if (r.includes('mx_deliverable') || r.includes('mx_only')) return 'Domain verified';
-    return 'Mailbox confirmed';
+    if (r.includes('smtp_accepted') || /\b250\b/.test(r)) return 'Mailbox confirmed';
+    return 'Valid';
   }
-  if (status === 'likely_valid') return 'Likely';
+  if (status === 'likely_valid') {
+    if (r.includes('mx_only') || r.includes('mx_pattern')) return 'Pattern estimate';
+    return 'Likely';
+  }
   if (r.includes('verify_mode:provided_full') || r.includes('provided')) {
     if (status === 'invalid') return 'Incorrect';
   }
@@ -854,30 +857,15 @@ export function DbAdminBulkEmailVerificationPanel() {
       return [
         { label: 'Prospects', value: '—' },
         { label: 'Verified', value: '—' },
-        { label: 'SMTP confirmed', value: '—' },
-        { label: 'Match rate', value: '—' },
+        { label: 'Likely valid', value: '—' },
+        { label: 'Catch-all', value: '—' },
       ];
     }
     return [
       { label: 'Prospects', value: selectedBatch.totalProspects },
-      {
-        label: 'Verified',
-        value:
-          (selectedBatch.verifiedCount ?? 0) + (selectedBatch.likelyValidCount ?? 0),
-      },
-      {
-        label: 'SMTP confirmed',
-        value: selectedBatch.verifiedCount ?? 0,
-      },
-      {
-        label: 'Match rate',
-        value: `${Math.round(
-          (((selectedBatch.verifiedCount ?? 0) +
-            (selectedBatch.likelyValidCount ?? 0)) /
-            Math.max(1, selectedBatch.emailsGenerated ?? selectedBatch.totalProspects)) *
-            1000,
-        ) / 10}%`,
-      },
+      { label: 'Verified', value: selectedBatch.verifiedCount ?? 0 },
+      { label: 'Likely valid', value: selectedBatch.likelyValidCount ?? 0 },
+      { label: 'Catch-all', value: selectedBatch.catchAllCount ?? 0 },
     ];
   }, [selectedBatch]);
 

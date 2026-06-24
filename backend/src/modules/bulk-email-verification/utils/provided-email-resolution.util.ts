@@ -13,11 +13,9 @@ import {
 export interface ProvidedEmailResolution<T extends VerifiableAttempt> {
   recommendedEmail: string;
   correctedEmail?: string;
-  /** Drives verificationStatus / score on the saved row (recommended email, not upload-only). */
   rowAttempt: T;
 }
 
-/** True when we should also verify name+domain patterns (not just the uploaded address). */
 export function shouldCrossCheckProvidedPatterns(
   provided: VerifiableAttempt,
   patterns: Array<{ email: string }>,
@@ -28,9 +26,23 @@ export function shouldCrossCheckProvidedPatterns(
   return !patterns.some((p) => p.email.trim().toLowerCase() === normalized);
 }
 
+/** Uploaded email went through SMTP/MX probe (not format-only / mx_only skip). */
+function smtpProbeCompleted<T extends VerifiableAttempt>(a: T): boolean {
+  const r = a.smtpResponse.toLowerCase();
+  if (smtpConfirmedAttempt(a)) return true;
+  if (a.status === EmailVerificationStatus.INVALID) return true;
+  if (a.status === EmailVerificationStatus.RISKY) return true;
+  if (/\b(250|550|551|553|452|451|450)\b/.test(r)) return true;
+  if (r.includes('smtp_accepted') || r.includes('smtp_rejected')) return true;
+  if (r.includes('mailbox_check_failed') || r.includes('mailbox_unreachable')) return true;
+  if (r.includes('connection_failed') || r.includes('connection_timeout')) return true;
+  if (r.includes('all_mx_failed') || r.includes('smtp_ip_blocked')) return true;
+  return false;
+}
+
 /**
  * Uploaded row had an Email column.
- * Row status always reflects the recommended email (Valid = SMTP 250, Likely valid = MX/pattern).
+ * Valid = SMTP 250 on uploaded or corrected email. Never downgrade SMTP-invalid to pattern guess.
  */
 export function resolveProvidedEmailVerification<T extends VerifiableAttempt>(
   provided: T,
@@ -67,20 +79,13 @@ export function resolveProvidedEmailVerification<T extends VerifiableAttempt>(
     bestRank,
   );
 
-  const recommendedNorm = recommendedEmail.trim().toLowerCase();
-  const recommendsDifferentEmail = recommendedNorm !== providedNorm;
-
-  if (
-    smtpConfirmedAttempt(provided) &&
-    !recommendsDifferentEmail &&
-    !correctedEmail
-  ) {
+  if (smtpConfirmedAttempt(provided)) {
     return { recommendedEmail: providedEmail, rowAttempt: provided };
   }
 
-  if (recommendsDifferentEmail || correctedEmail) {
+  if (smtpConfirmedAttempt(best)) {
     return {
-      recommendedEmail,
+      recommendedEmail: best.candidate.email,
       correctedEmail:
         correctedEmail && correctedEmail.trim().toLowerCase() !== providedNorm
           ? correctedEmail
@@ -89,12 +94,33 @@ export function resolveProvidedEmailVerification<T extends VerifiableAttempt>(
     };
   }
 
-  if (provided.status === EmailVerificationStatus.INVALID && bestRank > primaryRank) {
+  if (smtpProbeCompleted(provided) && provided.status === EmailVerificationStatus.INVALID) {
     return {
-      recommendedEmail: best.candidate.email,
+      recommendedEmail: providedEmail,
       correctedEmail:
-        best.candidate.email.trim().toLowerCase() !== providedNorm
-          ? best.candidate.email
+        smtpConfirmedAttempt(best) && correctedEmail ? correctedEmail : undefined,
+      rowAttempt: provided,
+    };
+  }
+
+  if (smtpProbeCompleted(provided) && !smtpConfirmedAttempt(best)) {
+    return {
+      recommendedEmail: providedEmail,
+      correctedEmail:
+        correctedEmail && correctedEmail.trim().toLowerCase() !== providedNorm
+          ? correctedEmail
+          : undefined,
+      rowAttempt: provided,
+    };
+  }
+
+  const recommendedNorm = recommendedEmail.trim().toLowerCase();
+  if (recommendedNorm !== providedNorm || correctedEmail) {
+    return {
+      recommendedEmail,
+      correctedEmail:
+        correctedEmail && correctedEmail.trim().toLowerCase() !== providedNorm
+          ? correctedEmail
           : undefined,
       rowAttempt: best,
     };

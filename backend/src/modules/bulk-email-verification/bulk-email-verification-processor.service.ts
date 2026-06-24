@@ -192,8 +192,11 @@ export class BulkEmailVerificationProcessorService implements OnModuleInit {
       return { generatedDelta, counters };
     }
 
-    const emailDomain = syntax.domain || prospect.domain;
-    const domainContext = await this.getCachedDomainContext(emailDomain, domainCache);
+    const companyDomain = normalizeDomain(prospect.domain);
+    const domainContext = await this.getCachedDomainContext(
+      companyDomain || syntax.domain,
+      domainCache,
+    );
     const providedVerified = await this.engine.verifyEmail(providedEmail, domainContext);
     const providedAttempt = this.toPatternAttempt(
       { email: providedEmail, patternType: 'provided' },

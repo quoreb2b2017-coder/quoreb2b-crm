@@ -123,6 +123,9 @@ const DEFAULT_STATUS_FILTERS: EmailVerificationStatus[] = [
   'valid',
   'likely_valid',
   'catch_all',
+  'invalid',
+  'unknown',
+  'risky',
 ];
 
 function mapRowsToProspects(headers: string[], rows: string[][]): ProspectRow[] {

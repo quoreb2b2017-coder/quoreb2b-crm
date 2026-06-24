@@ -15,6 +15,7 @@ export interface VerificationSignals {
   isDisposable: boolean;
   isRoleBased: boolean;
   strictMailboxReject?: boolean;
+  smtpAttempted?: boolean;
 }
 
 export interface RiskScoreResult {
@@ -31,13 +32,12 @@ export function confidenceLabel(score: number): string {
   return 'Invalid';
 }
 
-/** SMTP 550/551/553 with explicit "user unknown" style text */
 export function isHardSmtpReject(signals: VerificationSignals): boolean {
   if (signals.smtpStatus !== EmailVerificationStatus.INVALID) return false;
   return isDefinitiveMailboxReject(signals.smtpResponse, signals.smtpCode);
 }
 
-/** True when SMTP 250 mailbox confirmed (ZeroBounce "valid"). */
+/** SMTP 250 mailbox confirmed — only tier that counts as Valid. */
 export function isSmtpMailboxConfirmed(signals: VerificationSignals): boolean {
   return (
     signals.smtpStatus === EmailVerificationStatus.VALID &&
@@ -79,15 +79,6 @@ function softMailboxUnreachable(signals: VerificationSignals): boolean {
   );
 }
 
-/**
- * ZeroBounce-style status tiers:
- * - valid: SMTP 250 mailbox confirmed
- * - likely_valid: MX exists, pattern estimate (SMTP could not finish)
- * - catch_all: domain accepts all addresses
- * - risky: role-based / greylist
- * - invalid: bad syntax, no MX, mailbox rejected
- * - unknown: inconclusive SMTP
- */
 export function computeRiskScore(signals: VerificationSignals): RiskScoreResult {
   const reasons: string[] = [];
 
@@ -145,16 +136,6 @@ export function computeRiskScore(signals: VerificationSignals): RiskScoreResult 
     };
   }
 
-  if (signals.mxValid && isSmtpIpBlocked(signals.smtpResponse)) {
-    reasons.push('smtp_ip_blocked', 'mx_pattern_estimate');
-    return {
-      status: EmailVerificationStatus.LIKELY_VALID,
-      score: 78,
-      label: confidenceLabel(78),
-      reasons,
-    };
-  }
-
   if (!signals.mxValid) {
     if (signals.smtpResponse.includes('dns_error')) {
       reasons.push('dns_error');
@@ -202,12 +183,22 @@ export function computeRiskScore(signals: VerificationSignals): RiskScoreResult 
     };
   }
 
-  if (isMxOnlyWithoutMailboxCheck(signals)) {
-    reasons.push('mx_only', 'mx_pattern_estimate');
+  if (signals.mxValid && isSmtpIpBlocked(signals.smtpResponse)) {
+    reasons.push('smtp_ip_blocked');
     return {
-      status: EmailVerificationStatus.LIKELY_VALID,
-      score: 80,
-      label: confidenceLabel(80),
+      status: EmailVerificationStatus.UNKNOWN,
+      score: 44,
+      label: confidenceLabel(44),
+      reasons,
+    };
+  }
+
+  if (isMxOnlyWithoutMailboxCheck(signals)) {
+    reasons.push('mx_only', 'mailbox_not_checked');
+    return {
+      status: EmailVerificationStatus.UNKNOWN,
+      score: 52,
+      label: confidenceLabel(52),
       reasons,
     };
   }

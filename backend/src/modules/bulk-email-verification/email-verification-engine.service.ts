@@ -83,7 +83,7 @@ export class EmailVerificationEngineService implements OnModuleInit {
   getSmtpTimeoutMs(): number {
     return resolvePositiveInt(
       this.config.get('BULK_EMAIL_SMTP_TIMEOUT_MS'),
-      5_000,
+      10_000,
     );
   }
 
@@ -123,7 +123,7 @@ export class EmailVerificationEngineService implements OnModuleInit {
     const skipCatchAllProbe =
       this.config.get<string>('BULK_EMAIL_SKIP_CATCH_ALL_PROBE') === 'true';
 
-    if (dns.valid && dns.mxHosts.length && this.port25Reachable && !skipCatchAllProbe) {
+    if (dns.valid && dns.mxHosts.length && !skipCatchAllProbe) {
       const cached = this.catchAllCache.get(dns.domain);
       if (cached !== undefined) {
         isCatchAllDomain = cached;
@@ -167,16 +167,14 @@ export class EmailVerificationEngineService implements OnModuleInit {
 
     const skipSmtpProbe = this.config.get<string>('BULK_EMAIL_SKIP_SMTP_PROBE') === 'true';
 
-    const canAttemptSmtp =
+    const shouldTrySmtp =
       !skipSmtpProbe &&
       syntax.valid &&
       !isDisposable &&
       dns.valid &&
-      dns.mxHosts.length &&
-      !ctx.isCatchAllDomain &&
-      this.port25Reachable;
+      dns.mxHosts.length > 0;
 
-    if (canAttemptSmtp) {
+    if (shouldTrySmtp) {
       const smtp = await verifyEmailSmtp(
         syntax.normalizedEmail,
         dns.mxHosts,
@@ -190,14 +188,13 @@ export class EmailVerificationEngineService implements OnModuleInit {
       this.mxOnlyFallbackEnabled &&
       syntax.valid &&
       !isDisposable &&
-      dns.valid
+      dns.valid &&
+      !shouldTrySmtp
     ) {
       smtpStatus = EmailVerificationStatus.UNKNOWN;
       smtpResponse = skipSmtpProbe
         ? 'mx_only:smtp_probe_disabled'
-        : this.port25Reachable
-          ? 'mx_only:smtp_skipped'
-          : 'mx_only:port25_blocked';
+        : 'mx_only:smtp_skipped';
     } else if (!syntax.valid) {
       smtpResponse = syntax.error ?? 'invalid_syntax';
     } else if (isDisposable) {

@@ -27,7 +27,7 @@ export function validateEmailSyntax(email: string): SyntaxValidationResult {
     allow_display_name: false,
     require_tld: true,
     allow_ip_domain: false,
-    domain_specific_validation: true,
+    domain_specific_validation: false,
   })) {
     return {
       valid: false,

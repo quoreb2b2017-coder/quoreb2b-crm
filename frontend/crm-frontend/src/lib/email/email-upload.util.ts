@@ -1,3 +1,6 @@
+const EMAIL_PLACEHOLDER =
+  /^(?:n\/?a|none|null|nil|na|tbd|unknown|\.|-|—|–|not\s*available|no\s*email)$/i;
+
 export function sanitizeEmailInput(raw: string): string {
   let s = String(raw ?? '')
     .replace(/^\uFEFF/, '')
@@ -11,6 +14,7 @@ export function sanitizeEmailInput(raw: string): string {
 
   s = s.replace(/^mailto:/i, '').trim();
   s = s.replace(/^["']|["']$/g, '').trim();
+  s = s.replace(/\s*\([^)]*\)\s*$/, '').trim();
 
   if (s.includes(';')) {
     s = s.split(';').map((p) => p.trim()).find((p) => p.includes('@')) ?? s.split(';')[0].trim();
@@ -20,7 +24,11 @@ export function sanitizeEmailInput(raw: string): string {
     if (first) s = first;
   }
 
-  return s.toLowerCase().trim();
+  s = s.toLowerCase().trim().replace(/\.+$/, '');
+
+  if (!s.includes('@') || EMAIL_PLACEHOLDER.test(s)) return '';
+
+  return s;
 }
 
 export function normalizeDomainField(raw: string): string {

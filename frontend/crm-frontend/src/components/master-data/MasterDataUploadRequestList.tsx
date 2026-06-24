@@ -87,7 +87,7 @@ export function MasterDataUploadRequestList({
             <tr>
               {[
                 'File',
-                'Rows',
+                'Contacts',
                 'Duplicates',
                 'Missing filled',
                 'Status',

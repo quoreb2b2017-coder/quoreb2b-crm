@@ -142,7 +142,7 @@ export function BatchExcelView({
         headers: updated.headers,
         rows: updated.rows,
       });
-      toast.success('Campaign saved', `${updated.rowCount} rows updated`);
+      toast.success('Campaign saved', `${updated.rowCount} contacts updated`);
     } catch (e) {
       toast.error('Save failed', extractApiError(e));
     } finally {
@@ -210,7 +210,7 @@ export function BatchExcelView({
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold leading-tight">{name}</p>
             <p className="truncate text-[11px] text-white/75">
-              {rowCount != null && `${rowCount} rows`}
+              {rowCount != null && `${rowCount} contacts`}
               {columnCount != null && ` · ${columnCount} columns`}
               {sourceFileName && ` · ${sourceFileName}`}
               {editable && batchId && autoSaveStatus === 'pending' && ' · Editing…'}
@@ -218,7 +218,7 @@ export function BatchExcelView({
               {editable && batchId && autoSaveStatus === 'saved' && ' · Saved'}
               {editable && batchId && autoSaveStatus === 'error' && ' · Save failed'}
               {dirty && editable && !batchId && ' · Unsaved changes'}
-              {allowCreateSubBatch && ' · Filter rows → Create Campaign'}
+              {allowCreateSubBatch && ' · Filter contacts → Create Campaign'}
             </p>
           </div>
         </div>
@@ -310,7 +310,7 @@ export function BatchExcelView({
                   <p className="font-semibold text-slate-900">Create campaign from admin data</p>
                   <div className="mt-1.5 flex flex-wrap gap-2">
                     <span className="inline-flex items-center rounded-full bg-violet-50 px-2.5 py-0.5 text-[11px] font-semibold text-violet-700">
-                      {batchModal.rows.length.toLocaleString('en-US')} rows
+                      {batchModal.rows.length.toLocaleString('en-US')} contacts
                     </span>
                     <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">
                       {batchModal.headers.length} columns

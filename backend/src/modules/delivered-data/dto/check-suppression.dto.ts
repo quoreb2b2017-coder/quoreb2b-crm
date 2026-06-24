@@ -1,7 +1,8 @@
 import {
+  ArrayMaxSize,
+  IsArray,
   IsIn,
   IsMongoId,
-  IsNotEmpty,
   IsOptional,
   IsString,
   MaxLength,
@@ -23,6 +24,17 @@ export class CheckSuppressionDto {
   @IsOptional()
   @IsMongoId()
   sourceBatchId?: string;
+
+  /** Inline rows (e.g. DB admin master extract before campaign create) */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  sourceHeaders?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50000)
+  sourceRows?: string[][];
 
   /** Optional manual domain/email values (newline or comma separated) */
   @IsOptional()

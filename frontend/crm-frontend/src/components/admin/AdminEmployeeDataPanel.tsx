@@ -80,7 +80,7 @@ export function AdminEmployeeDataPanel() {
     setActionLoadingId(request.id);
     try {
       await masterDataService.reviewUploadRequest(request.id, 'approved');
-      toast.success('Merged to master', `${request.rowCount} row(s) added to master file`);
+      toast.success('Merged to master', `${request.rowCount} contact(s) added to master file`);
       window.dispatchEvent(new CustomEvent('master-data-updated'));
       await load();
     } catch (err) {
@@ -135,7 +135,7 @@ export function AdminEmployeeDataPanel() {
   const remove = async (request: MasterDataUploadRequest) => {
     if (
       !confirm(
-        `Delete "${request.fileName}" from employee ${request.submittedByEmail ?? ''}? Approved rows are removed from master file too.`,
+        `Delete "${request.fileName}" from employee ${request.submittedByEmail ?? ''}? Approved contacts are removed from master file too.`,
       )
     ) {
       return;

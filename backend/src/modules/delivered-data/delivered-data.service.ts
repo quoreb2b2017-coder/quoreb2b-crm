@@ -248,9 +248,14 @@ export class SuppressionDataService {
     if (!isEmployee && !isDbAdmin) {
       throw new ForbiddenException('Only employees and DB admins can check suppression');
     }
-    if (!dto.sourceRequestId && !dto.sourceBatchId && !dto.manualInput?.trim()) {
+    if (
+      !dto.sourceRequestId &&
+      !dto.sourceBatchId &&
+      !dto.manualInput?.trim() &&
+      !(dto.sourceRows?.length && dto.sourceHeaders?.length)
+    ) {
       throw new BadRequestException(
-        'Select My Data, your campaign, or enter domain/email values to check',
+        'Select My Data, your campaign, master rows, or enter domain/email values to check',
       );
     }
 
@@ -286,6 +291,10 @@ export class SuppressionDataService {
       sourceHeaders = (batch.headers as string[]) ?? [];
       sourceRows = (batch.rows as string[][]) ?? [];
       baseFileName = String(batch.sourceFileName ?? batch.name ?? baseFileName);
+      duplicateSourceRole = isDbAdmin ? 'db_admin' : 'employee';
+    } else if (dto.sourceHeaders?.length && dto.sourceRows?.length) {
+      sourceHeaders = dto.sourceHeaders;
+      sourceRows = dto.sourceRows;
       duplicateSourceRole = isDbAdmin ? 'db_admin' : 'employee';
     }
 

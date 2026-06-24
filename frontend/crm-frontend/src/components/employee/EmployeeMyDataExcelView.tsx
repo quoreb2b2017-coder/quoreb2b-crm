@@ -112,7 +112,7 @@ export function EmployeeMyDataExcelView({
             <p className="truncate text-sm font-semibold leading-tight">{fileName}</p>
             <p className="truncate text-[11px] text-white/70">
               {sheetName}
-              {` · ${data.rows.length} rows · ${data.headers.length} columns`}
+              {` · ${data.rows.length} contacts · ${data.headers.length} columns`}
               {editable && autoSaveStatus === 'pending' && ' · Editing…'}
               {editable && autoSaveStatus === 'saving' && ' · Auto-saving…'}
               {editable && autoSaveStatus === 'saved' && ' · Saved'}

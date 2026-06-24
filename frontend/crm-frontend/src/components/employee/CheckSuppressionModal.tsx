@@ -188,7 +188,7 @@ export function CheckSuppressionModal({
                     ) : (
                       campaigns.map((c) => (
                         <option key={c.id} value={c.id}>
-                          {c.name} — {c.rowCount.toLocaleString()} rows
+                          {c.name} — {c.rowCount.toLocaleString()} contacts
                         </option>
                       ))
                     )}
@@ -244,7 +244,7 @@ export function CheckSuppressionModal({
                     <option value="">Select campaign…</option>
                     {batches.map((b) => (
                       <option key={b.id} value={b.id}>
-                        {b.name} ({b.rowCount} rows)
+                        {b.name} ({b.rowCount} contacts)
                       </option>
                     ))}
                   </select>

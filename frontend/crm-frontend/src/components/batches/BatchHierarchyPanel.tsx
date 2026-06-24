@@ -188,7 +188,7 @@ export function BatchHierarchyPanel({
                   {data.root.name}
                   {data.root.monthLabel && ` · ${data.root.monthLabel}`}
                   {' · '}
-                  {data.root.rowCount.toLocaleString('en-US')} rows total
+                  {data.root.rowCount.toLocaleString('en-US')} contacts total
                 </p>
               )}
             </div>
@@ -208,7 +208,7 @@ export function BatchHierarchyPanel({
           <p className="text-sm font-semibold text-slate-800">{data.root.name}</p>
           <p className="text-xs text-slate-500">
             {data.root.monthLabel && `${data.root.monthLabel} · `}
-            {data.root.rowCount.toLocaleString('en-US')} rows in this campaign tree
+            {data.root.rowCount.toLocaleString('en-US')} contacts in this campaign tree
           </p>
         </div>
       )}
@@ -270,7 +270,7 @@ export function BatchHierarchyPanel({
                         Role
                       </th>
                       <th className="border-b border-r border-slate-200 px-2 py-1 text-right">
-                        Rows
+                        Contacts
                       </th>
                       <th className="border-b border-slate-200 px-2 py-1 text-right">
                         Up/Tch/Op

@@ -210,19 +210,19 @@ export function DbAdminMasterDataUploadPanel() {
       if (result.request) {
         toast.success(
           'Added to master file',
-          `${result.mergedAddedRows ?? result.pendingRows} row(s) merged${result.duplicateFileName ? ` · duplicates in ${result.duplicateFileName}` : ''}`,
+          `${result.mergedAddedRows ?? result.pendingRows} contact(s) merged${result.duplicateFileName ? ` · duplicates in ${result.duplicateFileName}` : ''}`,
         );
       } else if (result.duplicateFileName) {
         toast.info(
           'Duplicates saved',
-          `${result.duplicateCount} duplicate row(s) in ${result.duplicateFileName}`,
+          `${result.duplicateCount} duplicate contact(s) in ${result.duplicateFileName}`,
         );
       } else {
         toast.info(
-          'No new rows',
+          'No new contacts',
           result.duplicateCount > 0
-            ? `${result.duplicateCount} duplicate row(s) were found`
-            : 'All rows were empty or already in master file',
+            ? `${result.duplicateCount} duplicate contact(s) were found`
+            : 'All contacts were empty or already in master file',
         );
       }
     } catch (err) {
@@ -238,7 +238,7 @@ export function DbAdminMasterDataUploadPanel() {
       try {
         const parsed = await parseSpreadsheetFile(file);
         if (!parsed.rows.length) {
-          throw new Error('The file has no data rows.');
+          throw new Error('The file has no contacts.');
         }
         setPendingUpload(parsed);
       } catch (err) {
@@ -322,7 +322,7 @@ export function DbAdminMasterDataUploadPanel() {
           <table className="w-full min-w-full border-collapse text-[13px]">
             <thead>
               <tr>
-                {['Master sheet', 'Columns', 'Rows in master', 'Missing rule', 'Approval flow'].map((h) => (
+                {['Master sheet', 'Columns', 'Contacts in master', 'Missing rule', 'Approval flow'].map((h) => (
                   <th
                     key={h}
                     className="border border-[#c6c6c6] bg-[#f2f2f2] px-3 py-2 text-left text-xs font-semibold text-slate-700"
@@ -477,7 +477,7 @@ export function DbAdminMasterDataUploadPanel() {
               <table className="w-full min-w-[720px] border-collapse text-sm">
                 <thead className="bg-[#f8fafc]">
                   <tr>
-                    {['File', 'Uploaded on', 'Rows', 'Shared', 'Super Admin status', 'Reason'].map((label) => (
+                    {['File', 'Uploaded on', 'Contacts', 'Shared', 'Super Admin status', 'Reason'].map((label) => (
                       <th
                         key={label}
                         className="border border-[#e0e0e0] px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-600"
@@ -598,7 +598,7 @@ export function DbAdminMasterDataUploadPanel() {
                   variant: 'secondary',
                 },
                 {
-                  label: `Send ${pendingUpload.rows.length} row(s) for approval`,
+                  label: `Send ${pendingUpload.rows.length} contact(s) for approval`,
                   onClick: confirmPendingUpload,
                   loading: uploading,
                   disabled: uploading,

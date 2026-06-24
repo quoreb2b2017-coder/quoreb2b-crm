@@ -114,7 +114,7 @@ export function DbAdminEmployeeDataPanel({ onRequestsChanged }: DbAdminEmployeeD
     setActionLoadingId(request.id);
     try {
       await masterDataService.forwardEmployeeRequestToAdmin(request.id);
-      toast.success('Merged to master', `${request.rowCount} row(s) added to master file automatically`);
+      toast.success('Merged to master', `${request.rowCount} contact(s) added to master file automatically`);
       window.dispatchEvent(new CustomEvent('master-data-updated'));
       await load();
     } catch (err) {

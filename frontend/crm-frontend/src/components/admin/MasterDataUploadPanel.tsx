@@ -25,6 +25,7 @@ import { useAuthStore } from '@/store/auth.store';
 import { useCanExportSpreadsheet } from '@/hooks/useSpreadsheetCopyGuard';
 import { useDebouncedAutoSave, type AutoSaveStatus } from '@/hooks/useDebouncedAutoSave';
 import { MasterDataClearConfirmModal } from '@/components/master-data/MasterDataClearConfirmModal';
+import { DbAdminCampaignWizard } from '@/components/db-admin/DbAdminCampaignWizard';
 
 const ACCEPT = '.csv,.xlsx,.xls';
 
@@ -212,7 +213,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
         if (mode === 'append' && record.addedRows != null) {
           const skipped = record.skippedDuplicates && record.skippedDuplicates > 0
             ? ` · ${record.skippedDuplicates} duplicate(s) skipped` : '';
-          toast.success('Added to master database', `+${record.addedRows} rows · ${record.rowCount} total${skipped}`);
+          toast.success('Added to master database', `+${record.addedRows} contacts · ${record.rowCount} total${skipped}`);
           window.dispatchEvent(new CustomEvent('master-data-updated'));
           if ((record.skippedDuplicates ?? 0) > 0) {
             setDuplicateModal({
@@ -226,7 +227,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
             });
           }
         } else {
-          toast.success('Saved to database', `${record.rowCount} rows in master data`);
+          toast.success('Saved to database', `${record.rowCount} contacts in master data`);
           window.dispatchEvent(new CustomEvent('master-data-updated'));
         }
       } catch (e) {
@@ -321,10 +322,10 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
       );
       toast.success(
         'Duplicate file downloaded',
-        `${duplicateModal.duplicateCount} duplicate row(s) exported`,
+        `${duplicateModal.duplicateCount} duplicate contact(s) exported`,
       );
     } catch {
-      toast.error('Download failed', 'Could not export duplicate rows');
+      toast.error('Download failed', 'Could not export duplicate contacts');
     }
   };
 
@@ -364,7 +365,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   const openBatchModal = useCallback(
     (payload: { rows: string[][]; headers: string[]; sourceRowIndices: number[] }) => {
       if (!payload.sourceRowIndices.length) {
-        toast.error('No rows selected', 'Apply filters or pick rows that are not already in a campaign');
+        toast.error('No contacts selected', 'Apply filters or pick contacts that are not already in a campaign');
         return;
       }
       const now = new Date().toLocaleDateString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
@@ -393,7 +394,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
         masterSourceRowIndices: batchModal.sourceRowIndices,
       });
       await loadCoverage();
-      toast.success('Campaign created!', `"${batch.name}" — ${batch.rowCount} rows`);
+      toast.success('Campaign created!', `"${batch.name}" — ${batch.rowCount} contacts`);
       setBatchModal(null);
       window.dispatchEvent(
         new CustomEvent('batch-created', {
@@ -405,9 +406,6 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
         }),
       );
       window.dispatchEvent(new CustomEvent('master-data-updated'));
-      if (isDbAdminView) {
-        router.push('/db-admin/batches');
-      }
     } catch (e) {
       toast.error('Campaign creation failed', extractApiError(e, 'Could not create campaign'));
     } finally { setSavingBatch(false); }
@@ -427,7 +425,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
               <span className="max-w-[140px] truncate text-xs text-slate-600 sm:max-w-[200px]" title={data.fileName}>
                 {data.fileName}
               </span>
-              <span className="text-xs font-medium text-slate-700">{totalRows} rows in DB</span>
+              <span className="text-xs font-medium text-slate-700">{totalRows} contacts in DB</span>
               {coverage && coverage.summary.totalRows > 0 && (
                 <>
                   <span className="text-xs text-amber-800">
@@ -556,8 +554,24 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
         </div>
       )}
 
-      {/* ── Create Batch Modal ── */}
-      {batchModal && (
+      {/* ── DB Admin: Extract → Suppression → Distribute wizard ── */}
+      {isDbAdminView && batchModal && (
+        <DbAdminCampaignWizard
+          open
+          onClose={() => setBatchModal(null)}
+          headers={batchModal.headers}
+          rows={batchModal.rows}
+          sourceRowIndices={batchModal.sourceRowIndices}
+          sourceFileName={data?.fileName}
+          onCreated={() => {
+            void loadCoverage();
+            setBatchModal(null);
+          }}
+        />
+      )}
+
+      {/* ── Admin: Create Batch Modal ── */}
+      {!isDbAdminView && batchModal && (
         <>
           <div
             onClick={() => setBatchModal(null)}
@@ -579,7 +593,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
                   </p>
                   <div className="mt-1.5 flex flex-wrap gap-2">
                     <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-700">
-                      {batchModal.rows.length.toLocaleString('en-US')} rows
+                      {batchModal.rows.length.toLocaleString('en-US')} contacts
                     </span>
                     <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">
                       {batchModal.headers.length} columns
@@ -629,15 +643,15 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-xs font-semibold text-slate-700">Campaign summary</p>
                     <p className="text-xs text-slate-500">
-                      <span className="font-medium text-slate-700">{batchModal.rows.length.toLocaleString('en-US')}</span> rows selected
+                      <span className="font-medium text-slate-700">{batchModal.rows.length.toLocaleString('en-US')}</span> contacts selected
                     </p>
                   </div>
 
                   <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
                     <p className="text-xs leading-relaxed text-emerald-800">
-                      Master data stays unchanged. Campaign rows remain in the database and show as{' '}
+                      Master data stays unchanged. Campaign contacts remain in the database and show as{' '}
                       <span className="font-semibold text-amber-700">&quot;In campaign&quot;</span> (yellow) so
-                      you can pick only new rows next time.
+                      you can pick only new contacts next time.
                       {isDbAdminView && (
                         <>
                           {' '}
@@ -713,9 +727,9 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
             <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="flex items-start justify-between border-b border-slate-100 px-6 py-4">
                 <div>
-                  <p className="font-semibold text-slate-900">Duplicate rows found</p>
+                  <p className="font-semibold text-slate-900">Duplicate contacts found</p>
                   <p className="mt-0.5 text-sm text-slate-500">
-                    Upload completed, but some rows were skipped as duplicates.
+                    Upload completed, but some contacts were skipped as duplicates.
                   </p>
                 </div>
                 <button
@@ -745,7 +759,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
                     </p>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Total DB rows</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Total DB contacts</p>
                     <p className="mt-1 text-2xl font-bold text-slate-900">
                       {duplicateModal.totalRows}
                     </p>
@@ -754,7 +768,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
 
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                   <p className="font-medium">
-                    {duplicateModal.duplicateCount} row(s) were already present in the master database
+                    {duplicateModal.duplicateCount} contact(s) were already present in the master database
                     or repeated inside the uploaded file.
                   </p>
                   <p className="mt-1 text-xs text-amber-800">

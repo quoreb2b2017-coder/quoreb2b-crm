@@ -68,7 +68,7 @@ export function SpreadsheetPreviewModal({
                 <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>
               ) : (
                 <p className="mt-0.5 text-sm text-slate-500">
-                  {total} row{total === 1 ? '' : 's'}
+                  {total} contact{total === 1 ? '' : 's'}
                   {truncated ? ` · showing first ${visible.length}` : ''}
                 </p>
               )}
@@ -122,7 +122,7 @@ export function SpreadsheetPreviewModal({
                       colSpan={Math.max(headers.length, 1)}
                       className="border border-[#e0e0e0] py-10 text-center text-slate-500"
                     >
-                      No rows to preview
+                      No contacts to preview
                     </td>
                   </tr>
                 ) : (

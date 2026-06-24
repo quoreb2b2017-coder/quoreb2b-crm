@@ -184,7 +184,7 @@ export default function AdminBatchesPage() {
                 <p className="mb-3 rounded-lg border border-emerald-100 bg-emerald-50/80 px-3 py-2 text-xs leading-relaxed text-emerald-900">
                   <span className="font-semibold">Employees</span> receive an{' '}
                   <span className="font-semibold">equal, unique slice</span> of leads — no duplicate
-                  rows across team members.{' '}
+                  contacts across team members.{' '}
                   <span className="font-semibold">DB Administrators</span> receive the full batch to
                   split and assign further.
                 </p>

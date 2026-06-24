@@ -482,7 +482,7 @@ export function BatchMonthExplorer({
                   <tr>
                     <th className="w-10 text-center">#</th>
                     <th className="text-left">Campaign name</th>
-                    <th className="w-20 text-right">Rows</th>
+                    <th className="w-20 text-right">Contacts</th>
                     <th className="text-left">Source file</th>
                     <th className="w-36 text-left">Created</th>
                     <th className="min-w-[280px] text-center whitespace-nowrap">Actions</th>

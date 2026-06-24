@@ -92,6 +92,8 @@ export const suppressionDataService = {
     checkMode: 'domain' | 'email';
     sourceRequestId?: string;
     sourceBatchId?: string;
+    sourceHeaders?: string[];
+    sourceRows?: string[][];
     manualInput?: string;
     baseFileName?: string;
   }): Promise<CheckSuppressionResult> => {

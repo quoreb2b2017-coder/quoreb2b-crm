@@ -143,7 +143,7 @@ export function SuperAdminCrmDashboard() {
                     ? `+${stats.newUsersThisMonth} this month`
                     : 'No new users this month',
               },
-              { label: 'Total leads', value: stats.totalLeads, note: 'Master data rows' },
+              { label: 'Total leads', value: stats.totalLeads, note: 'Master data contacts' },
               {
                 label: 'Active leads',
                 value: stats.activeLeads,

@@ -18,7 +18,7 @@ export function SuppressionDataClearConfirmModal(props: SuppressionDataClearConf
         <div className="pointer-events-auto w-full max-w-[348px] rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl">
           <h2 className="text-[15px] font-semibold text-slate-900">Clear suppression file?</h2>
           <p className="mt-2 text-xs leading-relaxed text-slate-500">
-            All suppression rows, suppression campaigns, and duplicate files will be permanently removed.
+            All suppression contacts, suppression campaigns, and duplicate files will be permanently removed.
           </p>
           <div className="mt-4 flex gap-2">
             <button

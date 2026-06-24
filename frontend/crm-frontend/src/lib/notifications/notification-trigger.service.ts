@@ -48,7 +48,7 @@ export class NotificationTriggerService {
       data_uploaded: {
         type: 'data_uploaded',
         title: '📤 Data Uploaded',
-        message: '1,250 rows uploaded successfully',
+        message: '1,250 contacts uploaded successfully',
         actionUrl: '/admin/master-data-upload/requests',
         actionLabel: 'Review request',
         priority: 'medium',
@@ -170,7 +170,7 @@ export class NotificationTriggerService {
     this.socket.emit('notification:receive', {
       type: 'data_uploaded',
       title: '📤 Data Uploaded',
-      message: `${rowCount.toLocaleString()} rows uploaded successfully`,
+      message: `${rowCount.toLocaleString()} contacts uploaded successfully`,
       actionUrl: '/admin/master-data-upload/requests',
       actionLabel: 'Review request',
       priority: 'medium',

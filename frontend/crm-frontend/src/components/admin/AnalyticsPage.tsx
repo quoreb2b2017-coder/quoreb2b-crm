@@ -188,7 +188,7 @@ export function AnalyticsPage() {
               <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
                 <p className="text-xs font-medium text-slate-500">Top status</p>
                 <p className="mt-1 text-lg font-bold text-slate-900">{chart.topStatus ?? '—'}</p>
-                <p className="text-xs text-slate-400">{chart.topStatusPct ?? 0}% of tracked rows</p>
+                <p className="text-xs text-slate-400">{chart.topStatusPct ?? 0}% of tracked contacts</p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
                 <p className="text-xs font-medium text-slate-500">Status categories</p>
@@ -201,7 +201,7 @@ export function AnalyticsPage() {
                   Master + {chart.batchCount ?? 0} campaigns
                 </p>
                 <p className="text-xs text-slate-400">
-                  {(chart.trackedRows ?? chart.totalLeads).toLocaleString('en-US')} rows analyzed
+                  {(chart.trackedRows ?? chart.totalLeads).toLocaleString('en-US')} contacts analyzed
                 </p>
               </div>
             </div>

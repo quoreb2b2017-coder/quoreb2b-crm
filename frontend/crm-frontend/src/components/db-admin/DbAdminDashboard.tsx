@@ -159,14 +159,14 @@ export function DbAdminDashboard() {
           rows={[
             { label: 'Total campaigns', value: b.total, note: `${b.owned} created by you` },
             { label: 'Shared with you', value: b.sharedWithMe, note: 'From admin' },
-            { label: 'Rows in your campaigns', value: b.totalRows, note: 'All assigned data' },
+            { label: 'Contacts in your campaigns', value: b.totalRows, note: 'All assigned data' },
             {
               label: 'Shared to employees',
               value: b.employeesShared,
               note: 'People on your campaigns',
             },
             { label: 'Active leads', value: b.activeLeads, note: 'Status Active in sheets' },
-            { label: 'Won / Lead status', value: b.wonLeads, note: 'From campaign row data' },
+            { label: 'Won / Lead status', value: b.wonLeads, note: 'From campaign contact data' },
           ]}
         />
       </div>
@@ -177,8 +177,8 @@ export function DbAdminDashboard() {
           title="Master database (admin shared access)"
           columns={4}
           rows={[
-            { label: 'Master rows', value: data.masterData.totalRows, note: 'Full master file' },
-            { label: 'Already in campaigns', value: data.masterData.batchedRows, note: 'Yellow rows in upload' },
+            { label: 'Master contacts', value: data.masterData.totalRows, note: 'Full master file' },
+            { label: 'Already in campaigns', value: data.masterData.batchedRows, note: 'Yellow contacts in upload' },
             { label: 'Available for new campaign', value: data.masterData.availableRows, note: 'Not in a campaign yet' },
             {
               label: 'Campaigns from master',
@@ -247,7 +247,7 @@ export function DbAdminDashboard() {
               <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
                 <tr className="border-b border-slate-100">
                   <th className="px-3 py-2 text-left font-semibold">Name</th>
-                  <th className="px-3 py-2 text-right font-semibold">Rows</th>
+                  <th className="px-3 py-2 text-right font-semibold">Contacts</th>
                   <th className="px-3 py-2 text-left font-semibold">Type</th>
                   <th className="px-3 py-2 text-right font-semibold">Updated</th>
                 </tr>

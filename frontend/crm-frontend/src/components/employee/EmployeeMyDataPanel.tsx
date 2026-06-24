@@ -90,20 +90,20 @@ export function EmployeeMyDataPanel() {
           const merged = result.mergedAddedRows ?? result.pendingRows;
           toast.success(
             'Merged to master file',
-            `${merged} row(s) added${result.duplicateFileName ? ` · duplicates saved as ${result.duplicateFileName}` : ''}`,
+            `${merged} contact(s) added${result.duplicateFileName ? ` · duplicates saved as ${result.duplicateFileName}` : ''}`,
           );
         } else if (result.duplicateFileName) {
           window.dispatchEvent(new CustomEvent('master-data-updated'));
           toast.info(
             'Duplicates saved',
-            `${result.duplicateCount} duplicate row(s) in ${result.duplicateFileName}`,
+            `${result.duplicateCount} duplicate contact(s) in ${result.duplicateFileName}`,
           );
         } else {
           toast.info(
-            'No new rows',
+            'No new contacts',
             result.duplicateCount > 0
-              ? `${result.duplicateCount} duplicate row(s) were found`
-              : 'All rows were empty or duplicates',
+              ? `${result.duplicateCount} duplicate contact(s) were found`
+              : 'All contacts were empty or duplicates',
           );
         }
       } catch (err) {
@@ -121,7 +121,7 @@ export function EmployeeMyDataPanel() {
       try {
         const parsed = await parseSpreadsheetFile(file);
         if (!parsed.rows.length) {
-          throw new Error('The file has no data rows.');
+          throw new Error('The file has no contacts.');
         }
         setPendingUpload(parsed);
       } catch (err) {

@@ -403,7 +403,7 @@ export function ExcelPreviewGrid({
         <span>
           <span className="font-medium text-slate-800">{data.sheetName}</span>
           {' · '}
-          {displayRows.length} / {sourceRows.length} rows
+          {displayRows.length} / {sourceRows.length} contacts
           {hasActiveFilters(filters) && <span className="text-[#217346]"> · Filtered</span>}
           {batchedByRow && Object.keys(batchedByRow).length > 0 && (
             <span className="text-amber-800">
@@ -469,7 +469,7 @@ export function ExcelPreviewGrid({
                 onChange={(e) => onHideBatchedRowsChange(e.target.checked)}
                 className="rounded border-slate-300 text-[#217346] focus:ring-[#217346]"
               />
-              Hide rows already in a batch
+              Hide contacts already in a batch
             </label>
           )}
           {onCreateBatch && (
@@ -491,7 +491,7 @@ export function ExcelPreviewGrid({
               disabled={createBatchStats.available === 0}
               title={
                 createBatchStats.available === 0
-                  ? 'No new rows — uncheck "Hide rows already in a campaign" or pick rows not yet in a campaign'
+                  ? 'No new contacts — uncheck "Hide contacts already in a campaign" or pick contacts not yet in a campaign'
                   : undefined
               }
               className="inline-flex items-center gap-1.5 bg-[#217346] px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-[#1a5c38] disabled:opacity-50"
@@ -633,8 +633,8 @@ export function ExcelPreviewGrid({
                   className="border border-[#e0e0e0] px-4 py-10 text-center text-slate-500"
                 >
                   {sourceRows.length === 0 && editable
-                    ? 'No rows yet — click "Add row" or upload a file.'
-                    : 'No rows match the current filters.'}
+                    ? 'No contacts yet — click "Add contact" or upload a file.'
+                    : 'No contacts match the current filters.'}
                 </td>
               </tr>
             ) : (

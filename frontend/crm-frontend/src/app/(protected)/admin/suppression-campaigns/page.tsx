@@ -119,7 +119,7 @@ export default function SuppressionCampaignsPage() {
   const handleDelete = async (batch: BatchRecord) => {
     if (
       !confirm(
-        `Delete "${batch.name}" and all ${batch.rowCount ?? 0} delivered rows? This cannot be undone.`,
+        `Delete "${batch.name}" and all ${batch.rowCount ?? 0} delivered contacts? This cannot be undone.`,
       )
     ) {
       return;

@@ -65,7 +65,7 @@ export function MasterDataRequestInbox() {
     setActionLoadingId(request.id);
     try {
       await masterDataService.reviewUploadRequest(request.id, 'approved');
-      toast.success('Request approved', `${request.rowCount} row(s) merged into master data`);
+      toast.success('Request approved', `${request.rowCount} contact(s) merged into master data`);
       window.dispatchEvent(new CustomEvent('master-data-updated'));
       await load();
     } catch (err) {
@@ -124,7 +124,7 @@ export function MasterDataRequestInbox() {
         : 'DB Admin';
     const approvedNote =
       request.status === 'approved'
-        ? ' Merged rows will also be removed from the master file.'
+        ? ' Merged contacts will also be removed from the master file.'
         : '';
     const ok = window.confirm(
       `Delete "${request.fileName}" from ${who}? This removes it from Admin, DB Admin, and Employee views everywhere.${approvedNote}`,
@@ -136,7 +136,7 @@ export function MasterDataRequestInbox() {
       const result = await masterDataService.deleteUploadRequest(request.id);
       const masterNote =
         result.removedFromMaster && result.removedFromMaster > 0
-          ? ` ${result.removedFromMaster} row(s) removed from master file.`
+          ? ` ${result.removedFromMaster} contact(s) removed from master file.`
           : '';
       toast.success('Request deleted', `Removed from all panels.${masterNote}`);
       await load();
@@ -219,7 +219,7 @@ export function MasterDataRequestInbox() {
         duplicateCount={duplicateRequest?.duplicateCount ?? 0}
         headers={duplicateRequest?.headers ?? []}
         rows={duplicateRequest?.duplicatePreviewRows ?? []}
-        note="Super Admin can review duplicate rows before approving the request."
+        note="Super Admin can review duplicate contacts before approving the request."
       />
 
       {rejectTarget && (

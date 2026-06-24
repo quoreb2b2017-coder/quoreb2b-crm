@@ -227,7 +227,7 @@ export function SuppressionDataUploadPanel() {
         if (mode === 'append' && record.addedRows != null) {
           const skipped = record.skippedDuplicates && record.skippedDuplicates > 0
             ? ` · ${record.skippedDuplicates} duplicate(s) skipped` : '';
-          toast.success('Added to suppression database', `+${record.addedRows} rows · ${record.rowCount} total${skipped}`);
+          toast.success('Added to suppression database', `+${record.addedRows} contacts · ${record.rowCount} total${skipped}`);
           window.dispatchEvent(new CustomEvent('suppression-data-updated'));
           if ((record.skippedDuplicates ?? 0) > 0) {
             setDuplicateModal({
@@ -241,7 +241,7 @@ export function SuppressionDataUploadPanel() {
             });
           }
         } else {
-          toast.success('Saved to database', `${record.rowCount} rows in suppression data`);
+          toast.success('Saved to database', `${record.rowCount} contacts in suppression data`);
           window.dispatchEvent(new CustomEvent('suppression-data-updated'));
         }
       } catch (e) {
@@ -336,10 +336,10 @@ export function SuppressionDataUploadPanel() {
       );
       toast.success(
         'Duplicate file downloaded',
-        `${duplicateModal.duplicateCount} duplicate row(s) exported`,
+        `${duplicateModal.duplicateCount} duplicate contact(s) exported`,
       );
     } catch {
-      toast.error('Download failed', 'Could not export duplicate rows');
+      toast.error('Download failed', 'Could not export duplicate contacts');
     }
   };
 
@@ -379,7 +379,7 @@ export function SuppressionDataUploadPanel() {
   const openBatchModal = useCallback(
     (payload: { rows: string[][]; headers: string[]; sourceRowIndices: number[] }) => {
       if (!payload.sourceRowIndices.length) {
-        toast.error('No rows selected', 'Apply filters or pick rows that are not already in a suppression campaign');
+        toast.error('No contacts selected', 'Apply filters or pick contacts that are not already in a suppression campaign');
         return;
       }
       const now = new Date().toLocaleDateString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
@@ -414,10 +414,10 @@ export function SuppressionDataUploadPanel() {
       if (result.batch) {
         toast.success(
           'Batch created',
-          `"${result.batch.name}" — ${result.batch.rowCount} rows`,
+          `"${result.batch.name}" — ${result.batch.rowCount} contacts`,
         );
       } else if (result.duplicateCount > 0) {
-        toast.info('Only duplicates found', `${result.duplicateCount} duplicate row(s) moved to duplicate file`);
+        toast.info('Only duplicates found', `${result.duplicateCount} duplicate contact(s) moved to duplicate file`);
       }
       setBatchModal(null);
       if (result.duplicateCount > 0) {
@@ -452,7 +452,7 @@ export function SuppressionDataUploadPanel() {
               <span className="max-w-[140px] truncate text-xs text-slate-600 sm:max-w-[200px]" title={data.fileName}>
                 {data.fileName}
               </span>
-              <span className="text-xs font-medium text-slate-700">{totalRows} rows in DB</span>
+              <span className="text-xs font-medium text-slate-700">{totalRows} contacts in DB</span>
               {coverage && coverage.summary.totalRows > 0 && (
                 <>
                   <span className="text-xs text-amber-800">
@@ -605,7 +605,7 @@ export function SuppressionDataUploadPanel() {
                   </p>
                   <div className="mt-1.5 flex flex-wrap gap-2">
                     <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-700">
-                      {batchModal.rows.length.toLocaleString('en-US')} rows
+                      {batchModal.rows.length.toLocaleString('en-US')} contacts
                     </span>
                     <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">
                       {batchModal.headers.length} columns
@@ -675,13 +675,13 @@ export function SuppressionDataUploadPanel() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-xs font-semibold text-slate-700">Campaign summary</p>
                     <p className="text-xs text-slate-500">
-                      <span className="font-medium text-slate-700">{batchModal.rows.length.toLocaleString('en-US')}</span> rows selected
+                      <span className="font-medium text-slate-700">{batchModal.rows.length.toLocaleString('en-US')}</span> contacts selected
                     </p>
                   </div>
 
                   <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
                     <p className="text-xs leading-relaxed text-emerald-800">
-                      Suppression file holds delivered data only. On create, rows are compressed (deduped) then uploaded to a{' '}
+                      Suppression file holds delivered data only. On create, contacts are compressed (deduped) then uploaded to a{' '}
                       <span className="font-semibold text-indigo-700">{CHANNEL_LABELS[campaignChannel]}</span> campaign in{' '}
                       <span className="font-semibold">Campaigns</span> (year → month folder).
                       Duplicates go to the monthly duplicate file.
@@ -753,9 +753,9 @@ export function SuppressionDataUploadPanel() {
             <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
               <div className="flex items-start justify-between border-b border-slate-100 px-6 py-4">
                 <div>
-                  <p className="font-semibold text-slate-900">Duplicate rows found</p>
+                  <p className="font-semibold text-slate-900">Duplicate contacts found</p>
                   <p className="mt-0.5 text-sm text-slate-500">
-                    Upload completed, but some rows were skipped as duplicates.
+                    Upload completed, but some contacts were skipped as duplicates.
                   </p>
                 </div>
                 <button
@@ -785,7 +785,7 @@ export function SuppressionDataUploadPanel() {
                     </p>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Total DB rows</p>
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Total DB contacts</p>
                     <p className="mt-1 text-2xl font-bold text-slate-900">
                       {duplicateModal.totalRows}
                     </p>
@@ -794,7 +794,7 @@ export function SuppressionDataUploadPanel() {
 
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                   <p className="font-medium">
-                    {duplicateModal.duplicateCount} row(s) were already in a campaign
+                    {duplicateModal.duplicateCount} contact(s) were already in a campaign
                     or repeated in your selection.
                   </p>
                   {duplicateModal.duplicatesBatchName && (

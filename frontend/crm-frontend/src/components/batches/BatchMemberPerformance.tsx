@@ -186,7 +186,7 @@ export function BatchMemberPerformance({
       <div className="shrink-0 bg-[#217346] px-3 py-2 text-white">
         <p className="text-sm font-semibold">{userName}</p>
         <p className="text-[11px] text-white/75">
-          {dataRows.toLocaleString('en-US')} rows assigned · Productivity:{' '}
+          {dataRows.toLocaleString('en-US')} contacts assigned · Productivity:{' '}
           <span className="font-semibold text-white">{perf.productivityLabel}</span> (
           {perf.productivityScore}%)
         </p>

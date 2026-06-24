@@ -187,7 +187,7 @@ export function MasterDataUploadMonthExplorer({
                       'File',
                       ...(showSubmittedBy ? ['Employee'] : []),
                       'Uploaded on',
-                      'Rows',
+                      'Contacts',
                       statusColumnLabel,
                       'Action',
                     ].map((label) => (

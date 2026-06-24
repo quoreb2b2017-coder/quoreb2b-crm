@@ -103,7 +103,7 @@ export default function SuppressionCampaignDetailPage() {
       if (result.addedRows > 0) {
         toast.success(
           'Uploaded to campaign',
-          `+${result.addedRows} rows · ${result.totalRows} total in this campaign`,
+          `+${result.addedRows} contacts · ${result.totalRows} total in this campaign`,
         );
       }
       if (result.duplicateCount > 0) {
@@ -168,7 +168,7 @@ export default function SuppressionCampaignDetailPage() {
             ))}
           </div>
         </div>
-        <span className="text-xs text-slate-500">{data?.rows.length ?? 0} rows</span>
+        <span className="text-xs text-slate-500">{data?.rows.length ?? 0} contacts</span>
         <div className="ml-auto flex gap-2">
           <button
             type="button"
@@ -214,7 +214,7 @@ export default function SuppressionCampaignDetailPage() {
             <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
               <h3 className="font-semibold text-slate-900">Duplicates in this campaign</h3>
               <p className="mt-1 text-sm text-slate-600">
-                {duplicateModal.duplicateCount} row(s) already existed in this campaign or repeated in the file.
+                {duplicateModal.duplicateCount} contact(s) already existed in this campaign or repeated in the file.
               </p>
               <div className="mt-4 grid grid-cols-3 gap-2 text-center">
                 <div className="rounded-lg bg-amber-50 p-3">
@@ -232,7 +232,7 @@ export default function SuppressionCampaignDetailPage() {
               </div>
               {duplicateModal.duplicatesBatchName && (
                 <p className="mt-3 text-xs text-slate-600">
-                  Duplicate rows saved to: <strong>{duplicateModal.duplicatesBatchName}</strong>
+                  Duplicate contacts saved to: <strong>{duplicateModal.duplicatesBatchName}</strong>
                 </p>
               )}
               <div className="mt-4 flex gap-2">

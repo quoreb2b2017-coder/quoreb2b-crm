@@ -48,6 +48,7 @@ export function QcExcelSheet({
     <ExcelSheetShell
       title={title}
       rowCount={sheet.rows.length}
+      countUnit="contact"
       loading={loading}
       toolbar={toolbar}
       hint="Only columns with data (Client Name, Campaign Code, Salutation, etc.)"

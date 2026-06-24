@@ -195,7 +195,7 @@ export function EmployeeDashboard() {
               <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
                 <tr className="border-b border-slate-100">
                   <th className="px-3 py-2 text-left font-semibold">Name</th>
-                  <th className="px-3 py-2 text-right font-semibold">Rows</th>
+                  <th className="px-3 py-2 text-right font-semibold">Contacts</th>
                   <th className="px-3 py-2 text-right font-semibold">Updated</th>
                 </tr>
               </thead>

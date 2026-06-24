@@ -8,6 +8,8 @@ import { useCanExportSpreadsheet, useShowSpreadsheetRestrictionHint } from '@/ho
 interface ExcelSheetShellProps {
   title: string;
   rowCount?: number;
+  /** Singular label for the count badge (default: row → rows) */
+  countUnit?: string;
   loading?: boolean;
   toolbar?: React.ReactNode;
   children: React.ReactNode;
@@ -19,6 +21,7 @@ interface ExcelSheetShellProps {
 export function ExcelSheetShell({
   title,
   rowCount,
+  countUnit = 'row',
   loading,
   toolbar,
   children,
@@ -60,7 +63,11 @@ export function ExcelSheetShell({
           <span className="text-xs font-semibold">{title}</span>
         </div>
         <span className="text-[11px] text-white/80">
-          {loading ? 'Loading…' : rowCount != null ? `${rowCount} row${rowCount !== 1 ? 's' : ''}` : ''}
+          {loading
+            ? 'Loading…'
+            : rowCount != null
+              ? `${rowCount} ${rowCount === 1 ? countUnit : `${countUnit}s`}`
+              : ''}
         </span>
       </div>
 

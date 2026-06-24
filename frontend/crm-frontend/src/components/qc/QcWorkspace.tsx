@@ -205,7 +205,7 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
       toast.success(
         res.isNewFile
           ? `Created ${res.campaignName} — ${res.mergedCount} lead(s)${mergeBreakdown ? ` (${mergeBreakdown})` : ''}`
-          : `Added ${res.mergedCount} lead(s) to ${res.campaignName} — ${res.rowCount} rows total${mergeBreakdown ? ` (${mergeBreakdown})` : ''}`,
+          : `Added ${res.mergedCount} lead(s) to ${res.campaignName} — ${res.rowCount} contacts total${mergeBreakdown ? ` (${mergeBreakdown})` : ''}`,
       );
       setShowAll(false);
       setSelectedPath(mergePath);

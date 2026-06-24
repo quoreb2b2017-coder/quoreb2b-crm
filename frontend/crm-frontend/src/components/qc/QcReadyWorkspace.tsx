@@ -200,7 +200,7 @@ export function QcReadyWorkspace() {
                   <tr>
                     <th className="w-7">#</th>
                     <th>Month / Campaign</th>
-                    <th className="w-10 text-right">Rows</th>
+                    <th className="w-10 text-right">Contacts</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -327,6 +327,7 @@ export function QcReadyWorkspace() {
             <ExcelSheetShell
               title={batchDetail?.name ?? 'QC'}
               rowCount={batchDetail?.rowCount}
+              countUnit="contact"
               loading={loadingBatch}
               toolbar={sheetToolbar}
               headerVariant="violet"

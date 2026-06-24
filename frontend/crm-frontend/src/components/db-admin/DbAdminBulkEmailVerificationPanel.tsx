@@ -561,7 +561,7 @@ export function DbAdminBulkEmailVerificationPanel() {
       const sheet = await parseSpreadsheetFile(file);
       const prospects = mapRowsToProspects(sheet.headers, sheet.rows);
       if (!prospects.length) {
-        throw new Error('No valid rows found. Check column names and data.');
+        throw new Error('No valid contacts found. Check column names and data.');
       }
       setPendingUpload({
         fileName: sheet.fileName,
@@ -772,11 +772,11 @@ export function DbAdminBulkEmailVerificationPanel() {
         const statusLabel = statusFilters.map((s) => formatStatus(s)).join(', ');
         if (kind === 'corrected') {
           throw new Error(
-            `No corrected-email rows for status: ${statusLabel}. Try other statuses or Re-run verify.`,
+            `No corrected-email contacts for status: ${statusLabel}. Try other statuses or Re-run verify.`,
           );
         }
         throw new Error(
-          `No rows with status: ${statusLabel}. Change filter or run Verify again.`,
+          `No contacts with status: ${statusLabel}. Change filter or run Verify again.`,
         );
       }
       const statusSlug = statusFilters.map((s) => s.replace(/_/g, '-')).join('-');
@@ -805,7 +805,7 @@ export function DbAdminBulkEmailVerificationPanel() {
           : kind === 'best'
             ? 'best email only'
             : statusLabel;
-      toast.success('Export ready', `${items.length} row(s) — ${kindNote}.`);
+      toast.success('Export ready', `${items.length} contact(s) — ${kindNote}.`);
     } catch (err) {
       toast.error('Export failed', extractApiError(err));
     } finally {
@@ -1156,8 +1156,8 @@ export function DbAdminBulkEmailVerificationPanel() {
                               </div>
                             ) : batch.status === 'completed' ? (
                               batch.emailsGenerated > 0
-                                ? `${batch.emailsGenerated} rows · ${batch.verifiedCount} SMTP OK · ${batch.likelyValidCount ?? 0} likely`
-                                : '0 rows — Re-run after reset'
+                                ? `${batch.emailsGenerated} contacts · ${batch.verifiedCount} SMTP OK · ${batch.likelyValidCount ?? 0} likely`
+                                : '0 contacts — Re-run after reset'
                             ) : (
                               '—'
                             )}
@@ -1278,6 +1278,7 @@ export function DbAdminBulkEmailVerificationPanel() {
             ? recordTotal
             : selectedBatch?.emailsGenerated ?? 0
         }
+        countUnit="contact"
         loading={loading}
         hint="Excel-style results grid"
         toolbar={
@@ -1362,7 +1363,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                   disabled={!selectedBatchId || exporting || statusFilters.length === 0}
                   onClick={() => void handleExportXlsx('corrected')}
                   className={shellBtn()}
-                  title="Only corrected emails — one Email column per row"
+                  title="Only corrected emails — one Email column per contact"
                 >
                   <Download className="h-3.5 w-3.5" />
                   Corrected email
@@ -1372,7 +1373,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                   disabled={!selectedBatchId || exporting || statusFilters.length === 0}
                   onClick={() => void handleExportXlsx('best')}
                   className={shellBtn()}
-                  title="Same status filter — one Email column (best/recommended) per row"
+                  title="Same status filter — one Email column (best/recommended) per contact"
                 >
                   <Download className="h-3.5 w-3.5" />
                   Best email
@@ -1474,7 +1475,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                           'Verification in progress…'
                         ) : statusFilters.length > 0 || minScore !== '' ? (
                           <span>
-                            No rows match the current filters.{' '}
+                            No contacts match the current filters.{' '}
                             <button
                               type="button"
                               className="font-semibold text-[#217346] underline"
@@ -1489,9 +1490,9 @@ export function DbAdminBulkEmailVerificationPanel() {
                             {canDownload ? ' or adjust statuses before download.' : '.'}
                           </span>
                         ) : (selectedBatch?.emailsGenerated ?? 0) > 0 ? (
-                          'Rows are syncing — click Refresh or Re-run verification.'
+                          'Contacts are syncing — click Refresh or Re-run verification.'
                         ) : (
-                          'No email rows yet. Click Verify on this job.'
+                          'No email contacts yet. Click Verify on this job.'
                         )}
                       </td>
                     </tr>
@@ -1539,7 +1540,7 @@ export function DbAdminBulkEmailVerificationPanel() {
         {recordTotal > 50 && (
           <div className="flex items-center justify-between border-t border-[#d4d4d4] bg-[#fafafa] px-3 py-2 text-xs text-slate-600">
             <span>
-              Page {recordPage} of {Math.ceil(recordTotal / 50)} · {recordTotal} rows
+              Page {recordPage} of {Math.ceil(recordTotal / 50)} · {recordTotal} contacts
             </span>
             <div className="flex gap-1">
               <button
@@ -1570,7 +1571,7 @@ export function DbAdminBulkEmailVerificationPanel() {
         headers={pendingUpload?.headers ?? [...PROSPECT_HEADERS]}
         rows={pendingUpload?.rows ?? []}
         totalRows={pendingUpload?.rows.length}
-        note="Email column → format check only (marked Valid). Company Domain → full SMTP/pattern verify. Valid rows only."
+        note="Email column → format check only (marked Valid). Company Domain → full SMTP/pattern verify. Valid contacts only."
         actions={
           pendingUpload
             ? [

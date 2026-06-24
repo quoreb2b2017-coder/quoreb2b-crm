@@ -22,7 +22,7 @@ export function toastBatchShareResult(result: BatchShareResult) {
     );
     toast.success(
       'Equal distribution complete',
-      `${distributed.length} employee(s) · ~${avg} unique leads each · no duplicate rows`,
+      `${distributed.length} employee(s) · ~${avg} unique leads each · no duplicate contacts`,
     );
     return;
   }

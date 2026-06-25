@@ -68,7 +68,7 @@ export class EmailVerificationEngineService implements OnModuleInit {
     this.port25Reachable = port25.reachable;
     if (!port25.reachable) {
       this.logger.warn(
-        `Outbound port 25 not reachable — MX-only fallback active: ${port25.message}`,
+        `Outbound port 25 blocked — using MX/DNS deliverability estimate (likely_valid) until port 25 is open. ${port25.message}`,
       );
     }
 
@@ -124,7 +124,7 @@ export class EmailVerificationEngineService implements OnModuleInit {
     const skipCatchAllProbe =
       this.config.get<string>('BULK_EMAIL_SKIP_CATCH_ALL_PROBE') === 'true';
 
-    if (dns.valid && dns.mxHosts.length && !skipCatchAllProbe) {
+    if (dns.valid && dns.mxHosts.length && !skipCatchAllProbe && this.port25Reachable) {
       const cached = this.catchAllCache.get(dns.domain);
       if (cached !== undefined) {
         isCatchAllDomain = cached;
@@ -169,22 +169,22 @@ export class EmailVerificationEngineService implements OnModuleInit {
 
     const skipSmtpProbe = this.config.get<string>('BULK_EMAIL_SKIP_SMTP_PROBE') === 'true';
 
-    const shouldTrySmtp =
+    const canVerifySmtp =
       !skipSmtpProbe &&
       syntax.valid &&
       !isDisposable &&
       dns.valid &&
       dns.mxHosts.length > 0;
 
-    if (shouldTrySmtp) {
-      const smtpTimeout = this.port25Reachable
-        ? this.getSmtpTimeoutMs()
-        : Math.min(this.getSmtpTimeoutMs(), 6_000);
+    if (canVerifySmtp && !this.port25Reachable && this.mxOnlyFallbackEnabled) {
+      smtpStatus = EmailVerificationStatus.UNKNOWN;
+      smtpResponse = 'port25_blocked:mx_deliverable';
+    } else if (canVerifySmtp) {
       const smtp = await verifyEmailSmtp(
         syntax.normalizedEmail,
         dns.mxHosts,
         this.getSmtpFrom(),
-        smtpTimeout,
+        this.getSmtpTimeoutMs(),
       );
       smtpStatus = smtp.status;
       smtpResponse = smtp.smtpResponse;
@@ -224,7 +224,7 @@ export class EmailVerificationEngineService implements OnModuleInit {
       isFreeEmail,
       strictMailboxReject:
         this.config.get<string>('BULK_EMAIL_STRICT_MAILBOX_REJECT') === 'true',
-      smtpAttempted: shouldTrySmtp,
+      smtpAttempted: canVerifySmtp,
     };
 
     const risk: RiskScoreResult = computeRiskScore(signals);

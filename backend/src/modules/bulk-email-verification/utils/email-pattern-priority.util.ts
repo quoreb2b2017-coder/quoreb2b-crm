@@ -126,7 +126,7 @@ function sortAttempts<T extends VerifiableAttempt>(
   });
 }
 
-/** Pick best: real SMTP 250 first, else MX+pattern estimate when IP blocklisted. */
+/** Pick best: SMTP 250 first, then highest tier by status, score, pattern. */
 export function pickBestVerifiedAttempt<T extends VerifiableAttempt>(
   attempts: T[],
   prospect?: { firstName: string; lastName: string },
@@ -139,8 +139,5 @@ export function pickBestVerifiedAttempt<T extends VerifiableAttempt>(
   const smtpOk = attempts.filter(smtpConfirmedAttempt);
   if (smtpOk.length) return sortAttempts(smtpOk, firstName, lastName)[0];
 
-  const deliverable = attempts.filter((a) => DELIVERABLE.has(a.status));
-  const pool = deliverable.length ? deliverable : attempts;
-
-  return sortAttempts(pool, firstName, lastName)[0];
+  return sortAttempts(attempts, firstName, lastName)[0];
 }

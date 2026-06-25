@@ -76,4 +76,5 @@ export default () => ({
   /** In-house only — SMTP + DNS/MX verification */
   BULK_EMAIL_VERIFICATION_PROVIDER: 'internal',
   BULK_EMAIL_SKIP_SMTP_PROBE: process.env.BULK_EMAIL_SKIP_SMTP_PROBE === 'true',
+  BULK_EMAIL_FORCE_SMTP_PROBE: process.env.BULK_EMAIL_FORCE_SMTP_PROBE === 'true',
 });

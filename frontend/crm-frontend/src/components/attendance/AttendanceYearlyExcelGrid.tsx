@@ -11,7 +11,7 @@ const COLUMNS = ['Month', 'Present', 'Absent', 'Leave', 'Half', 'Attendance %'] 
 const COL_COUNT = COLUMNS.length;
 
 const PCT_STYLES = [
-  { min: 90, className: 'bg-[#e2efda] text-[#217346] font-semibold' },
+  { min: 90, className: 'bg-[#e2efda] text-[#2e7ad1] font-semibold' },
   { min: 75, className: 'bg-[#ddebf7] text-[#2e75b6] font-semibold' },
   { min: 60, className: 'bg-[#fff2cc] text-[#bf8f00] font-semibold' },
   { min: 0, className: 'bg-[#fce4d6] text-[#c00000] font-semibold' },
@@ -63,7 +63,7 @@ function GridCell({
         'border border-[#e0e0e0] p-0 text-[13px] text-slate-900 outline-none transition-colors cursor-default',
         align === 'center' && 'text-center',
         sticky && 'sticky left-0 z-10 bg-[#f2f2f2]',
-        active && 'relative z-[1] bg-[#e7f3ff] ring-2 ring-inset ring-[#217346]',
+        active && 'relative z-[1] bg-[#e7f3ff] ring-2 ring-inset ring-[#2e7ad1]',
         !active && 'hover:bg-[#e7f3ff]/50',
         className,
       )}
@@ -215,7 +215,7 @@ export function AttendanceYearlyExcelGrid({
                   <td className="border border-[#c6c6c6] px-2 py-1.5 text-xs uppercase text-slate-700">
                     {totalsLabel}
                   </td>
-                  <td className="border border-[#c6c6c6] px-2 py-1.5 text-center text-[#217346]">{totals.present}</td>
+                  <td className="border border-[#c6c6c6] px-2 py-1.5 text-center text-[#2e7ad1]">{totals.present}</td>
                   <td className="border border-[#c6c6c6] px-2 py-1.5 text-center text-[#c00000]">{totals.absent}</td>
                   <td className="border border-[#c6c6c6] px-2 py-1.5 text-center text-[#2e75b6]">{totals.leave}</td>
                   <td className="border border-[#c6c6c6] px-2 py-1.5 text-center text-[#bf8f00]">{totals.half}</td>

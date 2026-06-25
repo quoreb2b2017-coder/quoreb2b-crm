@@ -152,7 +152,7 @@ export function AdminEmployeeDataPanel() {
             {[
               { label: 'Total', value: stats.total, color: 'bg-slate-100 text-slate-800' },
               { label: 'In progress', value: stats.active, color: 'bg-sky-100 text-sky-800' },
-              { label: 'In master', value: stats.approved, color: 'bg-emerald-100 text-emerald-800' },
+              { label: 'In master', value: stats.approved, color: 'bg-emerald-100 text-[#2568b8]' },
               { label: 'Pending', value: stats.pending, color: 'bg-amber-100 text-amber-800' },
             ].map((s) => (
               <div key={s.label} className={`rounded-xl px-3 py-2 ${s.color}`}>
@@ -206,7 +206,7 @@ export function AdminEmployeeDataPanel() {
                       className={cn(
                         'rounded-lg px-2.5 py-1 text-[11px] font-semibold capitalize',
                         filter === item
-                          ? 'bg-indigo-600 text-white'
+                          ? 'bg-[#2e7ad1] text-white'
                           : 'border border-slate-200 text-slate-600 hover:bg-slate-50',
                       )}
                     >

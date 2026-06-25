@@ -54,7 +54,7 @@ export interface BatchMonthExplorerProps {
 export function BatchMonthExplorer({
   batches,
   loading = false,
-  title = 'Campaigns',
+  title = 'All campaigns',
   subtitle = 'January–December folders · new campaigns auto-file by creation month',
   emptyTitle = 'No campaigns yet',
   emptyHint = 'Create a campaign from Master Data to see it in the matching month folder',
@@ -161,7 +161,7 @@ export function BatchMonthExplorer({
                 type="button"
                 onClick={() => onOpenBatch(b)}
                 className={cn(
-                  'text-left transition-colors hover:text-[#217346] hover:underline',
+                  'text-left transition-colors hover:text-[#2e7ad1] hover:underline',
                   opts.child ? 'xl-slice-name' : 'xl-cell-name',
                 )}
                 title={opts.child ? b.name : `Open ${b.name}`}
@@ -211,13 +211,13 @@ export function BatchMonthExplorer({
         <ChevronRight className="h-3.5 w-3.5" />
       </span>
       {expanded ? (
-        <FolderOpen className="h-4 w-4 shrink-0 text-[#217346]" />
+        <FolderOpen className="h-4 w-4 shrink-0 text-[#2e7ad1]" />
       ) : (
-        <Folder className="h-4 w-4 shrink-0 text-[#217346]" />
+        <Folder className="h-4 w-4 shrink-0 text-[#2e7ad1]" />
       )}
       <span className="min-w-0 flex-1 text-left">
         <span className="flex flex-wrap items-center gap-2">
-          <span className="xl-cell-name font-semibold text-[#1a5c38]">{name}</span>
+          <span className="xl-cell-name font-semibold text-[#2568b8]">{name}</span>
           <span className="xl-folder-count-pill">
             {childCount} slice{childCount !== 1 ? 's' : ''}
           </span>
@@ -264,7 +264,7 @@ export function BatchMonthExplorer({
                 aria-label={expanded ? 'Collapse folder' : 'Expand folder'}
               >
                 <span className="xl-folder-chevron" data-expanded={expanded ? 'true' : 'false'}>
-                  <ChevronRight className="h-3.5 w-3.5 text-[#217346]" />
+                  <ChevronRight className="h-3.5 w-3.5 text-[#2e7ad1]" />
                 </span>
               </button>
             ) : (
@@ -281,9 +281,9 @@ export function BatchMonthExplorer({
                   aria-label={expanded ? 'Collapse folder' : 'Expand folder'}
                 >
                   {expanded ? (
-                    <FolderOpen className="h-4 w-4 text-[#217346]" />
+                    <FolderOpen className="h-4 w-4 text-[#2e7ad1]" />
                   ) : (
-                    <Folder className="h-4 w-4 text-[#217346]" />
+                    <Folder className="h-4 w-4 text-[#2e7ad1]" />
                   )}
                 </button>
                 <div className="min-w-0 flex-1">
@@ -312,7 +312,7 @@ export function BatchMonthExplorer({
                   <button
                     type="button"
                     onClick={() => onOpenBatch(parent)}
-                    className="xl-cell-name text-left transition-colors hover:text-[#217346] hover:underline"
+                    className="xl-cell-name text-left transition-colors hover:text-[#2e7ad1] hover:underline"
                     title={`Open ${parent.name}`}
                   >
                     {parent.name}
@@ -413,14 +413,14 @@ export function BatchMonthExplorer({
                         <Folder
                           className={cn(
                             'mx-auto h-3.5 w-3.5 transition-colors',
-                            active ? 'text-[#217346]' : 'text-slate-400',
+                            active ? 'text-[#2e7ad1]' : 'text-slate-400',
                           )}
                         />
                       </td>
                       <td
                         className={cn(
                           'border-r border-slate-100 px-2 py-1.5 font-medium',
-                          active ? 'text-[#217346]' : 'text-slate-700',
+                          active ? 'text-[#2e7ad1]' : 'text-slate-700',
                         )}
                       >
                         {m.label}
@@ -444,7 +444,7 @@ export function BatchMonthExplorer({
         <section className="xl-sheet-panel">
           <div className="xl-sheet-head">
             <div className="flex items-center gap-2">
-              <ChevronRight className="h-3.5 w-3.5 text-[#217346]" />
+              <ChevronRight className="h-3.5 w-3.5 text-[#2e7ad1]" />
               <span className="xl-sheet-head-title">
                 {monthMeta.label} {year}
               </span>
@@ -457,7 +457,7 @@ export function BatchMonthExplorer({
           {monthFolders.length === 0 ? (
             <div className="xl-empty">
               <div className="xl-empty-icon">
-                <FileSpreadsheet className="h-5 w-5 text-[#217346]" />
+                <FileSpreadsheet className="h-5 w-5 text-[#2e7ad1]" />
               </div>
               {batches.length === 0 ? (
                 <>

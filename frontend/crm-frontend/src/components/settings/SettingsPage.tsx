@@ -29,19 +29,15 @@ const SETTINGS_SECTIONS = [
 
 type SectionId = (typeof SETTINGS_SECTIONS)[number]['id'];
 
+const CRM_THEME = {
+  gradient: 'bg-[#2e7ad1]',
+  accent: '#2e7ad1',
+};
+
 const PANEL_THEME: Record<string, { gradient: string; accent: string }> = {
-  admin: {
-    gradient: 'bg-gradient-to-r from-[#0f2e22] via-[#217346] to-[#2d9a62]',
-    accent: '#217346',
-  },
-  db_admin: {
-    gradient: 'bg-gradient-to-r from-violet-900 via-violet-600 to-purple-500',
-    accent: '#7c3aed',
-  },
-  employee: {
-    gradient: 'bg-gradient-to-r from-emerald-900 via-emerald-600 to-teal-500',
-    accent: '#059669',
-  },
+  admin: CRM_THEME,
+  db_admin: CRM_THEME,
+  employee: CRM_THEME,
 };
 
 function userInitials(firstName?: string, lastName?: string, email?: string) {

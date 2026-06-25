@@ -136,7 +136,7 @@ export function MasterDataClearConfirmModal({
                 <span
                   className={cn(
                     'relative text-[11px] font-bold tabular-nums transition-colors duration-300',
-                    canDelete ? 'text-emerald-600' : 'text-slate-700',
+                    canDelete ? 'text-[#2e7ad1]' : 'text-slate-700',
                   )}
                 >
                   {canDelete ? (

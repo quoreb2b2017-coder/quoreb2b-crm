@@ -22,24 +22,24 @@ const ACCENT: Record<
   { fab: string; fabRing: string; header: string; btn: string; link: string }
 > = {
   employee: {
-    fab: 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-900/30',
+    fab: 'bg-[#2e7ad1] hover:bg-[#2568b8] shadow-emerald-900/30',
     fabRing: 'ring-emerald-400/40',
     header: 'border-t-emerald-500 bg-emerald-50/80',
-    btn: 'bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-500/30',
-    link: 'text-emerald-700 hover:text-emerald-900',
+    btn: 'bg-[#2e7ad1] hover:bg-[#2568b8] focus:ring-[#2e7ad1]/30',
+    link: 'text-[#2e7ad1] hover:text-emerald-900',
   },
   admin: {
-    fab: 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-900/30',
+    fab: 'bg-[#2e7ad1] hover:bg-[#2568b8] shadow-indigo-900/30',
     fabRing: 'ring-indigo-400/40',
     header: 'border-t-indigo-500 bg-indigo-50/80',
-    btn: 'bg-indigo-600 hover:bg-indigo-700 focus:ring-indigo-500/30',
+    btn: 'bg-[#2e7ad1] hover:bg-[#2568b8] focus:ring-indigo-500/30',
     link: 'text-indigo-700 hover:text-indigo-900',
   },
   db_admin: {
-    fab: 'bg-violet-600 hover:bg-violet-700 shadow-violet-900/30',
+    fab: 'bg-[#2e7ad1] hover:bg-[#2568b8] shadow-violet-900/30',
     fabRing: 'ring-violet-400/40',
     header: 'border-t-violet-500 bg-violet-50/80',
-    btn: 'bg-violet-600 hover:bg-violet-700 focus:ring-violet-500/30',
+    btn: 'bg-[#2e7ad1] hover:bg-[#2568b8] focus:ring-violet-500/30',
     link: 'text-violet-700 hover:text-violet-900',
   },
 };

@@ -81,7 +81,7 @@ const LAYOUT_COLUMNS: Record<'team' | 'org', { key: ColKey; label: string }[]> =
 };
 
 const PCT_STYLES = [
-  { min: 90, className: 'bg-[#e2efda] text-[#217346] font-semibold' },
+  { min: 90, className: 'bg-[#e2efda] text-[#2e7ad1] font-semibold' },
   { min: 75, className: 'bg-[#ddebf7] text-[#2e75b6] font-semibold' },
   { min: 60, className: 'bg-[#fff2cc] text-[#bf8f00] font-semibold' },
   { min: 0, className: 'bg-[#fce4d6] text-[#c00000] font-semibold' },
@@ -151,7 +151,7 @@ function cellValue(
       return (
         <button
           type="button"
-          className="whitespace-nowrap text-[11px] font-semibold text-[#217346] underline decoration-[#217346]/40 underline-offset-2 hover:text-[#1a5c38]"
+          className="whitespace-nowrap text-[11px] font-semibold text-[#2e7ad1] underline decoration-[#2e7ad1]/40 underline-offset-2 hover:text-[#2568b8]"
           onClick={(e) => {
             e.stopPropagation();
             onHistory?.(member.userId);
@@ -296,8 +296,8 @@ export function TeamAttendanceExcelTable({
                       const sticky = col.key === 'index';
 
                       let className: string | undefined;
-                      if (col.key === 'workTime') className = 'font-semibold text-[#217346]';
-                      if (col.key === 'present') className = 'bg-[#e2efda]/40 font-bold text-[#217346]';
+                      if (col.key === 'workTime') className = 'font-semibold text-[#2e7ad1]';
+                      if (col.key === 'present') className = 'bg-[#e2efda]/40 font-bold text-[#2e7ad1]';
                       if (col.key === 'history') className = 'min-w-[100px]';
                       if (col.key === 'pct') className = pctStyle(member.attendancePercentage);
 

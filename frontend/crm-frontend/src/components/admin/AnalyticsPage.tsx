@@ -96,7 +96,7 @@ export function AnalyticsPage() {
               className={cn(
                 'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all',
                 pageTab === 'crm'
-                  ? 'bg-indigo-600 text-white shadow-sm'
+                  ? 'bg-[#2e7ad1] text-white shadow-sm'
                   : 'text-slate-600 hover:bg-slate-50',
               )}
             >
@@ -109,7 +109,7 @@ export function AnalyticsPage() {
               className={cn(
                 'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all',
                 pageTab === 'employees'
-                  ? 'bg-indigo-600 text-white shadow-sm'
+                  ? 'bg-[#2e7ad1] text-white shadow-sm'
                   : 'text-slate-600 hover:bg-slate-50',
               )}
             >
@@ -156,7 +156,7 @@ export function AnalyticsPage() {
                 value={stats.totalUsers}
                 note={`+${stats.newUsersThisMonth} joined this month`}
                 accent="indigo"
-                icon={<Users className="h-5 w-5 text-indigo-600" />}
+                icon={<Users className="h-5 w-5 text-[#2e7ad1]" />}
               />
               <KpiCard
                 label="Total leads"
@@ -170,14 +170,14 @@ export function AnalyticsPage() {
                 value={stats.activeLeads}
                 note={`${stats.activeRate ?? 0}% active rate`}
                 accent="emerald"
-                icon={<TrendingUp className="h-5 w-5 text-emerald-600" />}
+                icon={<TrendingUp className="h-5 w-5 text-[#2e7ad1]" />}
               />
               <KpiCard
                 label="Won / Lead status"
                 value={stats.statusLeads}
                 note={`${stats.wonRate ?? 0}% conversion · ${stats.batchCount ?? 0} campaigns`}
                 accent="violet"
-                icon={<Target className="h-5 w-5 text-violet-600" />}
+                icon={<Target className="h-5 w-5 text-[#2e7ad1]" />}
               />
             </div>
           ) : null}

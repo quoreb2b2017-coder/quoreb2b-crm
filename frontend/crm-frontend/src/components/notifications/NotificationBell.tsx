@@ -21,13 +21,13 @@ import { cn } from '@/lib/utils/cn';
 type NotificationFilter = 'all' | 'unread';
 
 const NOTIFICATION_COLORS: Record<NotificationType, { icon: LucideIcon; bg: string; text: string; border: string }> = {
-  success: { icon: CheckCircle2, bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-l-emerald-500' },
+  success: { icon: CheckCircle2, bg: 'bg-emerald-50', text: 'text-[#2e7ad1]', border: 'border-l-emerald-500' },
   error: { icon: AlertCircle, bg: 'bg-red-50', text: 'text-red-700', border: 'border-l-red-500' },
   warning: { icon: AlertTriangle, bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-l-amber-500' },
   info: { icon: Info, bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-l-blue-500' },
   batch_created: { icon: CheckCircle2, bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-l-indigo-500' },
   batch_updated: { icon: CheckCircle2, bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-l-violet-500' },
-  batch_completed: { icon: CheckCircle2, bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-l-emerald-500' },
+  batch_completed: { icon: CheckCircle2, bg: 'bg-emerald-50', text: 'text-[#2e7ad1]', border: 'border-l-emerald-500' },
   user_added: { icon: CheckCircle2, bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-l-sky-500' },
   data_uploaded: { icon: CheckCircle2, bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-l-indigo-500' },
   system_alert: { icon: AlertTriangle, bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-l-rose-500' },

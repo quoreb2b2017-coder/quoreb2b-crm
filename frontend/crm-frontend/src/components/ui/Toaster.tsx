@@ -14,7 +14,7 @@ const config: Record<ToastType, {
   success: {
     bar: 'bg-emerald-500',
     iconBg: 'bg-emerald-50',
-    iconColor: 'text-emerald-600',
+    iconColor: 'text-[#2e7ad1]',
     border: 'border-emerald-100',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
@@ -47,7 +47,7 @@ const config: Record<ToastType, {
   info: {
     bar: 'bg-indigo-500',
     iconBg: 'bg-indigo-50',
-    iconColor: 'text-indigo-600',
+    iconColor: 'text-[#2e7ad1]',
     border: 'border-indigo-100',
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">

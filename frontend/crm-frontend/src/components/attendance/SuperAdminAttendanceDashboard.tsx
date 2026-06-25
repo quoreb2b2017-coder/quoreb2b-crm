@@ -166,13 +166,13 @@ export function SuperAdminAttendanceDashboard() {
           placeholder="Search name, email, employee ID…"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-10 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#217346]/30"
+          className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-10 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#2e7ad1]/30"
         />
       </div>
       <select
         value={roleFilter}
         onChange={(e) => setRoleFilter(e.target.value)}
-        className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#217346]/30"
+        className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2e7ad1]/30"
       >
         <option value="all">All roles</option>
         <option value="super-admin">Super Admin</option>

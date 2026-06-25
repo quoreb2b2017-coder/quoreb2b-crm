@@ -8,6 +8,9 @@ import { DAILY_NET_WORK_TARGET_LABEL } from '@/lib/attendance/attendance-shift.c
 
 interface WorkTimerStripProps {
   className?: string;
+  variant?: 'light' | 'dark';
+  /** Tighter layout for dashboard welcome banner */
+  compact?: boolean;
 }
 
 const MAX_DAY_MINUTES = 24 * 60;
@@ -16,7 +19,37 @@ function capDayMinutes(minutes: number): number {
   return Math.min(Math.max(0, minutes), MAX_DAY_MINUTES);
 }
 
-export function WorkTimerStrip({ className }: WorkTimerStripProps) {
+function timerSkin(light: boolean) {
+  return {
+    panel: light ? 'border-slate-200/90 bg-slate-50/90' : 'border-white/10 bg-white/5',
+    label: light ? 'text-slate-400' : 'text-white/45',
+    value: light ? 'text-slate-900' : 'text-white',
+    sub: light ? 'text-slate-500' : 'text-white/50',
+    meta: light ? 'text-slate-600' : 'text-white/70',
+    btn: light
+      ? 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+      : 'border-white/15 bg-white/10 text-white/70 hover:bg-white/15',
+    navBtn: light
+      ? 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+      : 'border-white/10 bg-white/5 text-white/60 hover:bg-white/10',
+    dayToday: light ? 'bg-[#e8f1fb] ring-1 ring-[#2e7ad1]/30' : 'bg-white/20 ring-1 ring-white/40',
+    dayNormal: light
+      ? 'border border-slate-100 bg-white hover:bg-slate-50'
+      : 'bg-white/5 hover:bg-white/10',
+    dayMet: light ? 'bg-[#e8f1fb]/80 ring-1 ring-[#2e7ad1]/20' : 'bg-white/15 ring-1 ring-white/30',
+    dayLabel: light ? 'text-slate-500' : 'text-white/50',
+    dayLabelToday: light ? 'text-[#2568b8]' : 'text-white/90',
+    dayValue: light ? 'text-slate-800' : 'text-white',
+    livePillOn: light ? 'bg-[#e8f1fb] text-[#2568b8]' : 'bg-white/20 text-white/90',
+    livePillOff: light ? 'bg-slate-100 text-slate-500' : 'bg-white/10 text-white/50',
+    skeleton: light ? 'bg-slate-100' : 'bg-white/5',
+    skeletonInner: light ? 'bg-slate-200' : 'bg-white/10',
+  };
+}
+
+export function WorkTimerStrip({ className, variant = 'light', compact = false }: WorkTimerStripProps) {
+  const light = variant === 'light';
+  const t = timerSkin(light);
   const scrollRef = useRef<HTMLDivElement>(null);
   const {
     isRunning,
@@ -33,7 +66,6 @@ export function WorkTimerStrip({ className }: WorkTimerStripProps) {
     todayFirstLoginTime,
     todayLastLogoutTime,
     isOnDuty,
-    todaySessions,
   } = useWorkTimer(true);
 
   const days = useMemo(() => dailyBreakdown ?? [], [dailyBreakdown]);
@@ -46,73 +78,142 @@ export function WorkTimerStrip({ className }: WorkTimerStripProps) {
 
   if (loading) {
     return (
-      <div className={cn('animate-pulse rounded-xl bg-white/5 px-3 py-4', className)}>
-        <div className="h-14 rounded-lg bg-white/10" />
+      <div className={cn('animate-pulse rounded-md bg-slate-100 px-2 py-1.5', className)}>
+        <div className="h-8 rounded bg-slate-200" />
+      </div>
+    );
+  }
+
+  if (compact) {
+    return (
+      <div className={cn('dash-timer-bar', className)}>
+        <div className="dash-timer-stat">
+          <span className="dash-timer-stat__label">Today</span>
+          <span className="dash-timer-stat__value">{todayLiveFormatted}</span>
+        </div>
+        <div className="dash-timer-divider" aria-hidden />
+        <div ref={scrollRef} className="dash-timer-scroll">
+          {days.length === 0 ? (
+            <span className="px-1 text-[10px] text-slate-400">No hours logged</span>
+          ) : (
+            days.map((day) => {
+              const displayFormatted = day.isToday ? todayLiveFormatted : day.totalFormatted;
+              const displayMinutes = capDayMinutes(
+                day.isToday ? todayLiveMinutes : day.totalMinutes,
+              );
+              const targetMet =
+                day.dailyTargetMet ||
+                displayMinutes >= (dailyTargetMinutes ?? 7 * 60 + 45);
+
+              return (
+                <div
+                  key={day.date}
+                  className={cn(
+                    'dash-timer-day',
+                    day.isToday && 'dash-timer-day--today',
+                    targetMet && !day.isToday && 'dash-timer-day--met',
+                  )}
+                  title={day.date}
+                >
+                  <span className="dash-timer-day__label">{day.dayLabel}</span>
+                  <span className="dash-timer-day__val">{displayFormatted}</span>
+                </div>
+              );
+            })
+          )}
+        </div>
+        <div className="dash-timer-divider" aria-hidden />
+        <div className="dash-timer-stat">
+          <span className="dash-timer-stat__label">Month</span>
+          <span className="dash-timer-stat__value">{monthlyFormatted}</span>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className={cn('w-full space-y-2', className)}>
-      {(todayFirstLoginTime || todaySessions.length > 0) && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] text-white/70">
+    <div className={cn('w-full', compact ? 'space-y-1' : 'space-y-1.5', className)}>
+      {!compact && (todayFirstLoginTime || todayLastLogoutTime || isOnDuty) && (
+        <div
+          className={cn(
+            'flex flex-wrap items-center gap-x-3 gap-y-0.5 rounded-md border px-2 py-1 text-[10px]',
+            t.panel,
+            t.meta,
+          )}
+        >
           <span>
-            <span className="font-bold uppercase tracking-wide text-white/45">First login · </span>
+            <span className={cn('font-bold uppercase tracking-wide', t.label)}>First login · </span>
             {todayFirstLoginTime ?? '—'}
           </span>
           {!isOnDuty && todayLastLogoutTime && (
             <span>
-              <span className="font-bold uppercase tracking-wide text-white/45">Last logout · </span>
+              <span className={cn('font-bold uppercase tracking-wide', t.label)}>Last logout · </span>
               {todayLastLogoutTime}
             </span>
           )}
-          {isOnDuty && (
-            <span className="text-emerald-200/90">On duty now</span>
-          )}
+          {isOnDuty && <span className="font-medium text-[#2568b8]">On duty now</span>}
         </div>
       )}
 
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,130px)_1fr_minmax(0,120px)] lg:items-center lg:gap-4">
-        {/* Today total (all sessions) */}
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 lg:flex-col lg:items-start lg:justify-center">
+      <div
+        className={cn(
+          'grid gap-1.5',
+          compact
+            ? 'sm:grid-cols-[minmax(0,96px)_1fr_minmax(0,88px)] sm:items-center'
+            : 'lg:grid-cols-[minmax(0,118px)_1fr_minmax(0,108px)] lg:items-center lg:gap-2.5',
+        )}
+      >
+        <div
+          className={cn(
+            'flex items-center justify-between gap-1.5 rounded-md border',
+            compact ? 'px-1.5 py-1' : 'rounded-lg px-2 py-2 lg:flex-col lg:items-start lg:justify-center',
+            t.panel,
+          )}
+        >
           <div>
-            <p className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-white/45">
-              <Timer className="h-3 w-3" />
-              Today total
+            <p className={cn('flex items-center gap-1 text-[8px] font-bold uppercase tracking-wider', t.label)}>
+              <Timer className="h-2.5 w-2.5" />
+              Today
             </p>
-            <p className="mt-1 font-mono text-2xl font-bold tabular-nums leading-none text-white">
+            <p className={cn('font-mono font-bold tabular-nums leading-none', compact ? 'text-base' : 'mt-0.5 text-xl', t.value)}>
               {todayLiveFormatted}
             </p>
-            <p className="mt-0.5 text-[10px] text-white/50">
-              {!isRunning && !onBreak
-                ? 'Paused · logged out or idle'
-                : onBreak
-                  ? `On break · ${isRunning ? `session ${liveFormatted}` : 'timer running'}`
-                  : `Live · this session ${liveFormatted}`}
-            </p>
+            {!compact && (
+              <p className={cn('mt-0.5 text-[10px]', t.sub)}>
+                {!isRunning && !onBreak
+                  ? 'Paused · logged out or idle'
+                  : onBreak
+                    ? `On break · ${isRunning ? `session ${liveFormatted}` : 'timer running'}`
+                    : `Live · this session ${liveFormatted}`}
+              </p>
+            )}
           </div>
+          {!compact && (
           <button
             type="button"
             onClick={() => reload()}
-            className="inline-flex items-center gap-1 rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[9px] font-semibold text-white/70 hover:bg-white/15"
+            className={cn(
+              'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[9px] font-semibold',
+              t.btn,
+            )}
           >
             <RefreshCw className="h-3 w-3" />
             Sync
           </button>
+          )}
         </div>
 
-        {/* Daily */}
-        <div className="min-w-0 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <p className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-white/45">
-              <CalendarDays className="h-3 w-3" />
-              Net hours · target {DAILY_NET_WORK_TARGET_LABEL}
+        <div className={cn('min-w-0 rounded-md border', compact ? 'px-1.5 py-1' : 'rounded-lg px-2 py-2', t.panel)}>
+          <div className={cn('flex items-center justify-between gap-1', compact ? 'mb-0.5' : 'mb-1')}>
+            <p className={cn('flex items-center gap-1 text-[8px] font-bold uppercase tracking-wider', t.label)}>
+              <CalendarDays className="h-2.5 w-2.5" />
+              {compact ? 'Month' : `Net hours · target ${DAILY_NET_WORK_TARGET_LABEL}`}
             </p>
             <div className="flex items-center gap-0.5">
               <button
                 type="button"
                 onClick={() => scrollBy(-1)}
-                className="rounded-md border border-white/10 bg-white/5 p-1 text-white/60 hover:bg-white/10"
+                className={cn('rounded-md border p-0.5', t.navBtn)}
                 aria-label="Scroll left"
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
@@ -120,7 +221,7 @@ export function WorkTimerStrip({ className }: WorkTimerStripProps) {
               <button
                 type="button"
                 onClick={() => scrollBy(1)}
-                className="rounded-md border border-white/10 bg-white/5 p-1 text-white/60 hover:bg-white/10"
+                className={cn('rounded-md border p-0.5', t.navBtn)}
                 aria-label="Scroll right"
               >
                 <ChevronRight className="h-3.5 w-3.5" />
@@ -130,15 +231,13 @@ export function WorkTimerStrip({ className }: WorkTimerStripProps) {
 
           <div
             ref={scrollRef}
-            className="flex gap-2 overflow-x-auto px-0.5 pb-1 pt-0.5 scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="flex gap-1.5 overflow-x-auto px-0.5 pb-0.5 pt-0.5 scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             {days.length === 0 ? (
-              <p className="py-2 text-[11px] text-white/45">No time logged this month</p>
+              <p className={cn('py-1.5 text-[11px]', t.label)}>No time logged this month</p>
             ) : (
               days.map((day) => {
-                const displayFormatted = day.isToday
-                  ? todayLiveFormatted
-                  : day.totalFormatted;
+                const displayFormatted = day.isToday ? todayLiveFormatted : day.totalFormatted;
                 const displayMinutes = capDayMinutes(
                   day.isToday ? todayLiveMinutes : day.totalMinutes,
                 );
@@ -150,11 +249,10 @@ export function WorkTimerStrip({ className }: WorkTimerStripProps) {
                   <div
                     key={day.date}
                     className={cn(
-                      'flex min-w-[76px] shrink-0 flex-col items-center rounded-lg px-2 py-2 text-center',
-                      day.isToday
-                        ? 'bg-teal-400/25 ring-1 ring-teal-300/50'
-                        : 'bg-white/5 hover:bg-white/10',
-                      targetMet && !day.isToday && 'bg-emerald-400/10 ring-1 ring-emerald-400/45',
+                      'flex shrink-0 flex-col items-center rounded px-1 py-1 text-center',
+                      compact ? 'min-w-[52px]' : 'min-w-[68px] rounded-md px-1.5 py-1.5',
+                      day.isToday ? t.dayToday : t.dayNormal,
+                      targetMet && !day.isToday && t.dayMet,
                     )}
                     title={
                       targetMet
@@ -166,31 +264,26 @@ export function WorkTimerStrip({ className }: WorkTimerStripProps) {
                       <span
                         className={cn(
                           'text-[8px] font-bold uppercase leading-none',
-                          day.isToday ? 'text-teal-100' : 'text-white/50',
+                          day.isToday ? t.dayLabelToday : t.dayLabel,
                         )}
                       >
                         {day.dayLabel}
                       </span>
                       {targetMet && (
                         <CheckCircle2
-                          className="h-3 w-3 shrink-0 text-emerald-300"
+                          className={cn('h-3 w-3 shrink-0', light ? 'text-[#2e7ad1]' : 'text-white/90')}
                           aria-label="Target met"
                         />
                       )}
                       {day.isToday && isRunning && (
-                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" />
+                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#2e7ad1]" />
                       )}
                     </div>
-                    <span
-                      className={cn(
-                        'mt-1 font-mono text-[11px] font-bold tabular-nums leading-tight',
-                        day.isToday ? 'text-teal-50' : 'text-white',
-                      )}
-                    >
+                    <span className={cn('mt-0.5 font-mono text-[11px] font-bold tabular-nums leading-tight', t.dayValue)}>
                       {displayFormatted}
                     </span>
                     {displayMinutes >= MAX_DAY_MINUTES && (
-                      <span className="text-[7px] text-amber-200/80">max</span>
+                      <span className="text-[7px] text-amber-500">max</span>
                     )}
                   </div>
                 );
@@ -199,70 +292,41 @@ export function WorkTimerStrip({ className }: WorkTimerStripProps) {
           </div>
         </div>
 
-        {/* Month */}
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 lg:flex-col lg:items-end lg:justify-center">
+        <div
+          className={cn(
+            'flex items-center justify-between gap-1.5 rounded-md border',
+            compact ? 'px-1.5 py-1 lg:flex-col lg:items-end' : 'rounded-lg px-2 py-2 lg:flex-col lg:items-end lg:justify-center',
+            t.panel,
+          )}
+        >
           <div className="lg:text-right">
-            <p className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-white/45 lg:justify-end">
-              <Clock className="h-3 w-3" />
-              This month
+            <p className={cn('flex items-center gap-1 text-[8px] font-bold uppercase tracking-wider lg:justify-end', t.label)}>
+              <Clock className="h-2.5 w-2.5" />
+              Total
             </p>
-            <p className="mt-1 font-mono text-xl font-bold tabular-nums text-teal-200">
+            <p className={cn('font-mono font-bold tabular-nums', compact ? 'text-sm' : 'mt-0.5 text-lg', light ? 'text-slate-800' : 'text-white/90')}>
               {monthlyFormatted}
             </p>
-            {periodLabel && (
-              <p className="text-[10px] text-white/45">{periodLabel}</p>
-            )}
+            {!compact && periodLabel && <p className={cn('text-[10px]', t.sub)}>{periodLabel}</p>}
           </div>
+          {!compact && (
           <span
             className={cn(
-              'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide',
-              isRunning ? 'bg-emerald-400/20 text-emerald-100' : 'bg-white/10 text-white/50',
+              'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide',
+              isRunning ? t.livePillOn : t.livePillOff,
             )}
           >
             <span
               className={cn(
                 'h-1.5 w-1.5 rounded-full',
-                isRunning ? 'animate-pulse bg-emerald-300' : 'bg-slate-400',
+                isRunning ? 'animate-pulse bg-[#2e7ad1]' : 'bg-slate-400',
               )}
             />
             {isRunning ? 'Live' : 'Paused'}
           </span>
+          )}
         </div>
       </div>
-
-      {todaySessions.length > 0 && (
-        <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-          <p className="mb-1.5 text-[9px] font-bold uppercase tracking-wider text-white/45">
-            Today&apos;s sessions · login → logout
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {todaySessions.map((s) => (
-              <div
-                key={s.sessionId + s.loginAt}
-                className={cn(
-                  'rounded-lg border px-2 py-1 text-[10px] tabular-nums',
-                  s.stillActive
-                    ? 'border-emerald-400/40 bg-emerald-400/15 text-emerald-50'
-                    : 'border-white/15 bg-white/5 text-white/80',
-                )}
-                title={`${s.loginTime} → ${s.logoutTime ?? 'now'}`}
-              >
-                <span className="font-bold text-white/50">#{s.index}</span>{' '}
-                {s.loginTime}
-                <span className="text-white/40"> → </span>
-                {s.stillActive ? (
-                  <span className="font-semibold text-emerald-200">Live</span>
-                ) : (
-                  s.logoutTime ?? '—'
-                )}
-                <span className="ml-1 font-mono font-semibold text-white/90">
-                  {s.durationFormatted}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

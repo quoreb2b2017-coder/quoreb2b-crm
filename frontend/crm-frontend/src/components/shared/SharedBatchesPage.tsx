@@ -128,7 +128,7 @@ export default function SharedBatchesPage({
       <BatchMonthExplorer
         batches={batches}
         loading={loading}
-        title={role === 'db_admin' ? 'Campaigns' : 'My Campaigns'}
+        title={role === 'db_admin' ? 'All campaigns' : 'My campaign'}
         subtitle={subtitle}
         emptyTitle={role === 'db_admin' ? 'No campaigns yet' : 'No campaigns shared yet'}
         emptyHint={emptyHint}

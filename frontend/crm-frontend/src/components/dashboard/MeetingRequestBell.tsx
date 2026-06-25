@@ -103,7 +103,7 @@ export function MeetingRequestBell() {
       >
         <Users className="h-4 w-4" />
         {count > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-violet-600 px-1 text-[10px] font-bold text-white">
+          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#2e7ad1] px-1 text-[10px] font-bold text-white">
             {count}
           </span>
         )}
@@ -136,7 +136,7 @@ export function MeetingRequestBell() {
                         type="button"
                         disabled={actingId === req.id}
                         onClick={() => void handleReview(req.id, 'approve')}
-                        className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-emerald-600 px-2 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                        className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-[#2e7ad1] px-2 py-1.5 text-xs font-semibold text-white hover:bg-[#2568b8] disabled:opacity-50"
                       >
                         {actingId === req.id ? (
                           <Loader2 className="h-3 w-3 animate-spin" />

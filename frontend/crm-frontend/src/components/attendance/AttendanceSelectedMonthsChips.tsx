@@ -6,9 +6,9 @@ import { monthChipLabel } from '@/lib/attendance/period-labels';
 type Accent = 'emerald' | 'violet' | 'admin';
 
 const chipClass: Record<Accent, string> = {
-  emerald: 'bg-emerald-600 text-white ring-emerald-700/30',
-  violet: 'bg-violet-600 text-white ring-violet-700/30',
-  admin: 'bg-[#217346] text-white ring-[#1a5c38]/30',
+  emerald: 'bg-[#2e7ad1] text-white ring-emerald-700/30',
+  violet: 'bg-[#2e7ad1] text-white ring-violet-700/30',
+  admin: 'bg-[#2e7ad1] text-white ring-[#2568b8]/30',
 };
 
 interface AttendanceSelectedMonthsChipsProps {

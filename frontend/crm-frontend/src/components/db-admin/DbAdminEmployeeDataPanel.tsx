@@ -10,14 +10,17 @@ import {
 } from '@/lib/api/master-data.service';
 import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
-import { AttendanceFullBleed } from '@/components/attendance/AttendanceFullBleed';
 import { MasterDataUploadMonthExplorer } from '@/components/master-data/MasterDataUploadMonthExplorer';
 import { MasterDataUploadRequestList } from '@/components/master-data/MasterDataUploadRequestList';
+import {
+  DataPageShell,
+  dataFilterPill,
+  dataToolbarBadge,
+} from '@/components/master-data/DataPageShell';
 import {
   resolveDuplicatesOpenPath,
   uploadRequestFilePath,
 } from '@/lib/master-data/upload-request-nav';
-import { cn } from '@/lib/utils/cn';
 
 const FILTERS: Array<MasterDataUploadRequestStatus | 'all'> = [
   'pending_db_admin',
@@ -129,7 +132,28 @@ export function DbAdminEmployeeDataPanel({ onRequestsChanged }: DbAdminEmployeeD
   };
 
   return (
-    <AttendanceFullBleed className="gap-4 px-4 py-4 sm:px-5">
+    <DataPageShell
+      title="Employee data"
+      subtitle="Review employee uploads by month folder — approve, reject, or forward to Super Admin."
+      actions={
+        <button
+          type="button"
+          onClick={load}
+          disabled={loading}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-white/30 bg-white/10 px-3 py-2 text-sm font-semibold text-white backdrop-blur-sm transition-all hover:bg-white/18 disabled:opacity-50"
+        >
+          <RefreshCw className={loading ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
+          Refresh
+        </button>
+      }
+    >
+      {pendingDbCount > 0 && (
+        <div className="rounded-xl border border-amber-200/80 bg-amber-50/90 px-4 py-2.5 text-sm text-amber-900">
+          <span className="font-semibold">{pendingDbCount} request{pendingDbCount !== 1 ? 's' : ''}</span>
+          {' '}waiting for your review
+        </div>
+      )}
+
       <MasterDataUploadMonthExplorer
         title="Employee data folders"
         requests={filteredRequests}
@@ -159,39 +183,18 @@ export function DbAdminEmployeeDataPanel({ onRequestsChanged }: DbAdminEmployeeD
             onViewFile={openRequestFile}
             toolbar={
               <div className="flex w-full flex-wrap items-center gap-2">
-                <span className="text-sm font-medium text-slate-700">
-                  {pendingDbCount > 0
-                    ? `${pendingDbCount} waiting for your review`
-                    : 'Review employee uploads by month folder'}
-                </span>
-                <span className="font-medium text-slate-700">Folder:</span>
-                <span className="border border-[#c6c6c6] bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700">
-                  {meta.monthLabel} {meta.year}
-                </span>
-                <div className="ml-auto flex flex-wrap gap-2">
+                <span className={dataToolbarBadge()}>{meta.monthLabel} {meta.year}</span>
+                <div className="ml-auto flex flex-wrap gap-1.5">
                   {FILTERS.map((item) => (
                     <button
                       key={item}
                       type="button"
                       onClick={() => setFilter(item)}
-                      className={cn(
-                        'rounded-lg px-3 py-1.5 text-xs font-semibold capitalize',
-                        filter === item
-                          ? 'bg-[#217346] text-white'
-                          : 'border border-slate-200 text-slate-600 hover:bg-slate-50',
-                      )}
+                      className={dataFilterPill(filter === item)}
                     >
                       {item === 'all' ? 'All' : item.replace(/_/g, ' ')}
                     </button>
                   ))}
-                  <button
-                    type="button"
-                    onClick={load}
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    Refresh
-                  </button>
                 </div>
               </div>
             }
@@ -207,7 +210,7 @@ export function DbAdminEmployeeDataPanel({ onRequestsChanged }: DbAdminEmployeeD
             aria-hidden
           />
           <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="pointer-events-auto w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="pointer-events-auto w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl ring-1 ring-slate-200/80">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h3 className="text-lg font-semibold text-slate-900">Reject employee upload</h3>
@@ -226,13 +229,13 @@ export function DbAdminEmployeeDataPanel({ onRequestsChanged }: DbAdminEmployeeD
                 onChange={(e) => setRejectReason(e.target.value)}
                 placeholder="Reason for rejection (required)"
                 rows={4}
-                className="mt-4 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                className="mt-4 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-[#2e7ad1] focus:outline-none focus:ring-2 focus:ring-[#2e7ad1]/15"
               />
               <div className="mt-4 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setRejectTarget(null)}
-                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700"
+                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                 >
                   Cancel
                 </button>
@@ -249,6 +252,6 @@ export function DbAdminEmployeeDataPanel({ onRequestsChanged }: DbAdminEmployeeD
           </div>
         </>
       )}
-    </AttendanceFullBleed>
+    </DataPageShell>
   );
 }

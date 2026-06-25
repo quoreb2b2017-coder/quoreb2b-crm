@@ -55,12 +55,12 @@ export function AttendanceMonthlySummarySheet({
                 <td className="border border-[#e0e0e0] px-2 py-2 text-center font-medium">
                   {data.totalDays}
                 </td>
-                <td className="border border-[#e0e0e0] px-2 py-2 text-center bg-[#e2efda] font-bold text-[#217346]">
+                <td className="border border-[#e0e0e0] px-2 py-2 text-center bg-[#e2efda] font-bold text-[#2e7ad1]">
                   <div>{data.presentDays}</div>
                   {checkHistoryHref && (
                     <Link
                       href={checkHistoryHref}
-                      className="mt-1 inline-block text-[10px] font-semibold text-[#217346] underline underline-offset-2"
+                      className="mt-1 inline-block text-[10px] font-semibold text-[#2e7ad1] underline underline-offset-2"
                     >
                       Check history
                     </Link>
@@ -78,7 +78,7 @@ export function AttendanceMonthlySummarySheet({
                 <td className="border border-[#e0e0e0] px-2 py-2 text-center font-semibold tabular-nums">
                   {totalHours.toFixed(1)}h
                 </td>
-                <td className="border border-[#e0e0e0] px-2 py-2 text-center bg-[#e2efda] font-bold text-[#217346]">
+                <td className="border border-[#e0e0e0] px-2 py-2 text-center bg-[#e2efda] font-bold text-[#2e7ad1]">
                   {data.attendancePercentage}%
                 </td>
               </tr>

@@ -95,7 +95,7 @@
 
 /* Root shell */
 .al-root {
-  animation: al-page-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: al-page-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .al-shell {
@@ -112,7 +112,7 @@
 .al-hero {
   position: relative;
   overflow: hidden;
-  background: linear-gradient(128deg, #0c2419 0%, #143d2b 28%, #217346 58%, #2d9a62 100%);
+  background: linear-gradient(128deg, #0c2419 0%, #143d2b 28%, #2e7ad1 58%, #2d9a62 100%);
 }
 
 .al-hero::before {
@@ -244,7 +244,7 @@
 }
 
 .al-kpi--green::before {
-  background: linear-gradient(90deg, #217346, #34d399);
+  background: linear-gradient(90deg, #2e7ad1, #34d399);
 }
 
 .al-kpi--blue::before {
@@ -266,8 +266,8 @@
 }
 
 .al-kpi-icon--green {
-  background: rgba(33, 115, 70, 0.12);
-  color: #217346;
+  background: rgba(46, 122, 209, 0.12);
+  color: #2e7ad1;
 }
 
 .al-kpi-icon--blue {
@@ -301,9 +301,9 @@
 
 .al-period-btn--active {
   background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-  color: #217346;
+  color: #2e7ad1;
   box-shadow:
-    0 2px 8px rgba(33, 115, 70, 0.12),
+    0 2px 8px rgba(46, 122, 209, 0.12),
     0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
@@ -312,7 +312,7 @@
 }
 
 .al-input-wrap:focus-within {
-  box-shadow: 0 0 0 3px rgba(33, 115, 70, 0.14);
+  box-shadow: 0 0 0 3px rgba(46, 122, 209, 0.14);
   border-radius: 0.5rem;
 }
 
@@ -323,9 +323,9 @@
 
 .al-refresh-btn:hover:not(:disabled) {
   background: linear-gradient(180deg, #f0faf4 0%, #e8f5ee 100%);
-  border-color: #217346;
-  color: #217346;
-  box-shadow: 0 2px 8px rgba(33, 115, 70, 0.15);
+  border-color: #2e7ad1;
+  color: #2e7ad1;
+  box-shadow: 0 2px 8px rgba(46, 122, 209, 0.15);
 }
 
 .al-filter-chip {
@@ -336,16 +336,16 @@
   border-radius: 9999px;
   font-size: 11px;
   font-weight: 600;
-  color: #217346;
+  color: #2e7ad1;
   background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%);
-  border: 1px solid rgba(33, 115, 70, 0.25);
-  box-shadow: 0 1px 2px rgba(33, 115, 70, 0.08);
+  border: 1px solid rgba(46, 122, 209, 0.25);
+  box-shadow: 0 1px 2px rgba(46, 122, 209, 0.08);
 }
 
 /* Main body */
 .al-body {
   background:
-    radial-gradient(circle at 20% 0%, rgba(33, 115, 70, 0.04), transparent 35%),
+    radial-gradient(circle at 20% 0%, rgba(46, 122, 209, 0.04), transparent 35%),
     radial-gradient(circle at 80% 100%, rgba(124, 58, 237, 0.03), transparent 30%),
     linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
 }
@@ -369,7 +369,7 @@
 
 .al-table-head {
   background: linear-gradient(180deg, #f0faf4 0%, #f8faf9 100%);
-  border-bottom: 2px solid rgba(33, 115, 70, 0.15);
+  border-bottom: 2px solid rgba(46, 122, 209, 0.15);
 }
 
 .al-table-head th {
@@ -387,7 +387,7 @@
 }
 
 .al-table-row {
-  animation: al-row-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation: al-row-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) backwards;
   transition:
     background-color 0.18s ease,
     box-shadow 0.18s ease;
@@ -395,7 +395,7 @@
 
 .al-table-row:hover {
   background: linear-gradient(90deg, rgba(240, 250, 244, 0.95) 0%, rgba(248, 250, 252, 0.6) 100%) !important;
-  box-shadow: inset 3px 0 0 #217346;
+  box-shadow: inset 3px 0 0 #2e7ad1;
 }
 
 .al-table-row:nth-child(even) {
@@ -414,7 +414,7 @@
   transform: scale(1.08);
   box-shadow:
     0 4px 14px rgba(15, 23, 42, 0.16),
-    0 0 0 2px rgba(33, 115, 70, 0.25);
+    0 0 0 2px rgba(46, 122, 209, 0.25);
 }
 
 .al-action-badge {
@@ -500,10 +500,10 @@
 }
 
 .al-page-btn:hover:not(:disabled) {
-  border-color: #217346;
-  color: #217346;
+  border-color: #2e7ad1;
+  color: #2e7ad1;
   background: #f0faf4;
-  box-shadow: 0 2px 6px rgba(33, 115, 70, 0.12);
+  box-shadow: 0 2px 6px rgba(46, 122, 209, 0.12);
 }
 
 /* Charts sidebar */
@@ -524,7 +524,7 @@
 }
 
 .al-chart-hero {
-  background: linear-gradient(145deg, #0f2e22 0%, #1a5c38 35%, #217346 70%, #2d9a62 100%);
+  background: linear-gradient(145deg, #0f2e22 0%, #2568b8 35%, #2e7ad1 70%, #2d9a62 100%);
   position: relative;
   overflow: hidden;
 }
@@ -568,7 +568,7 @@
 /* Scroll area */
 .al-scroll {
   scrollbar-width: thin;
-  scrollbar-color: #21734666 #f1f5f9;
+  scrollbar-color: #2e7ad166 #f1f5f9;
 }
 
 .al-scroll::-webkit-scrollbar {
@@ -582,11 +582,11 @@
 }
 
 .al-scroll::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #21734688, #217346aa);
+  background: linear-gradient(180deg, #2e7ad188, #2e7ad1aa);
   border-radius: 4px;
   border: 2px solid #f1f5f9;
 }
 
 .al-scroll::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #217346aa, #217346cc);
+  background: linear-gradient(180deg, #2e7ad1aa, #2e7ad1cc);
 }

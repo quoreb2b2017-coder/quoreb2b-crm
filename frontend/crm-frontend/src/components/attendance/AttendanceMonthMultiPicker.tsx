@@ -9,9 +9,9 @@ import { ALL_MONTH_INDICES } from '@/lib/attendance/yearly-analytics';
 type Accent = 'emerald' | 'violet' | 'admin';
 
 const focusRing: Record<Accent, string> = {
-  emerald: 'focus:ring-emerald-500/40',
+  emerald: 'focus:ring-[#2e7ad1]/40',
   violet: 'focus:ring-violet-500/40',
-  admin: 'focus:ring-[#217346]/40',
+  admin: 'focus:ring-[#2e7ad1]/40',
 };
 
 interface AttendanceMonthMultiPickerProps {
@@ -145,14 +145,14 @@ export function AttendanceMonthMultiPicker({
             <button
               type="button"
               onClick={selectAllDraft}
-              className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+              className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-semibold text-[#2568b8] hover:bg-emerald-100"
             >
               Select all
             </button>
             <button
               type="button"
               onClick={(e) => applyFullYear(e)}
-              className="rounded-md border border-[#217346] bg-[#217346] px-2 py-1 text-xs font-semibold text-white hover:bg-[#1a5c38]"
+              className="rounded-md border border-[#2e7ad1] bg-[#2e7ad1] px-2 py-1 text-xs font-semibold text-white hover:bg-[#2568b8]"
             >
               All 12 & apply
             </button>
@@ -183,7 +183,7 @@ export function AttendanceMonthMultiPicker({
                     <span
                       className={cn(
                         'flex h-4 w-4 shrink-0 items-center justify-center rounded border',
-                        checked ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300',
+                        checked ? 'border-[#2e7ad1] bg-[#2e7ad1] text-white' : 'border-slate-300',
                       )}
                     >
                       {checked && <Check className="h-3 w-3" />}
@@ -206,7 +206,7 @@ export function AttendanceMonthMultiPicker({
               type="button"
               disabled={draft.length === 0}
               onClick={apply}
-              className="rounded-lg bg-[#217346] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1a5c38] disabled:opacity-50 disabled:cursor-not-allowed"
+              className="rounded-lg bg-[#2e7ad1] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#2568b8] disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {allDraftSelected ? 'Apply all 12' : `Apply (${draft.length})`}
             </button>

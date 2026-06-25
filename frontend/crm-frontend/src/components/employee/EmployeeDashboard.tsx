@@ -10,7 +10,6 @@ import {
   fetchEmployeeDashboard,
   type EmployeeDashboardData,
 } from '@/lib/api/analytics.service';
-import { formatActivityAction } from '@/lib/constants/activity-labels';
 import { extractApiError } from '@/lib/api/errors';
 import { cn } from '@/lib/utils/cn';
 import { useWorkTimer } from '@/hooks/useWorkTimer';
@@ -20,9 +19,7 @@ import { DashboardBarRow } from '@/components/dashboard/DashboardBarRow';
 import {
   dashboardCard,
   dashboardCardHeader,
-  dashboardContextPill,
-  dashboardContextStrip,
-  dashboardRefreshBtn,
+  dashboardBannerBtn,
   dashboardSectionTitle,
   dashboardLink,
 } from '@/components/dashboard/dashboard-ui';
@@ -97,44 +94,28 @@ export function EmployeeDashboard() {
 
   return (
     <DashboardPageShell>
-      <div className="dash-section">
-        <WelcomeBanner
+      <WelcomeBanner
         variant="employee"
         toolbar={
           <button
             type="button"
             onClick={() => void load({ silent: true })}
             disabled={loading}
-            className={cn(
-              dashboardRefreshBtn,
-              'border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white',
-            )}
+            className={dashboardBannerBtn}
           >
             <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
             Refresh
           </button>
         }
-        />
-      </div>
+      />
 
-      <div className={cn(dashboardContextStrip, 'dash-section')}>
-        <span className="font-semibold text-slate-800">{data.user.name}</span>
-        {data.user.employeeId && (
-          <span className={dashboardContextPill('emerald')}>{data.user.employeeId}</span>
-        )}
-        <span className={dashboardContextPill('emerald')}>{data.period.monthLabel}</span>
-        <span className="ml-auto text-slate-500">
-          Today: <span className="font-medium text-slate-700">{data.period.todayLabel}</span>
-        </span>
-      </div>
-
-      <div className="dash-section grid gap-4 lg:grid-cols-2">
+      <div className="dash-section grid gap-1.5 lg:grid-cols-2">
         <XlMetricCardSection
           title="My assigned leads"
           headerVariant="green"
           columns={2}
           rows={[
-            { label: 'Campaigns', value: b.total },
+            { label: 'My campaign', value: b.total },
             { label: 'Total leads', value: b.totalLeads },
             { label: 'Pending', value: w.notTouched, note: 'Not touched this month' },
           ]}
@@ -159,30 +140,30 @@ export function EmployeeDashboard() {
         <AttendanceSummaryCard basePath="/employee/attendance" variant="dashboard" />
       </div>
 
-      <div className={cn(dashboardCard, 'dash-section p-4 sm:p-5')}>
+      <div className={cn(dashboardCard, 'dash-section p-2 sm:p-2.5')}>
         <h3 className={dashboardSectionTitle()}>
-          <Layers className="h-4 w-4 text-emerald-600" />
+          <Layers className="h-4 w-4 text-[#2e7ad1]" />
           Lead status breakdown
         </h3>
         {data.statusBreakdown.length === 0 ? (
           <p className="text-xs text-slate-500">No status data in your campaigns yet.</p>
         ) : (
-          <div className="max-h-44 space-y-3 overflow-auto pr-1">
+          <div className="max-h-32 space-y-1 overflow-auto pr-1">
             {data.statusBreakdown.map((item, i) => (
               <DashboardBarRow
                 key={item.label}
                 label={item.label}
                 count={item.count}
                 total={assignedTotal}
-                color="bg-gradient-to-r from-emerald-600 to-teal-400"
+                color="bg-[#2e7ad1]"
                 delay={i * 45}
               />
             ))}
           </div>
         )}
-        <div className="mt-4 flex flex-wrap gap-4">
+        <div className="mt-2 flex flex-wrap gap-3">
           <Link href="/employee/batches" className={dashboardLink}>
-            Open campaigns →
+            Open my campaign →
           </Link>
           <Link href="/employee/activity-logs" className={dashboardLink}>
             Activity logs →
@@ -190,91 +171,46 @@ export function EmployeeDashboard() {
         </div>
       </div>
 
-      <div className="dash-section grid gap-4 lg:grid-cols-2">
-        <div className={cn(dashboardCard, 'dash-section')}>
-          <div className={dashboardCardHeader}>Recent campaigns</div>
-          <div className="dash-table-wrap">
-            <table className="dash-table w-full text-xs">
-              <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
-                <tr className="border-b border-slate-100">
-                  <th className="px-3 py-2 text-left font-semibold">Name</th>
-                  <th className="px-3 py-2 text-right font-semibold">Contacts</th>
-                  <th className="px-3 py-2 text-right font-semibold">Updated</th>
+      <div className={cn(dashboardCard, 'dash-section')}>
+        <div className={dashboardCardHeader}>Recent campaigns</div>
+        <div className="dash-table-wrap">
+          <table className="dash-table w-full text-xs">
+            <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+              <tr className="border-b border-slate-100">
+                <th className="px-2 py-1.5 text-left font-semibold">Name</th>
+                <th className="px-2 py-1.5 text-right font-semibold">Contacts</th>
+                <th className="px-2 py-1.5 text-right font-semibold">Updated</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {data.recentBatches.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="px-2 py-4 text-center text-slate-400">
+                    No campaigns assigned yet
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {data.recentBatches.length === 0 ? (
-                  <tr>
-                    <td colSpan={3} className="px-3 py-8 text-center text-slate-400">
-                      No campaigns assigned yet
+              ) : (
+                data.recentBatches.map((batch) => (
+                  <tr key={batch.id} className="hover:bg-[#e8f1fb]/40">
+                    <td className="px-2 py-1.5">
+                      <Link
+                        href={`/employee/batches/${batch.id}`}
+                        className="font-medium text-[#2e7ad1] hover:underline"
+                      >
+                        {batch.name}
+                      </Link>
+                    </td>
+                    <td className="px-2 py-1.5 text-right font-mono text-slate-700">
+                      {batch.rowCount.toLocaleString('en-US')}
+                    </td>
+                    <td className="px-2 py-1.5 text-right text-slate-500">
+                      {formatWhen(batch.updatedAt)}
                     </td>
                   </tr>
-                ) : (
-                  data.recentBatches.map((batch) => (
-                    <tr key={batch.id} className="hover:bg-emerald-50/40">
-                      <td className="px-3 py-2">
-                        <Link
-                          href={`/employee/batches/${batch.id}`}
-                          className="font-medium text-emerald-700 hover:underline"
-                        >
-                          {batch.name}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono text-slate-700">
-                        {batch.rowCount.toLocaleString('en-US')}
-                      </td>
-                      <td className="px-3 py-2 text-right text-slate-500">
-                        {formatWhen(batch.updatedAt)}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className={cn(dashboardCard, 'dash-section')}>
-          <div className={dashboardCardHeader}>Your recent activity</div>
-          <div className="dash-table-wrap">
-            <table className="dash-table w-full text-xs">
-              <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
-                <tr className="border-b border-slate-100">
-                  <th className="px-3 py-2 text-left font-semibold">Action</th>
-                  <th className="px-3 py-2 text-left font-semibold">Detail</th>
-                  <th className="px-3 py-2 text-right font-semibold">When</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {data.recentActivity.length === 0 ? (
-                  <tr>
-                    <td colSpan={3} className="px-3 py-8 text-center text-slate-400">
-                      No activity logged yet
-                    </td>
-                  </tr>
-                ) : (
-                  data.recentActivity.map((a) => (
-                    <tr key={a.id} className="hover:bg-emerald-50/40">
-                      <td className="px-3 py-2 font-medium text-slate-800">
-                        {formatActivityAction(a.action)}
-                      </td>
-                      <td className="max-w-[180px] truncate px-3 py-2 text-slate-500">
-                        {a.batchName ?? a.path ?? a.resource}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2 text-right text-slate-500">
-                        {formatWhen(a.occurredAt)}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-          <div className="border-t border-slate-100 px-4 py-2.5">
-            <Link href="/employee/activity-logs" className={dashboardLink}>
-              All activity logs →
-            </Link>
-          </div>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </DashboardPageShell>

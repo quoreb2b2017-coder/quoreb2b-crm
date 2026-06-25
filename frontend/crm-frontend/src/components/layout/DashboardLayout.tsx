@@ -16,6 +16,7 @@ import {
   quickActionIcons,
   useAttendancePanelOptional,
 } from '@/components/attendance/AttendancePanelContext';
+import { CRM_SHELL_THEME } from '@/lib/theme/crm-colors';
 
 export type DashboardVariant = 'admin' | 'db_admin' | 'employee';
 
@@ -109,6 +110,16 @@ export function isPersonalNotesPath(pathname: string) {
   return /^\/(admin|db-admin|employee)\/personal-notes$/.test(pathname);
 }
 
+/** Master data list / upload workspace (employee my-data, db-admin master-data tabs) */
+export function isMasterDataWorkspacePath(pathname: string) {
+  return (
+    pathname === '/employee/my-data' ||
+    /^\/employee\/my-data\/[^/]+\/duplicates$/.test(pathname) ||
+    pathname === '/db-admin/master-data' ||
+    pathname.startsWith('/db-admin/master-data/')
+  );
+}
+
 /** Edge-to-edge content (no left/right padding) */
 export function isAdminEdgeToEdgePath(pathname: string) {
   return (
@@ -120,7 +131,8 @@ export function isAdminEdgeToEdgePath(pathname: string) {
     isAttendancePath(pathname) ||
     isLeaveApplyPath(pathname) ||
     isPersonalNotesPath(pathname) ||
-    isBulkEmailVerificationPath(pathname)
+    isBulkEmailVerificationPath(pathname) ||
+    isMasterDataWorkspacePath(pathname)
   );
 }
 
@@ -141,6 +153,7 @@ interface NavItem {
   href: string;
   icon?: React.ReactNode;
   badgeCount?: number;
+  section?: string;
   children?: { label: string; href: string; external?: boolean }[];
 }
 
@@ -276,6 +289,8 @@ const iconMap: Record<string, React.ReactNode> = {
   'my campaigns':       Icons.logs,
   'my qc':              Icons.leads,
   'all qc':             Icons.leads,
+  'qc review':          Icons.leads,
+  'ready qc':           Icons.leads,
   'attendance':         Icons.attendance,
   'leave requests':     Icons.leave,
   'leave apply':        Icons.leave,
@@ -288,38 +303,11 @@ function getIcon(label: string) {
   return iconMap[label.toLowerCase()] ?? Icons.dashboard;
 }
 
-// ─── Theme config ─────────────────────────────────────────────────────────────
+// ─── Theme config — unified dual-tone blue for all panels ─────────────────────
 const themes = {
-  admin: {
-    color:       '#6366f1',
-    activeBg:    'bg-indigo-500/[0.15]',
-    activeBorder:'border-indigo-400',
-    activeText:  'text-indigo-300',
-    activeDot:   'bg-indigo-400',
-    badgeBg:     'bg-indigo-500',
-    badgeRing:   'ring-indigo-500/30',
-    headerDot:   'bg-indigo-500',
-  },
-  db_admin: {
-    color:       '#8b5cf6',
-    activeBg:    'bg-violet-500/[0.15]',
-    activeBorder:'border-violet-400',
-    activeText:  'text-violet-300',
-    activeDot:   'bg-violet-400',
-    badgeBg:     'bg-violet-500',
-    badgeRing:   'ring-violet-500/30',
-    headerDot:   'bg-violet-500',
-  },
-  employee: {
-    color:       '#10b981',
-    activeBg:    'bg-emerald-500/[0.15]',
-    activeBorder:'border-emerald-400',
-    activeText:  'text-emerald-300',
-    activeDot:   'bg-emerald-400',
-    badgeBg:     'bg-emerald-500',
-    badgeRing:   'ring-emerald-500/30',
-    headerDot:   'bg-emerald-500',
-  },
+  admin: CRM_SHELL_THEME,
+  db_admin: CRM_SHELL_THEME,
+  employee: CRM_SHELL_THEME,
 };
 
 const roleLabel: Record<DashboardVariant, string> = {
@@ -334,13 +322,27 @@ function isNavItemActive(pathname: string, href: string) {
   return href.length > 7 && pathname.startsWith(href);
 }
 
-function navSpinnerClass(variant: DashboardVariant) {
-  return cn(
-    'h-3.5 w-3.5 flex-shrink-0 rounded-full border-2 border-white/20 animate-spin',
-    variant === 'admin' && 'border-t-indigo-300',
-    variant === 'db_admin' && 'border-t-violet-300',
-    variant === 'employee' && 'border-t-emerald-300',
-  );
+function groupNavBySection(items: NavItem[]) {
+  const groups: { label?: string; items: NavItem[] }[] = [];
+  for (const item of items) {
+    const label = item.section || undefined;
+    const last = groups[groups.length - 1];
+    if (!last || last.label !== label) {
+      groups.push({ label, items: [item] });
+    } else {
+      last.items.push(item);
+    }
+  }
+  return groups;
+}
+
+function NavSectionHeader({ label, collapsed }: { label?: string; collapsed: boolean }) {
+  if (collapsed || !label) return null;
+  return <p className="crm-nav-section">{label}</p>;
+}
+
+function navSpinnerClass(_variant: DashboardVariant) {
+  return 'h-3.5 w-3.5 flex-shrink-0 rounded-full border-2 border-slate-200 border-t-[#2e7ad1] animate-spin';
 }
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
@@ -351,7 +353,7 @@ function Avatar({ name, collapsed, variant }: { name: string; collapsed: boolean
     <span className={cn(
       'inline-flex items-center justify-center rounded-xl text-white font-bold flex-shrink-0 ring-2 transition-all duration-300',
       t.badgeBg, t.badgeRing,
-      collapsed ? 'w-8 h-8 text-xs' : 'w-9 h-9 text-sm',
+      collapsed ? 'w-8 h-8 text-xs' : 'w-8 h-8 text-xs',
     )}>
       {initials}
     </span>
@@ -406,13 +408,13 @@ function SidebarInner({
 
   return (
     <div className={cn(
-      'flex flex-col h-full bg-[#0d0f14] border-r border-white/[0.05] overflow-hidden',
-      isCollapsed ? 'w-[68px]' : 'w-[240px]',
+      'flex flex-col h-full bg-[#f0f4f8] border-r border-slate-200/80 overflow-hidden',
+      isCollapsed ? 'w-[60px]' : 'w-[220px]',
     )}>
       {/* ── Logo + collapse btn ── */}
       <div className={cn(
-        'flex items-center border-b border-white/[0.05] flex-shrink-0',
-        isCollapsed ? 'justify-center px-0 py-4 h-[64px]' : 'justify-between px-4 h-[64px]',
+        'flex items-center border-b border-slate-200/80 flex-shrink-0',
+        isCollapsed ? 'justify-center px-0 py-2.5 h-[52px]' : 'justify-between px-3 h-[52px]',
       )}>
         {!isCollapsed && (
           <div className="flex items-center gap-2.5 min-w-0">
@@ -422,7 +424,7 @@ function SidebarInner({
               </svg>
             </div>
             <div className="min-w-0">
-              <p className="text-white font-bold text-sm leading-none">QuoreB2B</p>
+              <p className="text-slate-900 font-bold text-sm leading-none">QuoreB2B</p>
               <p className="text-[10px] text-slate-500 mt-0.5">CRM Platform</p>
             </div>
           </div>
@@ -435,7 +437,7 @@ function SidebarInner({
           </div>
         )}
         {!isMobile && !isCollapsed && (
-          <button onClick={onCollapse} className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/[0.07] transition-colors flex-shrink-0" title="Collapse sidebar">
+          <button onClick={onCollapse} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors flex-shrink-0" title="Collapse sidebar">
             <span className="w-4 h-4 block">{Icons.chevronLeft}</span>
           </button>
         )}
@@ -443,8 +445,8 @@ function SidebarInner({
 
       {/* ── Expand btn when collapsed ── */}
       {!isMobile && isCollapsed && (
-        <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
-          <button onClick={onExpand} className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/[0.07] transition-colors" title="Expand sidebar">
+        <div className="flex justify-center pt-1.5 pb-0 flex-shrink-0">
+          <button onClick={onExpand} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors" title="Expand sidebar">
             <span className="w-4 h-4 block rotate-180">{Icons.chevronLeft}</span>
           </button>
         </div>
@@ -452,8 +454,8 @@ function SidebarInner({
 
       {/* ── Role pill ── */}
       {!isCollapsed && (
-        <div className="px-4 pt-4 pb-1 flex-shrink-0">
-          <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-md bg-white/[0.05] text-slate-400">
+        <div className="px-3 pt-2 pb-0 flex-shrink-0">
+          <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-md bg-white border border-slate-200/80 text-slate-500">
             <span className={cn('w-1.5 h-1.5 rounded-full', t.activeDot)} />
             {roleLabel[variant]}
           </span>
@@ -461,7 +463,7 @@ function SidebarInner({
       )}
 
       {/* ── Nav items ── */}
-      <nav className={cn('flex-1 overflow-y-auto overflow-x-hidden py-2', isCollapsed ? 'px-2' : 'px-3')}>
+      <nav className={cn('flex-1 overflow-y-auto overflow-x-hidden py-1', isCollapsed ? 'px-1.5' : 'px-2')}>
         {navItems.map((item) => {
           const active = pathname === item.href || (item.href !== '/admin/dashboard' && pathname.startsWith(item.href) && item.href.length > 7);
           return (
@@ -470,16 +472,16 @@ function SidebarInner({
                 href={item.href}
                 prefetch={true}
                 className={cn(
-                  'flex items-center gap-3 rounded-xl text-sm font-medium transition-colors duration-100 group mb-0.5 cursor-pointer select-none',
-                  isCollapsed ? 'justify-center w-11 h-11 mx-auto' : 'px-3 py-3',
+                  'flex items-center gap-2.5 rounded-lg text-[13px] font-medium transition-colors duration-100 group mb-0 cursor-pointer select-none',
+                  isCollapsed ? 'justify-center w-9 h-9 mx-auto' : 'px-2.5 py-2',
                   active
                     ? cn(t.activeBg, t.activeText, !isCollapsed && `border-l-2 ${t.activeBorder} pl-[10px]`)
-                    : 'text-slate-400 hover:text-white hover:bg-white/[0.08] active:bg-white/[0.12]',
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 active:bg-slate-200/80',
                 )}
               >
                 <span className={cn(
                   'flex-shrink-0 w-5 h-5 transition-colors duration-100',
-                  active ? t.activeText : 'text-slate-500 group-hover:text-slate-200',
+                  active ? t.activeText : 'text-slate-500 group-hover:text-slate-700',
                 )}>
                   {item.icon ?? getIcon(item.label)}
                 </span>
@@ -495,9 +497,9 @@ function SidebarInner({
         })}
 
         {showQuickActions && (
-          <div className={cn('mt-4', isCollapsed ? 'space-y-1' : '')}>
+          <div className={cn('mt-2', isCollapsed ? 'space-y-0.5' : '')}>
             {!isCollapsed && (
-              <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+              <p className="px-2.5 pb-1 text-[9px] font-semibold uppercase tracking-wider text-slate-500">
                 Quick actions
               </p>
             )}
@@ -507,11 +509,11 @@ function SidebarInner({
                   type="button"
                   onClick={attendancePanel!.openMark}
                   className={cn(
-                    'flex w-full items-center gap-3 rounded-xl text-sm font-medium transition-colors duration-100 mb-0.5',
-                    isCollapsed ? 'justify-center w-11 h-11 mx-auto text-slate-400 hover:text-white hover:bg-white/[0.08]' : 'px-3 py-2.5 text-slate-400 hover:text-white hover:bg-emerald-500/[0.12] border border-transparent hover:border-emerald-500/20',
+                    'flex w-full items-center gap-2.5 rounded-lg text-[13px] font-medium transition-colors duration-100 mb-0',
+                    isCollapsed ? 'justify-center w-9 h-9 mx-auto text-slate-600 hover:text-slate-900 hover:bg-slate-200/60' : 'px-2.5 py-2 text-slate-600 hover:text-[#2e7ad1] hover:bg-[#2e7ad1]/10 border border-transparent hover:border-[#2e7ad1]/20',
                   )}
                 >
-                  <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-400">
+                  <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-[#2e7ad1]/10 text-[#2e7ad1]">
                     {quickActionIcons.mark}
                   </span>
                   {!isCollapsed && <span className="flex-1 text-left">Mark Today</span>}
@@ -523,11 +525,11 @@ function SidebarInner({
                 type="button"
                 onClick={attendancePanel!.openLeave}
                 className={cn(
-                  'flex w-full items-center gap-3 rounded-xl text-sm font-medium transition-colors duration-100',
-                  isCollapsed ? 'justify-center w-11 h-11 mx-auto text-slate-400 hover:text-white hover:bg-white/[0.08]' : 'px-3 py-2.5 text-slate-400 hover:text-white hover:bg-violet-500/[0.12] border border-transparent hover:border-violet-500/20',
+                  'flex w-full items-center gap-2.5 rounded-lg text-[13px] font-medium transition-colors duration-100 mb-0',
+                  isCollapsed ? 'justify-center w-9 h-9 mx-auto text-slate-600 hover:text-slate-900 hover:bg-slate-200/60' : 'px-2.5 py-2 text-slate-600 hover:text-[#2e7ad1] hover:bg-[#2e7ad1]/10 border border-transparent hover:border-[#2e7ad1]/20',
                 )}
               >
-                <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-violet-500/15 text-violet-300">
+                <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-[#2e7ad1]/10 text-[#2e7ad1]">
                   {quickActionIcons.leave}
                 </span>
                 {!isCollapsed && <span className="flex-1 text-left">Apply Leave</span>}
@@ -538,29 +540,29 @@ function SidebarInner({
       </nav>
 
       {/* ── Divider ── */}
-      <div className={cn('border-t border-white/[0.05] flex-shrink-0', isCollapsed ? 'mx-2' : 'mx-3')} />
+      <div className={cn('border-t border-slate-200/80 flex-shrink-0', isCollapsed ? 'mx-2' : 'mx-3')} />
 
       {/* ── User + logout ── */}
-      <div className={cn('py-3 flex-shrink-0', isCollapsed ? 'px-2' : 'px-3')}>
+      <div className={cn('py-2 flex-shrink-0', isCollapsed ? 'px-1.5' : 'px-2')}>
         {!isCollapsed ? (
           <>
-            <div className="flex items-center gap-2.5 px-2 py-2 rounded-xl bg-white/[0.03] mb-1">
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-white border border-slate-200/80 mb-0.5">
               <Avatar name={displayName} collapsed={false} variant={variant} />
               <div className="flex-1 min-w-0">
-                <p className="text-[13px] font-semibold text-white truncate leading-tight">{displayName}</p>
-                <p className="text-[10px] text-slate-500 truncate mt-0.5">{user?.employeeId ?? user?.email}</p>
+                <p className="text-xs font-semibold text-slate-900 truncate leading-tight">{displayName}</p>
+                <p className="text-[10px] text-slate-500 truncate">{user?.employeeId ?? user?.email}</p>
               </div>
             </div>
             <button
               onClick={onLogout}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm text-slate-500 hover:text-red-400 hover:bg-red-500/[0.08] transition-colors duration-100 group"
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-slate-500 hover:text-red-400 hover:bg-red-500/[0.08] transition-colors duration-100 group"
             >
               <span className="w-[18px] h-[18px] flex-shrink-0 group-hover:text-red-400 transition-colors">{Icons.logout}</span>
               <span>Sign out</span>
             </button>
           </>
         ) : (
-          <div className="flex flex-col items-center gap-2">
+          <div className="flex flex-col items-center gap-1.5">
             <Tip label={displayName} collapsed>
               <Avatar name={displayName} collapsed variant={variant} />
             </Tip>
@@ -640,14 +642,14 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
     const isCollapsed = isMobile ? false : collapsed;
     return (
       <div className={cn(
-        'flex flex-col h-full bg-[#0d0f14] border-r border-white/[0.05] transition-all duration-300 overflow-hidden',
-        isCollapsed ? 'w-[68px]' : 'w-[240px]',
+        'flex flex-col h-full bg-[#f0f4f8] border-r border-slate-200/80 transition-all duration-300 overflow-hidden',
+        isCollapsed ? 'w-[60px]' : 'w-[220px]',
       )}>
 
         {/* ── Logo + collapse btn ── */}
         <div className={cn(
-          'flex items-center border-b border-white/[0.05] flex-shrink-0',
-          isCollapsed ? 'justify-center px-0 py-4 h-[64px]' : 'justify-between px-4 h-[64px]',
+          'flex items-center border-b border-slate-200/80 flex-shrink-0',
+          isCollapsed ? 'justify-center px-0 py-2.5 h-[52px]' : 'justify-between px-3 h-[52px]',
         )}>
           {!isCollapsed && (
             <div className="flex items-center gap-2.5 min-w-0">
@@ -657,7 +659,7 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
                 </svg>
               </div>
               <div className="min-w-0">
-                <p className="text-white font-bold text-sm leading-none">QuoreB2B</p>
+                <p className="text-slate-900 font-bold text-sm leading-none">QuoreB2B</p>
                 <p className="text-[10px] text-slate-500 mt-0.5">CRM Platform</p>
               </div>
             </div>
@@ -672,7 +674,7 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
           {!isMobile && !isCollapsed && (
             <button
               onClick={() => setCollapsed(true)}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/[0.07] transition-all flex-shrink-0"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-all flex-shrink-0"
               title="Collapse sidebar"
             >
               <span className="w-4 h-4 block">{Icons.chevronLeft}</span>
@@ -682,10 +684,10 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
 
         {/* ── Expand btn when collapsed ── */}
         {!isMobile && isCollapsed && (
-          <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+          <div className="flex justify-center pt-1.5 pb-0 flex-shrink-0">
             <button
               onClick={() => setCollapsed(false)}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/[0.07] transition-all"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-all"
               title="Expand sidebar"
             >
               <span className="w-4 h-4 block rotate-180">{Icons.chevronLeft}</span>
@@ -695,8 +697,8 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
 
         {/* ── Role pill ── */}
         {!isCollapsed && (
-          <div className="px-4 pt-4 pb-1 flex-shrink-0">
-            <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-md bg-white/[0.05] text-slate-400">
+          <div className="px-3 pt-2 pb-0 flex-shrink-0">
+            <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-md bg-white border border-slate-200/80 text-slate-500">
               <span className={cn('w-1.5 h-1.5 rounded-full', t.activeDot)} />
               {roleLabel[variant]}
             </span>
@@ -704,8 +706,11 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
         )}
 
         {/* ── Nav items ── */}
-        <nav className={cn('flex-1 overflow-y-auto overflow-x-hidden py-2', isCollapsed ? 'px-2' : 'px-3')}>
-          {navItems.map((item) => {
+        <nav className={cn('flex-1 overflow-y-auto overflow-x-hidden py-1', isCollapsed ? 'px-1.5' : 'px-2')}>
+          {groupNavBySection(navItems).map((group, groupIdx) => (
+            <div key={group.label ?? `nav-group-${groupIdx}`}>
+              <NavSectionHeader label={group.label} collapsed={isCollapsed} />
+              {group.items.map((item) => {
             const active = isNavItemActive(pathname, item.href);
             const pending = pendingHref === item.href && !active;
             const childActive = item.children?.some((c) => pathname === c.href || pendingHref === c.href);
@@ -714,21 +719,21 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
             if (item.children?.length) {
               // ── Group with dropdown ──
               return (
-                <div key={item.href} className="mb-0.5">
+                <div key={item.href} className="mb-0">
                   <Tip label={item.label} collapsed={isCollapsed}>
                     <button
                       onClick={() => !isCollapsed && setOpen(v => !v)}
                       className={cn(
-                        'w-full flex items-center gap-3 rounded-xl text-sm font-medium transition-all duration-200 group cursor-pointer select-none',
-                        isCollapsed ? 'justify-center w-11 h-11 mx-auto' : 'px-3 py-3',
+                        'w-full flex items-center gap-2.5 rounded-lg text-[13px] font-medium transition-all duration-200 group cursor-pointer select-none',
+                        isCollapsed ? 'justify-center w-9 h-9 mx-auto' : 'px-2.5 py-2',
                         childActive
                           ? cn(t.activeBg, t.activeText)
-                          : 'text-slate-400 hover:text-white hover:bg-white/[0.08] active:bg-white/[0.12]',
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 active:bg-slate-200/80',
                       )}
                     >
                       <span className={cn(
                         'flex-shrink-0 w-5 h-5 transition-colors duration-200',
-                        childActive ? t.activeText : 'text-slate-500 group-hover:text-slate-200',
+                        childActive ? t.activeText : 'text-slate-500 group-hover:text-slate-700',
                       )}>
                         {item.icon ?? getIcon(item.label)}
                       </span>
@@ -748,7 +753,7 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
                   </Tip>
                   {/* Sub-items */}
                   {!isCollapsed && open && (
-                    <div className="ml-4 mt-0.5 pl-3 border-l border-white/[0.07] space-y-0.5">
+                    <div className="ml-3 mt-0 pl-2.5 border-l border-slate-200/90 space-y-0">
                       {item.children.map(child => {
                         const cActive = pathname === child.href;
                         const cPending = pendingHref === child.href && !cActive;
@@ -761,12 +766,12 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
                             key={child.href}
                             {...extraProps}
                             className={cn(
-                              'tap-smooth flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200',
+                              'tap-smooth flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-200',
                               cActive
                                 ? cn(t.activeBg, t.activeText)
                                 : cPending
-                                  ? cn(t.activeBg, 'text-white/90')
-                                  : 'text-slate-500 hover:text-white hover:bg-white/[0.06]',
+                                  ? cn(t.activeBg, 'text-[#2e7ad1]')
+                                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60',
                             )}
                           >
                             {cPending ? (
@@ -799,18 +804,18 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
                   aria-current={active ? 'page' : undefined}
                   aria-busy={pending || undefined}
                   className={cn(
-                    'tap-smooth flex items-center gap-3 rounded-xl text-sm font-medium transition-all duration-200 group mb-0.5 cursor-pointer select-none',
-                    isCollapsed ? 'relative justify-center w-11 h-11 mx-auto' : 'px-3 py-3',
+                    'crm-nav-link tap-smooth group mb-0 cursor-pointer select-none',
+                    isCollapsed ? 'relative justify-center w-9 h-9 mx-auto' : 'px-2.5 py-2',
                     active
-                      ? cn(t.activeBg, t.activeText, !isCollapsed && `border-l-2 ${t.activeBorder} pl-[10px]`)
+                      ? cn('crm-nav-link--active', !isCollapsed && `border-l-2 ${t.activeBorder} pl-[10px]`)
                       : pending
-                        ? cn(t.activeBg, 'text-white/90 ring-1 ring-white/10')
-                        : 'text-slate-400 hover:text-white hover:bg-white/[0.08] active:bg-white/[0.12]',
+                        ? cn('crm-nav-link--active', 'ring-1 ring-[#2e7ad1]/20')
+                        : 'text-slate-600',
                   )}
                 >
                   <span className={cn(
                     'flex-shrink-0 w-5 h-5 transition-colors duration-200',
-                    active || pending ? t.activeText : 'text-slate-500 group-hover:text-slate-200',
+                    active || pending ? t.activeText : 'text-slate-500 group-hover:text-slate-700',
                   )}>
                     {item.icon ?? getIcon(item.label)}
                   </span>
@@ -836,32 +841,34 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
               </Tip>
             );
           })}
+            </div>
+          ))}
         </nav>
 
         {/* ── Divider ── */}
-        <div className={cn('border-t border-white/[0.05] flex-shrink-0', isCollapsed ? 'mx-2' : 'mx-3')} />
+        <div className={cn('border-t border-slate-200/80 flex-shrink-0', isCollapsed ? 'mx-1.5' : 'mx-2')} />
 
         {/* ── User + logout ── */}
-        <div className={cn('py-3 flex-shrink-0', isCollapsed ? 'px-2' : 'px-3')}>
+        <div className={cn('py-2 flex-shrink-0', isCollapsed ? 'px-1.5' : 'px-2')}>
           {!isCollapsed ? (
             <>
-              <div className="flex items-center gap-2.5 px-2 py-2 rounded-xl bg-white/[0.03] mb-1">
+              <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-white border border-slate-200/80 mb-0.5">
                 <Avatar name={displayName} collapsed={false} variant={variant} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-[13px] font-semibold text-white truncate leading-tight">{displayName}</p>
-                  <p className="text-[10px] text-slate-500 truncate mt-0.5">{user?.employeeId ?? user?.email}</p>
+                  <p className="text-xs font-semibold text-slate-900 truncate leading-tight">{displayName}</p>
+                  <p className="text-[10px] text-slate-500 truncate">{user?.employeeId ?? user?.email}</p>
                 </div>
               </div>
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm text-slate-500 hover:text-red-400 hover:bg-red-500/[0.08] transition-all duration-150 group"
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-slate-500 hover:text-red-400 hover:bg-red-500/[0.08] transition-all duration-150 group"
               >
                 <span className="w-[18px] h-[18px] flex-shrink-0 group-hover:text-red-400 transition-colors">{Icons.logout}</span>
                 <span>Sign out</span>
               </button>
             </>
           ) : (
-            <div className="flex flex-col items-center gap-2">
+            <div className="flex flex-col items-center gap-1.5">
               <Tip label={displayName} collapsed>
                 <Avatar name={displayName} collapsed variant={variant} />
               </Tip>
@@ -883,14 +890,14 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
   return (
     <div
       className={cn(
-        'flex bg-slate-50/80',
+        'flex bg-[#f0f4f8]',
         contentLocked ? 'h-screen overflow-hidden' : 'min-h-screen',
       )}
     >
 
       {/* ── Desktop sidebar ── */}
       <aside className="hidden lg:block flex-shrink-0 h-screen sticky top-0 transition-all duration-300"
-        style={{ width: collapsed ? 68 : 240 }}>
+        style={{ width: collapsed ? 60 : 220 }}>
         <SidebarContent isMobile={false} />
       </aside>
 
@@ -898,10 +905,10 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
       {mobileOpen && (
         <>
           <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+            className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm crm-drawer-backdrop lg:hidden"
             onClick={() => setMobileOpen(false)}
           />
-          <aside className="fixed inset-y-0 left-0 z-50 lg:hidden">
+          <aside className="fixed inset-y-0 left-0 z-50 crm-drawer-panel lg:hidden">
             <SidebarContent isMobile />
           </aside>
         </>
@@ -911,12 +918,12 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
       <main className="flex flex-1 min-h-0 min-w-0 flex-col">
 
         {/* ── Top header ── */}
-        <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-4 sm:px-6 h-[64px] flex items-center justify-between flex-shrink-0">
+        <header className="crm-header">
           <div className="flex items-center gap-3">
             {/* Mobile menu btn */}
             <button
               type="button"
-              className="lg:hidden p-2 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors"
+              className="crm-icon-btn lg:hidden"
               onClick={() => setMobileOpen(true)}
             >
               <span className="w-5 h-5 block">{Icons.menu}</span>
@@ -948,7 +955,7 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
 
             {/* User chip */}
             <div className={cn(
-              'hidden sm:flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-xl text-xs font-medium text-white',
+              'hidden sm:flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-xl text-xs font-medium text-white shadow-crm transition-transform duration-200 hover:scale-[1.02]',
               t.badgeBg,
             )}>
               <span className="w-5 h-5 flex-shrink-0">
@@ -980,17 +987,17 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
         {/* ── Page content ── */}
         <div
           className={cn(
-            'flex-1 min-h-0 min-w-0 w-full transition-opacity duration-200',
-            edgeToEdge ? 'p-0' : 'overflow-auto p-4 sm:p-6',
+            'crm-content transition-opacity duration-150',
+            edgeToEdge ? 'p-0 !bg-transparent' : 'overflow-auto p-4 sm:p-6',
             contentLocked ? 'flex flex-col overflow-hidden' : 'overflow-y-auto overflow-x-hidden',
             (attendancePage || isBulkEmailVerificationPath(pathname)) && 'overflow-y-auto',
-            isNavigating && 'opacity-80',
+            isNavigating && 'opacity-90',
           )}
         >
           <div
             key={pathname}
             className={cn(
-              'min-w-0 w-full max-w-none animate-page-enter',
+              'min-w-0 w-full max-w-none crm-page-enter',
               edgeToEdge && contentLocked && 'min-h-0 flex-1 flex flex-col self-stretch',
               edgeToEdge && !contentLocked && 'flex flex-col self-stretch',
               !edgeToEdge && 'min-h-0 flex-1',

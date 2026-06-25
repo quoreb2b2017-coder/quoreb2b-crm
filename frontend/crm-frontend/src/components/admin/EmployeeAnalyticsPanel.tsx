@@ -125,7 +125,7 @@ function SectionCard({
     >
       <div className="flex items-start gap-3 border-b border-slate-100/90 bg-gradient-to-r from-slate-50 to-white px-5 py-4">
         {Icon && (
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-50 to-indigo-100/80 text-indigo-600 shadow-sm ring-1 ring-indigo-100">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-50 to-indigo-100/80 text-[#2e7ad1] shadow-sm ring-1 ring-indigo-100">
             <Icon className="h-4 w-4" />
           </span>
         )}
@@ -461,7 +461,7 @@ export function EmployeeAnalyticsPanel({
           {showBackLink && (
             <Link
               href="/admin/users"
-              className="mb-3 inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1 text-xs font-semibold text-indigo-600 shadow-sm ring-1 ring-slate-200/80 transition hover:bg-indigo-50 hover:text-indigo-800"
+              className="mb-3 inline-flex items-center gap-1.5 rounded-lg bg-white px-2.5 py-1 text-xs font-semibold text-[#2e7ad1] shadow-sm ring-1 ring-slate-200/80 transition hover:bg-indigo-50 hover:text-indigo-800"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               Back to users
@@ -478,7 +478,7 @@ export function EmployeeAnalyticsPanel({
           type="button"
           onClick={loadReport}
           disabled={loading || !selectedId}
-          className="inline-flex items-center justify-center gap-2 self-start rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-600/20 transition-all duration-300 hover:bg-indigo-700 hover:shadow-lg disabled:opacity-50"
+          className="inline-flex items-center justify-center gap-2 self-start rounded-xl bg-[#2e7ad1] px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-600/20 transition-all duration-300 hover:bg-[#2568b8] hover:shadow-lg disabled:opacity-50"
         >
           <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
           Refresh
@@ -595,7 +595,7 @@ export function EmployeeAnalyticsPanel({
           {loading && (
             <div className="absolute inset-x-0 top-0 z-10 flex justify-center pt-2">
               <span className="inline-flex items-center gap-2 rounded-full bg-white/90 px-3.5 py-1.5 text-xs font-medium text-slate-600 shadow-lg ring-1 ring-slate-200/80 backdrop-blur-md">
-                <RefreshCw className="h-3.5 w-3.5 animate-spin text-indigo-600" />
+                <RefreshCw className="h-3.5 w-3.5 animate-spin text-[#2e7ad1]" />
                 Updating…
               </span>
             </div>
@@ -653,21 +653,21 @@ export function EmployeeAnalyticsPanel({
               value={la.totalLeads}
               note={`${la.batchCount} campaign(s)`}
               accent="indigo"
-              icon={<Users className="h-5 w-5 text-indigo-600" />}
+              icon={<Users className="h-5 w-5 text-[#2e7ad1]" />}
             />
             <KpiCard
               label="Worked this period"
               value={la.periodWorkedLeads}
               note={`${la.updated} field updates`}
               accent="emerald"
-              icon={<UserCheck className="h-5 w-5 text-emerald-600" />}
+              icon={<UserCheck className="h-5 w-5 text-[#2e7ad1]" />}
             />
             <KpiCard
               label="Active time"
               value={s.totalActiveFormatted}
               note={`${s.loginCount} logins · avg ${s.avgSessionFormatted}`}
               accent="violet"
-              icon={<Clock className="h-5 w-5 text-violet-600" />}
+              icon={<Clock className="h-5 w-5 text-[#2e7ad1]" />}
             />
             <KpiCard
               label="Work rate"
@@ -717,7 +717,7 @@ export function EmployeeAnalyticsPanel({
           {/* Charts dashboard */}
           <div>
             <div className="mb-5 flex items-center gap-3">
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 ring-1 ring-indigo-100">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-[#2e7ad1] ring-1 ring-indigo-100">
                 <PieChart className="h-4 w-4" />
               </span>
               <div>
@@ -905,7 +905,7 @@ export function EmployeeAnalyticsPanel({
                           >
                             <Td className="font-medium text-slate-900">{b.batchName}</Td>
                             <Td align="right" className="font-mono tabular-nums">{b.totalLeads}</Td>
-                            <Td align="right" className="font-mono tabular-nums text-emerald-700">
+                            <Td align="right" className="font-mono tabular-nums text-[#2e7ad1]">
                               {b.activeLeads}
                             </Td>
                             <Td align="right" className="font-mono tabular-nums text-violet-700">
@@ -948,7 +948,7 @@ export function EmployeeAnalyticsPanel({
                           >
                             <Td className="font-medium text-slate-900">{l.leadLabel}</Td>
                             <Td className="text-slate-600">{l.batchName}</Td>
-                            <Td className="capitalize text-emerald-700">{l.status}</Td>
+                            <Td className="capitalize text-[#2e7ad1]">{l.status}</Td>
                             <Td className="max-w-[200px] truncate text-slate-500">
                               {l.changedColumns?.length ? l.changedColumns.join(', ') : '—'}
                             </Td>
@@ -1033,7 +1033,7 @@ export function EmployeeAnalyticsPanel({
                               className={cn(
                                 'inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold transition-colors',
                                 sess.stillActive
-                                  ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
+                                  ? 'bg-emerald-50 text-[#2e7ad1] ring-1 ring-emerald-100'
                                   : sess.logoutType === 'IDLE_LOGOUT'
                                     ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-100'
                                     : 'bg-slate-100 text-slate-600 ring-1 ring-slate-200/60',

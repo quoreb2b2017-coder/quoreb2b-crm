@@ -2,9 +2,14 @@
 
 import { WORKSPACE_TIMEZONE } from '@/lib/constants/workspace-timezone';
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronRight, Folder } from 'lucide-react';
+import { ChevronRight, Folder, FolderOpen } from 'lucide-react';
 import type { MasterDataUploadRequest } from '@/lib/api/master-data.service';
 import { ExcelSheetShell } from '@/components/attendance/ExcelSheetShell';
+import {
+  dataFilterPill,
+  dataToolbarBadge,
+  dataToolbarSelect,
+} from '@/components/master-data/DataPageShell';
 import {
   buildUploadRequestYears,
   groupUploadRequestsByMonth,
@@ -24,6 +29,14 @@ function formatRequestDate(value?: string) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function statusBadgeClass(status: MasterDataUploadRequest['status']) {
+  if (status === 'approved') return 'bg-[#e8f1fb] text-[#2568b8] ring-[#2e7ad1]/25';
+  if (status === 'rejected') return 'bg-red-50 text-red-700 ring-red-200/60';
+  if (status === 'active') return 'bg-sky-50 text-sky-800 ring-sky-200/60';
+  if (status === 'pending_admin') return 'bg-violet-50 text-violet-800 ring-violet-200/50';
+  return 'bg-amber-50 text-amber-800 ring-amber-200/60';
 }
 
 export interface MasterDataUploadMonthExplorerProps {
@@ -91,6 +104,7 @@ export function MasterDataUploadMonthExplorer({
       <ExcelSheetShell
         title={title}
         rowCount={totalInYear}
+        countUnit="file"
         loading={loading}
         toolbar={
           <div className="flex w-full flex-wrap items-center gap-2">
@@ -98,7 +112,7 @@ export function MasterDataUploadMonthExplorer({
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="border border-[#c6c6c6] bg-white px-2 py-1 text-xs font-semibold text-slate-700 outline-none"
+              className={dataToolbarSelect()}
             >
               {availableYears.map((year) => (
                 <option key={year} value={year}>
@@ -106,73 +120,60 @@ export function MasterDataUploadMonthExplorer({
                 </option>
               ))}
             </select>
-            <span className="border border-[#c6c6c6] bg-white px-2 py-1 text-[11px] text-slate-700">
-              12 folders · Jan–Dec
-            </span>
-            <span className="border border-[#c6c6c6] bg-white px-2 py-1 text-[11px] text-slate-700">
+            <span className={dataToolbarBadge()}>12 folders · Jan–Dec</span>
+            <span className={dataToolbarBadge()}>
               {totalInYear} file{totalInYear === 1 ? '' : 's'} in {selectedYear}
             </span>
           </div>
         }
         hint={hint}
       >
-        <div className="flex min-h-0 overflow-hidden bg-white">
-          <aside className="w-[220px] shrink-0 border-r border-[#d4d4d4]">
-            <div className="border-b border-[#d4d4d4] bg-[#f2f2f2] px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+        <div className="flex min-h-0 flex-col bg-white lg:flex-row">
+          <aside className="w-full shrink-0 border-b border-slate-100 bg-slate-50/50 lg:w-[200px] lg:border-b-0 lg:border-r">
+            <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
               {selectedYear} folders
             </div>
-            <table className="w-full border-collapse text-xs">
-              <thead className="bg-[#fafafa]">
-                <tr>
-                  <th className="border border-[#e0e0e0] px-2 py-1 text-left text-[10px] uppercase text-slate-500" />
-                  <th className="border border-[#e0e0e0] px-2 py-1 text-left text-[10px] uppercase text-slate-500">
-                    Month
-                  </th>
-                  <th className="border border-[#e0e0e0] px-2 py-1 text-right text-[10px] uppercase text-slate-500">
-                    #
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {CALENDAR_MONTHS.map((monthMeta) => {
-                  const month = monthMeta.index;
-                  const count = requestsByMonth.get(month)?.length ?? 0;
-                  const active = selectedMonth === month;
-                  return (
-                    <tr
-                      key={monthMeta.label}
-                      onClick={() => setSelectedMonth(month)}
+            <div className="grid grid-cols-3 gap-1 p-2 sm:grid-cols-4 lg:grid-cols-1 lg:gap-0.5 lg:p-1.5 lg:pb-3">
+              {CALENDAR_MONTHS.map((monthMeta) => {
+                const month = monthMeta.index;
+                const count = requestsByMonth.get(month)?.length ?? 0;
+                const active = selectedMonth === month;
+                const Icon = active ? FolderOpen : Folder;
+                return (
+                  <button
+                    key={monthMeta.label}
+                    type="button"
+                    onClick={() => setSelectedMonth(month)}
+                    className={cn(
+                      'flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium transition-all duration-150',
+                      active
+                        ? 'bg-[#e8f1fb] text-[#2568b8] ring-1 ring-[#2e7ad1]/25 shadow-sm'
+                        : 'text-slate-600 hover:bg-white hover:shadow-sm',
+                    )}
+                  >
+                    <Icon
+                      className={cn('h-3.5 w-3.5 shrink-0', active ? 'text-[#2e7ad1]' : 'text-slate-400')}
+                    />
+                    <span className="min-w-0 flex-1 truncate">{monthMeta.short}</span>
+                    <span
                       className={cn(
-                        'cursor-pointer',
-                        active ? 'bg-[#e2efda]' : 'hover:bg-[#fafafa]',
+                        'shrink-0 rounded-full px-1.5 py-0.5 font-mono text-[10px] tabular-nums',
+                        active ? 'bg-[#2e7ad1]/15 text-[#2568b8]' : 'bg-slate-200/80 text-slate-600',
                       )}
                     >
-                      <td className="border border-[#e0e0e0] px-2 py-1.5 text-center">
-                        <Folder
-                          className={cn(
-                            'mx-auto h-3.5 w-3.5',
-                            active ? 'text-[#217346]' : 'text-slate-400',
-                          )}
-                        />
-                      </td>
-                      <td className="border border-[#e0e0e0] px-2 py-1.5 font-medium text-slate-700">
-                        {monthMeta.label}
-                      </td>
-                      <td className="border border-[#e0e0e0] px-2 py-1.5 text-right font-mono text-slate-800">
-                        {count}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </aside>
 
           <section className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#d4d4d4] bg-[#e2efda] px-3 py-2">
-              <div className="flex items-center gap-2 text-sm font-semibold text-[#217346]">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-[#e8f1fb]/40 px-4 py-2.5">
+              <div className="flex items-center gap-2 text-sm font-semibold text-[#2568b8]">
                 <ChevronRight className="h-4 w-4" />
-                <span>{selectedMonthLabel} folder</span>
+                <span>{selectedMonthLabel} {selectedYear}</span>
               </div>
               <span className="text-xs text-slate-600">
                 {selectedMonthRequests.length} file{selectedMonthRequests.length === 1 ? '' : 's'}
@@ -180,89 +181,73 @@ export function MasterDataUploadMonthExplorer({
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] border-collapse text-sm">
-                <thead className="bg-[#f8fafc]">
-                  <tr>
-                    {[
-                      'File',
-                      ...(showSubmittedBy ? ['Employee'] : []),
-                      'Uploaded on',
-                      'Contacts',
-                      statusColumnLabel,
-                      'Action',
-                    ].map((label) => (
-                      <th
-                        key={label}
-                        className="border border-[#e0e0e0] px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-600"
-                      >
-                        {label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedMonthRequests.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={showSubmittedBy ? 6 : 5}
-                        className="border border-[#e0e0e0] px-4 py-10 text-center text-slate-500"
-                      >
-                        {emptyFolderMessage ??
-                          `No files in ${selectedMonthLabel} ${selectedYear} yet.`}
-                      </td>
+              {selectedMonthRequests.length === 0 ? (
+                <div className="px-4 py-12 text-center text-sm text-slate-500">
+                  {emptyFolderMessage ?? `No files in ${selectedMonthLabel} ${selectedYear} yet.`}
+                </div>
+              ) : (
+                <table className="w-full min-w-[640px] text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-slate-50/80 text-left text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                      {[
+                        'File',
+                        ...(showSubmittedBy ? ['Employee'] : []),
+                        'Uploaded',
+                        'Contacts',
+                        statusColumnLabel,
+                        '',
+                      ].map((label) => (
+                        <th key={label || 'action'} className="px-4 py-2.5 font-semibold">
+                          {label}
+                        </th>
+                      ))}
                     </tr>
-                  ) : (
-                    selectedMonthRequests.map((request) => (
-                      <tr key={request.id} className="even:bg-[#fafafa]">
-                        <td className="border border-[#e0e0e0] px-3 py-2 text-slate-900">
-                          <div className="font-medium">{request.fileName}</div>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {selectedMonthRequests.map((request) => (
+                      <tr
+                        key={request.id}
+                        className="transition-colors duration-150 hover:bg-[#e8f1fb]/25"
+                      >
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-slate-900">{request.fileName}</div>
                           <div className="text-xs text-slate-500">{request.sheetName}</div>
                         </td>
                         {showSubmittedBy && (
-                          <td className="border border-[#e0e0e0] px-3 py-2 text-slate-700">
-                            {request.submittedByEmail ?? '—'}
-                          </td>
+                          <td className="px-4 py-3 text-slate-700">{request.submittedByEmail ?? '—'}</td>
                         )}
-                        <td className="border border-[#e0e0e0] px-3 py-2 text-slate-700">
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-600">
                           {formatRequestDate(request.createdAt)}
                         </td>
-                        <td className="border border-[#e0e0e0] px-3 py-2 text-slate-700">
+                        <td className="px-4 py-3 font-mono tabular-nums text-slate-800">
                           {request.rowCount}
                         </td>
-                        <td className="border border-[#e0e0e0] px-3 py-2">
+                        <td className="px-4 py-3">
                           <span
                             className={cn(
-                              'inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize',
-                              request.status === 'approved'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : request.status === 'rejected'
-                                  ? 'bg-red-100 text-red-800'
-                                  : request.status === 'active'
-                                    ? 'bg-sky-100 text-sky-800'
-                                    : request.status === 'pending_admin'
-                                      ? 'bg-violet-100 text-violet-800'
-                                      : 'bg-amber-100 text-amber-800',
+                              'inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ring-1 ring-inset',
+                              statusBadgeClass(request.status),
                             )}
                           >
                             {request.status.replace(/_/g, ' ')}
                           </span>
                         </td>
-                        <td className="border border-[#e0e0e0] px-3 py-2">
+                        <td className="px-4 py-3 text-right">
                           {onOpenRequest && (
                             <button
                               type="button"
                               onClick={() => onOpenRequest(request)}
-                              className="rounded-lg border border-[#217346]/40 bg-[#e2efda]/40 px-3 py-1.5 text-xs font-semibold text-[#217346] hover:bg-[#e2efda]"
+                              className="rounded-lg bg-[#2e7ad1] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-[#2568b8] active:scale-[0.98]"
                             >
                               Open
                             </button>
                           )}
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </section>
         </div>

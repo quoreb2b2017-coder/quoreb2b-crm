@@ -9,7 +9,7 @@ import type { ActivityLogStats } from '@/lib/api/activity-logs.service';
 import { actionBadgeClass } from '@/components/activity/activity-log-ui';
 
 const BAR_COLORS = [
-  'from-[#217346] to-emerald-500',
+  'from-[#2e7ad1] to-emerald-500',
   'from-emerald-500 to-teal-400',
   'from-sky-500 to-blue-400',
   'from-violet-500 to-purple-400',
@@ -30,7 +30,7 @@ function PanelHeader({
 }) {
   return (
     <div className="flex items-center gap-2.5 border-b border-slate-100 bg-gradient-to-r from-slate-50/90 to-white px-4 py-3">
-      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#217346]/10 text-[#217346] shadow-sm">
+      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#2e7ad1]/10 text-[#2e7ad1] shadow-sm">
         <Icon className="h-3.5 w-3.5" />
       </span>
       <div className="min-w-0">
@@ -124,14 +124,14 @@ function TimelineBars({
               className="group flex flex-1 flex-col items-center justify-end min-w-[8px] max-w-[24px]"
               title={`${pt.label}: ${pt.count} actions`}
             >
-              <span className="mb-1 hidden rounded bg-[#217346]/10 px-1 font-mono text-[8px] font-bold text-[#217346] group-hover:block">
+              <span className="mb-1 hidden rounded bg-[#2e7ad1]/10 px-1 font-mono text-[8px] font-bold text-[#2e7ad1] group-hover:block">
                 {pt.count}
               </span>
               <div
                 className={cn(
                   'al-col-bar w-full rounded-t-md transition-all duration-300',
                   pt.count > 0
-                    ? 'bg-gradient-to-t from-[#1a5c38] via-[#217346] to-emerald-400 group-hover:from-[#217346] group-hover:to-emerald-300'
+                    ? 'bg-gradient-to-t from-[#2568b8] via-[#2e7ad1] to-emerald-400 group-hover:from-[#2e7ad1] group-hover:to-emerald-300'
                     : 'bg-slate-200/50',
                 )}
                 style={{ height: h, animationDelay: `${i * 25}ms` }}

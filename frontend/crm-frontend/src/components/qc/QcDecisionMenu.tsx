@@ -11,7 +11,7 @@ const OPTIONS: Array<{ id: QcDecisionChoice; label: string; desc: string; classN
     id: 'qualified',
     label: 'Qualified',
     desc: 'Send to Ready QC',
-    className: 'hover:bg-emerald-50 text-emerald-800',
+    className: 'hover:bg-emerald-50 text-[#2568b8]',
   },
   {
     id: 'tbd',

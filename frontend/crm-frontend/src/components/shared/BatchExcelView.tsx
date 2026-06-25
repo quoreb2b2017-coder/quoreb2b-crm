@@ -177,7 +177,7 @@ export function BatchExcelView({
         sourceBatchId,
         parentSourceRowIndices: batchModal.sourceRowIndices,
       });
-      toast.success('Campaign created', `"${batch.name}" — share it with your team from Campaigns`);
+      toast.success('Campaign created', `"${batch.name}" — share it with your team from All campaigns`);
       setBatchModal(null);
       window.dispatchEvent(
         new CustomEvent('batch-created', {
@@ -379,7 +379,7 @@ export function BatchExcelView({
                     type="button"
                     onClick={handleCreateSubBatch}
                     disabled={savingBatch || !batchName.trim()}
-                    className="w-full rounded-xl bg-violet-600 py-2.5 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50 sm:flex-1"
+                    className="w-full rounded-xl bg-[#2e7ad1] py-2.5 text-sm font-medium text-white hover:bg-[#2568b8] disabled:opacity-50 sm:flex-1"
                   >
                     {savingBatch ? 'Creating…' : 'Create campaign'}
                   </button>

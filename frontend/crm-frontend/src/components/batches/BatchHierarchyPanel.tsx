@@ -180,7 +180,7 @@ export function BatchHierarchyPanel({
       {!standalone && (
         <div className="flex items-center justify-between border-b border-slate-100 bg-gradient-to-r from-indigo-50 to-white px-4 py-3">
           <div className="flex items-center gap-2">
-            <GitBranch className="h-5 w-5 text-indigo-600" />
+            <GitBranch className="h-5 w-5 text-[#2e7ad1]" />
             <div>
               <p className="text-sm font-bold text-slate-900">Data hierarchy & activity</p>
               {data && (
@@ -215,7 +215,7 @@ export function BatchHierarchyPanel({
 
       {loading ? (
         <div className="flex flex-1 items-center justify-center gap-2 py-12 text-sm text-slate-500">
-          <Loader2 className="h-5 w-5 animate-spin text-indigo-600" />
+          <Loader2 className="h-5 w-5 animate-spin text-[#2e7ad1]" />
           Loading hierarchy…
         </div>
       ) : error ? (
@@ -234,7 +234,7 @@ export function BatchHierarchyPanel({
                       <td className="px-2 py-1 font-medium text-slate-800">{ev.sharerName}</td>
                       <td className="px-2 py-1 text-slate-600">{ev.batchName}</td>
                       <td className="px-2 py-1 text-right font-mono">{ev.rowCount}</td>
-                      <td className="px-2 py-1 text-emerald-800">
+                      <td className="px-2 py-1 text-[#2568b8]">
                         {ev.recipients.map((r) => r.name).join(', ')}
                       </td>
                       <td className="px-2 py-1 text-right text-slate-400">

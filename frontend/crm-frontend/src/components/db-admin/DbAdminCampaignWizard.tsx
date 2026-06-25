@@ -252,7 +252,7 @@ export function DbAdminCampaignWizard({
         >
           <div className="flex shrink-0 items-center justify-between border-b border-slate-100 bg-gradient-to-r from-violet-50 to-white px-4 py-3.5 sm:px-5">
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-600 text-white shadow-sm">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#2e7ad1] text-white shadow-sm">
                 <Briefcase className="h-4 w-4" />
               </div>
               <div>
@@ -278,9 +278,9 @@ export function DbAdminCampaignWizard({
                   className={cn(
                     'rounded-full px-3 py-1 text-[11px] font-semibold transition-colors',
                     step === s.id
-                      ? 'bg-violet-600 text-white shadow-sm'
+                      ? 'bg-[#2e7ad1] text-white shadow-sm'
                       : i < stepIndex
-                        ? 'bg-violet-100 text-violet-800'
+                        ? 'bg-violet-100 text-[#2568b8]'
                         : 'bg-white text-slate-500 ring-1 ring-slate-200',
                   )}
                 >
@@ -296,7 +296,7 @@ export function DbAdminCampaignWizard({
               <div className="space-y-4">
                 <div className="grid gap-3 sm:grid-cols-3">
                   <div className="rounded-xl border border-violet-100 bg-gradient-to-br from-violet-50 to-white p-3.5 sm:p-4">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-violet-600">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-[#2e7ad1]">
                       Contacts
                     </p>
                     <p className="mt-1 text-2xl font-black tabular-nums text-violet-900">
@@ -361,7 +361,7 @@ export function DbAdminCampaignWizard({
               <div className="space-y-4">
                 <div className="rounded-xl border border-emerald-100 bg-gradient-to-br from-emerald-50/80 to-white p-4">
                   <div className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-[#2e7ad1]">
                       <ShieldCheck className="h-5 w-5" />
                     </div>
                     <div>
@@ -461,7 +461,7 @@ export function DbAdminCampaignWizard({
                         className={cn(
                           'flex items-center justify-center gap-2 rounded-xl border-2 py-2.5 text-sm font-semibold transition',
                           checkMode === 'domain'
-                            ? 'border-emerald-500 bg-emerald-50 text-emerald-800 shadow-sm'
+                            ? 'border-emerald-500 bg-emerald-50 text-[#2568b8] shadow-sm'
                             : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50',
                         )}
                       >
@@ -476,7 +476,7 @@ export function DbAdminCampaignWizard({
                         className={cn(
                           'flex items-center justify-center gap-2 rounded-xl border-2 py-2.5 text-sm font-semibold transition',
                           checkMode === 'email'
-                            ? 'border-violet-500 bg-violet-50 text-violet-800 shadow-sm'
+                            ? 'border-violet-500 bg-violet-50 text-[#2568b8] shadow-sm'
                             : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50',
                         )}
                       >
@@ -489,7 +489,7 @@ export function DbAdminCampaignWizard({
                     type="button"
                     disabled={checking || !suppressionCampaignId || loadingCampaigns}
                     onClick={() => void runSuppressionCheck()}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#1a5c38] to-[#217346] py-3 text-sm font-bold text-white shadow-md transition hover:from-[#154a2d] hover:to-[#1a5c38] hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#2568b8] to-[#2e7ad1] py-3 text-sm font-bold text-white shadow-md transition hover:from-[#154a2d] hover:to-[#2568b8] hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
                   >
                     {checking ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -513,7 +513,7 @@ export function DbAdminCampaignWizard({
                       {duplicateCount > 0 ? (
                         <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
                       ) : (
-                        <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+                        <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-[#2e7ad1]" />
                       )}
                       <div>
                         {duplicateCount > 0 ? (
@@ -537,7 +537,7 @@ export function DbAdminCampaignWizard({
                         ) : (
                           <>
                             <p className="text-sm font-bold text-emerald-900">All clear!</p>
-                            <p className="mt-1 text-xs text-emerald-800">
+                            <p className="mt-1 text-xs text-[#2568b8]">
                               No matches in the selected suppression list. Ready to distribute.
                             </p>
                           </>
@@ -568,12 +568,12 @@ export function DbAdminCampaignWizard({
                 </p>
                 <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                   <p className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-800">
-                    <Users className="h-4 w-4 text-violet-600" />
+                    <Users className="h-4 w-4 text-[#2e7ad1]" />
                     Select employees
                   </p>
                   {usersLoading ? (
                     <div className="flex items-center justify-center gap-2 py-8 text-sm text-slate-500">
-                      <Loader2 className="h-4 w-4 animate-spin text-violet-600" /> Loading team…
+                      <Loader2 className="h-4 w-4 animate-spin text-[#2e7ad1]" /> Loading team…
                     </div>
                   ) : users.length === 0 ? (
                     <p className="py-4 text-center text-sm text-slate-500">
@@ -597,7 +597,7 @@ export function DbAdminCampaignWizard({
                               type="checkbox"
                               checked={selected}
                               onChange={() => toggleUser(u.id)}
-                              className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                              className="h-4 w-4 rounded border-slate-300 text-[#2e7ad1] focus:ring-violet-500"
                             />
                             <div className="min-w-0 flex-1">
                               <span className="block text-sm font-medium text-slate-800">
@@ -638,7 +638,7 @@ export function DbAdminCampaignWizard({
                 type="button"
                 disabled={!batchName.trim()}
                 onClick={() => setStep('suppression')}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-[#2e7ad1] px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-[#2568b8] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
               >
                 Next: Suppression <ChevronRight className="h-4 w-4" />
               </button>
@@ -648,7 +648,7 @@ export function DbAdminCampaignWizard({
                 type="button"
                 disabled={!suppressionDone}
                 onClick={() => setStep('distribute')}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-[#2e7ad1] px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-[#2568b8] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
               >
                 Next: Distribute <ChevronRight className="h-4 w-4" />
               </button>
@@ -658,7 +658,7 @@ export function DbAdminCampaignWizard({
                 type="button"
                 disabled={creating || !batchName.trim()}
                 onClick={() => void handleCreateAndDistribute()}
-                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#1a5c38] to-[#217346] px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:from-[#154a2d] hover:to-[#1a5c38] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#2568b8] to-[#2e7ad1] px-5 py-2.5 text-sm font-bold text-white shadow-md transition hover:from-[#154a2d] hover:to-[#2568b8] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
               >
                 {creating ? (
                   <Loader2 className="h-4 w-4 animate-spin" />

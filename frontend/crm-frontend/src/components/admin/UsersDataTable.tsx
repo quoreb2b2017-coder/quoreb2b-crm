@@ -32,14 +32,14 @@ const roleLabels: Record<string, string> = {
 };
 
 const roleBadge: Record<string, string> = {
-  admin: 'bg-violet-100 text-violet-800',
+  admin: 'bg-violet-100 text-[#2568b8]',
   db_admin: 'bg-blue-100 text-blue-800',
-  employee: 'bg-emerald-100 text-emerald-800',
+  employee: 'bg-emerald-100 text-[#2568b8]',
   super_admin: 'bg-slate-200 text-slate-700',
 };
 
 const STATUS_STYLES = {
-  active: 'bg-[#e2efda] text-[#217346] font-semibold',
+  active: 'bg-[#e2efda] text-[#2e7ad1] font-semibold',
   blocked: 'bg-[#fce4d6] text-[#c00000] font-semibold',
 };
 
@@ -116,7 +116,7 @@ function XlActionButton({
   variant?: 'default' | 'warn' | 'danger';
 }) {
   const variantClass = {
-    default: 'text-[#217346] hover:bg-[#e2efda]',
+    default: 'text-[#2e7ad1] hover:bg-[#e2efda]',
     warn: 'text-amber-900 hover:bg-[#fff8e6]',
     danger: 'text-red-700 hover:bg-red-50',
   }[variant];
@@ -130,7 +130,7 @@ function XlActionButton({
         'pointer-events-auto rounded-sm border px-2 py-0.5 text-[11px] font-semibold transition-all duration-150',
         'border-[#ababab] bg-white disabled:opacity-50',
         variantClass,
-        active && 'ring-2 ring-[#217346]/40 shadow-sm',
+        active && 'ring-2 ring-[#2e7ad1]/40 shadow-sm',
       )}
     >
       {children}
@@ -228,7 +228,7 @@ export function UsersDataTable({
                     colSpan={COL_COUNT}
                     className="border border-[#e0e0e0] px-4 py-12 text-center text-sm text-slate-500"
                   >
-                    <RefreshCw className="mx-auto mb-2 h-5 w-5 animate-spin text-[#217346]" />
+                    <RefreshCw className="mx-auto mb-2 h-5 w-5 animate-spin text-[#2e7ad1]" />
                     Loading users…
                   </td>
                 </tr>
@@ -331,8 +331,8 @@ export function UsersDataTable({
                           }}
                           title="View password (Enter)"
                           className={cn(
-                            'pointer-events-auto text-[11px] font-semibold text-[#217346] underline decoration-[#217346]/40 underline-offset-2 hover:text-[#1a5c38]',
-                            isActive(rowIndex, 7) && 'decoration-[#217346]',
+                            'pointer-events-auto text-[11px] font-semibold text-[#2e7ad1] underline decoration-[#2e7ad1]/40 underline-offset-2 hover:text-[#2568b8]',
+                            isActive(rowIndex, 7) && 'decoration-[#2e7ad1]',
                           )}
                         >
                           View
@@ -352,7 +352,7 @@ export function UsersDataTable({
                               e.stopPropagation();
                               onOpenReport(row.raw);
                             }}
-                            className="pointer-events-auto text-[11px] font-semibold text-[#217346] underline decoration-[#217346]/40 underline-offset-2 hover:text-[#1a5c38]"
+                            className="pointer-events-auto text-[11px] font-semibold text-[#2e7ad1] underline decoration-[#2e7ad1]/40 underline-offset-2 hover:text-[#2568b8]"
                           >
                             Report
                           </button>

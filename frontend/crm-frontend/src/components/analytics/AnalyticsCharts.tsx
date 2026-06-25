@@ -24,7 +24,7 @@ export function KpiCard({
 }) {
   const accents = {
     indigo: 'from-indigo-500/10 to-indigo-600/5 border-indigo-200/80 text-indigo-700',
-    emerald: 'from-emerald-500/10 to-emerald-600/5 border-emerald-200/80 text-emerald-700',
+    emerald: 'from-emerald-500/10 to-emerald-600/5 border-emerald-200/80 text-[#2e7ad1]',
     amber: 'from-amber-500/10 to-amber-600/5 border-amber-200/80 text-amber-700',
     violet: 'from-violet-500/10 to-violet-600/5 border-violet-200/80 text-violet-700',
     rose: 'from-rose-500/10 to-rose-600/5 border-rose-200/80 text-rose-700',

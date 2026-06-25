@@ -8,11 +8,11 @@ import { cn } from '@/lib/utils/cn';
 
 const statusStyles: Record<string, { pill: string; banner: string }> = {
   up: {
-    pill: 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200',
+    pill: 'bg-emerald-100 text-[#2568b8] ring-1 ring-emerald-200',
     banner: 'border-emerald-200 bg-gradient-to-r from-emerald-50 to-white text-emerald-900',
   },
   ok: {
-    pill: 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200',
+    pill: 'bg-emerald-100 text-[#2568b8] ring-1 ring-emerald-200',
     banner: 'border-emerald-200 bg-gradient-to-r from-emerald-50 to-white text-emerald-900',
   },
   down: {

@@ -36,12 +36,12 @@ export function WorkDurationCell({
     <div className="flex flex-col items-center gap-0.5">
       <div className="flex items-center gap-1">
         {showGreenTick && (
-          <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" aria-hidden />
+          <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-[#2e7ad1]" aria-hidden />
         )}
         <span
           className={cn(
             'font-mono text-[12px] font-semibold tabular-nums',
-            showGreenTick && 'text-emerald-700',
+            showGreenTick && 'text-[#2e7ad1]',
             !showGreenTick && inProgress && 'text-amber-800',
           )}
         >
@@ -52,7 +52,7 @@ export function WorkDurationCell({
         className={cn(
           'inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-[9px] font-bold uppercase tracking-wide',
           showGreenTick
-            ? 'bg-emerald-100 text-emerald-800'
+            ? 'bg-emerald-100 text-[#2568b8]'
             : inProgress
               ? 'bg-amber-100 text-amber-800'
               : targetReached && !isNet

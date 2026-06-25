@@ -31,6 +31,19 @@ import { cn } from '@/lib/utils/cn';
 
 export type NotesPanelVariant = 'employee' | 'admin' | 'db_admin';
 
+const CRM_NOTES_THEME = {
+  hero: 'from-[#2568b8] via-[#2e7ad1] to-[#1e5fa8]',
+  accentBar: 'bg-white/25',
+  glow: 'bg-white/10',
+  btn: 'bg-white text-[#2e7ad1] hover:bg-[#e8f1fb]',
+  btnShadow: 'shadow-[#2568b8]/20',
+  navActive: 'bg-[#e8f1fb] text-[#2568b8] shadow-sm ring-1 ring-[#2e7ad1]/20',
+  navIcon: 'text-[#2e7ad1]',
+  searchFocus: 'focus:border-[#2e7ad1] focus:ring-[#2e7ad1]/20',
+  tagActive: 'bg-[#2e7ad1] text-white ring-[#2568b8]',
+  sheet: 'emerald' as SideSheetAccent,
+};
+
 const THEME: Record<
   NotesPanelVariant,
   {
@@ -46,42 +59,9 @@ const THEME: Record<
     sheet: SideSheetAccent;
   }
 > = {
-  employee: {
-    hero: 'from-emerald-800 via-emerald-700 to-teal-700',
-    accentBar: 'bg-emerald-300',
-    glow: 'bg-emerald-400/20',
-    btn: 'bg-white text-emerald-800 hover:bg-emerald-50',
-    btnShadow: 'shadow-emerald-900/20',
-    navActive: 'bg-emerald-50 text-emerald-900 shadow-sm ring-1 ring-emerald-100',
-    navIcon: 'text-emerald-600',
-    searchFocus: 'focus:border-emerald-400 focus:ring-emerald-500/20',
-    tagActive: 'bg-emerald-700 text-white ring-emerald-600',
-    sheet: 'emerald',
-  },
-  admin: {
-    hero: 'from-indigo-900 via-indigo-800 to-blue-800',
-    accentBar: 'bg-indigo-300',
-    glow: 'bg-indigo-400/20',
-    btn: 'bg-white text-indigo-900 hover:bg-indigo-50',
-    btnShadow: 'shadow-indigo-900/20',
-    navActive: 'bg-indigo-50 text-indigo-900 shadow-sm ring-1 ring-indigo-100',
-    navIcon: 'text-indigo-600',
-    searchFocus: 'focus:border-indigo-400 focus:ring-indigo-500/20',
-    tagActive: 'bg-indigo-700 text-white ring-indigo-600',
-    sheet: 'indigo',
-  },
-  db_admin: {
-    hero: 'from-violet-900 via-violet-800 to-purple-800',
-    accentBar: 'bg-violet-300',
-    glow: 'bg-violet-400/20',
-    btn: 'bg-white text-violet-900 hover:bg-violet-50',
-    btnShadow: 'shadow-violet-900/20',
-    navActive: 'bg-violet-50 text-violet-900 shadow-sm ring-1 ring-violet-100',
-    navIcon: 'text-violet-600',
-    searchFocus: 'focus:border-violet-400 focus:ring-violet-500/20',
-    tagActive: 'bg-violet-700 text-white ring-violet-600',
-    sheet: 'violet',
-  },
+  employee: CRM_NOTES_THEME,
+  admin: CRM_NOTES_THEME,
+  db_admin: CRM_NOTES_THEME,
 };
 
 const SIDEBAR_ITEMS: Array<{ id: NoteSidebarFilter; label: string; icon: React.ReactNode }> = [
@@ -434,9 +414,7 @@ export function PersonalNotesPage({ variant = 'employee' }: PersonalNotesPagePro
                 onClick={openCreate}
                 className={cn(
                   'rounded-lg p-2 text-white md:hidden',
-                  variant === 'employee' && 'bg-emerald-600',
-                  variant === 'admin' && 'bg-indigo-600',
-                  variant === 'db_admin' && 'bg-violet-600',
+                  'bg-[#2e7ad1]',
                 )}
                 title="New note"
               >

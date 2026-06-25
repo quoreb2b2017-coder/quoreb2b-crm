@@ -24,9 +24,9 @@ interface NoteEditorModalProps {
 const PRIORITIES: NotePriority[] = ['low', 'medium', 'high'];
 
 const ACCENT_BTN: Record<SideSheetAccent, string> = {
-  emerald: 'bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-500/30',
-  indigo: 'bg-indigo-600 hover:bg-indigo-700 focus:ring-indigo-500/30',
-  violet: 'bg-violet-600 hover:bg-violet-700 focus:ring-violet-500/30',
+  emerald: 'bg-[#2e7ad1] hover:bg-[#2568b8] focus:ring-[#2e7ad1]/30',
+  indigo: 'bg-[#2e7ad1] hover:bg-[#2568b8] focus:ring-indigo-500/30',
+  violet: 'bg-[#2e7ad1] hover:bg-[#2568b8] focus:ring-violet-500/30',
 };
 
 const ACCENT_TOP: Record<SideSheetAccent, string> = {

@@ -108,7 +108,7 @@ export default function AdminBatchesPage() {
   const handleDelete = async (batch: BatchRecord) => {
     const isRootCampaign = !batch.sourceBatchId;
     const msg = isRootCampaign
-      ? `Delete campaign "${batch.name}"?\n\nContacts will return to Master Data as available rows (no longer in Campaigns). Related sub-campaigns and QC data will also be removed.`
+      ? `Delete campaign "${batch.name}"?\n\nContacts will return to Master Data as available rows (no longer in All campaigns). Related sub-campaigns and QC data will also be removed.`
       : `Delete sub-campaign "${batch.name}"?\n\nThis slice will be removed. Master Data is unchanged.`;
     if (!confirm(msg)) return;
     setDeleting(batch.id);
@@ -144,7 +144,7 @@ export default function AdminBatchesPage() {
       <BatchMonthExplorer
         batches={batches}
         loading={loading}
-        title="Campaigns"
+        title="All campaigns"
         subtitle="Add a year · Jan–Dec folders auto-created · campaigns file by creation month"
         emptyHint='Go to Master Data Upload, apply filters, then click "Create Campaign"'
         onOpenBatch={(b) => router.push(`/admin/batches/${b.id}`)}
@@ -213,7 +213,7 @@ export default function AdminBatchesPage() {
                             : new Set(users.map((u) => u.id)),
                         )
                       }
-                      className="text-xs font-medium text-indigo-600 hover:underline"
+                      className="text-xs font-medium text-[#2e7ad1] hover:underline"
                     >
                       {selectedUserIds.size === users.length ? 'Deselect all' : 'Select all'}
                     </button>
@@ -234,7 +234,7 @@ export default function AdminBatchesPage() {
                           type="checkbox"
                           checked={selectedUserIds.has(u.id)}
                           onChange={() => toggleUser(u.id)}
-                          className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                          className="h-4 w-4 rounded border-slate-300 text-[#2e7ad1]"
                         />
                         <Initials name={u.name} />
                         <div className="min-w-0 flex-1">

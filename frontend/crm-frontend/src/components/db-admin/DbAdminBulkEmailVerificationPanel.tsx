@@ -100,15 +100,15 @@ const STATUS_LABEL: Record<BatchStatus, string> = {
 };
 
 const STATUS_BADGE: Record<BatchStatus, string> = {
-  uploaded: 'bg-violet-100 text-violet-800',
+  uploaded: 'bg-violet-100 text-[#2568b8]',
   pending: 'bg-slate-100 text-slate-700',
   processing: 'bg-sky-100 text-sky-800',
-  completed: 'bg-emerald-100 text-emerald-800',
+  completed: 'bg-emerald-100 text-[#2568b8]',
   failed: 'bg-red-100 text-red-800',
 };
 
 const RECORD_STATUS: Record<EmailVerificationStatus, string> = {
-  valid: 'bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-200',
+  valid: 'bg-emerald-50 text-[#2568b8] ring-1 ring-inset ring-emerald-200',
   likely_valid: 'bg-green-50 text-green-800 ring-1 ring-inset ring-green-200',
   catch_all: 'bg-amber-50 text-amber-900 ring-1 ring-inset ring-amber-200',
   risky: 'bg-orange-50 text-orange-800 ring-1 ring-inset ring-orange-200',
@@ -123,7 +123,7 @@ const METRIC_ACCENT: Record<
   valid: {
     card: 'bg-emerald-50/80',
     border: 'border-emerald-200',
-    label: 'text-emerald-800',
+    label: 'text-[#2568b8]',
     dot: 'bg-emerald-500',
     icon: CheckCircle2,
   },
@@ -307,7 +307,7 @@ function shellBtn(className?: string) {
 }
 
 function scoreTone(score: number): string {
-  if (score >= 95) return 'bg-emerald-100 text-emerald-800 ring-emerald-200';
+  if (score >= 95) return 'bg-emerald-100 text-[#2568b8] ring-emerald-200';
   if (score >= 80) return 'bg-green-100 text-green-800 ring-green-200';
   if (score >= 70) return 'bg-amber-100 text-amber-900 ring-amber-200';
   if (score >= 55) return 'bg-slate-100 text-slate-700 ring-slate-200';
@@ -367,7 +367,7 @@ function VerificationStatusFilter({
         onClick={() => !disabled && setOpen((o) => !o)}
         className={cn(
           'inline-flex min-w-[10rem] items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50',
-          open && 'border-emerald-600 ring-2 ring-emerald-500/20',
+          open && 'border-[#2e7ad1] ring-2 ring-[#2e7ad1]/20',
         )}
       >
         <span className="truncate">{statusFilterLabel(value)}</span>
@@ -387,7 +387,7 @@ function VerificationStatusFilter({
           </span>
           <button
             type="button"
-            className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-50"
+            className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-[#2e7ad1] hover:bg-emerald-50"
             onClick={() => onChange([...DEFAULT_STATUS_FILTERS])}
           >
             Reset all
@@ -411,7 +411,7 @@ function VerificationStatusFilter({
                     className={cn(
                       'flex h-4 w-4 shrink-0 items-center justify-center rounded border',
                       active
-                        ? 'border-emerald-600 bg-emerald-600 text-white'
+                        ? 'border-[#2e7ad1] bg-[#2e7ad1] text-white'
                         : 'border-slate-300 bg-white',
                     )}
                   >
@@ -1007,7 +1007,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                 onClick={() => inputRef.current?.click()}
                 disabled={uploading}
                 className={shellBtn(
-                  'border-violet-600 bg-violet-600 text-white shadow-md hover:border-violet-700 hover:bg-violet-700',
+                  'border-violet-600 bg-[#2e7ad1] text-white shadow-md hover:border-violet-700 hover:bg-[#2568b8]',
                 )}
               >
                 {uploading ? (
@@ -1062,7 +1062,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                   className={cn(
                     'group relative overflow-hidden rounded-xl border bg-white p-3 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md',
                     accent.border,
-                    active && 'ring-2 ring-emerald-500/30',
+                    active && 'ring-2 ring-[#2e7ad1]/30',
                     accent.card,
                   )}
                 >
@@ -1102,7 +1102,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                       type="button"
                       disabled={exporting || m.value === 0 || m.value === '—'}
                       onClick={() => void handleExportXlsx('status', [m.status])}
-                      className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-white/80 bg-white/90 px-2 py-1.5 text-[10px] font-semibold text-emerald-700 shadow-sm transition-colors hover:bg-white disabled:opacity-40"
+                      className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-white/80 bg-white/90 px-2 py-1.5 text-[10px] font-semibold text-[#2e7ad1] shadow-sm transition-colors hover:bg-white disabled:opacity-40"
                       title={`Download ${m.label} only`}
                     >
                       <Download className="h-3 w-3" />
@@ -1127,7 +1127,7 @@ export function DbAdminBulkEmailVerificationPanel() {
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-[#2e7ad1]/20"
             >
               {availableYears.map((year) => (
                 <option key={year} value={year}>
@@ -1182,7 +1182,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                         <Folder
                           className={cn(
                             'mx-auto h-3.5 w-3.5',
-                            active ? 'text-[#217346]' : 'text-slate-400',
+                            active ? 'text-[#2e7ad1]' : 'text-slate-400',
                           )}
                         />
                       </td>
@@ -1201,7 +1201,7 @@ export function DbAdminBulkEmailVerificationPanel() {
 
           <section className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-200 bg-gradient-to-r from-emerald-50 to-white px-4 py-2.5">
-              <div className="flex items-center gap-2 text-sm font-semibold text-emerald-800">
+              <div className="flex items-center gap-2 text-sm font-semibold text-[#2568b8]">
                 <ChevronRight className="h-4 w-4" />
                 <span>{selectedMonthLabel} folder</span>
               </div>
@@ -1307,7 +1307,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                                     style={{ width: `${batch.progress}%` }}
                                   />
                                 </div>
-                                <span className="text-xs font-semibold text-emerald-700">
+                                <span className="text-xs font-semibold text-[#2e7ad1]">
                                   {batch.progress}%
                                 </span>
                               </div>
@@ -1343,7 +1343,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                                   type="button"
                                   disabled={verifyingId === batch.id}
                                   onClick={() => startVerification(batch.id)}
-                                  className="inline-flex items-center gap-1 rounded border border-[#217346] bg-[#217346] px-2 py-1 text-[11px] font-semibold text-white hover:bg-[#1a5c38] disabled:opacity-60"
+                                  className="inline-flex items-center gap-1 rounded border border-[#2e7ad1] bg-[#2e7ad1] px-2 py-1 text-[11px] font-semibold text-white hover:bg-[#2568b8] disabled:opacity-60"
                                 >
                                   {verifyingId === batch.id ? (
                                     <Loader2 className="h-3 w-3 animate-spin" />
@@ -1358,7 +1358,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                                   type="button"
                                   disabled={verifyingId === batch.id}
                                   onClick={() => resumeVerification(batch.id)}
-                                  className="inline-flex items-center gap-1 rounded border border-[#217346] bg-[#217346] px-2 py-1 text-[11px] font-semibold text-white hover:bg-[#1a5c38] disabled:opacity-60"
+                                  className="inline-flex items-center gap-1 rounded border border-[#2e7ad1] bg-[#2e7ad1] px-2 py-1 text-[11px] font-semibold text-white hover:bg-[#2568b8] disabled:opacity-60"
                                 >
                                   {verifyingId === batch.id ? (
                                     <Loader2 className="h-3 w-3 animate-spin" />
@@ -1373,7 +1373,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                                   type="button"
                                   disabled={verifyingId === batch.id}
                                   onClick={() => resumeVerification(batch.id)}
-                                  className="inline-flex items-center gap-1 rounded border border-[#217346] bg-[#217346] px-2 py-1 text-[11px] font-semibold text-white hover:bg-[#1a5c38] disabled:opacity-60"
+                                  className="inline-flex items-center gap-1 rounded border border-[#2e7ad1] bg-[#2e7ad1] px-2 py-1 text-[11px] font-semibold text-white hover:bg-[#2568b8] disabled:opacity-60"
                                 >
                                   {verifyingId === batch.id ? (
                                     <Loader2 className="h-3 w-3 animate-spin" />
@@ -1483,7 +1483,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                   setMinScore(e.target.value === '' ? '' : Number(e.target.value));
                   setRecordPage(1);
                 }}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-[#2e7ad1]/20"
                 title="Minimum confidence score"
               >
                 <option value="">All scores</option>
@@ -1498,7 +1498,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                     disabled={!selectedBatchId || exporting || statusFilters.length === 0}
                     onClick={() => void handleExportXlsx('status')}
                     className={shellBtn(
-                      'border-emerald-600 bg-emerald-600 text-white shadow-md hover:border-emerald-700 hover:bg-emerald-700',
+                      'border-[#2e7ad1] bg-[#2e7ad1] text-white shadow-md hover:border-emerald-700 hover:bg-[#2568b8]',
                     )}
                     title={
                       statusFilters.length
@@ -1597,7 +1597,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                     colSpan={8}
                     className="px-4 py-12 text-center text-slate-500"
                   >
-                    <Loader2 className="mx-auto mb-3 h-8 w-8 animate-spin text-emerald-600" />
+                    <Loader2 className="mx-auto mb-3 h-8 w-8 animate-spin text-[#2e7ad1]" />
                     Loading results…
                   </td>
                 </tr>
@@ -1616,7 +1616,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                             No contacts match the current filters.{' '}
                             <button
                               type="button"
-                              className="font-semibold text-emerald-700 underline"
+                              className="font-semibold text-[#2e7ad1] underline"
                               onClick={() => {
                                 setStatusFilters([]);
                                 setMinScore('');
@@ -1645,7 +1645,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                     </td>
                     <td className="px-3 py-2.5 text-slate-700">{r.companyName || '—'}</td>
                     <td className="px-3 py-2.5 text-slate-600">{r.domain}</td>
-                    <td className="px-3 py-2.5 font-mono text-xs font-semibold text-emerald-700">
+                    <td className="px-3 py-2.5 font-mono text-xs font-semibold text-[#2e7ad1]">
                       {r.recommendedEmail || r.generatedEmail}
                     </td>
                     <td className="px-3 py-2.5 font-mono text-xs text-slate-600">

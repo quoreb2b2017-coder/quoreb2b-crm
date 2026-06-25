@@ -155,7 +155,7 @@ export function CheckSuppressionModal({
           aria-labelledby="check-suppression-title"
         >
           {/* Header */}
-          <div className="flex items-center justify-between gap-3 border-b border-emerald-100 bg-gradient-to-r from-[#1a5c38] to-[#217346] px-4 py-3 text-white">
+          <div className="flex items-center justify-between gap-3 border-b border-emerald-100 bg-gradient-to-r from-[#2568b8] to-[#2e7ad1] px-4 py-3 text-white">
             <div className="flex min-w-0 items-center gap-2.5">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/15">
                 <ShieldCheck className="h-4 w-4" />
@@ -181,7 +181,7 @@ export function CheckSuppressionModal({
 
           {loading ? (
             <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-500">
-              <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
+              <Loader2 className="h-4 w-4 animate-spin text-[#2e7ad1]" />
               Loading…
             </div>
           ) : (
@@ -218,7 +218,7 @@ export function CheckSuppressionModal({
 
               {inlineSource ? (
                 <div className="rounded-lg border border-emerald-100 bg-emerald-50/80 px-3 py-2">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#2e7ad1]">
                     QC sheet
                   </p>
                   <p className="mt-0.5 text-xs font-medium text-slate-700">
@@ -288,7 +288,7 @@ export function CheckSuppressionModal({
                     className={cn(
                       'flex items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-semibold transition',
                       checkMode === 'domain'
-                        ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
+                        ? 'border-emerald-500 bg-emerald-50 text-[#2568b8]'
                         : 'border-slate-200 text-slate-600 hover:bg-slate-50',
                     )}
                   >
@@ -301,7 +301,7 @@ export function CheckSuppressionModal({
                     className={cn(
                       'flex items-center justify-center gap-1.5 rounded-lg border py-2 text-xs font-semibold transition',
                       checkMode === 'email'
-                        ? 'border-violet-500 bg-violet-50 text-violet-800'
+                        ? 'border-violet-500 bg-violet-50 text-[#2568b8]'
                         : 'border-slate-200 text-slate-600 hover:bg-slate-50',
                     )}
                   >
@@ -327,7 +327,7 @@ export function CheckSuppressionModal({
               type="button"
               disabled={checking || !canSubmit}
               onClick={() => void handleCheck()}
-              className="flex flex-[1.3] items-center justify-center gap-1.5 rounded-lg bg-[#217346] py-2 text-xs font-bold text-white hover:bg-[#1a5c38] disabled:opacity-50"
+              className="flex flex-[1.3] items-center justify-center gap-1.5 rounded-lg bg-[#2e7ad1] py-2 text-xs font-bold text-white hover:bg-[#2568b8] disabled:opacity-50"
             >
               {checking ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />

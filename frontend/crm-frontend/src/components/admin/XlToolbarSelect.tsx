@@ -108,8 +108,8 @@ export function XlToolbarSelect({
                         className={cn(
                           'flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors duration-150',
                           active
-                            ? 'bg-[#217346] font-medium text-white'
-                            : 'text-slate-700 hover:bg-[#e8f5ee] hover:text-[#1a5c38]',
+                            ? 'bg-[#2e7ad1] font-medium text-white'
+                            : 'text-slate-700 hover:bg-[#e8f5ee] hover:text-[#2568b8]',
                         )}
                       >
                         <span className="min-w-0 flex-1 truncate">{opt.label}</span>
@@ -142,8 +142,8 @@ export function XlToolbarSelect({
           'flex w-full items-center justify-between gap-2 border border-white/25 bg-white px-2.5 py-2 text-left text-sm text-slate-800 shadow-sm',
           'transition-all duration-200 ease-out',
           'hover:border-white/50 hover:shadow-md',
-          'focus:outline-none focus:ring-2 focus:ring-white/50 focus:ring-offset-1 focus:ring-offset-[#217346]',
-          open && 'border-white/60 shadow-md ring-2 ring-white/30 ring-offset-1 ring-offset-[#217346]',
+          'focus:outline-none focus:ring-2 focus:ring-white/50 focus:ring-offset-1 focus:ring-offset-[#2e7ad1]',
+          open && 'border-white/60 shadow-md ring-2 ring-white/30 ring-offset-1 ring-offset-[#2e7ad1]',
           disabled && 'cursor-not-allowed opacity-55',
         )}
       >
@@ -153,7 +153,7 @@ export function XlToolbarSelect({
         <ChevronDown
           className={cn(
             'h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200 ease-out',
-            open && 'rotate-180 text-[#217346]',
+            open && 'rotate-180 text-[#2e7ad1]',
           )}
         />
       </button>

@@ -174,7 +174,7 @@ export function QcReadyWorkspace() {
       type="button"
       disabled={downloading}
       onClick={() => void handleDownload()}
-      className="inline-flex items-center gap-1.5 rounded bg-[#217346] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[#1a5c38] disabled:opacity-50"
+      className="inline-flex items-center gap-1.5 rounded bg-[#2e7ad1] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[#2568b8] disabled:opacity-50"
     >
       <Download className="h-3.5 w-3.5" />
       {downloading ? 'Preparing…' : 'Download .xlsx'}
@@ -326,8 +326,8 @@ export function QcReadyWorkspace() {
                                     className={cn(
                                       'truncate text-[11px] font-medium',
                                       active
-                                        ? 'text-[#217346]'
-                                        : 'text-slate-700 hover:text-[#217346]',
+                                        ? 'text-[#2e7ad1]'
+                                        : 'text-slate-700 hover:text-[#2e7ad1]',
                                     )}
                                     title={fileNode.label}
                                   >

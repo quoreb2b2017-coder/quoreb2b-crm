@@ -32,7 +32,7 @@ export function BatchTeamPage({
             </button>
             <div className="min-w-0 border-l border-slate-200 pl-3">
               <div className="flex items-center gap-2">
-                <GitBranch className="h-4 w-4 shrink-0 text-indigo-600" />
+                <GitBranch className="h-4 w-4 shrink-0 text-[#2e7ad1]" />
                 <h1 className="truncate text-base font-semibold text-slate-900">Team & activity</h1>
               </div>
               <p className="text-xs text-slate-500">
@@ -43,7 +43,7 @@ export function BatchTeamPage({
           <button
             type="button"
             onClick={() => router.push(batchViewHref)}
-            className="inline-flex items-center gap-2 rounded-lg border border-[#217346] bg-[#217346] px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#1a5c38]"
+            className="inline-flex items-center gap-2 rounded-lg border border-[#2e7ad1] bg-[#2e7ad1] px-3 py-2 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-[#2568b8]"
           >
             <Table2 className="h-3.5 w-3.5" />
             Open spreadsheet

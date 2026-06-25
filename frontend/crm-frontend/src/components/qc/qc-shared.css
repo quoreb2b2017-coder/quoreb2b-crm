@@ -5,8 +5,8 @@
 }
 
 .qc-workspace-titlebar {
-  background: linear-gradient(180deg, #248f54 0%, #217346 55%, #1a5c38 100%);
-  box-shadow: 0 2px 8px rgba(26, 92, 56, 0.2);
+  background: linear-gradient(180deg, #3a85d8 0%, #2e7ad1 55%, #2568b8 100%);
+  box-shadow: 0 2px 8px rgba(37, 104, 184, 0.2);
 }
 
 .qc-workspace-badge {
@@ -33,7 +33,7 @@
 }
 
 .qc-folder-panel-head--pending {
-  background: linear-gradient(180deg, #217346 0%, #1a5c38 100%);
+  background: linear-gradient(180deg, #2e7ad1 0%, #2568b8 100%);
   border-bottom: none;
 }
 
@@ -163,7 +163,7 @@
 .qc-month-row--has-files:hover .qc-month-icon--open {
   transform: scale(1.05);
   box-shadow:
-    0 2px 6px rgba(26, 92, 56, 0.25),
+    0 2px 6px rgba(37, 104, 184, 0.25),
     inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
@@ -297,10 +297,10 @@
   height: 1.625rem;
   flex-shrink: 0;
   border-radius: 0.3125rem;
-  background: linear-gradient(180deg, #2a9d5c 0%, #1a5c38 100%);
+  background: linear-gradient(180deg, #2a9d5c 0%, #2568b8 100%);
   color: #fff;
   box-shadow:
-    0 1px 3px rgba(26, 92, 56, 0.3),
+    0 1px 3px rgba(37, 104, 184, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
@@ -370,7 +370,7 @@
   font-size: 0.75rem;
   font-weight: 700;
   color: #145c36;
-  box-shadow: 0 1px 3px rgba(26, 92, 56, 0.12);
+  box-shadow: 0 1px 3px rgba(37, 104, 184, 0.12);
   transition:
     transform 0.12s ease,
     box-shadow 0.12s ease;
@@ -378,7 +378,7 @@
 
 .qc-link-ready:hover {
   transform: translateY(-1px);
-  box-shadow: 0 3px 8px rgba(26, 92, 56, 0.18);
+  box-shadow: 0 3px 8px rgba(37, 104, 184, 0.18);
 }
 
 .qc-folder-table .qc-folder-th-num {

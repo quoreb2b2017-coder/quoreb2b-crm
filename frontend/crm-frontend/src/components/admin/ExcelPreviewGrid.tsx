@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Filter, ChevronDown, ArrowUpAZ, ArrowDownAZ, X, Plus, Rows3, Columns3 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
@@ -37,6 +38,12 @@ interface ExcelPreviewGridProps {
   /** Change when loading from DB so grid resets; omit during inline edits */
   dataResetKey?: string;
   onFilteredDataChange?: (rows: string[][]) => void;
+  /** Filtered view + source row mapping (for export / create campaign) */
+  onFilteredViewChange?: (payload: {
+    rows: string[][];
+    sourceIndices: number[];
+    hasActiveViewFilter: boolean;
+  }) => void;
   /** When set, grid is editable (click/double-click cells, arrow keys, add row/column) */
   onDataChange?: (data: { headers: string[]; rows: string[][] }) => void;
   editable?: boolean;
@@ -64,6 +71,7 @@ export function ExcelPreviewGrid({
   data,
   dataResetKey,
   onFilteredDataChange,
+  onFilteredViewChange,
   onDataChange,
   editable: editableProp,
   batchedByRow,
@@ -146,11 +154,20 @@ export function ExcelPreviewGrid({
   }, [displayRows, sourceIndices, batchedSet]);
 
   const onFilteredDataChangeRef = useRef(onFilteredDataChange);
+  const onFilteredViewChangeRef = useRef(onFilteredViewChange);
   useEffect(() => { onFilteredDataChangeRef.current = onFilteredDataChange; });
+  useEffect(() => { onFilteredViewChangeRef.current = onFilteredViewChange; });
+
+  const viewFiltered = hasActiveFilters(filters) || hideBatchedRows;
 
   useEffect(() => {
     onFilteredDataChangeRef.current?.(displayRows);
-  }, [displayRows]);
+    onFilteredViewChangeRef.current?.({
+      rows: displayRows,
+      sourceIndices,
+      hasActiveViewFilter: viewFiltered,
+    });
+  }, [displayRows, sourceIndices, viewFiltered]);
 
   const isEditing = editTarget !== null;
 
@@ -269,10 +286,10 @@ export function ExcelPreviewGrid({
 
   const openFilterMenu = (colIndex: number, el: HTMLElement) => {
     const rect = el.getBoundingClientRect();
-    setFilterMenuPos({
-      top: rect.bottom + 2,
-      left: Math.min(rect.left, window.innerWidth - 300),
-    });
+    const menuWidth = 288;
+    const left = Math.min(Math.max(8, rect.left), window.innerWidth - menuWidth - 8);
+    const top = Math.min(rect.bottom + 4, window.innerHeight - 420);
+    setFilterMenuPos({ top, left });
     setOpenFilterCol(colIndex);
     setSearch('');
   };
@@ -402,12 +419,17 @@ export function ExcelPreviewGrid({
         !canExport && 'select-none',
       )}
     >
-      <div className="flex flex-shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[#d4d4d4] bg-[#f3f3f3] px-3 py-1.5 text-xs text-slate-600">
+      <div className="flex flex-shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-200/90 bg-gradient-to-r from-[#f8fafc] via-white to-[#f8fafc] px-3 py-2 text-xs text-slate-600 shadow-sm">
         <span>
           <span className="font-medium text-slate-800">{data.sheetName}</span>
           {' · '}
           {displayRows.length} / {sourceRows.length} contacts
-          {hasActiveFilters(filters) && <span className="text-[#217346]"> · Filtered</span>}
+          {viewFiltered && (
+            <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-[#e8f1fb] px-2 py-0.5 text-[11px] font-semibold text-[#2568b8] ring-1 ring-[#2e7ad1]/25">
+              <Filter className="h-3 w-3" />
+              Filtered view
+            </span>
+          )}
           {batchedByRow && Object.keys(batchedByRow).length > 0 && (
             <span className="text-amber-800">
               {' · '}
@@ -437,7 +459,7 @@ export function ExcelPreviewGrid({
               <button
                 type="button"
                 onClick={sheet.addRow}
-                className="inline-flex items-center gap-1 border border-[#ababab] bg-white px-2 py-1 hover:bg-[#fafafa]"
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 shadow-sm transition-all hover:border-[#2e7ad1]/30 hover:bg-[#e8f1fb]"
               >
                 <Plus className="h-3 w-3" />
                 <Rows3 className="h-3 w-3" />
@@ -446,7 +468,7 @@ export function ExcelPreviewGrid({
               <button
                 type="button"
                 onClick={sheet.addColumn}
-                className="inline-flex items-center gap-1 border border-[#ababab] bg-white px-2 py-1 hover:bg-[#fafafa]"
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 shadow-sm transition-all hover:border-[#2e7ad1]/30 hover:bg-[#e8f1fb]"
               >
                 <Plus className="h-3 w-3" />
                 <Columns3 className="h-3 w-3" />
@@ -458,7 +480,7 @@ export function ExcelPreviewGrid({
             <button
               type="button"
               onClick={clearAllFilters}
-              className="inline-flex items-center gap-1 font-medium text-[#217346] hover:underline"
+              className="inline-flex items-center gap-1 font-medium text-[#2e7ad1] hover:underline"
             >
               <X className="h-3 w-3" />
               Clear filters
@@ -470,7 +492,7 @@ export function ExcelPreviewGrid({
                 type="checkbox"
                 checked={hideBatchedRows}
                 onChange={(e) => onHideBatchedRowsChange(e.target.checked)}
-                className="rounded border-slate-300 text-[#217346] focus:ring-[#217346]"
+                className="rounded border-slate-300 text-[#2e7ad1] focus:ring-[#2e7ad1]"
               />
               Hide contacts already in a batch
             </label>
@@ -497,7 +519,7 @@ export function ExcelPreviewGrid({
                   ? 'No new contacts — uncheck "Hide contacts already in a campaign" or pick contacts not yet in a campaign'
                   : undefined
               }
-              className="inline-flex items-center gap-1.5 bg-[#217346] px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-[#1a5c38] disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#2e7ad1] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-[#2568b8] disabled:opacity-50"
             >
               <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 4v16m8-8H4" />
@@ -590,7 +612,7 @@ export function ExcelPreviewGrid({
                               commitEdit();
                             }
                           }}
-                          className="min-w-0 flex-1 border-0 bg-white px-2 py-1 text-xs outline-none ring-2 ring-[#217346] ring-inset"
+                          className="min-w-0 flex-1 border-0 bg-white px-2 py-1 text-xs outline-none ring-2 ring-[#2e7ad1] ring-inset"
                         />
                       ) : (
                         <span
@@ -612,12 +634,17 @@ export function ExcelPreviewGrid({
                       )}
                       <button
                         type="button"
-                        onClick={(e) => openFilterMenu(colIndex, e.currentTarget)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openFilterMenu(colIndex, e.currentTarget);
+                        }}
                         className={cn(
-                          'flex w-6 shrink-0 items-center justify-center hover:bg-[#d4d4d4]',
-                          isColumnFiltered(colIndex) ? 'bg-[#c5d9c5] text-[#217346]' : 'text-slate-500',
+                          'flex w-7 shrink-0 items-center justify-center rounded-r transition-colors',
+                          isColumnFiltered(colIndex)
+                            ? 'bg-[#2e7ad1] text-white shadow-inner'
+                            : 'text-slate-500 hover:bg-slate-200/80',
                         )}
-                        title="Filter"
+                        title="Filter column"
                       >
                         <Filter className="h-3 w-3" />
                         <ChevronDown className="h-2 w-2" />
@@ -677,7 +704,7 @@ export function ExcelPreviewGrid({
                       className={cn(
                         'sticky left-0 z-10 w-10 border border-[#e0e0e0] text-center text-[11px]',
                         isDuplicate && 'bg-red-200 text-red-900',
-                        !isDuplicate && isMarked && 'bg-[#c6e0b4] text-[#217346] font-semibold',
+                        !isDuplicate && isMarked && 'bg-[#c6e0b4] text-[#2e7ad1] font-semibold',
                         !isDuplicate && !isMarked && inBatch && 'bg-[#ffefb8] text-amber-900',
                         !isDuplicate && !isMarked && !inBatch && 'bg-[#f2f2f2] text-slate-500',
                       )}
@@ -687,7 +714,7 @@ export function ExcelPreviewGrid({
                         <span className="block text-[8px] font-bold uppercase text-red-800">Dup</span>
                       )}
                       {!isDuplicate && isMarked && (
-                        <span className="block text-[8px] font-bold uppercase text-[#217346]">Lead</span>
+                        <span className="block text-[8px] font-bold uppercase text-[#2e7ad1]">Lead</span>
                       )}
                       {!isDuplicate && !isMarked && inBatch && (
                         <span className="block text-[8px] font-bold uppercase text-amber-800">
@@ -715,7 +742,7 @@ export function ExcelPreviewGrid({
                           }
                           className={cn(
                             'border border-[#e0e0e0] p-0 text-slate-900',
-                            active && !editingCell && 'ring-2 ring-[#217346] ring-inset bg-[#e7f3ff]',
+                            active && !editingCell && 'ring-2 ring-[#2e7ad1] ring-inset bg-[#e7f3ff]',
                             editable && 'cursor-cell',
                           )}
                           title={value}
@@ -747,36 +774,40 @@ export function ExcelPreviewGrid({
         </table>
       </div>
 
-      {openCol != null && filterMenuPos && (
-        <FilterDropdown
-          style={{ top: filterMenuPos.top, left: filterMenuPos.left }}
-          headerLabel={headers[openCol]}
-          search={search}
-          onSearchChange={setSearch}
-          filteredOptions={filteredOptions}
-          selectedSet={selectedSet}
-          sort={filters[openCol]?.sort ?? null}
-          onToggle={toggleValue}
-          onSelectAll={selectAllVisible}
-          onDeselectAll={deselectAllVisible}
-          onClear={() => clearColumnFilter(openCol)}
-          onSortAsc={() => {
-            updateFilter(openCol, { sort: 'asc' });
-            setOpenFilterCol(null);
-            setFilterMenuPos(null);
-          }}
-          onSortDesc={() => {
-            updateFilter(openCol, { sort: 'desc' });
-            setOpenFilterCol(null);
-            setFilterMenuPos(null);
-          }}
-          onClose={() => {
-            setOpenFilterCol(null);
-            setFilterMenuPos(null);
-            setSearch('');
-          }}
-        />
-      )}
+      {openCol != null &&
+        filterMenuPos &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <FilterDropdown
+            style={{ top: filterMenuPos.top, left: filterMenuPos.left }}
+            headerLabel={headers[openCol]}
+            search={search}
+            onSearchChange={setSearch}
+            filteredOptions={filteredOptions}
+            selectedSet={selectedSet}
+            sort={filters[openCol]?.sort ?? null}
+            onToggle={toggleValue}
+            onSelectAll={selectAllVisible}
+            onDeselectAll={deselectAllVisible}
+            onClear={() => clearColumnFilter(openCol)}
+            onSortAsc={() => {
+              updateFilter(openCol, { sort: 'asc' });
+              setOpenFilterCol(null);
+              setFilterMenuPos(null);
+            }}
+            onSortDesc={() => {
+              updateFilter(openCol, { sort: 'desc' });
+              setOpenFilterCol(null);
+              setFilterMenuPos(null);
+            }}
+            onClose={() => {
+              setOpenFilterCol(null);
+              setFilterMenuPos(null);
+              setSearch('');
+            }}
+          />,
+          document.body,
+        )}
     </div>
   );
 }
@@ -814,13 +845,19 @@ function FilterDropdown({
 }) {
   return (
     <>
-      <div className="fixed inset-0 z-[75]" onClick={onClose} aria-hidden />
       <div
-        className="fixed z-[80] flex max-h-[min(420px,70vh)] w-72 flex-col border border-[#989898] bg-white text-sm shadow-xl"
+        className="fixed inset-0 z-[240] bg-slate-900/20 backdrop-blur-[1px]"
+        onClick={onClose}
+        aria-hidden
+      />
+      <div
+        className="fixed z-[250] flex max-h-[min(440px,72vh)] w-72 flex-col overflow-hidden rounded-xl border border-slate-200/90 bg-white text-sm shadow-2xl ring-1 ring-slate-900/5"
         style={style}
+        role="dialog"
+        aria-label={`Filter ${headerLabel}`}
       >
-        <div className="truncate border-b border-[#d4d4d4] bg-[#f3f3f3] px-3 py-2 text-xs font-semibold text-slate-800">
-          {headerLabel}
+        <div className="truncate border-b border-slate-100 bg-gradient-to-r from-[#2568b8] to-[#2e7ad1] px-3 py-2.5 text-xs font-semibold text-white">
+          Filter: {headerLabel}
         </div>
 
         <div className="border-b border-[#e8e8e8] py-1">
@@ -854,12 +891,12 @@ function FilterDropdown({
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder="Search..."
-            className="w-full border border-[#ababab] px-2 py-1 text-xs outline-none focus:border-[#217346]"
+            className="w-full border border-[#ababab] px-2 py-1 text-xs outline-none focus:border-[#2e7ad1]"
           />
         </div>
 
         <div className="flex gap-2 border-b border-[#eee] px-2 py-1 text-[11px]">
-          <button type="button" onClick={onSelectAll} className="text-[#217346] hover:underline">
+          <button type="button" onClick={onSelectAll} className="text-[#2e7ad1] hover:underline">
             Select all
           </button>
           <button type="button" onClick={onDeselectAll} className="text-slate-600 hover:underline">
@@ -887,16 +924,20 @@ function FilterDropdown({
           )}
         </div>
 
-        <div className="flex border-t border-[#d4d4d4] bg-[#f3f3f3]">
+        <div className="flex gap-2 border-t border-slate-100 bg-slate-50 p-2">
           <button
             type="button"
             onClick={onClear}
-            className="flex-1 border-r border-[#d4d4d4] py-2 text-xs hover:bg-white"
+            className="flex-1 rounded-lg border border-slate-200 py-2 text-xs font-medium text-slate-700 hover:bg-white"
           >
             Clear filter
           </button>
-          <button type="button" onClick={onClose} className="flex-1 py-2 text-xs font-medium hover:bg-white">
-            OK
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 rounded-lg bg-[#2e7ad1] py-2 text-xs font-semibold text-white shadow-sm hover:bg-[#2568b8]"
+          >
+            Apply
           </button>
         </div>
       </div>

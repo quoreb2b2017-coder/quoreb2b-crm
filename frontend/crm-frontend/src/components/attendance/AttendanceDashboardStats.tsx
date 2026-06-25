@@ -59,7 +59,7 @@ function StatRow({
           className={cn(
             'text-slate-600',
             compact ? 'text-xs' : 'text-sm',
-            isToday && 'font-medium text-emerald-700',
+            isToday && 'font-medium text-[#2e7ad1]',
           )}
         >
           {label}
@@ -69,7 +69,7 @@ function StatRow({
         className={cn(
           'shrink-0 font-semibold tabular-nums text-slate-800',
           compact ? 'text-sm' : 'text-base',
-          isToday && 'text-emerald-700',
+          isToday && 'text-[#2e7ad1]',
         )}
       >
         {value}
@@ -120,14 +120,14 @@ export function AttendanceDashboardStats({
         )}
       >
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-600/80">This month</p>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#2e7ad1]/80">This month</p>
           <p className={cn('mt-0.5 font-semibold text-slate-800', compact ? 'text-sm' : 'text-base')}>
             {monthLabel}
           </p>
         </div>
         <div className="text-right">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Rate</p>
-          <p className={cn('font-bold tabular-nums text-emerald-700', compact ? 'text-base' : 'text-lg')}>
+          <p className={cn('font-bold tabular-nums text-[#2e7ad1]', compact ? 'text-base' : 'text-lg')}>
             {attendancePct}%
           </p>
         </div>

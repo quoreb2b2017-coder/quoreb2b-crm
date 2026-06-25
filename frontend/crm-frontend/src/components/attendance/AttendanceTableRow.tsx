@@ -59,7 +59,7 @@ export function AttendanceTableRow({ user, analytics, workTime, onViewDetails }:
         </div>
       </td>
       <td className="px-4 py-3 text-center">
-        <span className="inline-block rounded-md bg-[#e2efda] px-2.5 py-1 text-xs font-bold text-[#217346]">
+        <span className="inline-block rounded-md bg-[#e2efda] px-2.5 py-1 text-xs font-bold text-[#2e7ad1]">
           {workTime}
         </span>
       </td>

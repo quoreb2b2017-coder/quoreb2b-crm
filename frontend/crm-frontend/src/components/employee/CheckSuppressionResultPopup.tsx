@@ -46,7 +46,7 @@ export function CheckSuppressionResultPopup({
             className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${
               hasDuplicates
                 ? 'bg-amber-100 text-amber-700 ring-4 ring-amber-50'
-                : 'bg-emerald-100 text-emerald-700 ring-4 ring-emerald-50'
+                : 'bg-emerald-100 text-[#2e7ad1] ring-4 ring-emerald-50'
             }`}
           >
             {hasDuplicates ? (
@@ -78,7 +78,7 @@ export function CheckSuppressionResultPopup({
           ) : (
             <>
               <p className="text-xl font-bold text-emerald-900">All clear!</p>
-              <p className="mt-2 text-sm text-emerald-700">No matches in the suppression list</p>
+              <p className="mt-2 text-sm text-[#2e7ad1]">No matches in the suppression list</p>
             </>
           )}
           <p className="mt-4 text-[11px] text-slate-400">Closing in 3 seconds…</p>

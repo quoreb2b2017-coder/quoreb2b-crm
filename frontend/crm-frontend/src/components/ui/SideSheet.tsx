@@ -12,25 +12,25 @@ const accentStyles: Record<
   { bar: string; header: string; ring: string; btn: string; btnHover: string }
 > = {
   emerald: {
-    bar: 'from-emerald-500 to-teal-600',
-    header: 'bg-gradient-to-br from-[#0d0f14] via-[#111820] to-emerald-950/40',
-    ring: 'focus:ring-emerald-500/40 focus:border-emerald-500',
-    btn: 'bg-emerald-600 hover:bg-emerald-500',
-    btnHover: 'shadow-emerald-500/25',
+    bar: 'from-[#2e7ad1] to-[#2568b8]',
+    header: 'bg-[#2e7ad1]',
+    ring: 'focus:ring-[#2e7ad1]/40 focus:border-[#2e7ad1]',
+    btn: 'bg-[#2e7ad1] hover:bg-[#2568b8]',
+    btnHover: 'shadow-[#2e7ad1]/25',
   },
   violet: {
-    bar: 'from-violet-500 to-purple-600',
-    header: 'bg-gradient-to-br from-[#0d0f14] via-[#14101f] to-violet-950/40',
-    ring: 'focus:ring-violet-500/40 focus:border-violet-500',
-    btn: 'bg-violet-600 hover:bg-violet-500',
-    btnHover: 'shadow-violet-500/25',
+    bar: 'from-[#2e7ad1] to-[#2568b8]',
+    header: 'bg-[#2e7ad1]',
+    ring: 'focus:ring-[#2e7ad1]/40 focus:border-[#2e7ad1]',
+    btn: 'bg-[#2e7ad1] hover:bg-[#2568b8]',
+    btnHover: 'shadow-[#2e7ad1]/25',
   },
   indigo: {
-    bar: 'from-indigo-500 to-blue-600',
-    header: 'bg-gradient-to-br from-[#0d0f14] via-[#10131f] to-indigo-950/40',
-    ring: 'focus:ring-indigo-500/40 focus:border-indigo-500',
-    btn: 'bg-indigo-600 hover:bg-indigo-500',
-    btnHover: 'shadow-indigo-500/25',
+    bar: 'from-[#2e7ad1] to-[#2568b8]',
+    header: 'bg-[#2e7ad1]',
+    ring: 'focus:ring-[#2e7ad1]/40 focus:border-[#2e7ad1]',
+    btn: 'bg-[#2e7ad1] hover:bg-[#2568b8]',
+    btnHover: 'shadow-[#2e7ad1]/25',
   },
 };
 

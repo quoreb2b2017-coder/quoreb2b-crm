@@ -17,15 +17,10 @@ export function Button({
     <button
       disabled={disabled}
       className={cn(
-        'inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg font-semibold text-sm',
-        'transition-all duration-200 active:scale-[0.98]',
-        'disabled:opacity-50 disabled:pointer-events-none',
         fullWidth && 'w-full',
-        variant === 'primary' &&
-          'bg-slate-900 text-white hover:bg-brand-600',
-        variant === 'secondary' &&
-          'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50',
-        variant === 'ghost' && 'text-slate-600 hover:bg-slate-100',
+        variant === 'primary' && 'crm-btn-primary',
+        variant === 'secondary' && 'crm-btn-secondary',
+        variant === 'ghost' && 'crm-btn-ghost',
         className,
       )}
       {...props}

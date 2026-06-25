@@ -61,7 +61,7 @@ function ActivityTrendChart({
                     <div className="w-full bg-amber-400" style={{ height: touchH }} />
                   )}
                   {updH > 0 && (
-                    <div className="w-full bg-[#217346]" style={{ height: updH }} />
+                    <div className="w-full bg-[#2e7ad1]" style={{ height: updH }} />
                   )}
                 </div>
                 <span className="mt-1 origin-center -rotate-45 text-[8px] text-slate-400">
@@ -80,7 +80,7 @@ function ActivityTrendChart({
           <span className="inline-block h-2 w-2 bg-amber-400" /> Touches
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block h-2 w-2 bg-[#217346]" /> Updates
+          <span className="inline-block h-2 w-2 bg-[#2e7ad1]" /> Updates
         </span>
       </div>
     </div>
@@ -101,7 +101,7 @@ function LeadBreakdownBars({
   total: number;
 }) {
   const items = [
-    { label: 'Updated', count: updated, color: 'bg-[#217346]' },
+    { label: 'Updated', count: updated, color: 'bg-[#2e7ad1]' },
     { label: 'Touched only', count: touchedOnly, color: 'bg-amber-500' },
     { label: 'Viewed only', count: viewedOnly, color: 'bg-sky-400' },
     { label: 'Not worked', count: notTouched, color: 'bg-slate-300' },
@@ -167,7 +167,7 @@ export function BatchMemberPerformance({
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center gap-2 text-sm text-slate-500">
-        <Loader2 className="h-5 w-5 animate-spin text-[#217346]" />
+        <Loader2 className="h-5 w-5 animate-spin text-[#2e7ad1]" />
         Loading performance…
       </div>
     );
@@ -183,7 +183,7 @@ export function BatchMemberPerformance({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#e8e8e8]">
-      <div className="shrink-0 bg-[#217346] px-3 py-2 text-white">
+      <div className="shrink-0 bg-[#2e7ad1] px-3 py-2 text-white">
         <p className="text-sm font-semibold">{userName}</p>
         <p className="text-[11px] text-white/75">
           {dataRows.toLocaleString('en-US')} contacts assigned · Productivity:{' '}
@@ -234,7 +234,7 @@ export function BatchMemberPerformance({
           </div>
           <div className="h-3 border border-slate-200 bg-slate-100">
             <div
-              className="h-full bg-[#217346]"
+              className="h-full bg-[#2e7ad1]"
               style={{ width: `${perf.productivityScore}%` }}
             />
           </div>
@@ -273,7 +273,7 @@ export function BatchMemberPerformance({
                     <td className="border-b border-slate-100 px-2 py-1 text-slate-600">
                       {l.batchName}
                     </td>
-                    <td className="border-b border-slate-100 px-2 py-1 capitalize text-[#217346]">
+                    <td className="border-b border-slate-100 px-2 py-1 capitalize text-[#2e7ad1]">
                       {l.status}
                     </td>
                     <td className="border-b border-slate-100 px-2 py-1 text-right text-slate-400">

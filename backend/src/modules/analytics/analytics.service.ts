@@ -21,6 +21,7 @@ import {
   type ActivityLogRow,
 } from '../activity-logs/employee-report.util';
 import { aggregateBatchesLeadStats } from '../activity-logs/sheet-lead-stats.util';
+import { DASHBOARD_EXCLUDED_ACTIVITY_ACTIONS } from '../activity-logs/activity-actions.constant';
 
 const LEAD_ACTIONS = new Set(['LEAD_UPDATE', 'LEAD_TOUCH', 'LEAD_VIEW']);
 
@@ -129,7 +130,10 @@ export class AnalyticsService {
         .exec(),
       this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).select('headers rows sharedWithDbAdmins').lean().exec(),
       this.activityLogModel
-        .find({ userId: oid })
+        .find({
+          userId: oid,
+          action: { $nin: [...DASHBOARD_EXCLUDED_ACTIVITY_ACTIONS] },
+        })
         .sort({ occurredAt: -1 })
         .limit(10)
         .lean()
@@ -277,7 +281,10 @@ export class AnalyticsService {
         .lean()
         .exec(),
       this.activityLogModel
-        .find({ userId: oid })
+        .find({
+          userId: oid,
+          action: { $nin: [...DASHBOARD_EXCLUDED_ACTIVITY_ACTIONS] },
+        })
         .sort({ occurredAt: -1 })
         .limit(10)
         .lean()
@@ -437,6 +444,40 @@ export class AnalyticsService {
       cacheTtlSeconds(this.config, 'long'),
       () => this.loadDashboardStats(),
     );
+  }
+
+  /** Super Admin dashboard — meaningful work actions only (no login/logout noise) */
+  async getRecentWorkActivity(limit = 12) {
+    const capped = Math.min(Math.max(limit, 1), 50);
+    return this.cache.wrap(
+      `analytics:recent-work:${capped}`,
+      cacheTtlSeconds(this.config, 'short'),
+      () => this.loadRecentWorkActivity(capped),
+    );
+  }
+
+  private async loadRecentWorkActivity(limit: number) {
+    const logs = await this.activityLogModel
+      .find({ action: { $nin: [...DASHBOARD_EXCLUDED_ACTIVITY_ACTIONS] } })
+      .sort({ occurredAt: -1 })
+      .limit(limit)
+      .lean()
+      .exec();
+
+    return logs.map((log) => {
+      const meta = (log.metadata as Record<string, unknown>) ?? {};
+      return {
+        id: String(log._id),
+        action: log.action as string,
+        resource: log.resource as string,
+        path: log.path as string | undefined,
+        batchName: meta.batchName as string | undefined,
+        userName: (log.userName as string) ?? 'Unknown',
+        userRole: log.userRole as string | undefined,
+        employeeId: log.employeeId as string | undefined,
+        occurredAt: (log.occurredAt as Date)?.toISOString?.() ?? '',
+      };
+    });
   }
 
   private async loadDashboardStats() {

@@ -126,12 +126,12 @@ export function AttendanceSummaryCard({
 
   if (variant === 'dashboard') {
     return (
-      <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm ring-1 ring-slate-100">
-        <div className="flex flex-col gap-2.5 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+      <div className="overflow-hidden rounded-lg border border-slate-200/80 bg-white shadow-sm">
+        <div className="flex flex-col gap-1.5 border-b border-slate-100 bg-slate-50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center justify-between gap-2 sm:block">
             <div>
-              <p className="text-sm font-semibold text-slate-800">Attendance</p>
-              <p className="text-[11px] text-slate-500">{monthLabel}</p>
+              <p className="text-xs font-semibold text-slate-800">Attendance</p>
+              <p className="text-[10px] text-slate-500">{monthLabel}</p>
             </div>
             <button
               type="button"
@@ -147,7 +147,7 @@ export function AttendanceSummaryCard({
             {periodNav}
             <Link
               href={yearlySheetHref}
-              className="hidden text-xs font-semibold text-emerald-700 hover:underline lg:inline"
+              className="hidden text-xs font-semibold text-[#2e7ad1] hover:underline lg:inline"
             >
               12-month report →
             </Link>
@@ -163,7 +163,7 @@ export function AttendanceSummaryCard({
           </div>
         </div>
 
-        <div className="grid gap-4 p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start lg:gap-5">
+        <div className="grid gap-2 p-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start lg:gap-2.5">
           <AttendanceDashboardStats
             present={present}
             absent={absent}
@@ -180,8 +180,8 @@ export function AttendanceSummaryCard({
             loading={loading}
             compact
           />
-          <div className="mx-auto w-full max-w-[248px] shrink-0 rounded-xl border border-slate-200/70 bg-gradient-to-b from-white to-slate-50/80 p-2.5 shadow-sm lg:mx-0">
-            <p className="mb-1.5 text-center text-[9px] font-bold uppercase tracking-wider text-slate-400">
+          <div className="mx-auto w-full max-w-[200px] shrink-0 rounded-md border border-slate-200/70 bg-slate-50/50 p-1.5 lg:mx-0">
+            <p className="mb-1 text-center text-[8px] font-bold uppercase tracking-wider text-slate-400">
               {DAILY_NET_WORK_TARGET_LABEL} target
             </p>
             <AttendanceMonthCalendar
@@ -198,18 +198,18 @@ export function AttendanceSummaryCard({
             />
           </div>
         </div>
-        <div className="border-t border-slate-100 px-4 py-2.5 sm:hidden">
+        <div className="border-t border-slate-100 px-3 py-1.5 sm:hidden">
           <div className="flex flex-wrap gap-3">
             <Link
               href={monthlySheetHref}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-[#2e7ad1] hover:underline"
             >
               This month
               <ChevronRight className="h-3.5 w-3.5" />
             </Link>
             <Link
               href={yearlySheetHref}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-[#2e7ad1] hover:underline"
             >
               12-month report
               <ChevronRight className="h-3.5 w-3.5" />
@@ -222,7 +222,7 @@ export function AttendanceSummaryCard({
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center justify-between border-b border-emerald-800/20 bg-gradient-to-r from-[#1a5c38] to-[#217346] px-4 py-2.5 text-white">
+      <div className="flex items-center justify-between border-b border-emerald-800/20 bg-gradient-to-r from-[#2568b8] to-[#2e7ad1] px-4 py-2.5 text-white">
         <span className="text-xs font-bold uppercase tracking-wide">Attendance</span>
         <button
           type="button"
@@ -261,14 +261,14 @@ export function AttendanceSummaryCard({
         <div className="flex flex-wrap gap-3">
           <Link
             href={monthlySheetHref}
-            className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline"
+            className="inline-flex items-center gap-1 text-xs font-semibold text-[#2e7ad1] hover:underline"
           >
             This month
             <ChevronRight className="h-3.5 w-3.5" />
           </Link>
           <Link
             href={yearlySheetHref}
-            className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline"
+            className="inline-flex items-center gap-1 text-xs font-semibold text-[#2e7ad1] hover:underline"
           >
             12-month report
             <ChevronRight className="h-3.5 w-3.5" />

@@ -111,7 +111,7 @@ function AutoSaveHint({ status }: { status: AutoSaveStatus }) {
     status === 'error'
       ? 'text-red-600'
       : status === 'saved'
-        ? 'text-[#217346]'
+        ? 'text-[#2e7ad1]'
         : 'text-slate-500';
   return (
     <span className={cn('inline-flex items-center gap-1 text-xs', className)}>
@@ -458,7 +458,7 @@ export function SuppressionDataUploadPanel() {
                   <span className="text-xs text-amber-800">
                     {coverage.summary.batchedRows.toLocaleString('en-US')} in campaign
                   </span>
-                  <span className="text-xs font-medium text-[#217346]">
+                  <span className="text-xs font-medium text-[#2e7ad1]">
                     {coverage.summary.availableRows.toLocaleString('en-US')} available
                   </span>
                 </>
@@ -468,7 +468,7 @@ export function SuppressionDataUploadPanel() {
             <span className="text-xs text-slate-500">No data in suppression database yet</span>
           )}
           {savedAt && (
-            <span className="inline-flex items-center gap-1 text-xs text-[#217346]">
+            <span className="inline-flex items-center gap-1 text-xs text-[#2e7ad1]">
               <Cloud className="h-3 w-3 shrink-0" />
               <span className="truncate">
                 Saved {new Date(savedAt).toLocaleString('en-US', { timeZone: WORKSPACE_TIMEZONE,  dateStyle: 'short', timeStyle: 'short' })}
@@ -508,7 +508,7 @@ export function SuppressionDataUploadPanel() {
               type="button"
               onClick={saveEditsToDb}
               disabled={savingDb || !dirty}
-              className="inline-flex items-center gap-1.5 border border-[#217346] bg-[#217346] px-3 py-1 text-xs text-white hover:bg-[#1a5c38] disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 border border-[#2e7ad1] bg-[#2e7ad1] px-3 py-1 text-xs text-white hover:bg-[#2568b8] disabled:opacity-50"
             >
               <Save className="h-3.5 w-3.5" />
               Save now
@@ -519,7 +519,7 @@ export function SuppressionDataUploadPanel() {
               <button
                 type="button"
                 onClick={handleDownloadFormatted}
-                className="inline-flex items-center gap-1.5 bg-[#217346] text-white px-3 py-1 text-xs hover:bg-[#1a5c38]"
+                className="inline-flex items-center gap-1.5 bg-[#2e7ad1] text-white px-3 py-1 text-xs hover:bg-[#2568b8]"
               >
                 <Download className="h-3.5 w-3.5" />
                 Export Excel
@@ -680,7 +680,7 @@ export function SuppressionDataUploadPanel() {
                   </div>
 
                   <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
-                    <p className="text-xs leading-relaxed text-emerald-800">
+                    <p className="text-xs leading-relaxed text-[#2568b8]">
                       Suppression file holds delivered data only. On create, contacts are compressed (deduped) then uploaded to a{' '}
                       <span className="font-semibold text-indigo-700">{CHANNEL_LABELS[campaignChannel]}</span> campaign in{' '}
                       <span className="font-semibold">Campaigns</span> (year → month folder).
@@ -734,7 +734,7 @@ export function SuppressionDataUploadPanel() {
                     type="button"
                     onClick={handleSaveBatch}
                     disabled={savingBatch || !batchName.trim()}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:opacity-60 sm:flex-1"
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#2e7ad1] py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#2568b8] disabled:opacity-60 sm:flex-1"
                   >
                     {savingBatch && <Loader2 className="h-4 w-4 animate-spin" />}
                     {savingBatch ? 'Creating...' : 'Create Suppression Campaign'}
@@ -780,7 +780,7 @@ export function SuppressionDataUploadPanel() {
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Added</p>
-                    <p className="mt-1 text-2xl font-bold text-[#217346]">
+                    <p className="mt-1 text-2xl font-bold text-[#2e7ad1]">
                       {duplicateModal.addedRows}
                     </p>
                   </div>
@@ -813,7 +813,7 @@ export function SuppressionDataUploadPanel() {
                   type="button"
                   onClick={handleDownloadDuplicates}
                   disabled={duplicateModal.duplicateRows.length === 0}
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#217346] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#1a5c38] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#2e7ad1] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#2568b8] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Download className="h-4 w-4" />
                   Download duplicates

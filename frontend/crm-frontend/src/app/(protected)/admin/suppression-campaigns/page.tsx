@@ -165,7 +165,7 @@ export default function SuppressionCampaignsPage() {
                   onClick={() => setChannelFilter(ch)}
                   className={cn(
                     'rounded-md px-2.5 py-1 text-[11px] font-semibold',
-                    channelFilter === ch ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-50',
+                    channelFilter === ch ? 'bg-[#2e7ad1] text-white' : 'text-slate-600 hover:bg-slate-50',
                   )}
                 >
                   {CHANNEL_LABELS[ch]}
@@ -193,7 +193,7 @@ export default function SuppressionCampaignsPage() {
                 setCustomChannelLabel('');
                 setCreateOpen(true);
               }}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#2e7ad1] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#2568b8]"
             >
               <Plus className="h-3.5 w-3.5" />
               Add campaign
@@ -247,7 +247,7 @@ export default function SuppressionCampaignsPage() {
                   type="button"
                   disabled={creating || !customChannelLabel.trim()}
                   onClick={() => void handleCreate()}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-sm font-medium text-white disabled:opacity-50"
+                  className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#2e7ad1] py-2.5 text-sm font-medium text-white disabled:opacity-50"
                 >
                   {creating && <Loader2 className="h-4 w-4 animate-spin" />}
                   Create

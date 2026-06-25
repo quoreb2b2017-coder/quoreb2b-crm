@@ -12,7 +12,7 @@ const COLUMNS = ['#', 'Type', 'From', 'To', 'Days', 'Paid', 'Unpaid', 'Reason', 
 const COL_COUNT = COLUMNS.length;
 
 const STATUS_STYLES: Record<string, string> = {
-  approved: 'bg-[#e2efda] text-[#217346] font-semibold',
+  approved: 'bg-[#e2efda] text-[#2e7ad1] font-semibold',
   rejected: 'bg-[#fce4d6] text-[#c00000] font-semibold',
   pending: 'bg-[#fff2cc] text-[#bf8f00] font-semibold',
 };
@@ -187,7 +187,7 @@ export function LeaveApplicationsExcelTable({
                                 type="button"
                                 disabled={actionLoading === leave._id}
                                 onClick={() => onApprove(leave._id)}
-                                className="rounded bg-[#217346] px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-[#1a5c38] disabled:opacity-50"
+                                className="rounded bg-[#2e7ad1] px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-[#2568b8] disabled:opacity-50"
                               >
                                 Approve
                               </button>

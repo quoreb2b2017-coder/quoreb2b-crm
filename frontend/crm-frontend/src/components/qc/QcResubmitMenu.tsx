@@ -52,7 +52,7 @@ export function QcResubmitMenu({
         </p>
         <Link
           href={`/employee/batches/${batchId}`}
-          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-violet-800 hover:bg-violet-50"
+          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-[#2568b8] hover:bg-violet-50"
           onClick={onClose}
         >
           <ExternalLink className="h-4 w-4 shrink-0" />
@@ -63,7 +63,7 @@ export function QcResubmitMenu({
           disabled={loading}
           onClick={onResubmit}
           className={cn(
-            'flex w-full items-center justify-center gap-2 rounded-lg bg-[#217346] px-3 py-2.5 text-sm font-bold text-white hover:bg-[#1a5c38] disabled:opacity-50',
+            'flex w-full items-center justify-center gap-2 rounded-lg bg-[#2e7ad1] px-3 py-2.5 text-sm font-bold text-white hover:bg-[#2568b8] disabled:opacity-50',
           )}
         >
           {loading ? (

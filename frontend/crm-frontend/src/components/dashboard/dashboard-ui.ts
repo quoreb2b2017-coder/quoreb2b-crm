@@ -1,8 +1,11 @@
 import { cn } from '@/lib/utils/cn';
 
-/** Shared refresh button for role dashboards */
+/** Shared refresh button for role dashboards (light page background) */
 export const dashboardRefreshBtn =
-  'inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm transition-all duration-200 hover:border-slate-300 hover:bg-slate-50 hover:shadow-md active:scale-[0.98] disabled:opacity-50';
+  'crm-btn-secondary !px-4 !py-2 !text-xs shadow-soft hover:shadow-soft-lg disabled:opacity-50';
+
+/** Glass toolbar buttons on blue welcome banner */
+export const dashboardBannerBtn = 'dash-banner-btn';
 
 /** Card shell — prefer dash-card CSS class */
 export const dashboardCard = 'dash-card';
@@ -18,21 +21,16 @@ export const dashboardLinkViolet = 'dash-link dash-link--violet';
 
 export const dashboardContextStrip = 'dash-context-strip';
 
-export function dashboardContextPill(accent: 'emerald' | 'violet' | 'admin' = 'emerald') {
-  const tone = {
-    emerald: 'bg-emerald-50 text-emerald-800 ring-emerald-200/80',
-    violet: 'bg-violet-50 text-violet-800 ring-violet-200/80',
-    admin: 'bg-emerald-50 text-[#1a5c38] ring-emerald-200/80',
-  }[accent];
+export function dashboardContextPill(_accent: 'emerald' | 'violet' | 'admin' = 'emerald') {
   return cn(
     'inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset',
-    tone,
+    'bg-[#e8f1fb] text-[#2568b8] ring-[#2e7ad1]/25',
   );
 }
 
 export function dashboardHealthRow(tone: 'ok' | 'warn' | 'neutral' = 'neutral') {
   const bg = {
-    ok: 'bg-emerald-50',
+    ok: 'bg-[#e8f1fb]/60',
     warn: 'bg-amber-50',
     neutral: 'bg-slate-50',
   }[tone];

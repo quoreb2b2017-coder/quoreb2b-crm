@@ -12,8 +12,8 @@ const STATUS_STYLES: Record<MasterDataUploadRequestStatus, string> = {
   pending: 'bg-amber-100 text-amber-800',
   pending_db_admin: 'bg-amber-100 text-amber-800',
   active: 'bg-sky-100 text-sky-800',
-  pending_admin: 'bg-violet-100 text-violet-800',
-  approved: 'bg-emerald-100 text-emerald-800',
+  pending_admin: 'bg-violet-100 text-[#2568b8]',
+  approved: 'bg-emerald-100 text-[#2568b8]',
   rejected: 'bg-red-100 text-red-800',
 };
 
@@ -82,9 +82,9 @@ export function MasterDataUploadRequestList({
       hint="Excel-style request queue"
     >
       <div className={cn('overflow-x-auto', viewportClassName)}>
-        <table className="w-full min-w-full border-collapse text-sm">
-          <thead className="sticky top-0 z-10 bg-[#f2f2f2]">
-            <tr>
+        <table className="w-full min-w-full text-sm">
+          <thead>
+            <tr className="border-b border-slate-100 bg-slate-50/90 text-left text-[10px] font-bold uppercase tracking-wide text-slate-500">
               {[
                 'File',
                 'Contacts',
@@ -96,25 +96,22 @@ export function MasterDataUploadRequestList({
                 'Reason',
                 'Action',
               ].map((label) => (
-                <th
-                  key={label}
-                  className="border border-[#c6c6c6] px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-600"
-                >
+                <th key={label} className="px-4 py-2.5 font-semibold">
                   {label}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-slate-100">
             {loading ? (
               <tr>
-                <td colSpan={9} className="border border-[#e0e0e0] px-4 py-8 text-center text-slate-500">
+                <td colSpan={9} className="px-4 py-10 text-center text-slate-500">
                   Loading requests…
                 </td>
               </tr>
             ) : requests.length === 0 ? (
               <tr>
-                <td colSpan={9} className="border border-[#e0e0e0] px-4 py-8 text-center text-slate-500">
+                <td colSpan={9} className="px-4 py-10 text-center text-slate-500">
                   {emptyMessage}
                 </td>
               </tr>
@@ -122,28 +119,28 @@ export function MasterDataUploadRequestList({
               requests.map((request) => {
                 const busy = actionLoadingId === request.id;
                 return (
-                  <tr key={request.id} className="align-top even:bg-[#fafafa]">
-                    <td className="border border-[#e0e0e0] px-3 py-2">
+                  <tr key={request.id} className="align-top transition-colors hover:bg-[#e8f1fb]/20">
+                    <td className="px-4 py-3">
                       <p className="font-medium text-slate-900">{request.fileName}</p>
                       <p className="mt-0.5 text-xs text-slate-500">{request.sheetName}</p>
                     </td>
-                    <td className="border border-[#e0e0e0] px-3 py-2 font-medium text-slate-900">{request.rowCount}</td>
-                    <td className="border border-[#e0e0e0] px-3 py-2">
+                    <td className="px-4 py-3 font-medium text-slate-900">{request.rowCount}</td>
+                    <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-slate-900">{request.duplicateCount}</span>
                         {request.duplicateCount > 0 && onViewDuplicates && (
                           <button
                             type="button"
                             onClick={() => onViewDuplicates(request)}
-                            className="text-xs font-semibold text-[#217346] underline underline-offset-2"
+                            className="text-xs font-semibold text-[#2e7ad1] underline underline-offset-2"
                           >
                             View
                           </button>
                         )}
                       </div>
                     </td>
-                    <td className="border border-[#e0e0e0] px-3 py-2 font-medium text-slate-900">{request.missingValueCount}</td>
-                    <td className="border border-[#e0e0e0] px-3 py-2">
+                    <td className="px-4 py-3 font-medium text-slate-900">{request.missingValueCount}</td>
+                    <td className="px-4 py-3">
                       <span
                         className={cn(
                           'inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize',
@@ -153,8 +150,8 @@ export function MasterDataUploadRequestList({
                         {STATUS_LABELS[request.status] ?? request.status}
                       </span>
                     </td>
-                    <td className="border border-[#e0e0e0] px-3 py-2 text-slate-700">{request.submittedByEmail ?? '—'}</td>
-                    <td className="border border-[#e0e0e0] px-3 py-2 text-slate-700">
+                    <td className="px-4 py-3 text-slate-700">{request.submittedByEmail ?? '—'}</td>
+                    <td className="px-4 py-3 text-slate-700">
                       {request.reviewedByEmail ? (
                         <div>
                           <p>{request.reviewedByEmail}</p>
@@ -164,17 +161,17 @@ export function MasterDataUploadRequestList({
                         '—'
                       )}
                     </td>
-                    <td className="border border-[#e0e0e0] px-3 py-2 text-slate-700">
+                    <td className="px-4 py-3 text-slate-700">
                       {request.reason || (request.status === 'approved' ? 'Approved' : '—')}
                     </td>
-                    <td className="border border-[#e0e0e0] px-3 py-2">
+                    <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-2">
                         {onViewFile && (
                           <button
                             type="button"
                             disabled={viewFileLoadingId === request.id}
                             onClick={() => onViewFile(request)}
-                            className="rounded-lg border border-[#217346]/40 bg-[#e2efda]/40 px-3 py-1.5 text-xs font-semibold text-[#217346] hover:bg-[#e2efda] disabled:opacity-50"
+                            className="rounded-lg bg-[#2e7ad1] px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-[#2568b8] disabled:opacity-50"
                           >
                             {viewFileLoadingId === request.id ? 'Opening…' : 'Open'}
                           </button>
@@ -194,7 +191,7 @@ export function MasterDataUploadRequestList({
                               type="button"
                               disabled={busy}
                               onClick={() => onApprove?.(request)}
-                              className="rounded-lg bg-[#217346] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1a5c38] disabled:opacity-50"
+                              className="rounded-lg bg-[#2e7ad1] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#2568b8] disabled:opacity-50"
                             >
                               Approve
                             </button>
@@ -213,7 +210,7 @@ export function MasterDataUploadRequestList({
                             type="button"
                             disabled={busy}
                             onClick={() => onForward(request)}
-                            className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-800 hover:bg-violet-100 disabled:opacity-50"
+                            className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-[#2568b8] hover:bg-violet-100 disabled:opacity-50"
                           >
                             Send to Admin
                           </button>

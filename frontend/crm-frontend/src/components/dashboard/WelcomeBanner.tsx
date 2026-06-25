@@ -3,13 +3,11 @@
 import './dashboard.css';
 
 import { WORKSPACE_TIMEZONE } from '@/lib/constants/workspace-timezone';
-import { dailyTipForToday } from '@/lib/auth/login-welcome';
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   Shield,
   Database,
   Briefcase,
-  CheckCircle2,
   Users,
   Layers,
   BarChart3,
@@ -17,17 +15,26 @@ import {
   Upload,
   Share2,
   ClipboardList,
-  Sparkles,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/auth.store';
-import { cn } from '@/lib/utils/cn';
 import { WorkTimerStrip } from '@/components/dashboard/WorkTimerStrip';
 import { BannerPunchTiles } from '@/components/dashboard/BannerPunchTiles';
 
 type PanelVariant = 'admin' | 'db_admin' | 'employee';
 
 type DecoTile = { icon: LucideIcon; label: string };
+
+const bannerShell = 'bg-[#2e7ad1]';
+const bannerShared = {
+  shell: bannerShell,
+  accentBar: 'bg-white/20',
+  badge: 'bg-white/12 text-white ring-1 ring-white/20',
+  badgeText: 'text-white/85',
+  glow: 'bg-white/10',
+  gridLine: 'border-white/[0.08]',
+  statusDot: 'bg-white/80',
+};
 
 const config: Record<
   PanelVariant,
@@ -49,17 +56,11 @@ const config: Record<
     roleLabel: 'Super Admin',
     subtitle: 'CRM control center — users, master data, campaigns & analytics',
     Icon: Shield,
-    shell: 'bg-gradient-to-br from-[#143d28] via-[#1a5c38] to-[#0f3d2e]',
-    accentBar: 'bg-gradient-to-r from-amber-400 to-amber-300',
-    badge: 'bg-white/12 text-white ring-1 ring-white/20',
-    badgeText: 'text-white/85',
-    glow: 'bg-emerald-400/15',
-    gridLine: 'border-white/[0.08]',
-    statusDot: 'bg-emerald-300',
+    ...bannerShared,
     decoTiles: [
       { icon: Users, label: 'Users' },
       { icon: Upload, label: 'Master data' },
-      { icon: Layers, label: 'Campaigns' },
+      { icon: Layers, label: 'All campaigns' },
       { icon: BarChart3, label: 'Analytics' },
     ],
   },
@@ -67,16 +68,10 @@ const config: Record<
     roleLabel: 'Database Administrator',
     subtitle: 'Database operations — campaigns, master data & team assignments',
     Icon: Database,
-    shell: 'bg-gradient-to-br from-[#3b1578] via-[#5b21b6] to-[#4c1d95]',
-    accentBar: 'bg-gradient-to-r from-violet-300 to-purple-300',
-    badge: 'bg-white/12 text-white ring-1 ring-white/20',
-    badgeText: 'text-white/85',
-    glow: 'bg-violet-400/15',
-    gridLine: 'border-white/[0.08]',
-    statusDot: 'bg-violet-200',
+    ...bannerShared,
     decoTiles: [
       { icon: Database, label: 'Master DB' },
-      { icon: Layers, label: 'Campaigns' },
+      { icon: Layers, label: 'All campaigns' },
       { icon: Share2, label: 'Assign' },
       { icon: Activity, label: 'Logs' },
     ],
@@ -85,15 +80,9 @@ const config: Record<
     roleLabel: 'Employee',
     subtitle: 'Your workspace — assigned campaigns, leads & activity',
     Icon: Briefcase,
-    shell: 'bg-gradient-to-br from-[#065f46] via-[#047857] to-[#0d9488]',
-    accentBar: 'bg-gradient-to-r from-teal-300 to-emerald-300',
-    badge: 'bg-white/12 text-white ring-1 ring-white/20',
-    badgeText: 'text-white/85',
-    glow: 'bg-teal-400/15',
-    gridLine: 'border-white/[0.08]',
-    statusDot: 'bg-teal-200',
+    ...bannerShared,
     decoTiles: [
-      { icon: Layers, label: 'Campaigns' },
+      { icon: Layers, label: 'My campaign' },
       { icon: ClipboardList, label: 'Leads' },
       { icon: Activity, label: 'Activity' },
       { icon: Briefcase, label: 'Tasks' },
@@ -144,8 +133,8 @@ function BannerDecor({
                 key={tile.label}
                 className="dash-deco-tile"
               >
-                <TileIcon className="h-3.5 w-3.5 text-white/90" strokeWidth={2} />
-                <span className="text-center text-[9px] font-semibold text-white/75">{tile.label}</span>
+                <TileIcon className="h-3.5 w-3.5 text-[#2e7ad1]" strokeWidth={2} />
+                <span className="text-center text-[9px] font-semibold text-slate-600">{tile.label}</span>
               </div>
             );
           })}
@@ -180,96 +169,55 @@ export function WelcomeBanner({ variant, subtitleOverride, toolbar }: WelcomeBan
   });
 
   const empId = user?.employeeId;
-  const dailyTip = dailyTipForToday();
 
   return (
     <div className="dash-section animate-fade-in">
-      <div
-        className={cn(
-          'dash-banner-shine relative overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/10',
-          c.shell,
-        )}
-      >
-        <div className={cn('h-1 w-full', c.accentBar)} />
+      <div className="dash-welcome-card dash-banner-shine relative overflow-hidden">
+        <div className="dash-welcome-accent" />
 
-        <div
-          className="pointer-events-none absolute inset-0 opacity-30"
-          style={{
-            backgroundImage: `
-              linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
-              linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px)
-            `,
-            backgroundSize: '28px 28px',
-          }}
-        />
-        <div className={cn('pointer-events-none absolute -right-20 -top-20 h-56 w-56 rounded-full blur-3xl', c.glow)} />
-
-        <div className="relative z-10 flex flex-col gap-3 p-4 sm:p-5">
-          {/* Header row */}
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
+        <div className="relative z-10 flex flex-col gap-1 p-2 sm:p-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-1">
+            <div className="flex min-w-0 items-center gap-1.5">
               <div className="dash-avatar">
                 {initials(user?.firstName, user?.lastName, user?.email)}
               </div>
               <div className="min-w-0">
-                <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                  <span
-                    className={cn(
-                      'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider',
-                      c.badge,
-                    )}
-                  >
-                    <Icon className="h-3 w-3" />
+                <div className="flex flex-wrap items-center gap-1">
+                  <h2 className="text-sm font-bold leading-none tracking-tight text-slate-900">
+                    {timeGreeting()}, {name}
+                  </h2>
+                  <span className="inline-flex items-center gap-0.5 rounded bg-[#e8f1fb] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-[#2568b8]">
+                    <Icon className="h-2.5 w-2.5" />
                     {c.roleLabel}
                   </span>
                   {empId && (
-                    <span className="rounded-md bg-white/10 px-1.5 py-0.5 font-mono text-[9px] text-white/70">
+                    <span className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[8px] text-slate-500">
                       {empId}
                     </span>
                   )}
                 </div>
-                <h2 className="text-lg font-bold leading-tight tracking-tight text-white sm:text-xl">
-                  {timeGreeting()}, {name}
-                </h2>
-                <p className={cn('mt-0.5 line-clamp-1 text-[11px]', c.badgeText)}>
-                  {subtitleOverride ?? c.subtitle}
-                </p>
-                <p className="dash-daily-tip">
-                  <Sparkles className="h-3 w-3 shrink-0 text-amber-200/90" />
-                  {dailyTip}
-                </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-1">
               {toolbar}
-              <div className="dash-clock-widget hidden sm:block">
+              <div className="dash-clock-widget hidden md:block">
                 <p className="dash-clock-time">{liveTime}</p>
                 <p className="dash-clock-date">{dateShort}</p>
-              </div>
-              <div className="dash-status-pill">
-                <span className="relative flex h-1.5 w-1.5">
-                  <span className={cn('absolute h-full w-full animate-ping rounded-full opacity-50', c.statusDot)} />
-                  <span className={cn('relative h-1.5 w-1.5 rounded-full', c.statusDot)} />
-                </span>
-                <CheckCircle2 className="h-3 w-3" />
-                Signed in
               </div>
             </div>
           </div>
 
-          {/* Quick punch — full width */}
           {showWorkTimer ? (
-            <BannerPunchTiles />
+            <div className="dash-punch-strip">
+              <BannerPunchTiles />
+            </div>
           ) : (
             <BannerDecor variant={variant} MainIcon={Icon} tiles={c.decoTiles} />
           )}
 
-          {/* Work timer */}
           {showWorkTimer && (
-            <div className="border-t border-white/10 pt-3">
-              <WorkTimerStrip />
-            </div>
+            <WorkTimerStrip variant="light" compact />
           )}
         </div>
       </div>

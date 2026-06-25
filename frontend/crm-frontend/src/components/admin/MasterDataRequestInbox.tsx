@@ -151,7 +151,7 @@ export function MasterDataRequestInbox() {
                 onClick={() => setFilter(item)}
                 className={`border px-2.5 py-1 text-[11px] font-semibold ${
                   filter === item
-                    ? 'border-[#217346] bg-[#217346] text-white'
+                    ? 'border-[#2e7ad1] bg-[#2e7ad1] text-white'
                     : 'border-[#c6c6c6] bg-white text-slate-600 hover:bg-[#fafafa]'
                 }`}
               >

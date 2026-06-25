@@ -160,7 +160,7 @@ export default function SuppressionCampaignDetailPage() {
                 onClick={() => void handleChannelChange(ch)}
                 className={cn(
                   'rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors',
-                  channelTab === ch ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-50',
+                  channelTab === ch ? 'bg-[#2e7ad1] text-white' : 'text-slate-600 hover:bg-slate-50',
                 )}
               >
                 {ch === 'other' && channelTab === 'other' ? channelLabel : CHANNEL_LABELS[ch]}
@@ -174,7 +174,7 @@ export default function SuppressionCampaignDetailPage() {
             type="button"
             disabled={uploading}
             onClick={() => inputRef.current?.click()}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-[#217346] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#1a5c38] disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-[#2e7ad1] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#2568b8] disabled:opacity-50"
           >
             {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
             Upload delivered data
@@ -222,8 +222,8 @@ export default function SuppressionCampaignDetailPage() {
                   <p className="text-[10px] uppercase text-amber-800">Duplicates</p>
                 </div>
                 <div className="rounded-lg bg-emerald-50 p-3">
-                  <p className="text-2xl font-bold text-emerald-700">{duplicateModal.addedRows}</p>
-                  <p className="text-[10px] uppercase text-emerald-800">Added</p>
+                  <p className="text-2xl font-bold text-[#2e7ad1]">{duplicateModal.addedRows}</p>
+                  <p className="text-[10px] uppercase text-[#2568b8]">Added</p>
                 </div>
                 <div className="rounded-lg bg-slate-50 p-3">
                   <p className="text-2xl font-bold text-slate-800">{duplicateModal.totalRows}</p>
@@ -256,7 +256,7 @@ export default function SuppressionCampaignDetailPage() {
                       'duplicates.xlsx',
                     )
                   }
-                  className="flex-1 rounded-xl bg-[#217346] py-2 text-sm text-white"
+                  className="flex-1 rounded-xl bg-[#2e7ad1] py-2 text-sm text-white"
                 >
                   Download duplicates
                 </button>

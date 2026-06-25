@@ -8,15 +8,15 @@ import { cn } from '@/lib/utils/cn';
 function avatarHue(name: string): string {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  const hues = ['#217346', '#2e75b6', '#7c3aed', '#0d9488', '#c2410c'];
+  const hues = ['#2e7ad1', '#2e75b6', '#7c3aed', '#0d9488', '#c2410c'];
   return hues[Math.abs(hash) % hues.length];
 }
 
 const ROLE_BADGE: Record<string, string> = {
   super_admin: 'bg-slate-700 text-white',
-  admin: 'bg-violet-100 text-violet-800 ring-1 ring-violet-200',
+  admin: 'bg-violet-100 text-[#2568b8] ring-1 ring-violet-200',
   db_admin: 'bg-sky-100 text-sky-800 ring-1 ring-sky-200',
-  employee: 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200',
+  employee: 'bg-emerald-100 text-[#2568b8] ring-1 ring-emerald-200',
 };
 
 export function AccountSettingsPanel() {

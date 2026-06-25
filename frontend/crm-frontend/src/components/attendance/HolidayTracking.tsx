@@ -38,7 +38,7 @@ export function HolidayTracking({ userId, variant = 'employee' }: HolidayTrackin
   const accentColor = variant === 'admin' ? 'emerald' : variant === 'db_admin' ? 'violet' : 'emerald';
   const accentBg = accentColor === 'emerald' ? 'bg-emerald-50 dark:bg-emerald-900/20' : 'bg-violet-50 dark:bg-violet-900/20';
   const accentBorder = accentColor === 'emerald' ? 'border-emerald-200 dark:border-emerald-800' : 'border-violet-200 dark:border-violet-800';
-  const accentText = accentColor === 'emerald' ? 'text-emerald-700 dark:text-emerald-300' : 'text-violet-700 dark:text-violet-300';
+  const accentText = accentColor === 'emerald' ? 'text-[#2e7ad1] dark:text-emerald-300' : 'text-violet-700 dark:text-violet-300';
 
   return (
     <div className="space-y-6">
@@ -94,7 +94,7 @@ export function HolidayTracking({ userId, variant = 'employee' }: HolidayTrackin
 
         <div className={cn('rounded-xl border p-4', accentBg, accentBorder)}>
           <p className={cn('text-xs font-semibold uppercase tracking-wide', accentText)}>Half Days</p>
-          <p className="mt-2 text-3xl font-bold text-emerald-600 dark:text-emerald-400">{totalHalfDays}</p>
+          <p className="mt-2 text-3xl font-bold text-[#2e7ad1] dark:text-emerald-400">{totalHalfDays}</p>
           <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">Half-day attendance entries</p>
         </div>
 
@@ -133,7 +133,7 @@ export function HolidayTracking({ userId, variant = 'employee' }: HolidayTrackin
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-slate-600 dark:text-slate-400">Present</span>
-                    <span className="font-semibold text-emerald-600 dark:text-emerald-400">{month.presentDays}</span>
+                    <span className="font-semibold text-[#2e7ad1] dark:text-emerald-400">{month.presentDays}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-600 dark:text-slate-400">Leaves</span>

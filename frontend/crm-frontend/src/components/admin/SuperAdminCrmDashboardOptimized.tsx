@@ -47,7 +47,7 @@ function BarRow({ label, count, total, color }: { label: string; count: number; 
 const QUICK_ACTIONS = [
   { label: 'Users', desc: 'Create & manage accounts', icon: UserCheck, href: '/admin/users' },
   { label: 'Master data', desc: 'Upload lead database', icon: Database, href: '/admin/master-data-upload' },
-  { label: 'Campaigns', desc: 'Assign & split data', icon: Layers, href: '/admin/batches' },
+  { label: 'All campaigns', desc: 'Assign & split data', icon: Layers, href: '/admin/batches' },
   { label: 'Activity logs', desc: 'All user actions', icon: Activity, href: '/admin/activity-logs' },
   { label: 'Analytics', desc: 'Team performance', icon: BarChart3, href: '/admin/analytics' },
 ];
@@ -176,7 +176,7 @@ export function SuperAdminCrmDashboard() {
             <div className="space-y-2 text-xs">
               <div className="flex justify-between border border-slate-200 bg-[#f9fff9] px-2 py-1.5">
                 <span className="font-medium text-slate-800">API</span>
-                <span className="font-mono font-semibold uppercase text-[#217346]">
+                <span className="font-mono font-semibold uppercase text-[#2e7ad1]">
                   {healthLabel(health.checks.api.status)}
                 </span>
               </div>
@@ -225,7 +225,7 @@ export function SuperAdminCrmDashboard() {
                   label={item.label}
                   count={item.count}
                   total={chartTotal}
-                  color="bg-[#217346]"
+                  color="bg-[#2e7ad1]"
                 />
               ))}
             </div>
@@ -246,7 +246,7 @@ export function SuperAdminCrmDashboard() {
                 href={a.href}
                 className="flex items-center gap-2 border-b border-r border-slate-200 px-3 py-3 text-left transition-colors hover:bg-[#f9fff9] sm:border-b-0 last:border-r-0"
               >
-                <Icon className="h-4 w-4 shrink-0 text-[#217346]" />
+                <Icon className="h-4 w-4 shrink-0 text-[#2e7ad1]" />
                 <span>
                   <span className="block text-xs font-semibold text-slate-900">{a.label}</span>
                   <span className="block text-[10px] text-slate-500">{a.desc}</span>

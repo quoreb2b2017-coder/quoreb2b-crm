@@ -35,7 +35,7 @@ function NavProgressBar({ active }: { active: boolean }) {
       className="pointer-events-none fixed inset-x-0 top-0 z-[9999] h-[3px] overflow-hidden bg-slate-200/40"
       aria-hidden
     >
-      <div className="h-full w-2/5 animate-nav-progress bg-gradient-to-r from-indigo-500 via-violet-500 to-emerald-500" />
+      <div className="h-full w-2/5 animate-nav-progress bg-gradient-to-r from-[#2568b8] via-[#2e7ad1] to-[#3a85d8]" />
     </div>
   );
 }

@@ -42,16 +42,16 @@ const toneStyles: Record<
     dot: 'bg-amber-300',
   },
   lunch: {
-    shell: 'border-emerald-300/30 bg-emerald-400/10 hover:bg-emerald-400/18',
-    icon: 'bg-emerald-400/25 text-emerald-100',
-    active: 'border-emerald-300/70 bg-emerald-400/30 ring-1 ring-emerald-300/50',
-    dot: 'bg-emerald-300',
+    shell: 'border-white/25 bg-white/12 hover:bg-white/18',
+    icon: 'bg-white/20 text-white',
+    active: 'border-white/50 bg-white/20 ring-1 ring-white/30',
+    dot: 'bg-white/80',
   },
   meeting: {
-    shell: 'border-violet-300/30 bg-violet-400/10 hover:bg-violet-400/18',
-    icon: 'bg-violet-400/25 text-violet-100',
-    active: 'border-violet-300/70 bg-violet-400/30 ring-1 ring-violet-300/50',
-    dot: 'bg-violet-300',
+    shell: 'border-white/20 bg-white/10 hover:bg-white/16',
+    icon: 'bg-white/18 text-white',
+    active: 'border-white/45 bg-white/18 ring-1 ring-white/25',
+    dot: 'bg-white/70',
   },
 };
 
@@ -82,7 +82,7 @@ function PunchTile({
       disabled={disabled || busy}
       onClick={onClick}
       className={cn(
-        'group relative flex min-w-0 flex-col items-center gap-1.5 rounded-xl border px-2 py-2.5 backdrop-blur-md transition-all duration-200',
+        'group relative flex min-w-0 flex-row items-center gap-1.5 rounded-md border px-2 py-1 backdrop-blur-md transition-all duration-200',
         'active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40',
         active ? t.active : t.shell,
       )}
@@ -94,20 +94,22 @@ function PunchTile({
       )}
       <span
         className={cn(
-          'flex h-8 w-8 items-center justify-center rounded-lg shadow-sm transition-transform group-hover:scale-105',
+          'flex h-6 w-6 shrink-0 items-center justify-center rounded-md shadow-sm transition-transform group-hover:scale-105',
           t.icon,
         )}
       >
-        <Icon className="h-4 w-4" strokeWidth={2} />
+        <Icon className="h-3.5 w-3.5" strokeWidth={2} />
       </span>
-      <span className="w-full truncate text-center text-[10px] font-bold leading-tight text-white">
-        {busy ? '…' : label}
-      </span>
-      {sublabel && (
-        <span className="w-full truncate text-center font-mono text-[9px] tabular-nums text-white/60">
-          {sublabel}
+      <span className="min-w-0 flex-1 text-left">
+        <span className="block truncate text-[10px] font-bold leading-tight text-white">
+          {busy ? '…' : label}
         </span>
-      )}
+        {sublabel && (
+          <span className="block truncate font-mono text-[8px] tabular-nums text-white/60">
+            {sublabel}
+          </span>
+        )}
+      </span>
     </button>
   );
 }
@@ -353,24 +355,24 @@ export function BannerPunchTiles() {
   };
 
   return (
-    <div className="w-full rounded-xl border border-white/15 bg-black/15 p-2.5 shadow-inner backdrop-blur-md sm:p-3">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-white/55">
-          <Fingerprint className="h-3.5 w-3.5 text-white/70" />
+    <div className="w-full p-1.5 sm:p-2">
+      <div className="mb-1 flex items-center justify-between gap-1.5">
+        <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-white/70">
+          <Fingerprint className="h-3 w-3 text-white/80" />
           Quick punch
         </p>
         <button
           type="button"
           onClick={handleSync}
           disabled={syncing || toggling !== null || requestingMeeting || eodLoggingOut}
-          className="inline-flex items-center gap-1 rounded-lg border border-white/20 bg-white/10 px-2 py-1 text-[9px] font-semibold text-white/75 transition hover:bg-white/20 disabled:opacity-50"
+          className="inline-flex items-center gap-1 rounded-md border border-white/20 bg-white/10 px-1.5 py-0.5 text-[9px] font-semibold text-white/80 transition hover:bg-white/20 disabled:opacity-50"
         >
           <RefreshCw className={cn('h-3 w-3', syncing && 'animate-spin')} />
           Sync
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-1 gap-1 sm:grid-cols-4">
         {onBreak ? (
           <PunchTile
             label="End break"
@@ -392,13 +394,13 @@ export function BannerPunchTiles() {
         ) : (
           <div
             className={cn(
-              'relative flex min-w-0 flex-col items-center gap-1.5 rounded-xl border px-2 py-2.5 backdrop-blur-md',
+              'relative flex min-w-0 flex-col items-center gap-1 rounded-lg border px-1.5 py-1.5 backdrop-blur-md',
               toneStyles.work.shell,
             )}
           >
             <span
               className={cn(
-                'flex h-8 w-8 items-center justify-center rounded-lg shadow-sm',
+                'flex h-7 w-7 items-center justify-center rounded-md shadow-sm',
                 toneStyles.work.icon,
               )}
             >

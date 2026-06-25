@@ -18,21 +18,21 @@ const accentStyles: Record<
 > = {
   emerald: {
     wrap: 'border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50',
-    icon: 'bg-emerald-100 text-emerald-700',
+    icon: 'bg-emerald-100 text-[#2e7ad1]',
     title: 'text-emerald-900',
-    badge: 'bg-emerald-100 text-emerald-800 ring-emerald-200',
+    badge: 'bg-emerald-100 text-[#2568b8] ring-emerald-200',
   },
   violet: {
     wrap: 'border-violet-200 bg-gradient-to-r from-violet-50 to-purple-50',
     icon: 'bg-violet-100 text-violet-700',
     title: 'text-violet-900',
-    badge: 'bg-violet-100 text-violet-800 ring-violet-200',
+    badge: 'bg-violet-100 text-[#2568b8] ring-violet-200',
   },
   admin: {
-    wrap: 'border-[#217346]/20 bg-gradient-to-r from-[#e8f5ee] to-emerald-50',
-    icon: 'bg-[#217346]/10 text-[#217346]',
-    title: 'text-[#1a5c38]',
-    badge: 'bg-[#217346]/10 text-[#217346] ring-[#217346]/20',
+    wrap: 'border-[#2e7ad1]/20 bg-gradient-to-r from-[#e8f5ee] to-emerald-50',
+    icon: 'bg-[#2e7ad1]/10 text-[#2e7ad1]',
+    title: 'text-[#2568b8]',
+    badge: 'bg-[#2e7ad1]/10 text-[#2e7ad1] ring-[#2e7ad1]/20',
   },
 };
 

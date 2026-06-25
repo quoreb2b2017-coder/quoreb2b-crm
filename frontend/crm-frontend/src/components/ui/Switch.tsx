@@ -54,12 +54,12 @@ export function Switch({
       onClick={() => onChange(!checked)}
       className={cn(
         'group relative shrink-0 rounded-full p-0.5 transition-all duration-300 ease-out',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50 focus-visible:ring-offset-2',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2e7ad1]/50 focus-visible:ring-offset-2',
         'disabled:cursor-not-allowed disabled:opacity-55',
         'hover:scale-[1.03] active:scale-[0.97]',
         s.track,
         checked
-          ? 'bg-gradient-to-r from-[#1a6b42] via-[#217346] to-[#2d8f5c] shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_2px_8px_rgba(33,115,70,0.35)]'
+          ? 'bg-gradient-to-r from-[#2568b8] via-[#2e7ad1] to-[#3a85d8] shadow-[inset_0_1px_0_rgba(255,255,255,0.2),0_2px_8px_rgba(46,122,209,0.35)]'
           : 'bg-slate-200 shadow-[inset_0_2px_4px_rgba(15,23,42,0.08)]',
         !checked && 'hover:bg-slate-300/90',
         className,
@@ -85,12 +85,12 @@ export function Switch({
         )}
       >
         {loading ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-[#217346]" />
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-[#2e7ad1]" />
         ) : (
           <span
             className={cn(
               'h-1.5 w-1.5 rounded-full transition-all duration-300',
-              checked ? 'bg-[#217346] scale-100 opacity-100' : 'bg-slate-300 scale-75 opacity-60',
+              checked ? 'bg-[#2e7ad1] scale-100 opacity-100' : 'bg-slate-300 scale-75 opacity-60',
             )}
           />
         )}

@@ -18,14 +18,14 @@ const FILTERS: { id: LeaveStatus | 'all'; label: string }[] = [
 
 const THEMES = {
   admin: {
-    header: 'from-[#1a5c38] via-[#217346] to-[#0d0f14] ring-emerald-500/30',
-    filterActive: 'bg-emerald-600 text-white shadow-sm',
-    applyBtn: 'text-emerald-900 hover:bg-emerald-50',
+    header: 'from-[#2568b8] via-[#2e7ad1] to-[#1e5fa8] ring-[#2e7ad1]/25',
+    filterActive: 'bg-[#2e7ad1] text-white shadow-sm',
+    applyBtn: 'text-[#2568b8] hover:bg-[#e8f1fb]',
   },
   db_admin: {
-    header: 'from-violet-600/90 via-purple-600/75 to-[#0d0f14] ring-violet-500/30',
-    filterActive: 'bg-violet-600 text-white shadow-sm',
-    applyBtn: 'text-violet-800 hover:bg-violet-50',
+    header: 'from-[#2568b8] via-[#2e7ad1] to-[#1e5fa8] ring-[#2e7ad1]/25',
+    filterActive: 'bg-[#2e7ad1] text-white shadow-sm',
+    applyBtn: 'text-[#2568b8] hover:bg-[#e8f1fb]',
   },
 } as const;
 
@@ -105,7 +105,7 @@ export function LeaveApprovalsPanel({
     <AttendanceFullBleed className="xl-stagger gap-4 py-3 sm:py-4 md:gap-5 animate-fade-in">
       <div
         className={cn(
-          'relative overflow-hidden rounded-sm bg-gradient-to-br px-5 py-5 text-white shadow-md ring-1 transition-shadow duration-200 hover:shadow-lg',
+          'relative overflow-hidden rounded-2xl bg-gradient-to-br px-5 py-5 text-white shadow-crm ring-1 transition-all duration-200 hover:shadow-crm-lg',
           theme.header,
         )}
       >
@@ -124,7 +124,7 @@ export function LeaveApprovalsPanel({
               type="button"
               onClick={fetchLeaves}
               disabled={loading}
-              className="rounded-xl border border-white/30 p-2.5 hover:bg-white/10 disabled:opacity-50"
+              className="rounded-xl border border-white/30 bg-white/10 p-2.5 backdrop-blur-sm transition-all duration-150 hover:bg-white/18 disabled:opacity-50"
               title="Refresh"
             >
               <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
@@ -134,7 +134,7 @@ export function LeaveApprovalsPanel({
                 type="button"
                 onClick={() => panel.openLeave()}
                 className={cn(
-                  'inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold shadow-md',
+                  'inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold shadow-md transition-all duration-150 active:scale-[0.98]',
                   theme.applyBtn,
                 )}
               >
@@ -159,10 +159,10 @@ export function LeaveApprovalsPanel({
             type="button"
             onClick={() => setFilter(f.id)}
             className={cn(
-              'rounded-sm px-3 py-1.5 text-xs font-semibold transition-all duration-150',
+              'rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all duration-150',
               filter === f.id
                 ? theme.filterActive
-                : 'border border-[#d4d4d4] bg-[#f3f3f3] text-slate-600 hover:bg-white',
+                : 'border border-slate-200 bg-white text-slate-600 hover:border-[#2e7ad1]/30 hover:bg-[#e8f1fb]/40',
             )}
           >
             {f.label}

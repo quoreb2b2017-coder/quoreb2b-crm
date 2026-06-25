@@ -36,7 +36,7 @@ export function NotificationToast({
       case 'success':
       case 'batch_completed':
       case 'bulk_email_verification':
-        return <CheckCircle className="h-5 w-5 text-emerald-600" />;
+        return <CheckCircle className="h-5 w-5 text-[#2e7ad1]" />;
       case 'error':
       case 'system_alert':
         return <AlertCircle className="h-5 w-5 text-red-600" />;

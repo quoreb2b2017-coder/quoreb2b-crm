@@ -101,7 +101,7 @@ export function EmployeeMyDataExcelView({
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-[#e6e6e6]">
-      <div className="flex flex-shrink-0 items-center justify-between bg-[#217346] px-4 py-2 text-white">
+      <div className="flex flex-shrink-0 items-center justify-between bg-[#2e7ad1] px-4 py-2 text-white">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded bg-white/20">
             <span className="text-[10px] font-bold">XL</span>

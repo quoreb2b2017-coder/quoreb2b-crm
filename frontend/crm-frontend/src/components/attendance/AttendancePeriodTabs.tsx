@@ -7,9 +7,9 @@ export type AttendancePeriodView = 'monthly' | 'yearly' | 'custom';
 export type AttendancePeriodAccent = 'emerald' | 'violet' | 'admin';
 
 const activeTabClass: Record<AttendancePeriodAccent, string> = {
-  emerald: 'bg-white text-emerald-700 shadow-sm ring-1 ring-slate-200/80',
+  emerald: 'bg-white text-[#2e7ad1] shadow-sm ring-1 ring-slate-200/80',
   violet: 'bg-white text-violet-700 shadow-sm ring-1 ring-slate-200/80',
-  admin: 'bg-white text-[#217346] shadow-sm ring-1 ring-slate-200/80',
+  admin: 'bg-white text-[#2e7ad1] shadow-sm ring-1 ring-slate-200/80',
 };
 
 interface AttendancePeriodTabsProps {

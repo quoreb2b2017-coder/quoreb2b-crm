@@ -10,9 +10,9 @@ export const CHANNEL_LABELS: Record<CampaignChannel, string> = {
 };
 
 export const CHANNEL_COLORS: Record<CampaignChannel, string> = {
-  voip: 'bg-violet-100 text-violet-800 ring-violet-200',
+  voip: 'bg-violet-100 text-[#2568b8] ring-violet-200',
   gps: 'bg-sky-100 text-sky-800 ring-sky-200',
-  email: 'bg-emerald-100 text-emerald-800 ring-emerald-200',
+  email: 'bg-emerald-100 text-[#2568b8] ring-emerald-200',
   other: 'bg-slate-100 text-slate-700 ring-slate-200',
 };
 

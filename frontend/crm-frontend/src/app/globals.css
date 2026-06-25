@@ -6,11 +6,31 @@
   :root {
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
+    --crm-sidebar: #f0f4f8;
+    --crm-primary: #2e7ad1;
+    --crm-primary-dark: #2568b8;
+    --crm-primary-light: #e8f1fb;
   }
   body {
-    @apply bg-gray-50 text-gray-900 antialiased;
+    @apply bg-[#f8fafc] text-slate-900 antialiased;
     scroll-behavior: smooth;
     text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  ::selection {
+    background: rgba(46, 122, 209, 0.18);
+    color: #0f172a;
+  }
+
+  :focus-visible {
+    outline: 2px solid rgba(46, 122, 209, 0.45);
+    outline-offset: 2px;
   }
 }
 
@@ -21,6 +41,171 @@ html {
 * {
   scrollbar-width: thin;
   scrollbar-color: rgb(148 163 184 / 0.65) transparent;
+}
+
+@layer components {
+  .crm-surface {
+    background: linear-gradient(180deg, #ffffff 0%, #fafbfc 100%);
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    border-radius: 1rem;
+    box-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.04),
+      0 4px 20px rgba(15, 23, 42, 0.04);
+    transition:
+      box-shadow 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 0.22s ease,
+      transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .crm-surface:hover {
+    border-color: rgba(203, 213, 225, 0.95);
+    box-shadow:
+      0 4px 12px rgba(15, 23, 42, 0.06),
+      0 12px 32px rgba(46, 122, 209, 0.06);
+    transform: translateY(-1px);
+  }
+
+  .crm-surface-static {
+    background: #ffffff;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    border-radius: 1rem;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+  }
+
+  .crm-btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl font-semibold text-sm;
+    @apply transition-all duration-200 ease-out active:scale-[0.97];
+    @apply disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .crm-btn-primary {
+    @apply crm-btn px-5 py-2.5 text-white;
+    background: linear-gradient(180deg, #3a85d8 0%, #2e7ad1 50%, #2568b8 100%);
+    box-shadow:
+      0 1px 2px rgba(37, 104, 184, 0.2),
+      0 4px 14px rgba(46, 122, 209, 0.28);
+  }
+
+  .crm-btn-primary:hover:not(:disabled) {
+    background: linear-gradient(180deg, #4490e0 0%, #3380d4 50%, #2a6fc0 100%);
+    box-shadow:
+      0 2px 4px rgba(37, 104, 184, 0.25),
+      0 8px 20px rgba(46, 122, 209, 0.32);
+    transform: translateY(-1px);
+  }
+
+  .crm-btn-secondary {
+    @apply crm-btn border border-slate-200 bg-white px-5 py-2.5 text-slate-700;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  }
+
+  .crm-btn-secondary:hover:not(:disabled) {
+    @apply border-slate-300 bg-slate-50;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+    transform: translateY(-1px);
+  }
+
+  .crm-btn-ghost {
+    @apply crm-btn px-3 py-2 text-slate-600;
+  }
+
+  .crm-btn-ghost:hover:not(:disabled) {
+    @apply bg-slate-100 text-slate-900;
+  }
+
+  .crm-icon-btn {
+    @apply inline-flex items-center justify-center rounded-xl p-2 text-slate-500;
+    @apply transition-all duration-200 ease-out active:scale-95;
+  }
+
+  .crm-icon-btn:hover {
+    @apply bg-slate-100 text-slate-800;
+  }
+
+  .crm-input {
+    @apply w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-slate-900;
+    @apply placeholder:text-slate-400 transition-all duration-200;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  }
+
+  .crm-input:hover:not(:disabled):not(:focus) {
+    @apply border-slate-300;
+  }
+
+  .crm-input:focus {
+    @apply border-[#2e7ad1] outline-none;
+    box-shadow: 0 0 0 3px rgba(46, 122, 209, 0.14);
+  }
+
+  .crm-header {
+    @apply sticky top-0 z-30 flex h-16 flex-shrink-0 items-center justify-between;
+    @apply border-b border-slate-200/70 bg-white/90 px-4 backdrop-blur-xl sm:px-6;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset, 0 4px 24px rgba(15, 23, 42, 0.04);
+  }
+
+  .crm-content {
+    @apply flex-1 min-h-0 min-w-0 w-full;
+    background:
+      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(46, 122, 209, 0.04) 0%, transparent 60%),
+      #f8fafc;
+  }
+
+  .crm-nav-link {
+    @apply flex items-center gap-2 rounded-lg text-[13px] font-medium;
+    @apply transition-all duration-150 ease-out;
+    will-change: transform, background-color;
+  }
+
+  .crm-nav-link:not(.crm-nav-link--active):hover {
+    @apply bg-slate-200/55 text-slate-900;
+    transform: translateX(2px);
+  }
+
+  .crm-nav-link--active {
+    @apply bg-[#2e7ad1]/10 text-[#2e7ad1];
+    box-shadow: inset 0 0 0 1px rgba(46, 122, 209, 0.12);
+  }
+
+  .crm-nav-section {
+    @apply px-2.5 pb-0.5 pt-2 text-[9px] font-semibold uppercase tracking-wider text-slate-400 first:pt-1;
+  }
+
+  .crm-page-enter {
+    animation: crmPageEnter 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .crm-stagger > * {
+    animation: crmSectionIn 0.32s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  }
+  .crm-stagger > *:nth-child(1) { animation-delay: 0.03s; }
+  .crm-stagger > *:nth-child(2) { animation-delay: 0.06s; }
+  .crm-stagger > *:nth-child(3) { animation-delay: 0.09s; }
+  .crm-stagger > *:nth-child(4) { animation-delay: 0.12s; }
+  .crm-stagger > *:nth-child(5) { animation-delay: 0.15s; }
+  .crm-stagger > *:nth-child(6) { animation-delay: 0.18s; }
+  .crm-stagger > *:nth-child(7) { animation-delay: 0.21s; }
+  .crm-stagger > *:nth-child(8) { animation-delay: 0.24s; }
+
+  .crm-table-row {
+    @apply transition-colors duration-150;
+  }
+
+  .crm-table-row:hover {
+    background: rgba(232, 241, 251, 0.45);
+  }
+
+  .crm-badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold;
+    @apply bg-[#e8f1fb] text-[#2568b8] ring-1 ring-[#2e7ad1]/20;
+  }
+
+  .crm-drawer-backdrop {
+    animation: crmFadeIn 0.2s ease both;
+  }
+
+  .crm-drawer-panel {
+    animation: crmDrawerIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
 }
 
 @layer utilities {
@@ -77,7 +262,7 @@ html {
     overflow-y: auto;
     scroll-behavior: smooth;
     scrollbar-width: thin;
-    scrollbar-color: #21734655 #f3f3f3;
+    scrollbar-color: #2e7ad155 #f3f3f3;
   }
   .xl-scroll::-webkit-scrollbar {
     width: 8px;
@@ -88,11 +273,11 @@ html {
   }
   .xl-scroll::-webkit-scrollbar-thumb {
     border-radius: 4px;
-    background: #21734666;
+    background: #2e7ad166;
     transition: background 0.2s ease;
   }
   .xl-scroll::-webkit-scrollbar-thumb:hover {
-    background: #21734699;
+    background: #2e7ad199;
   }
 
   .xl-stagger > * {
@@ -202,6 +387,44 @@ html {
   }
 }
 
+@keyframes crmPageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes crmSectionIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes crmFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes crmDrawerIn {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 @layer utilities {
   .toast-enter {
     animation: toastEnter 0.38s cubic-bezier(0.21, 1.02, 0.73, 1) forwards;
@@ -213,13 +436,21 @@ html {
     animation: settingsPanel 0.28s ease-out forwards;
   }
   .animate-page-enter {
-    animation: pageEnter 0.24s ease-out forwards;
+    animation: pageEnter 0.28s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   }
   .animate-nav-progress {
     animation: navProgress 0.85s ease-in-out infinite;
   }
   .tap-smooth {
-    @apply transition-all duration-200 ease-out active:scale-[0.98];
+    @apply transition-all duration-150 ease-out active:scale-[0.98];
+  }
+
+  .crm-link {
+    @apply font-semibold text-[#2e7ad1] transition-all duration-150;
+  }
+
+  .crm-link:hover {
+    @apply text-[#2568b8];
   }
 
   /* Date/time inputs in narrow side panels — full width, responsive picker */
@@ -242,5 +473,26 @@ html {
   .note-date-input::-webkit-date-and-time-value {
     min-width: 0;
     text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crm-page-enter,
+  .crm-stagger > *,
+  .crm-drawer-backdrop,
+  .crm-drawer-panel,
+  .animate-page-enter,
+  .animate-fade-in,
+  .dash-section,
+  .dash-page {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .crm-nav-link:not(.crm-nav-link--active):hover,
+  .crm-surface:hover,
+  .crm-btn-primary:hover:not(:disabled),
+  .crm-btn-secondary:hover:not(:disabled) {
+    transform: none !important;
   }
 }

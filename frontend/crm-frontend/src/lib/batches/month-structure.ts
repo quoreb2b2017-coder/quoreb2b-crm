@@ -13,7 +13,7 @@ export const CALENDAR_MONTHS: CalendarMonth[] = [
   { index: 1, label: 'January', short: 'Jan', accent: 'text-sky-700', accentBg: 'bg-sky-50', border: 'border-sky-200' },
   { index: 2, label: 'February', short: 'Feb', accent: 'text-violet-700', accentBg: 'bg-violet-50', border: 'border-violet-200' },
   { index: 3, label: 'March', short: 'Mar', accent: 'text-indigo-700', accentBg: 'bg-indigo-50', border: 'border-indigo-200' },
-  { index: 4, label: 'April', short: 'Apr', accent: 'text-emerald-700', accentBg: 'bg-emerald-50', border: 'border-emerald-200' },
+  { index: 4, label: 'April', short: 'Apr', accent: 'text-[#2e7ad1]', accentBg: 'bg-emerald-50', border: 'border-emerald-200' },
   { index: 5, label: 'May', short: 'May', accent: 'text-lime-700', accentBg: 'bg-lime-50', border: 'border-lime-200' },
   { index: 6, label: 'June', short: 'Jun', accent: 'text-amber-700', accentBg: 'bg-amber-50', border: 'border-amber-200' },
   { index: 7, label: 'July', short: 'Jul', accent: 'text-orange-700', accentBg: 'bg-orange-50', border: 'border-orange-200' },

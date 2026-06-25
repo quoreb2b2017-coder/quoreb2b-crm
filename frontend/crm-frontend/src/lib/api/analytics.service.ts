@@ -42,6 +42,34 @@ export async function fetchChartData(): Promise<ChartData> {
   });
 }
 
+export interface RecentWorkActivityItem {
+  id: string;
+  action: string;
+  resource: string;
+  path?: string;
+  batchName?: string;
+  userName: string;
+  userRole?: string;
+  employeeId?: string;
+  occurredAt: string;
+}
+
+/** Super Admin dashboard — work actions only (login/logout excluded server-side) */
+export async function fetchRecentWorkActivity(
+  limit = 12,
+  refreshNonce = 0,
+): Promise<RecentWorkActivityItem[]> {
+  return deduplicatedFetch(`analytics:recent-work:${limit}:${refreshNonce}`, async () => {
+    const { data } = await apiClient.get('/analytics/recent-activity', {
+      params: { limit },
+    });
+    const body = data as { data?: RecentWorkActivityItem[] } | RecentWorkActivityItem[];
+    if (Array.isArray(body)) return body;
+    if (Array.isArray(body?.data)) return body.data;
+    return [];
+  });
+}
+
 export interface DbAdminDashboardData {
   health: {
     status: string;

@@ -114,7 +114,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
   if (isWorkspaceHub) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-100 via-white to-indigo-50/40">
+      <div className="min-h-screen bg-[#f0f4f8]">
         <CompanyProductPicker />
       </div>
     );

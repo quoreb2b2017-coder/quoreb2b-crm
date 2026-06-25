@@ -113,7 +113,7 @@ export function ChangePasswordForm({ variant = 'inline', onClose }: ChangePasswo
         </div>
 
         {msg && (
-          <p className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-700">
+          <p className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-sm text-[#2e7ad1]">
             {msg}
           </p>
         )}
@@ -162,7 +162,7 @@ export function ChangePasswordForm({ variant = 'inline', onClose }: ChangePasswo
         </div>
         <div className="st-card overflow-hidden">
           <div className="flex items-center gap-3 border-b border-slate-100 bg-gradient-to-r from-indigo-50/80 to-white px-4 py-4 sm:px-5">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 shadow-sm">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-[#2e7ad1] shadow-sm">
               <ShieldCheck className="h-5 w-5" />
             </span>
             <p className="text-xs leading-relaxed text-slate-500">

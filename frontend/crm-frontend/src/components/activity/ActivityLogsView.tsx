@@ -81,7 +81,7 @@ function KpiCard({
   icon: React.ComponentType<{ className?: string }>;
 }) {
   const valueColor = {
-    green: 'text-[#217346]',
+    green: 'text-[#2e7ad1]',
     blue: 'text-sky-700',
     violet: 'text-violet-700',
   }[accent];
@@ -423,7 +423,7 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
                       setSelectedDate(e.target.value);
                       setPage(1);
                     }}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition focus:border-[#217346] focus:ring-2 focus:ring-[#217346]/20"
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none transition focus:border-[#2e7ad1] focus:ring-2 focus:ring-[#2e7ad1]/20"
                   />
                   <button
                     type="button"
@@ -431,7 +431,7 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
                       setSelectedDate(todayIso());
                       setPage(1);
                     }}
-                    className="rounded-lg bg-[#217346] px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-[#1a5c38] active:scale-[0.98]"
+                    className="rounded-lg bg-[#2e7ad1] px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-[#2568b8] active:scale-[0.98]"
                   >
                     Today
                   </button>
@@ -507,7 +507,7 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
                         : 'Or search name, email, action…'
                       : 'Search actions or pages…'
                   }
-                  className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm shadow-sm outline-none transition focus:border-[#217346]"
+                  className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm shadow-sm outline-none transition focus:border-[#2e7ad1]"
                 />
               </div>
             </div>
@@ -567,7 +567,7 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
         <div className="al-table-card min-w-0 flex-1 overflow-hidden">
           <div className="flex items-center justify-between border-b border-slate-100 bg-gradient-to-r from-[#f0faf4]/80 to-white px-4 py-3">
             <div className="flex items-center gap-2.5">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#217346]/10 text-[#217346] shadow-sm">
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#2e7ad1]/10 text-[#2e7ad1] shadow-sm">
                 <User className="h-3.5 w-3.5" />
               </span>
               <div>
@@ -715,7 +715,7 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
               <div className="flex flex-col items-center gap-0.5">
                 <span className="flex items-center gap-1.5 text-xs text-slate-500">
                   Page
-                  <span className="flex h-7 min-w-[28px] items-center justify-center rounded-lg bg-[#217346] px-2 text-[11px] font-bold text-white shadow-sm">
+                  <span className="flex h-7 min-w-[28px] items-center justify-center rounded-lg bg-[#2e7ad1] px-2 text-[11px] font-bold text-white shadow-sm">
                     {page}
                   </span>
                   of <span className="font-bold text-slate-800">{totalPages}</span>

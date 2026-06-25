@@ -64,7 +64,7 @@ export function AttendanceRollupSummarySheet({
                 <td className="border border-[#e0e0e0] px-2 py-2 text-center font-medium text-slate-700">
                   {periodLabel}
                 </td>
-                <td className="border border-[#e0e0e0] bg-[#e2efda] px-2 py-2 text-center font-bold text-[#217346]">
+                <td className="border border-[#e0e0e0] bg-[#e2efda] px-2 py-2 text-center font-bold text-[#2e7ad1]">
                   {totals.present}
                 </td>
                 <td className="border border-[#e0e0e0] bg-[#fce4d6] px-2 py-2 text-center font-bold text-[#c00000]">
@@ -76,7 +76,7 @@ export function AttendanceRollupSummarySheet({
                 <td className="border border-[#e0e0e0] bg-[#fff2cc] px-2 py-2 text-center font-bold text-[#bf8f00]">
                   {totals.half}
                 </td>
-                <td className="border border-[#e0e0e0] bg-[#e2efda] px-2 py-2 text-center font-bold text-[#217346]">
+                <td className="border border-[#e0e0e0] bg-[#e2efda] px-2 py-2 text-center font-bold text-[#2e7ad1]">
                   {totals.avgPct}%
                 </td>
               </tr>

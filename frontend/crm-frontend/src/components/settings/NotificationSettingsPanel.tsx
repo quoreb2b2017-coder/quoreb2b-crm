@@ -105,7 +105,7 @@ function ToggleRow({
           className={cn(
             'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-all duration-300',
             checked
-              ? 'border-emerald-200 bg-gradient-to-br from-emerald-50 to-white text-[#217346] shadow-sm shadow-emerald-100/80'
+              ? 'border-emerald-200 bg-gradient-to-br from-emerald-50 to-white text-[#2e7ad1] shadow-sm shadow-emerald-100/80'
               : 'border-slate-200 bg-slate-50 text-slate-400',
           )}
         >
@@ -118,7 +118,7 @@ function ToggleRow({
               className={cn(
                 'rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide transition-colors duration-300',
                 checked
-                  ? 'bg-emerald-100 text-emerald-700'
+                  ? 'bg-emerald-100 text-[#2e7ad1]'
                   : 'bg-slate-100 text-slate-500',
               )}
             >
@@ -175,14 +175,14 @@ export function NotificationSettingsPanel() {
         <p className="st-section-sub">Control in-app alerts and popup toasts</p>
       </div>
 
-      <div className="mb-4 rounded-xl border border-emerald-200/80 bg-gradient-to-r from-emerald-50/90 to-white px-4 py-3 text-xs leading-relaxed text-emerald-800 shadow-sm">
+      <div className="mb-4 rounded-xl border border-emerald-200/80 bg-gradient-to-r from-emerald-50/90 to-white px-4 py-3 text-xs leading-relaxed text-[#2568b8] shadow-sm">
         Attendance is counted <strong>late after {ATTENDANCE_ON_TIME_LABEL}</strong> Eastern. Late entries include
         check-in time in notifications when enabled below.
       </div>
 
       {loading && !preferences ? (
         <div className="st-card flex items-center justify-center gap-2 py-14 text-sm text-slate-500">
-          <Loader2 className="h-4 w-4 animate-spin text-[var(--st-accent,#217346)]" />
+          <Loader2 className="h-4 w-4 animate-spin text-[var(--st-accent,#2e7ad1)]" />
           Loading preferences…
         </div>
       ) : (

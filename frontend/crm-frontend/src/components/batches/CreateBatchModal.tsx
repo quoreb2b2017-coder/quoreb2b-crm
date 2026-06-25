@@ -208,8 +208,8 @@ export function CreateBatchModal({
               onClick={handleSubmit}
               disabled={loading || !formData.name.trim()}
               className={cn(
-                'flex-1 rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white',
-                'transition-colors hover:bg-indigo-700',
+                'flex-1 rounded-lg bg-[#2e7ad1] py-2.5 text-sm font-medium text-white',
+                'transition-colors hover:bg-[#2568b8]',
                 'disabled:opacity-50 disabled:cursor-not-allowed'
               )}
             >

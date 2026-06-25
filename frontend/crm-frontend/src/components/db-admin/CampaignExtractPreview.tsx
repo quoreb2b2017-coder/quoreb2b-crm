@@ -99,7 +99,7 @@ export function CampaignExtractPreview({
       <div className="divide-y divide-slate-100 md:hidden">
         {displayRows.map((row, rowIndex) => (
           <article key={rowIndex} className="p-3.5">
-            <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-violet-600">
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-[#2e7ad1]">
               Contact {rowIndex + 1}
             </p>
             <dl className="space-y-1.5">

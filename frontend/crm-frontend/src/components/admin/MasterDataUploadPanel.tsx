@@ -96,7 +96,7 @@ function AutoSaveHint({ status }: { status: AutoSaveStatus }) {
     status === 'error'
       ? 'text-red-600'
       : status === 'saved'
-        ? 'text-[#217346]'
+        ? 'text-[#2e7ad1]'
         : 'text-slate-500';
   return (
     <span className={cn('inline-flex items-center gap-1 text-xs', className)}>
@@ -117,6 +117,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   const inputRef = useRef<HTMLInputElement>(null);
   const [data, setData] = useState<SpreadsheetData | null>(null);
   const [filteredRows, setFilteredRows] = useState<string[][]>([]);
+  const [filteredViewActive, setFilteredViewActive] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [loadingDb, setLoadingDb] = useState(true);
   const [savingDb, setSavingDb] = useState(false);
@@ -152,6 +153,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
     const sheet = recordToSpreadsheet(record);
     setData(sheet);
     setFilteredRows(sheet.rows);
+    setFilteredViewActive(false);
     setTotalRows(record.rowCount);
     setSavedAt(record.updatedAt ?? record.createdAt ?? new Date().toISOString());
     setDirty(false);
@@ -303,8 +305,11 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   const handleDownloadFormatted = async () => {
     if (!data) return;
     try {
-      await downloadSpreadsheetXlsx({ ...data, rows: filteredRows.length > 0 || data.rows.length === 0 ? filteredRows : data.rows });
-      toast.success('Download started', 'Excel file with current filters');
+      await downloadSpreadsheetXlsx({
+        ...data,
+        rows: filteredViewActive ? filteredRows : data.rows,
+      });
+      toast.success('Download started', filteredViewActive ? 'Excel file with current filters' : 'Full master data export');
     } catch { toast.error('Export failed', 'Could not create Excel file'); }
   };
 
@@ -342,6 +347,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
       const result = await masterDataService.clear();
       setData(null);
       setFilteredRows([]);
+      setFilteredViewActive(false);
       setTotalRows(0);
       setSavedAt(null);
       setCoverage(null);
@@ -416,9 +422,14 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
       {/* ── Toolbar ── */}
-      <div className="flex flex-col gap-2 border-b border-[#d4d4d4] bg-[#f3f3f3] px-3 py-2 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2 sm:px-4">
+      <div className="flex flex-col gap-2 border-b border-slate-200/90 bg-gradient-to-r from-[#f8fafc] via-white to-[#f8fafc] px-3 py-2.5 text-sm shadow-sm sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2 sm:px-4">
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-          <span className="font-semibold text-slate-800">Master Data Upload</span>
+          <span className="inline-flex items-center gap-2 font-semibold text-slate-900">
+            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[#2e7ad1] text-[9px] font-bold text-white">
+              DB
+            </span>
+            Master database
+          </span>
           {data ? (
             <>
               <span className="hidden text-slate-400 sm:inline">|</span>
@@ -431,7 +442,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
                   <span className="text-xs text-amber-800">
                     {coverage.summary.batchedRows.toLocaleString('en-US')} in campaign
                   </span>
-                  <span className="text-xs font-medium text-[#217346]">
+                  <span className="text-xs font-medium text-[#2e7ad1]">
                     {coverage.summary.availableRows.toLocaleString('en-US')} available
                   </span>
                 </>
@@ -441,7 +452,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
             <span className="text-xs text-slate-500">No data in master database yet</span>
           )}
           {savedAt && (
-            <span className="inline-flex items-center gap-1 text-xs text-[#217346]">
+            <span className="inline-flex items-center gap-1 text-xs text-[#2e7ad1]">
               <Cloud className="h-3 w-3 shrink-0" />
               <span className="truncate">
                 Saved {new Date(savedAt).toLocaleString('en-US', { timeZone: WORKSPACE_TIMEZONE,  dateStyle: 'short', timeStyle: 'short' })}
@@ -460,12 +471,12 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
           {!isDbAdminView && (
             <>
               <button type="button" onClick={() => inputRef.current?.click()} disabled={busy}
-                className="inline-flex items-center gap-1.5 border border-[#ababab] bg-white px-3 py-1 text-xs hover:bg-[#fafafa] disabled:opacity-50">
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium shadow-sm transition-all hover:border-[#2e7ad1]/30 hover:bg-[#e8f1fb] disabled:opacity-50">
                 <Upload className="h-3.5 w-3.5" />{data ? 'Open file' : 'Upload'}
               </button>
               {canExport && (
                 <button type="button" onClick={handleSampleTemplate}
-                  className="inline-flex items-center gap-1.5 border border-[#ababab] bg-white px-3 py-1 text-xs hover:bg-[#fafafa]">
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium shadow-sm transition-all hover:border-[#2e7ad1]/30 hover:bg-[#e8f1fb]">
                   <Download className="h-3.5 w-3.5" />Template
                 </button>
               )}
@@ -476,7 +487,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
               type="button"
               onClick={saveEditsToDb}
               disabled={savingDb || !dirty}
-              className="inline-flex items-center gap-1.5 border border-[#217346] bg-[#217346] px-3 py-1 text-xs text-white hover:bg-[#1a5c38] disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[#2e7ad1] bg-[#2e7ad1] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-[#2568b8] disabled:opacity-50"
             >
               <Save className="h-3.5 w-3.5" />
               Save now
@@ -485,14 +496,14 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
           {!isDbAdminView && data && canExport && (
             <>
               <button type="button" onClick={handleDownloadFormatted}
-                className="inline-flex items-center gap-1.5 bg-[#217346] text-white px-3 py-1 text-xs hover:bg-[#1a5c38]">
+                className="inline-flex items-center gap-1.5 rounded-lg bg-[#2e7ad1] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-[#2568b8]">
                 <Download className="h-3.5 w-3.5" />Export Excel
               </button>
               <button
                 type="button"
                 onClick={() => setClearModalOpen(true)}
                 disabled={savingDb || clearing}
-                className="inline-flex items-center gap-1.5 border border-[#ababab] bg-white px-3 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-700 transition-all hover:bg-red-50 disabled:opacity-50"
               >
                 <Trash2 className="h-3.5 w-3.5" />Clear
               </button>
@@ -517,7 +528,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
           onDragLeave={isDbAdminView ? undefined : () => setDragOver(false)}
           onDrop={isDbAdminView ? undefined : onDrop}
           className={cn(
-            'flex-1 flex flex-col items-center justify-center border-b border-[#d4d4d4] bg-white min-h-[400px]',
+            'flex-1 flex flex-col items-center justify-center border-b border-slate-200 bg-gradient-to-b from-white to-slate-50 min-h-[400px]',
             !isDbAdminView && dragOver && 'bg-[#e7f3ff]',
             !isDbAdminView && parsing && 'opacity-60 pointer-events-none',
           )}
@@ -538,13 +549,14 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
           )}
         </div>
       ) : (
-        <div className="flex-1 min-h-0 p-0 bg-[#e6e6e6]">
+        <div className="flex-1 min-h-0 p-0 bg-slate-100">
           <ExcelPreviewGrid
             data={data}
             dataResetKey={savedAt ?? 'master-empty'}
             editable={!isDbAdminView}
             onDataChange={isDbAdminView ? undefined : handleGridChange}
             onFilteredDataChange={setFilteredRows}
+            onFilteredViewChange={({ hasActiveViewFilter }) => setFilteredViewActive(hasActiveViewFilter)}
             batchedByRow={coverage?.batchedByRow}
             hideBatchedRows={hideBatchedRows}
             onHideBatchedRowsChange={setHideBatchedRows}
@@ -648,7 +660,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
                   </div>
 
                   <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
-                    <p className="text-xs leading-relaxed text-emerald-800">
+                    <p className="text-xs leading-relaxed text-[#2568b8]">
                       Master data stays unchanged. Campaign contacts remain in the database and show as{' '}
                       <span className="font-semibold text-amber-700">&quot;In campaign&quot;</span> (yellow) so
                       you can pick only new contacts next time.
@@ -656,7 +668,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
                         <>
                           {' '}
                           After creating, the campaign opens in{' '}
-                          <span className="font-semibold">Campaigns</span> (year → month folder).
+                          <span className="font-semibold">All campaigns</span> (year → month folder).
                         </>
                       )}
                     </p>
@@ -708,7 +720,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
                     type="button"
                     onClick={handleSaveBatch}
                     disabled={savingBatch || !batchName.trim()}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:opacity-60 sm:flex-1"
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#2e7ad1] py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#2568b8] disabled:opacity-60 sm:flex-1"
                   >
                     {savingBatch && <Loader2 className="h-4 w-4 animate-spin" />}
                     {savingBatch ? 'Creating...' : 'Create Campaign'}
@@ -754,7 +766,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Added</p>
-                    <p className="mt-1 text-2xl font-bold text-[#217346]">
+                    <p className="mt-1 text-2xl font-bold text-[#2e7ad1]">
                       {duplicateModal.addedRows}
                     </p>
                   </div>
@@ -782,7 +794,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
                   type="button"
                   onClick={handleDownloadDuplicates}
                   disabled={duplicateModal.duplicateRows.length === 0}
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#217346] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#1a5c38] disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#2e7ad1] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#2568b8] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Download className="h-4 w-4" />
                   Download duplicates

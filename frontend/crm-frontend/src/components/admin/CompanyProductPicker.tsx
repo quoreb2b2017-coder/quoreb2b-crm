@@ -50,7 +50,7 @@ export function CompanyProductPicker() {
         <div className="rounded-2xl border border-white/20 bg-white shadow-2xl shadow-slate-900/20 overflow-hidden">
           <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50 to-indigo-50/80 px-6 py-5 sm:px-8">
             <div className="flex items-center gap-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-lg shadow-indigo-200">
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#2e7ad1] text-white shadow-lg shadow-indigo-200">
                 <LayoutGrid className="h-5 w-5" />
               </span>
               <div>

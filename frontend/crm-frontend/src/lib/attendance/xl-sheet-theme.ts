@@ -2,8 +2,8 @@ import { cn } from '@/lib/utils/cn';
 
 /** Excel-style palette used across attendance / leave sheets */
 export const XL = {
-  green: '#217346',
-  greenDark: '#1a5c38',
+  green: '#2e7ad1',
+  greenDark: '#2568b8',
   shell: '#e6e6e6',
   toolbar: '#f3f3f3',
   headerBg: '#f2f2f2',
@@ -28,14 +28,12 @@ export function xlCellClass(opts?: {
     'transition-[background-color,box-shadow] duration-150 ease-out',
     opts?.align === 'center' && 'text-center',
     opts?.sticky && 'sticky left-0 z-10 bg-[#f2f2f2]',
-    opts?.active && 'relative z-[1] bg-[#e7f3ff] ring-2 ring-inset ring-[#217346]',
+    opts?.active && 'relative z-[1] bg-[#e7f3ff] ring-2 ring-inset ring-[#2e7ad1]',
     !opts?.active && 'hover:bg-[#e7f3ff]/55',
     opts?.className,
   );
 }
 
-export function xlHeaderClass(variant: 'green' | 'violet' = 'green') {
-  return variant === 'violet'
-    ? 'bg-gradient-to-r from-violet-700 to-purple-800'
-    : 'bg-[#217346]';
+export function xlHeaderClass(_variant: 'green' | 'violet' = 'green') {
+  return 'bg-[#2e7ad1]';
 }

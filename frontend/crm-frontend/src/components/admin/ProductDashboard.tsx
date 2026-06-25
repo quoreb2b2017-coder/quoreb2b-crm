@@ -62,7 +62,7 @@ function StatCard({ stat, idx }: { stat: StatConfig; idx: number }) {
           <span
             className={cn(
               'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold',
-              stat.trendUp ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500',
+              stat.trendUp ? 'bg-emerald-50 text-[#2e7ad1]' : 'bg-slate-100 text-slate-500',
             )}
           >
             <TrendIcon className="h-3 w-3" />
@@ -89,28 +89,28 @@ function StatCard({ stat, idx }: { stat: StatConfig; idx: number }) {
 const PRODUCT_STATS: Record<CompanyProductId, StatConfig[]> = {
   'quoreb2b-crm': [],
   'intent-matics': [
-    { label: 'Intent Signals', value: '12.4k', sub: '+22% this week', trendUp: true, icon: Zap, color: 'text-violet-600', bg: 'bg-violet-50', bar: 'bg-violet-500', barPct: 78, accent: 'from-violet-500 to-purple-500' },
-    { label: 'Accounts Scored', value: '890', sub: '+15 new accounts', trendUp: true, icon: Shield, color: 'text-indigo-600', bg: 'bg-indigo-50', bar: 'bg-indigo-500', barPct: 65, accent: 'from-indigo-500 to-blue-500' },
-    { label: 'Hot Leads', value: '156', sub: '34 high intent', trendUp: true, icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-50', bar: 'bg-emerald-500', barPct: 45, accent: 'from-emerald-500 to-teal-500' },
+    { label: 'Intent Signals', value: '12.4k', sub: '+22% this week', trendUp: true, icon: Zap, color: 'text-[#2e7ad1]', bg: 'bg-violet-50', bar: 'bg-violet-500', barPct: 78, accent: 'from-violet-500 to-purple-500' },
+    { label: 'Accounts Scored', value: '890', sub: '+15 new accounts', trendUp: true, icon: Shield, color: 'text-[#2e7ad1]', bg: 'bg-indigo-50', bar: 'bg-indigo-500', barPct: 65, accent: 'from-indigo-500 to-blue-500' },
+    { label: 'Hot Leads', value: '156', sub: '34 high intent', trendUp: true, icon: TrendingUp, color: 'text-[#2e7ad1]', bg: 'bg-emerald-50', bar: 'bg-emerald-500', barPct: 45, accent: 'from-emerald-500 to-teal-500' },
     { label: 'Campaigns', value: '24', sub: '6 active now', trendUp: true, icon: BarChart3, color: 'text-amber-600', bg: 'bg-amber-50', bar: 'bg-amber-500', barPct: 55, accent: 'from-amber-500 to-orange-500' },
   ],
   'compare-bazaar': [
     { label: 'Listings', value: '2,340', sub: '+45 this month', trendUp: true, icon: Database, color: 'text-amber-600', bg: 'bg-amber-50', bar: 'bg-amber-500', barPct: 82, accent: 'from-amber-500 to-orange-500' },
-    { label: 'Comparisons', value: '18.2k', sub: '+9% traffic', trendUp: true, icon: BarChart3, color: 'text-indigo-600', bg: 'bg-indigo-50', bar: 'bg-indigo-500', barPct: 70, accent: 'from-indigo-500 to-blue-500' },
-    { label: 'Vendors', value: '412', sub: '+12 onboarded', trendUp: true, icon: Building2, color: 'text-violet-600', bg: 'bg-violet-50', bar: 'bg-violet-500', barPct: 60, accent: 'from-violet-500 to-purple-500' },
-    { label: 'Reviews', value: '6.8k', sub: '+240 this week', trendUp: true, icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-50', bar: 'bg-emerald-500', barPct: 75, accent: 'from-emerald-500 to-teal-500' },
+    { label: 'Comparisons', value: '18.2k', sub: '+9% traffic', trendUp: true, icon: BarChart3, color: 'text-[#2e7ad1]', bg: 'bg-indigo-50', bar: 'bg-indigo-500', barPct: 70, accent: 'from-indigo-500 to-blue-500' },
+    { label: 'Vendors', value: '412', sub: '+12 onboarded', trendUp: true, icon: Building2, color: 'text-[#2e7ad1]', bg: 'bg-violet-50', bar: 'bg-violet-500', barPct: 60, accent: 'from-violet-500 to-purple-500' },
+    { label: 'Reviews', value: '6.8k', sub: '+240 this week', trendUp: true, icon: TrendingUp, color: 'text-[#2e7ad1]', bg: 'bg-emerald-50', bar: 'bg-emerald-500', barPct: 75, accent: 'from-emerald-500 to-teal-500' },
   ],
   personified: [
-    { label: 'Profiles', value: '5,102', sub: '+8% enriched', trendUp: true, icon: Users, color: 'text-emerald-600', bg: 'bg-emerald-50', bar: 'bg-emerald-500', barPct: 88, accent: 'from-emerald-500 to-teal-500' },
-    { label: 'Sequences', value: '89', sub: '12 running', trendUp: true, icon: Zap, color: 'text-indigo-600', bg: 'bg-indigo-50', bar: 'bg-indigo-500', barPct: 50, accent: 'from-indigo-500 to-blue-500' },
-    { label: 'Replies', value: '1,204', sub: '+31% vs last month', trendUp: true, icon: TrendingUp, color: 'text-violet-600', bg: 'bg-violet-50', bar: 'bg-violet-500', barPct: 72, accent: 'from-violet-500 to-purple-500' },
+    { label: 'Profiles', value: '5,102', sub: '+8% enriched', trendUp: true, icon: Users, color: 'text-[#2e7ad1]', bg: 'bg-emerald-50', bar: 'bg-emerald-500', barPct: 88, accent: 'from-emerald-500 to-teal-500' },
+    { label: 'Sequences', value: '89', sub: '12 running', trendUp: true, icon: Zap, color: 'text-[#2e7ad1]', bg: 'bg-indigo-50', bar: 'bg-indigo-500', barPct: 50, accent: 'from-indigo-500 to-blue-500' },
+    { label: 'Replies', value: '1,204', sub: '+31% vs last month', trendUp: true, icon: TrendingUp, color: 'text-[#2e7ad1]', bg: 'bg-violet-50', bar: 'bg-violet-500', barPct: 72, accent: 'from-violet-500 to-purple-500' },
     { label: 'Meetings', value: '342', sub: '+18 booked', trendUp: true, icon: BarChart3, color: 'text-amber-600', bg: 'bg-amber-50', bar: 'bg-amber-500', barPct: 63, accent: 'from-amber-500 to-orange-500' },
   ],
   'quore-it': [
     { label: 'Servers', value: '48', sub: 'All healthy', trendUp: true, icon: Shield, color: 'text-slate-600', bg: 'bg-slate-100', bar: 'bg-slate-500', barPct: 100, accent: 'from-slate-500 to-slate-700' },
-    { label: 'Uptime', value: '99.97%', sub: '30-day average', trendUp: true, icon: Activity, color: 'text-emerald-600', bg: 'bg-emerald-50', bar: 'bg-emerald-500', barPct: 99, accent: 'from-emerald-500 to-teal-500' },
+    { label: 'Uptime', value: '99.97%', sub: '30-day average', trendUp: true, icon: Activity, color: 'text-[#2e7ad1]', bg: 'bg-emerald-50', bar: 'bg-emerald-500', barPct: 99, accent: 'from-emerald-500 to-teal-500' },
     { label: 'Tickets', value: '23', sub: '7 open tickets', trendUp: false, icon: BarChart3, color: 'text-amber-600', bg: 'bg-amber-50', bar: 'bg-amber-500', barPct: 30, accent: 'from-amber-500 to-orange-500' },
-    { label: 'Backups', value: '12', sub: 'Last: 2h ago', trendUp: true, icon: Database, color: 'text-indigo-600', bg: 'bg-indigo-50', bar: 'bg-indigo-500', barPct: 85, accent: 'from-indigo-500 to-blue-500' },
+    { label: 'Backups', value: '12', sub: 'Last: 2h ago', trendUp: true, icon: Database, color: 'text-[#2e7ad1]', bg: 'bg-indigo-50', bar: 'bg-indigo-500', barPct: 85, accent: 'from-indigo-500 to-blue-500' },
   ],
 };
 

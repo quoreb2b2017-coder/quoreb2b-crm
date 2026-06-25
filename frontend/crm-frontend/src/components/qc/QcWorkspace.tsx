@@ -266,7 +266,7 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
         className={cn(
           'rounded-md px-2.5 py-1 text-xs font-bold shadow-sm transition-colors',
           showAll || selectedPath.length === 0
-            ? 'bg-[#217346] text-white'
+            ? 'bg-[#2e7ad1] text-white'
             : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50',
         )}
       >
@@ -276,7 +276,7 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
         <button
           type="button"
           onClick={() => setCheckOpen(true)}
-          className="inline-flex items-center gap-1 rounded-md bg-[#217346] px-2.5 py-1 text-xs font-bold text-white shadow-sm hover:bg-[#1a5c38]"
+          className="inline-flex items-center gap-1 rounded-md bg-[#2e7ad1] px-2.5 py-1 text-xs font-bold text-white shadow-sm hover:bg-[#2568b8]"
         >
           <ShieldAlert className="h-3.5 w-3.5" />
           Check suppression
@@ -288,7 +288,7 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
         </span>
       )}
       {mergedCount > 0 && (
-        <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800">
+        <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-[#2568b8]">
           {mergedCount} merged
         </span>
       )}
@@ -589,7 +589,7 @@ export function QcWorkspace({ mode }: QcWorkspaceProps) {
                     className={cn(
                       'qc-employee-chip inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold ring-1',
                       filterEmployeeId === g.employeeId
-                        ? 'bg-violet-600 text-white ring-violet-600'
+                        ? 'bg-[#2e7ad1] text-white ring-violet-600'
                         : 'bg-violet-50 text-violet-900 ring-violet-200 hover:bg-violet-100',
                     )}
                   >

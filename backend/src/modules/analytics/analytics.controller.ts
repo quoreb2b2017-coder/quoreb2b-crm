@@ -35,6 +35,15 @@ export class AnalyticsController {
     return this.analyticsService.getChartData();
   }
 
+  @Get('recent-activity')
+  @Roles(SystemRole.SUPER_ADMIN)
+  getRecentActivity(@Query('limit') limit?: string) {
+    const parsed = limit ? Number.parseInt(limit, 10) : 12;
+    return this.analyticsService.getRecentWorkActivity(
+      Number.isFinite(parsed) ? parsed : 12,
+    );
+  }
+
   @Get('search/leads')
   searchLeads(@Query('q') query: string) {
     return this.analyticsService.searchLeads(query);

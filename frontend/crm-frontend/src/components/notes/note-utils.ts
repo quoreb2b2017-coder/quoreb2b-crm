@@ -32,10 +32,10 @@ export const PRIORITY_META: Record<
   low: {
     label: 'Low',
     dot: 'bg-emerald-500',
-    badge: 'bg-emerald-50 text-emerald-700 ring-emerald-200/80',
+    badge: 'bg-emerald-50 text-[#2e7ad1] ring-emerald-200/80',
     stripe: 'bg-emerald-500',
     softBg: 'bg-emerald-50/40',
-    text: 'text-emerald-700',
+    text: 'text-[#2e7ad1]',
   },
 };
 

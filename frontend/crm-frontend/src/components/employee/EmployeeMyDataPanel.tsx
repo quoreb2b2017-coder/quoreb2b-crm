@@ -11,10 +11,14 @@ import {
 } from '@/lib/api/master-data.service';
 import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
-import { AttendanceFullBleed } from '@/components/attendance/AttendanceFullBleed';
 import { ExcelSheetShell } from '@/components/attendance/ExcelSheetShell';
 import { MasterDataUploadMonthExplorer } from '@/components/master-data/MasterDataUploadMonthExplorer';
 import { MasterDataUploadRequestList } from '@/components/master-data/MasterDataUploadRequestList';
+import {
+  DataPageShell,
+  dataFilterPill,
+  dataToolbarBadge,
+} from '@/components/master-data/DataPageShell';
 import { SpreadsheetPreviewModal } from '@/components/spreadsheet/SpreadsheetPreviewModal';
 import {
   resolveDuplicatesOpenPath,
@@ -22,7 +26,6 @@ import {
   uploadRequestDuplicatesPath,
 } from '@/lib/master-data/upload-request-nav';
 import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
-import { cn } from '@/lib/utils/cn';
 
 const ACCEPT = '.csv,.xlsx,.xls';
 const FILTERS: Array<MasterDataUploadRequestStatus | 'all'> = [
@@ -144,44 +147,58 @@ export function EmployeeMyDataPanel() {
   };
 
   return (
-    <AttendanceFullBleed className="gap-4 px-4 py-4 sm:px-5">
+    <DataPageShell
+      title="My Data"
+      subtitle="Upload contacts by month folder. After DB Admin approval, open any file in Excel view to work on leads."
+      actions={
+        <>
+          <input
+            ref={inputRef}
+            type="file"
+            accept={ACCEPT}
+            className="hidden"
+            onChange={onFileChange}
+          />
+          <button
+            type="button"
+            disabled={uploading}
+            onClick={() => inputRef.current?.click()}
+            className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-[#2568b8] shadow-md transition-all hover:bg-[#e8f1fb] active:scale-[0.98] disabled:opacity-50"
+          >
+            {uploading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="h-4 w-4" />
+            )}
+            Upload file
+          </button>
+        </>
+      }
+    >
       <ExcelSheetShell
-        title="My Data"
+        title="How it works"
         rowCount={requests.length}
+        countUnit="file"
         loading={loading}
-        toolbar={
-          <div className="flex w-full flex-wrap items-center gap-2">
-            <span className="font-medium text-slate-700">
-              Upload a file — it goes into the current month folder (Jan–Dec). Open any file in
-              Excel format to work on it after DB Admin approval.
-            </span>
-            <input
-              ref={inputRef}
-              type="file"
-              accept={ACCEPT}
-              className="hidden"
-              onChange={onFileChange}
-            />
-            <button
-              type="button"
-              disabled={uploading}
-              onClick={() => inputRef.current?.click()}
-              className="ml-auto inline-flex items-center gap-2 rounded-lg bg-[#217346] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1a5c38] disabled:opacity-50"
-            >
-              {uploading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Upload className="h-4 w-4" />
-              )}
-              Upload file
-            </button>
-          </div>
-        }
-        hint="Employee upload workflow"
+        hint="Files land in the current month folder automatically"
       >
-        <div className="bg-white px-4 py-3 text-sm text-slate-600">
-          Files are organized in month folders from January to December. Pick a folder, then open
-          your file to edit in Excel view.
+        <div className="grid gap-3 px-4 py-4 sm:grid-cols-3">
+          {[
+            { step: '1', title: 'Upload', desc: 'CSV or Excel — filed in Jan–Dec folders' },
+            { step: '2', title: 'DB Admin review', desc: 'Approval before you can edit' },
+            { step: '3', title: 'Excel view', desc: 'Open approved files to work on contacts' },
+          ].map((item) => (
+            <div
+              key={item.step}
+              className="rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-3 transition-colors hover:border-[#2e7ad1]/20 hover:bg-[#e8f1fb]/30"
+            >
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#2e7ad1] text-[11px] font-bold text-white">
+                {item.step}
+              </span>
+              <p className="mt-2 text-sm font-semibold text-slate-900">{item.title}</p>
+              <p className="mt-0.5 text-xs text-slate-600">{item.desc}</p>
+            </div>
+          ))}
         </div>
       </ExcelSheetShell>
 
@@ -200,22 +217,14 @@ export function EmployeeMyDataPanel() {
             emptyMessage={`No files in ${meta.monthLabel} ${meta.year}`}
             toolbar={
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium text-slate-700">Folder:</span>
-                <span className="border border-[#c6c6c6] bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700">
-                  {meta.monthLabel} {meta.year}
-                </span>
-                <span className="font-medium text-slate-700">Filter:</span>
+                <span className={dataToolbarBadge()}>{meta.monthLabel} {meta.year}</span>
+                <span className="font-medium text-slate-600">Filter:</span>
                 {FILTERS.map((item) => (
                   <button
                     key={item}
                     type="button"
                     onClick={() => setFilter(item)}
-                    className={cn(
-                      'rounded-lg px-3 py-1.5 text-xs font-semibold capitalize',
-                      filter === item
-                        ? 'bg-[#217346] text-white'
-                        : 'border border-slate-200 text-slate-600 hover:bg-slate-50',
-                    )}
+                    className={dataFilterPill(filter === item)}
                   >
                     {item === 'all' ? 'All' : item.replace(/_/g, ' ')}
                   </button>
@@ -256,7 +265,6 @@ export function EmployeeMyDataPanel() {
             : undefined
         }
       />
-
-    </AttendanceFullBleed>
+    </DataPageShell>
   );
 }

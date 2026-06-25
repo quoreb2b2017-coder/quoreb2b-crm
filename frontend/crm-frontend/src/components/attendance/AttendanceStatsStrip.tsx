@@ -14,7 +14,7 @@ export interface AttendanceStatItem {
 }
 
 const toneValue: Record<string, string> = {
-  green: 'text-[#217346]',
+  green: 'text-[#2e7ad1]',
   red: 'text-[#c00000]',
   blue: 'text-[#2e75b6]',
   violet: 'text-violet-700',
@@ -72,9 +72,9 @@ function AttendanceMetric({ stat, index }: { stat: AttendanceStatItem; index: nu
   return (
     <div
       className={cn(
-        'flex min-h-[76px] flex-1 flex-col justify-center border-r border-[#e0e0e0] px-3 py-3 text-center last:border-r-0',
-        'transition-colors duration-150 ease-out hover:bg-[#e7f3ff]/40',
-        index % 2 === 0 ? 'bg-white' : 'bg-[#fafafa]',
+        'flex min-h-[76px] flex-1 flex-col justify-center border-r border-slate-100 px-3 py-3 text-center last:border-r-0',
+        'transition-colors duration-150 ease-out hover:bg-[#e8f1fb]/35',
+        index % 2 === 0 ? 'bg-white' : 'bg-slate-50/60',
       )}
       style={{ animationDelay: `${index * 40}ms` }}
     >
@@ -86,7 +86,7 @@ function AttendanceMetric({ stat, index }: { stat: AttendanceStatItem; index: nu
         (stat.checkHistoryHref ? (
           <a
             href={stat.checkHistoryHref}
-            className="mt-2 inline-flex items-center justify-center gap-0.5 text-[11px] font-semibold text-[#217346] hover:underline"
+            className="mt-2 inline-flex items-center justify-center gap-0.5 text-[11px] font-semibold text-[#2e7ad1] hover:underline"
           >
             View history <ChevronRight className="h-3 w-3" />
           </a>
@@ -94,7 +94,7 @@ function AttendanceMetric({ stat, index }: { stat: AttendanceStatItem; index: nu
           <button
             type="button"
             onClick={stat.onCheckHistory}
-            className="mt-2 text-[11px] font-semibold text-[#217346] hover:underline"
+            className="mt-2 text-[11px] font-semibold text-[#2e7ad1] hover:underline"
           >
             View history →
           </button>
@@ -119,27 +119,27 @@ function PaidLeaveXlPanel({ stats }: { stats: AttendanceStatItem[] }) {
   const cells = [
     { label: 'Total paid', value: allowance, tone: 'text-slate-900' },
     { label: 'Paid used', value: used, tone: 'text-[#2e75b6]' },
-    { label: 'Remaining', value: remaining, tone: 'text-[#217346]' },
+    { label: 'Remaining', value: remaining, tone: 'text-[#2e7ad1]' },
     { label: 'Unpaid used', value: unpaid, tone: 'text-[#c00000]' },
   ];
 
   return (
-    <div className="overflow-hidden border border-[#b4b4b4] bg-[#e6e6e6] shadow-sm transition-shadow duration-200 hover:shadow-md sm:rounded-sm">
+    <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm transition-all duration-200 hover:shadow-md">
       <XlSheetHeader
         title="Paid leave balance"
-        variant="violet"
+        variant="green"
         meta={`Jan – Dec · ${allowance} days`}
       />
-      <div className="border-b border-[#d4d4d4] bg-[#f3f3f3] px-3 py-1.5 text-[11px] text-slate-600">
+      <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-1.5 text-[11px] text-slate-600">
         Auto-updates when leave is approved
       </div>
-      <div className="grid grid-cols-2 divide-x divide-[#e0e0e0] border-b border-[#e0e0e0] md:grid-cols-4">
+      <div className="grid grid-cols-2 divide-x divide-slate-100 border-b border-slate-100 md:grid-cols-4">
         {cells.map((cell, i) => (
           <div
             key={cell.label}
             className={cn(
-              'px-3 py-3 text-center transition-colors duration-150 hover:bg-[#ede9fe]/50',
-              i % 2 === 0 ? 'bg-white' : 'bg-[#fafafa]',
+              'px-3 py-3 text-center transition-colors duration-150 hover:bg-[#e8f1fb]/40',
+              i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50',
             )}
           >
             <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{cell.label}</p>
@@ -147,14 +147,14 @@ function PaidLeaveXlPanel({ stats }: { stats: AttendanceStatItem[] }) {
           </div>
         ))}
       </div>
-      <div className="bg-white px-3 py-2.5">
-        <div className="mb-1 flex justify-between text-[10px] font-semibold text-slate-500">
+      <div className="bg-white px-4 py-3">
+        <div className="mb-1.5 flex justify-between text-[10px] font-semibold text-slate-500">
           <span>Used {used} ({usedPct}%)</span>
-          <span className="text-[#217346]">{remaining} remaining</span>
+          <span className="text-[#2e7ad1]">{remaining} remaining</span>
         </div>
-        <div className="h-2 overflow-hidden rounded-sm border border-[#e0e0e0] bg-[#f2f2f2]">
+        <div className="h-2 overflow-hidden rounded-full bg-slate-100">
           <div
-            className="h-full bg-gradient-to-r from-[#217346] to-[#2e9b5f] transition-all duration-500 ease-out"
+            className="h-full rounded-full bg-gradient-to-r from-[#2568b8] to-[#2e7ad1] transition-all duration-500 ease-out"
             style={{ width: `${Math.min(100, usedPct)}%` }}
           />
         </div>
@@ -188,7 +188,7 @@ export function AttendanceStatsStrip({
       )}
     >
       {attendance.length > 0 && (
-        <div className="overflow-hidden border border-[#b4b4b4] bg-[#e6e6e6] shadow-sm transition-shadow duration-200 hover:shadow-md sm:rounded-sm">
+        <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm transition-all duration-200 hover:shadow-md">
           <XlSheetHeader title="Attendance summary" meta={`${attendance.length} metrics`} />
           <div className="flex flex-wrap sm:flex-nowrap">
             {attendance.map((stat, i) => (

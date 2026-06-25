@@ -1,9 +1,8 @@
 'use client';
 
-import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronRight, Download, Folder, Loader2, RefreshCw, Upload } from 'lucide-react';
+import { Download, Loader2, RefreshCw, Upload } from 'lucide-react';
 import { parseSpreadsheetFile } from '@/lib/spreadsheet/parse-spreadsheet';
 import { downloadSpreadsheetXlsx } from '@/lib/spreadsheet/export-spreadsheet';
 import {
@@ -14,16 +13,20 @@ import {
 } from '@/lib/api/master-data.service';
 import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
-import { AttendanceFullBleed } from '@/components/attendance/AttendanceFullBleed';
 import { ExcelSheetShell } from '@/components/attendance/ExcelSheetShell';
+import {
+  DataPageShell,
+  dataFilterPill,
+  dataToolbarBadge,
+} from '@/components/master-data/DataPageShell';
 import { SpreadsheetPreviewModal } from '@/components/spreadsheet/SpreadsheetPreviewModal';
 import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
 import { MasterDataUploadRequestList } from '@/components/master-data/MasterDataUploadRequestList';
+import { MasterDataUploadMonthExplorer } from '@/components/master-data/MasterDataUploadMonthExplorer';
 import {
   resolveDuplicatesOpenPath,
   uploadRequestFilePath,
 } from '@/lib/master-data/upload-request-nav';
-import { cn } from '@/lib/utils/cn';
 import { useCanExportSpreadsheet } from '@/hooks/useSpreadsheetCopyGuard';
 
 const ACCEPT = '.csv,.xlsx,.xls';
@@ -33,39 +36,6 @@ const FILTERS: Array<MasterDataUploadRequestStatus | 'all'> = [
   'approved',
   'rejected',
 ];
-const MONTHS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-] as const;
-
-function requestMonth(request: MasterDataUploadRequest) {
-  const date = request.createdAt ? new Date(request.createdAt) : new Date();
-  return {
-    month: date.getMonth() + 1,
-    year: date.getFullYear(),
-  };
-}
-
-function formatRequestDate(value?: string) {
-  if (!value) return '—';
-  return new Date(value).toLocaleString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
 
 export function DbAdminMasterDataUploadPanel() {
   const router = useRouter();
@@ -76,11 +46,12 @@ export function DbAdminMasterDataUploadPanel() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [filter, setFilter] = useState<MasterDataUploadRequestStatus | 'all'>('all');
-  const currentYear = new Date().getFullYear();
-  const currentMonth = new Date().getMonth() + 1;
-  const [selectedYear, setSelectedYear] = useState(currentYear);
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [pendingUpload, setPendingUpload] = useState<SpreadsheetData | null>(null);
+
+  const filteredRequests = useMemo(
+    () => requests.filter((request) => (filter === 'all' ? true : request.status === filter)),
+    [filter, requests],
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -102,69 +73,6 @@ export function DbAdminMasterDataUploadPanel() {
   useEffect(() => {
     load();
   }, [load]);
-
-  const availableYears = useMemo(() => {
-    const years = new Set<number>([currentYear]);
-    requests.forEach((request) => years.add(requestMonth(request).year));
-    return Array.from(years).sort((a, b) => b - a);
-  }, [currentYear, requests]);
-
-  useEffect(() => {
-    if (!availableYears.includes(selectedYear)) {
-      setSelectedYear(availableYears[0] ?? currentYear);
-    }
-  }, [availableYears, currentYear, selectedYear]);
-
-  const requestsByMonth = useMemo(() => {
-    const map = new Map<number, MasterDataUploadRequest[]>();
-    for (let month = 1; month <= 12; month += 1) {
-      map.set(month, []);
-    }
-    requests.forEach((request) => {
-      const period = requestMonth(request);
-      if (period.year !== selectedYear) return;
-      map.get(period.month)?.push(request);
-    });
-    map.forEach((list) => {
-      list.sort((a, b) => {
-        const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return tb - ta;
-      });
-    });
-    return map;
-  }, [requests, selectedYear]);
-
-  useEffect(() => {
-    if ((requestsByMonth.get(selectedMonth)?.length ?? 0) > 0) return;
-    for (let month = 12; month >= 1; month -= 1) {
-      if ((requestsByMonth.get(month)?.length ?? 0) > 0) {
-        setSelectedMonth(month);
-        return;
-      }
-    }
-    setSelectedMonth(currentMonth);
-  }, [currentMonth, requestsByMonth, selectedMonth]);
-
-  const selectedMonthRequests = useMemo(
-    () => requestsByMonth.get(selectedMonth) ?? [],
-    [requestsByMonth, selectedMonth],
-  );
-
-  const visibleRequests = useMemo(
-    () =>
-      selectedMonthRequests.filter((request) =>
-        filter === 'all' ? true : request.status === filter,
-      ),
-    [filter, selectedMonthRequests],
-  );
-
-  const totalInYear = useMemo(
-    () => Array.from(requestsByMonth.values()).reduce((sum, list) => sum + list.length, 0),
-    [requestsByMonth],
-  );
-
-  const selectedMonthLabel = MONTHS[selectedMonth - 1] ?? 'Month';
 
   const handleTemplateDownload = async () => {
     if (!template) return;
@@ -251,86 +159,69 @@ export function DbAdminMasterDataUploadPanel() {
   };
 
   return (
-    <AttendanceFullBleed className="gap-4 px-4 py-4 sm:px-5">
+    <DataPageShell
+      title="My uploads"
+      subtitle="Upload data for Super Admin approval. Columns align to the master template when available."
+      actions={
+        <>
+          <button
+            type="button"
+            onClick={load}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-white/30 bg-white/10 px-3 py-2 text-sm font-semibold text-white backdrop-blur-sm transition-all hover:bg-white/18 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+          {canExport && (
+            <button
+              type="button"
+              onClick={handleTemplateDownload}
+              disabled={!template}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-white/30 bg-white/10 px-3 py-2 text-sm font-semibold text-white backdrop-blur-sm transition-all hover:bg-white/18 disabled:opacity-50"
+            >
+              <Download className="h-4 w-4" />
+              Template
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={uploading || loading}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-[#2568b8] shadow-md transition-all hover:bg-[#e8f1fb] active:scale-[0.98] disabled:opacity-50"
+          >
+            {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            Upload file
+          </button>
+        </>
+      }
+    >
       <ExcelSheetShell
-        title="My Data"
-        rowCount={template?.headers.length ?? 0}
+        title="Master template"
+        rowCount={template?.columnCount ?? 0}
+        countUnit="column"
         loading={loading}
-        toolbar={
-          <div className="flex w-full flex-wrap items-center gap-2">
-            <span className="font-medium text-slate-700">
-              Upload your file for Super Admin approval. If a master template exists, columns are
-              aligned to it; missing fields become &quot;-&quot;.
-            </span>
-            <span className="text-slate-300">|</span>
-            <button
-              type="button"
-              onClick={load}
-              disabled={loading}
-              className="inline-flex items-center gap-1.5 border border-[#c6c6c6] bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-[#fafafa] disabled:opacity-50"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
-              Refresh
-            </button>
-            {canExport && (
-              <button
-                type="button"
-                onClick={handleTemplateDownload}
-                disabled={!template}
-                className="inline-flex items-center gap-1.5 border border-[#c6c6c6] bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-[#fafafa] disabled:opacity-50"
-              >
-                <Download className="h-3.5 w-3.5" />
-                Template
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              disabled={uploading || loading}
-              className="inline-flex items-center gap-1.5 border border-[#6d28d9] bg-[#6d28d9] px-3 py-1 text-xs font-semibold text-white hover:bg-[#5b21b6] disabled:opacity-50"
-            >
-              {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-              Upload file
-            </button>
-          </div>
-        }
-        hint="Use the same columns as master template"
+        hint="Approval flow: DB Admin → Super Admin → merge"
       >
-        <div className="overflow-x-auto bg-white">
-          <table className="w-full min-w-full border-collapse text-[13px]">
-            <thead>
-              <tr>
-                {['Master sheet', 'Columns', 'Contacts in master', 'Missing rule', 'Approval flow'].map((h) => (
-                  <th
-                    key={h}
-                    className="border border-[#c6c6c6] bg-[#f2f2f2] px-3 py-2 text-left text-xs font-semibold text-slate-700"
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className="border border-[#e0e0e0] px-3 py-2 text-slate-900">
-                  {template?.sheetName ?? 'No shared template'}
-                </td>
-                <td className="border border-[#e0e0e0] px-3 py-2 text-slate-900">
-                  {template?.columnCount ?? 0}
-                </td>
-                <td className="border border-[#e0e0e0] px-3 py-2 text-slate-900">
-                  {template?.rowCount ?? 0}
-                </td>
-                <td className="border border-[#e0e0e0] px-3 py-2 text-slate-900">Auto-fill "-"</td>
-                <td className="border border-[#e0e0e0] px-3 py-2 text-slate-900">
-                  DB Admin request → Super Admin review → merge
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <div className="grid gap-3 px-4 py-4 sm:grid-cols-2 lg:grid-cols-5">
+          {[
+            { label: 'Master sheet', value: template?.sheetName ?? 'No template' },
+            { label: 'Columns', value: template?.columnCount ?? 0 },
+            { label: 'Contacts in master', value: template?.rowCount ?? 0 },
+            { label: 'Missing fields', value: 'Auto-fill "-"' },
+            { label: 'Status', value: 'Awaiting Super Admin' },
+          ].map((item) => (
+            <div
+              key={item.label}
+              className="rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-3 transition-colors hover:border-[#2e7ad1]/20"
+            >
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{item.label}</p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">{item.value}</p>
+            </div>
+          ))}
         </div>
         {template ? (
-          <div className="border-t border-[#d4d4d4] bg-white px-3 py-3">
+          <div className="border-t border-slate-100 bg-white px-4 py-3">
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
               Template columns
             </p>
@@ -338,7 +229,7 @@ export function DbAdminMasterDataUploadPanel() {
               {template.headers.map((header) => (
                 <span
                   key={header}
-                  className="border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-medium text-violet-700"
+                  className="rounded-lg border border-[#2e7ad1]/20 bg-[#e8f1fb] px-2.5 py-1 text-[11px] font-medium text-[#2568b8]"
                 >
                   {header}
                 </span>
@@ -346,9 +237,8 @@ export function DbAdminMasterDataUploadPanel() {
             </div>
           </div>
         ) : (
-          <div className="border-t border-[#d4d4d4] bg-white px-3 py-6 text-center text-sm text-slate-500">
-            No master template yet — you can still upload your file. Super Admin will review and
-            approve it.
+          <div className="border-t border-slate-100 bg-white px-4 py-8 text-center text-sm text-slate-500">
+            No master template yet — you can still upload. Super Admin will review and approve.
           </div>
         )}
       </ExcelSheetShell>
@@ -361,193 +251,40 @@ export function DbAdminMasterDataUploadPanel() {
         onChange={onFileChange}
       />
 
-      <ExcelSheetShell
+      <MasterDataUploadMonthExplorer
         title="Upload folders sent to Super Admin"
-        rowCount={totalInYear}
-        toolbar={
-          <div className="flex w-full flex-wrap items-center gap-2">
-            <span className="font-medium text-slate-700">Year</span>
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="border border-[#c6c6c6] bg-white px-2 py-1 text-xs font-semibold text-slate-700 outline-none"
-            >
-              {availableYears.map((year) => (
-                <option key={year} value={year}>
-                  {year}
-                </option>
-              ))}
-            </select>
-            <span className="border border-[#c6c6c6] bg-white px-2 py-1 text-[11px] text-slate-700">
-              12 folders · Jan-Dec
-            </span>
-            <span className="border border-[#c6c6c6] bg-white px-2 py-1 text-[11px] text-slate-700">
-              {totalInYear} upload{totalInYear === 1 ? '' : 's'} in {selectedYear}
-            </span>
-          </div>
-        }
-        hint="Month-wise upload history"
-      >
-        <div className="flex min-h-0 overflow-hidden bg-white">
-          <aside className="w-[220px] shrink-0 border-r border-[#d4d4d4]">
-            <div className="border-b border-[#d4d4d4] bg-[#f2f2f2] px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-              {selectedYear} folders
-            </div>
-            <table className="w-full border-collapse text-xs">
-              <thead className="bg-[#fafafa]">
-                <tr>
-                  <th className="border border-[#e0e0e0] px-2 py-1 text-left text-[10px] uppercase text-slate-500" />
-                  <th className="border border-[#e0e0e0] px-2 py-1 text-left text-[10px] uppercase text-slate-500">
-                    Month
-                  </th>
-                  <th className="border border-[#e0e0e0] px-2 py-1 text-right text-[10px] uppercase text-slate-500">
-                    #
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {MONTHS.map((monthLabel, index) => {
-                  const month = index + 1;
-                  const count = requestsByMonth.get(month)?.length ?? 0;
-                  const active = selectedMonth === month;
-                  return (
-                    <tr
-                      key={monthLabel}
-                      onClick={() => setSelectedMonth(month)}
-                      className={cn(
-                        'cursor-pointer',
-                        active ? 'bg-[#e2efda]' : 'hover:bg-[#fafafa]',
-                      )}
-                    >
-                      <td className="border border-[#e0e0e0] px-2 py-1.5 text-center">
-                        <Folder
-                          className={cn(
-                            'mx-auto h-3.5 w-3.5',
-                            active ? 'text-[#217346]' : 'text-slate-400',
-                          )}
-                        />
-                      </td>
-                      <td className="border border-[#e0e0e0] px-2 py-1.5 font-medium text-slate-700">
-                        {monthLabel}
-                      </td>
-                      <td className="border border-[#e0e0e0] px-2 py-1.5 text-right font-mono text-slate-800">
-                        {count}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </aside>
-
-          <section className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#d4d4d4] bg-[#e2efda] px-3 py-2">
-              <div className="flex items-center gap-2 text-sm font-semibold text-[#217346]">
-                <ChevronRight className="h-4 w-4" />
-                <span>{selectedMonthLabel} folder</span>
-              </div>
-              <span className="text-xs text-slate-600">
-                {selectedMonthRequests.length} upload{selectedMonthRequests.length === 1 ? '' : 's'} sent to Super Admin
-              </span>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] border-collapse text-sm">
-                <thead className="bg-[#f8fafc]">
-                  <tr>
-                    {['File', 'Uploaded on', 'Contacts', 'Shared', 'Super Admin status', 'Reason'].map((label) => (
-                      <th
-                        key={label}
-                        className="border border-[#e0e0e0] px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-600"
-                      >
-                        {label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedMonthRequests.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={6}
-                        className="border border-[#e0e0e0] px-4 py-10 text-center text-slate-500"
-                      >
-                        No uploads in {selectedMonthLabel} {selectedYear} yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    selectedMonthRequests.map((request) => (
-                      <tr key={request.id} className="even:bg-[#fafafa]">
-                        <td className="border border-[#e0e0e0] px-3 py-2 text-slate-900">
-                          <div className="font-medium">{request.fileName}</div>
-                          <div className="text-xs text-slate-500">{request.sheetName}</div>
-                        </td>
-                        <td className="border border-[#e0e0e0] px-3 py-2 text-slate-700">
-                          {formatRequestDate(request.createdAt)}
-                        </td>
-                        <td className="border border-[#e0e0e0] px-3 py-2 text-slate-700">
-                          {request.rowCount}
-                        </td>
-                        <td className="border border-[#e0e0e0] px-3 py-2 text-slate-700">
-                          Yes, shared
-                        </td>
-                        <td className="border border-[#e0e0e0] px-3 py-2">
-                          <span
-                            className={cn(
-                              'inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize',
-                              request.status === 'approved'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : request.status === 'rejected'
-                                  ? 'bg-red-100 text-red-800'
-                                  : 'bg-amber-100 text-amber-800',
-                            )}
-                          >
-                            {request.status}
-                          </span>
-                        </td>
-                        <td className="border border-[#e0e0e0] px-3 py-2 text-slate-700">
-                          {request.reason || (request.status === 'pending' ? 'Waiting for review' : '—')}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </div>
-      </ExcelSheetShell>
-
-      <MasterDataUploadRequestList
-        title={`${selectedMonthLabel} ${selectedYear} upload requests`}
-        requests={visibleRequests}
+        requests={filteredRequests}
         loading={loading}
-        emptyMessage={`No upload requests in ${selectedMonthLabel} ${selectedYear}`}
-        toolbar={
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium text-slate-700">Folder:</span>
-            <span className="border border-[#c6c6c6] bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700">
-              {selectedMonthLabel} {selectedYear}
-            </span>
-            <span className="font-medium text-slate-700">Filter:</span>
-            {FILTERS.map((item) => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => setFilter(item)}
-                className={`border px-2.5 py-1 text-[11px] font-semibold ${
-                  filter === item
-                    ? 'border-violet-600 bg-violet-600 text-white'
-                    : 'border-[#c6c6c6] bg-white text-slate-600 hover:bg-[#fafafa]'
-                }`}
-              >
-                {item === 'all' ? 'All' : item[0].toUpperCase() + item.slice(1)}
-              </button>
-            ))}
-          </div>
-        }
-        onViewDuplicates={openDuplicates}
-        onViewFile={openRequestFile}
+        hint="Month-wise upload history"
+        statusColumnLabel="Super Admin status"
+        emptyFolderMessage="No uploads in this month yet."
+        onOpenRequest={openRequestFile}
+        renderDetails={(monthRequests, meta) => (
+          <MasterDataUploadRequestList
+            title={`${meta.monthLabel} ${meta.year} upload requests`}
+            requests={monthRequests}
+            loading={loading}
+            emptyMessage={`No upload requests in ${meta.monthLabel} ${meta.year}`}
+            toolbar={
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={dataToolbarBadge()}>{meta.monthLabel} {meta.year}</span>
+                <span className="font-medium text-slate-600">Filter:</span>
+                {FILTERS.map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    onClick={() => setFilter(item)}
+                    className={dataFilterPill(filter === item)}
+                  >
+                    {item === 'all' ? 'All' : item[0].toUpperCase() + item.slice(1)}
+                  </button>
+                ))}
+              </div>
+            }
+            onViewDuplicates={openDuplicates}
+            onViewFile={openRequestFile}
+          />
+        )}
       />
 
       <SpreadsheetPreviewModal
@@ -579,6 +316,6 @@ export function DbAdminMasterDataUploadPanel() {
         }
       />
 
-    </AttendanceFullBleed>
+    </DataPageShell>
   );
 }

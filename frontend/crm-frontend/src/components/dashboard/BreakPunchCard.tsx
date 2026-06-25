@@ -12,9 +12,9 @@ import {
 type Accent = 'emerald' | 'violet' | 'admin';
 
 const accentBtn: Record<Accent, string> = {
-  emerald: 'bg-emerald-600 hover:bg-emerald-700 ring-emerald-600/20',
-  violet: 'bg-violet-600 hover:bg-violet-700 ring-violet-600/20',
-  admin: 'bg-[#217346] hover:bg-[#1a5c38] ring-emerald-700/20',
+  emerald: 'bg-[#2e7ad1] hover:bg-[#2568b8] ring-[#2e7ad1]/20',
+  violet: 'bg-[#2e7ad1] hover:bg-[#2568b8] ring-[#2e7ad1]/20',
+  admin: 'bg-[#2e7ad1] hover:bg-[#2568b8] ring-[#2e7ad1]/20',
 };
 
 function CompactBreakTile({
@@ -56,7 +56,7 @@ function CompactBreakTile({
         'flex min-w-0 flex-1 items-center gap-2.5 rounded-lg border px-2.5 py-2 transition-all sm:gap-3 sm:px-3',
         isTea
           ? 'border-amber-200/70 bg-gradient-to-r from-amber-50/90 to-orange-50/50'
-          : 'border-emerald-200/70 bg-gradient-to-r from-emerald-50/90 to-teal-50/50',
+          : 'border-slate-200/70 bg-gradient-to-r from-[#e8f1fb]/90 to-white',
         isActive && 'border-rose-300/80 ring-1 ring-rose-200/80',
         locked && 'opacity-50',
         !hasTime && !isActive && 'opacity-60',
@@ -65,7 +65,7 @@ function CompactBreakTile({
       <div
         className={cn(
           'relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg shadow-sm',
-          isTea ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-800',
+          isTea ? 'bg-amber-100 text-amber-700' : 'bg-[#e8f1fb] text-[#2568b8]',
         )}
       >
         <Icon className="h-4 w-4" />

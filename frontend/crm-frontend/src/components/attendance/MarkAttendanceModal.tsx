@@ -203,7 +203,7 @@ export function MarkAttendanceModal({
                 type="checkbox"
                 checked={isPaidLeave}
                 onChange={(e) => setIsPaidLeave(e.target.checked)}
-                className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                className="w-4 h-4 rounded border-slate-300 text-[#2e7ad1] focus:ring-[#2e7ad1]"
               />
               <span className="text-sm font-medium text-slate-700">
                 Paid Leave
@@ -235,7 +235,7 @@ export function MarkAttendanceModal({
           </div>
         )}
         {success && (
-          <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+          <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-[#2568b8]">
             <CheckCircle className="h-4 w-4 flex-shrink-0" />
             {success}
           </div>

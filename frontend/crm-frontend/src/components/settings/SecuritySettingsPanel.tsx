@@ -34,7 +34,7 @@ const ITEMS = [
 const TONE_ICON: Record<string, string> = {
   amber: 'bg-amber-50 text-amber-700 border-amber-100',
   blue: 'bg-sky-50 text-sky-700 border-sky-100',
-  green: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+  green: 'bg-emerald-50 text-[#2e7ad1] border-emerald-100',
   violet: 'bg-violet-50 text-violet-700 border-violet-100',
 };
 

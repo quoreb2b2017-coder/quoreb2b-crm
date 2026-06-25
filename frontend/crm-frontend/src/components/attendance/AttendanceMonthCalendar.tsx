@@ -154,7 +154,7 @@ function CalendarDayButton({
               : 'max-w-[34px] text-[11px] sm:max-w-[36px]',
           !isOutside && 'hover:brightness-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60',
           isOutside && 'cursor-default border-transparent',
-          isToday && cell.type === 'day' && 'shadow-sm ring-2 ring-emerald-500/30',
+          isToday && cell.type === 'day' && 'shadow-sm ring-2 ring-[#2e7ad1]/30',
           selected && !isToday && 'ring-2 ring-slate-300/80',
           status === 'future' && 'font-medium',
         )}
@@ -169,7 +169,7 @@ function CalendarDayButton({
           {quotaMet && (
             <CheckCircle2
               className={cn(
-                'shrink-0 text-emerald-600',
+                'shrink-0 text-[#2e7ad1]',
                 compactCells ? 'h-2 w-2' : 'h-2.5 w-2.5',
               )}
               aria-label={`${DAILY_NET_WORK_TARGET_LABEL} complete`}
@@ -211,7 +211,7 @@ function CalendarDayButton({
         )}
         {quotaMet && (
           <CheckCircle2
-            className="absolute -right-0.5 -top-0.5 h-3 w-3 text-emerald-600"
+            className="absolute -right-0.5 -top-0.5 h-3 w-3 text-[#2e7ad1]"
             aria-label={`${DAILY_NET_WORK_TARGET_LABEL} complete`}
           />
         )}
@@ -243,7 +243,7 @@ function CalendarDayButton({
       <span className={cn('leading-none', isToday && cell.type === 'day' && 'text-white')}>{cell.day}</span>
       {quotaMet && (
         <CheckCircle2
-          className="absolute -right-0.5 -top-0.5 h-3.5 w-3.5 text-emerald-600 drop-shadow"
+          className="absolute -right-0.5 -top-0.5 h-3.5 w-3.5 text-[#2e7ad1] drop-shadow"
           aria-label={`${DAILY_NET_WORK_TARGET_LABEL} complete`}
         />
       )}
@@ -275,7 +275,7 @@ function CompactLegend({ dense }: { dense?: boolean }) {
         </span>
       ))}
       <span className="inline-flex items-center gap-0.5">
-        <CheckCircle2 className={cn('text-emerald-600', dense ? 'h-2.5 w-2.5' : 'h-3 w-3')} />
+        <CheckCircle2 className={cn('text-[#2e7ad1]', dense ? 'h-2.5 w-2.5' : 'h-3 w-3')} />
         <span className={cn('font-medium text-slate-500', dense ? 'text-[9px]' : 'text-[10px]')}>
           {DAILY_TARGET_LEGEND.label}
         </span>

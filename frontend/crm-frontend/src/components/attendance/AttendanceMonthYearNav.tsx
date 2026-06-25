@@ -21,9 +21,9 @@ import { formatSelectedMonthsShort as formatSelectedShort } from '@/lib/attendan
 type Accent = 'emerald' | 'violet' | 'admin';
 
 const focusRing: Record<Accent, string> = {
-  emerald: 'focus:ring-emerald-500/40',
+  emerald: 'focus:ring-[#2e7ad1]/40',
   violet: 'focus:ring-violet-500/40',
-  admin: 'focus:ring-[#217346]/40',
+  admin: 'focus:ring-[#2e7ad1]/40',
 };
 
 interface AttendanceMonthYearNavProps {

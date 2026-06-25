@@ -7,7 +7,6 @@ import { RefreshCw, Database, Layers, Users } from 'lucide-react';
 import { WelcomeBanner } from '@/components/dashboard/WelcomeBanner';
 import { XlMetricCardSection } from '@/components/admin/XlMetricCards';
 import { fetchDbAdminDashboard, type DbAdminDashboardData } from '@/lib/api/analytics.service';
-import { formatActivityAction } from '@/lib/constants/activity-labels';
 import { extractApiError } from '@/lib/api/errors';
 import { cn } from '@/lib/utils/cn';
 import { AttendanceSummaryCard } from '@/components/attendance/EmployeeAttendanceSummaryCard';
@@ -16,7 +15,7 @@ import { DashboardBarRow } from '@/components/dashboard/DashboardBarRow';
 import {
   dashboardCard,
   dashboardCardHeader,
-  dashboardRefreshBtn,
+  dashboardBannerBtn,
   dashboardSectionTitle,
   dashboardLinkViolet,
 } from '@/components/dashboard/dashboard-ui';
@@ -91,74 +90,25 @@ export function DbAdminDashboard() {
 
   return (
     <DashboardPageShell>
-      <div className="dash-section">
-        <WelcomeBanner
-          variant="db_admin"
+      <WelcomeBanner
+        variant="db_admin"
           toolbar={
             <button
               type="button"
               onClick={() => void load({ silent: true })}
               disabled={loading}
-              className={cn(
-                dashboardRefreshBtn,
-                'border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white',
-              )}
+              className={dashboardBannerBtn}
             >
               <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
               Refresh
             </button>
           }
-        />
-      </div>
+      />
 
-      <div className="dash-section grid gap-4 lg:grid-cols-2">
-        <XlMetricCardSection
-          title="Database & services (live)"
-          headerVariant="green"
-          columns={2}
-          rows={[
-            {
-              label: 'MongoDB',
-              value: data.health.mongo,
-              note: data.health.mongoState ?? data.health.status,
-            },
-            {
-              label: 'API',
-              value: 'OK',
-              note:
-                data.health.status === 'ok'
-                  ? 'All services healthy'
-                  : 'Core API running — see Redis / Elasticsearch below',
-            },
-            {
-              label: 'Redis / queues',
-              value:
-                data.health.redis === 'disabled'
-                  ? 'Off'
-                  : data.health.redis === 'up'
-                    ? 'On'
-                    : data.health.redis === 'down'
-                      ? 'Down'
-                      : data.health.redis,
-              note:
-                data.health.redis === 'disabled'
-                  ? 'REDIS_ENABLED=false in .env'
-                  : data.health.redis === 'up'
-                    ? 'Memurai / BullMQ active'
-                    : data.health.redis === 'down'
-                      ? 'Start Memurai on port 6379'
-                      : 'Background jobs',
-            },
-            {
-              label: 'Elasticsearch',
-              value: data.health.elasticsearch === 'disabled' ? 'Off' : data.health.elasticsearch,
-              note: data.health.elasticsearch === 'disabled' ? 'Not configured' : 'Search',
-            },
-          ]}
-        />
+      <div className="dash-section">
         <XlMetricCardSection
           title="Your campaigns (from database)"
-          columns={2}
+          columns={6}
           rows={[
             { label: 'Total campaigns', value: b.total, note: `${b.owned} created by you` },
             { label: 'Shared with you', value: b.sharedWithMe, note: 'From admin' },
@@ -197,28 +147,28 @@ export function DbAdminDashboard() {
         <AttendanceSummaryCard basePath="/db-admin/attendance" variant="dashboard" accent="violet" />
       </div>
 
-      <div className="dash-section grid gap-4 lg:grid-cols-2">
-        <div className={cn(dashboardCard, 'p-4 sm:p-5')}>
+      <div className="dash-section grid gap-1.5 lg:grid-cols-2">
+        <div className={cn(dashboardCard, 'p-2 sm:p-2.5')}>
           <h3 className={dashboardSectionTitle()}>
-            <Layers className="h-4 w-4 text-violet-600" />
+            <Layers className="h-4 w-4 text-[#2e7ad1]" />
             Campaign split
           </h3>
-          <div className="space-y-3">
-            <DashboardBarRow label="Your campaigns" count={b.owned} total={batchTotal} color="bg-gradient-to-r from-[#1a5c38] to-emerald-500" />
+          <div className="space-y-2">
+            <DashboardBarRow label="Your campaigns" count={b.owned} total={batchTotal} color="bg-gradient-to-r from-[#2568b8] to-emerald-500" />
             <DashboardBarRow label="Admin shared" count={b.sharedWithMe} total={batchTotal} color="bg-gradient-to-r from-violet-600 to-purple-400" delay={60} />
           </div>
           <Link href="/db-admin/batches" className={dashboardLinkViolet}>
-            Open Campaigns →
+            Open all campaigns →
           </Link>
         </div>
 
         {data.masterData ? (
-          <div className={cn(dashboardCard, 'p-4 sm:p-5')}>
+          <div className={cn(dashboardCard, 'p-2 sm:p-2.5')}>
             <h3 className={dashboardSectionTitle()}>
-              <Database className="h-4 w-4 text-violet-600" />
+              <Database className="h-4 w-4 text-[#2e7ad1]" />
               Master data usage
             </h3>
-            <div className="space-y-3">
+            <div className="space-y-2">
               <DashboardBarRow
                 label="In campaigns"
                 count={data.masterData.batchedRows}
@@ -229,7 +179,7 @@ export function DbAdminDashboard() {
                 label="Still available"
                 count={data.masterData.availableRows}
                 total={data.masterData.totalRows}
-                color="bg-gradient-to-r from-[#1a5c38] to-emerald-500"
+                color="bg-gradient-to-r from-[#2568b8] to-emerald-500"
                 delay={60}
               />
             </div>
@@ -242,7 +192,7 @@ export function DbAdminDashboard() {
         )}
       </div>
 
-      <div className="dash-section grid gap-4 lg:grid-cols-2">
+      <div className="dash-section">
         <div className={dashboardCard}>
           <div className={dashboardCardHeader}>Recent campaigns</div>
           <div className="dash-table-wrap">
@@ -287,49 +237,6 @@ export function DbAdminDashboard() {
                 )}
               </tbody>
             </table>
-          </div>
-        </div>
-
-        <div className={dashboardCard}>
-          <div className={dashboardCardHeader}>Your recent activity</div>
-          <div className="dash-table-wrap">
-            <table className="dash-table w-full text-xs">
-              <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
-                <tr className="border-b border-slate-100">
-                  <th className="px-3 py-2 text-left font-semibold">Action</th>
-                  <th className="px-3 py-2 text-left font-semibold">Detail</th>
-                  <th className="px-3 py-2 text-right font-semibold">When</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {data.recentActivity.length === 0 ? (
-                  <tr>
-                    <td colSpan={3} className="px-3 py-8 text-center text-slate-400">
-                      No activity logged yet
-                    </td>
-                  </tr>
-                ) : (
-                  data.recentActivity.map((a) => (
-                    <tr key={a.id} className="hover:bg-violet-50/40">
-                      <td className="px-3 py-2 font-medium text-slate-800">
-                        {formatActivityAction(a.action)}
-                      </td>
-                      <td className="max-w-[180px] truncate px-3 py-2 text-slate-500">
-                        {a.batchName ?? a.path ?? a.resource}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2 text-right text-slate-500">
-                        {formatWhen(a.occurredAt)}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-          <div className="border-t border-slate-100 px-4 py-2.5">
-            <Link href="/db-admin/activity-logs" className={dashboardLinkViolet}>
-              All activity logs →
-            </Link>
           </div>
         </div>
       </div>

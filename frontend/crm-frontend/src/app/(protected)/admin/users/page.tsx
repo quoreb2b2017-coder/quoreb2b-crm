@@ -127,7 +127,7 @@ export default function AdminUsersPage() {
     <div className="flex h-full min-h-0 w-full flex-col bg-[#e6e6e6]">
 
       {/* ── XL Page Header ── */}
-      <div className="flex flex-shrink-0 items-center justify-between border-b border-[#b4b4b4] bg-[#217346] px-4 py-2 text-white shadow-sm">
+      <div className="flex flex-shrink-0 items-center justify-between border-b border-[#b4b4b4] bg-[#2e7ad1] px-4 py-2 text-white shadow-sm">
         <div className="flex items-center gap-3">
           <span className="flex h-6 w-6 items-center justify-center rounded bg-white/20 text-[10px] font-bold">
             XL
@@ -139,7 +139,7 @@ export default function AdminUsersPage() {
         </div>
         <button
           onClick={openDrawer}
-          className="flex items-center gap-2 rounded-sm border border-white/30 bg-white px-3.5 py-1.5 text-sm font-semibold text-[#217346] shadow-sm transition-all duration-150 hover:bg-emerald-50 active:scale-[0.98]"
+          className="flex items-center gap-2 rounded-sm border border-white/30 bg-white px-3.5 py-1.5 text-sm font-semibold text-[#2e7ad1] shadow-sm transition-all duration-150 hover:bg-emerald-50 active:scale-[0.98]"
         >
           <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
@@ -249,7 +249,7 @@ export default function AdminUsersPage() {
               <select
                 value={form.role}
                 onChange={(e) => setForm({ ...form, role: e.target.value as RoleOption })}
-                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-[#217346]/40 outline-none text-sm bg-white"
+                className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-[#2e7ad1]/40 outline-none text-sm bg-white"
               >
                 {(Object.keys(roleLabels) as RoleOption[]).map((r) => (
                   <option key={r} value={r}>{roleLabels[r]}</option>
@@ -267,7 +267,7 @@ export default function AdminUsersPage() {
               required
             />
             <Input label="Password" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={8} />
-            {formMsg && <p className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-4 py-3">{formMsg}</p>}
+            {formMsg && <p className="text-sm text-[#2e7ad1] bg-emerald-50 border border-emerald-100 rounded-lg px-4 py-3">{formMsg}</p>}
             {formErr && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-4 py-3">{formErr}</p>}
           </form>
         </div>
@@ -275,7 +275,7 @@ export default function AdminUsersPage() {
           <button type="button" onClick={() => setDrawerOpen(false)} className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition-colors">
             Cancel
           </button>
-          <button type="submit" form="create-user-form" disabled={saving} className="flex-1 px-4 py-2.5 rounded-xl bg-[#217346] hover:bg-[#1a5c38] disabled:opacity-60 text-white text-sm font-medium transition-colors">
+          <button type="submit" form="create-user-form" disabled={saving} className="flex-1 px-4 py-2.5 rounded-xl bg-[#2e7ad1] hover:bg-[#2568b8] disabled:opacity-60 text-white text-sm font-medium transition-colors">
             {saving ? 'Creating...' : 'Create User'}
           </button>
         </div>

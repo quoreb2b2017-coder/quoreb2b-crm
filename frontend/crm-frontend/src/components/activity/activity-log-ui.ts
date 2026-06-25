@@ -2,20 +2,20 @@ import { formatActivityAction } from '@/lib/constants/activity-labels';
 
 const ROLE_BADGE: Record<string, string> = {
   super_admin: 'bg-gradient-to-r from-slate-700 to-slate-800 text-white ring-1 ring-slate-600/40',
-  admin: 'bg-violet-100 text-violet-800 ring-1 ring-violet-200',
+  admin: 'bg-violet-100 text-[#2568b8] ring-1 ring-violet-200',
   db_admin: 'bg-sky-100 text-sky-800 ring-1 ring-sky-200',
-  employee: 'bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200',
+  employee: 'bg-emerald-100 text-[#2568b8] ring-1 ring-emerald-200',
   client: 'bg-amber-100 text-amber-800 ring-1 ring-amber-200',
 };
 
 const ACTION_BADGE: Record<string, string> = {
-  LOGIN: 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200',
+  LOGIN: 'bg-emerald-50 text-[#2568b8] ring-1 ring-emerald-200',
   LOGOUT: 'bg-slate-100 text-slate-700 ring-1 ring-slate-200',
   IDLE_LOGOUT: 'bg-orange-50 text-orange-800 ring-1 ring-orange-200',
   LEAD_UPDATE: 'bg-blue-50 text-blue-800 ring-1 ring-blue-200',
   LEAD_TOUCH: 'bg-blue-50 text-blue-700 ring-1 ring-blue-100',
   LEAD_VIEW: 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-100',
-  USER_CREATE: 'bg-violet-50 text-violet-800 ring-1 ring-violet-200',
+  USER_CREATE: 'bg-violet-50 text-[#2568b8] ring-1 ring-violet-200',
   USER_DELETE: 'bg-red-50 text-red-700 ring-1 ring-red-200',
   USER_STATUS_CHANGE: 'bg-amber-50 text-amber-800 ring-1 ring-amber-200',
   MASTER_DATA_UPLOAD: 'bg-teal-50 text-teal-800 ring-1 ring-teal-200',
@@ -45,12 +45,12 @@ export function actionBadgeClass(action: string): string {
     return 'bg-blue-50 text-blue-800 ring-1 ring-blue-200';
   }
   if (action.startsWith('USER_')) {
-    return 'bg-violet-50 text-violet-800 ring-1 ring-violet-200';
+    return 'bg-violet-50 text-[#2568b8] ring-1 ring-violet-200';
   }
   if (action.startsWith('BATCH_')) {
     return 'bg-cyan-50 text-cyan-800 ring-1 ring-cyan-200';
   }
-  return 'bg-[#e2efda] text-[#217346] ring-1 ring-emerald-200';
+  return 'bg-[#e2efda] text-[#2e7ad1] ring-1 ring-emerald-200';
 }
 
 export function userInitials(name: string): string {
@@ -63,7 +63,7 @@ export function userInitials(name: string): string {
 export function avatarHue(name: string): string {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  const hues = ['#217346', '#2e75b6', '#7c3aed', '#0d9488', '#c2410c', '#be185d'];
+  const hues = ['#2e7ad1', '#2e75b6', '#7c3aed', '#0d9488', '#c2410c', '#be185d'];
   return hues[Math.abs(hash) % hues.length];
 }
 

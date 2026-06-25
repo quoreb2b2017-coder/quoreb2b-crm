@@ -125,6 +125,7 @@ export class BulkEmailVerificationController {
     @Param('id') id: string,
     @Query('minScore') minScore: string | undefined,
     @Query('strict') strict: string | undefined,
+    @Query('statuses') statuses: string | undefined,
     @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
     @Res() res: Response,
   ) {
@@ -134,6 +135,7 @@ export class BulkEmailVerificationController {
       actorFromJwt(user),
       Number.isFinite(score) ? score : 95,
       strict !== 'false',
+      statuses,
     );
     res.setHeader(
       'Content-Disposition',
@@ -143,7 +145,6 @@ export class BulkEmailVerificationController {
   }
 
   @Get('batches/:id/export')
-  @Roles(SystemRole.SUPER_ADMIN)
   @Header('Content-Type', 'text/csv')
   async exportRecords(
     @Param('id') id: string,

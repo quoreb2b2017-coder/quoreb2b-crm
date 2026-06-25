@@ -89,7 +89,7 @@ export class BulkEmailVerificationProcessorService implements OnModuleInit {
   }
 
   private stopOnValid(): boolean {
-    return this.config.get<boolean>('BULK_EMAIL_STOP_ON_VALID', true);
+    return this.config.get<string>('BULK_EMAIL_STOP_ON_VALID') !== 'false';
   }
 
   private maxPatternsPerProspect(): number {
@@ -426,28 +426,30 @@ export class BulkEmailVerificationProcessorService implements OnModuleInit {
     });
   }
 
-  /** Check-details column: valid only when mailbox layer passed */
+  /** User-facing check-details label aligned with verificationStatus tier. */
   private internalCheckStatus(
     status: EmailVerificationStatus,
     smtpResponse: string,
   ): string {
-    if (smtpResponse.includes('mailbox_check_failed')) return 'invalid';
-    if (smtpResponse.includes('smtp_ip_blocked_mx_pattern')) return 'unknown';
-    if (smtpResponse.includes('smtp_greylist') || smtpResponse.includes('450')) {
-      return 'unknown';
-    }
+    const r = smtpResponse.toLowerCase();
+    if (r.includes('mailbox_check_failed')) return 'invalid';
+    if (r.includes('smtp_ip_blocked')) return 'unknown';
+    if (r.includes('smtp_greylist') || /\b450\b/.test(r)) return 'unknown';
     switch (status) {
       case EmailVerificationStatus.VALID:
         return 'valid';
       case EmailVerificationStatus.LIKELY_VALID:
-        return 'unknown';
+        return 'likely';
       case EmailVerificationStatus.CATCH_ALL:
         return 'catch-all';
       case EmailVerificationStatus.INVALID:
         return 'invalid';
       case EmailVerificationStatus.RISKY:
         return 'do_not_mail';
+      case EmailVerificationStatus.UNKNOWN:
       default:
+        if (r.includes('catch_all')) return 'catch-all';
+        if (r.includes('port25') || r.includes('mailbox_unverified')) return 'unknown';
         return 'unknown';
     }
   }

@@ -3,16 +3,22 @@
 import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertCircle,
   Check,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
   Download,
   Folder,
+  HelpCircle,
+  Inbox,
   Loader2,
   Mail,
   Play,
   RefreshCw,
   RotateCcw,
+  ShieldAlert,
+  Sparkles,
   Trash2,
   Upload,
   Eye,
@@ -102,12 +108,60 @@ const STATUS_BADGE: Record<BatchStatus, string> = {
 };
 
 const RECORD_STATUS: Record<EmailVerificationStatus, string> = {
-  valid: 'bg-emerald-50 text-emerald-800',
-  likely_valid: 'bg-green-50 text-green-800',
-  catch_all: 'bg-amber-50 text-amber-800',
-  risky: 'bg-orange-50 text-orange-800',
-  invalid: 'bg-red-50 text-red-800',
-  unknown: 'bg-slate-100 text-slate-600',
+  valid: 'bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-200',
+  likely_valid: 'bg-green-50 text-green-800 ring-1 ring-inset ring-green-200',
+  catch_all: 'bg-amber-50 text-amber-900 ring-1 ring-inset ring-amber-200',
+  risky: 'bg-orange-50 text-orange-800 ring-1 ring-inset ring-orange-200',
+  invalid: 'bg-red-50 text-red-800 ring-1 ring-inset ring-red-200',
+  unknown: 'bg-slate-100 text-slate-600 ring-1 ring-inset ring-slate-200',
+};
+
+const METRIC_ACCENT: Record<
+  EmailVerificationStatus,
+  { card: string; border: string; label: string; dot: string; icon: typeof CheckCircle2 }
+> = {
+  valid: {
+    card: 'bg-emerald-50/80',
+    border: 'border-emerald-200',
+    label: 'text-emerald-800',
+    dot: 'bg-emerald-500',
+    icon: CheckCircle2,
+  },
+  likely_valid: {
+    card: 'bg-green-50/80',
+    border: 'border-green-200',
+    label: 'text-green-800',
+    dot: 'bg-green-500',
+    icon: Sparkles,
+  },
+  catch_all: {
+    card: 'bg-amber-50/80',
+    border: 'border-amber-200',
+    label: 'text-amber-900',
+    dot: 'bg-amber-500',
+    icon: Inbox,
+  },
+  risky: {
+    card: 'bg-orange-50/80',
+    border: 'border-orange-200',
+    label: 'text-orange-800',
+    dot: 'bg-orange-500',
+    icon: ShieldAlert,
+  },
+  invalid: {
+    card: 'bg-red-50/80',
+    border: 'border-red-200',
+    label: 'text-red-800',
+    dot: 'bg-red-500',
+    icon: AlertCircle,
+  },
+  unknown: {
+    card: 'bg-slate-50/80',
+    border: 'border-slate-200',
+    label: 'text-slate-700',
+    dot: 'bg-slate-400',
+    icon: HelpCircle,
+  },
 };
 
 const STATUS_FILTER_OPTIONS: { value: EmailVerificationStatus; label: string }[] = [
@@ -117,6 +171,19 @@ const STATUS_FILTER_OPTIONS: { value: EmailVerificationStatus; label: string }[]
   { value: 'risky', label: 'Risky' },
   { value: 'invalid', label: 'Invalid' },
   { value: 'unknown', label: 'Unknown' },
+];
+
+const STATUS_METRIC_OPTIONS: Array<{
+  label: string;
+  status: EmailVerificationStatus;
+  getCount: (batch: EmailVerificationBatch) => number;
+}> = [
+  { label: 'Valid', status: 'valid', getCount: (b) => b.verifiedCount ?? 0 },
+  { label: 'Likely valid', status: 'likely_valid', getCount: (b) => b.likelyValidCount ?? 0 },
+  { label: 'Catch-all', status: 'catch_all', getCount: (b) => b.catchAllCount ?? 0 },
+  { label: 'Risky', status: 'risky', getCount: (b) => b.riskyCount ?? 0 },
+  { label: 'Invalid', status: 'invalid', getCount: (b) => b.invalidCount ?? 0 },
+  { label: 'Unknown', status: 'unknown', getCount: (b) => b.unknownCount ?? 0 },
 ];
 
 const DEFAULT_STATUS_FILTERS: EmailVerificationStatus[] = [
@@ -201,19 +268,29 @@ function friendlyCheckLabel(
     return 'Valid';
   }
   if (status === 'likely_valid') {
-    if (r.includes('mx_only') || r.includes('mx_pattern')) return 'Pattern estimate';
-    return 'Likely';
+    if (r.includes('smtp_251') || /\b251\b/.test(r)) return 'Likely (SMTP 251)';
+    return 'Likely valid';
   }
+  if (status === 'catch_all' || r.includes('catch_all')) return 'Catch-all';
   if (r.includes('verify_mode:provided_full') || r.includes('provided')) {
     if (status === 'invalid') return 'Incorrect';
   }
-  if (status === 'catch_all') return 'Catch-all';
   if (status === 'risky') return 'Risky';
   if (status === 'invalid') return 'Invalid';
+  if (status === 'unknown') {
+    if (
+      r.includes('port25') ||
+      r.includes('mailbox_unverified') ||
+      r.includes('connection_timeout') ||
+      r.includes('connection_failed')
+    ) {
+      return 'Mailbox unverified';
+    }
+  }
   if (!response) return '—';
   if (r.includes('format_only')) return 'Format OK';
-  if (r.includes('port25') || r.includes('smtp_probe_disabled') || r.includes('mx_only')) {
-    return 'Pattern match';
+  if (r.includes('smtp_probe_disabled') || r.includes('mx_only')) {
+    return 'Mailbox unverified';
   }
   if (r.includes('no_mx') || r.includes('domain_not_found') || r.includes('dns_error')) {
     return 'No mail server';
@@ -224,9 +301,17 @@ function friendlyCheckLabel(
 
 function shellBtn(className?: string) {
   return cn(
-    'inline-flex items-center gap-1.5 border border-[#c6c6c6] bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-[#fafafa] disabled:opacity-50',
+    'inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50',
     className,
   );
+}
+
+function scoreTone(score: number): string {
+  if (score >= 95) return 'bg-emerald-100 text-emerald-800 ring-emerald-200';
+  if (score >= 80) return 'bg-green-100 text-green-800 ring-green-200';
+  if (score >= 70) return 'bg-amber-100 text-amber-900 ring-amber-200';
+  if (score >= 55) return 'bg-slate-100 text-slate-700 ring-slate-200';
+  return 'bg-red-100 text-red-800 ring-red-200';
 }
 
 function statusFilterLabel(selected: EmailVerificationStatus[]) {
@@ -281,8 +366,8 @@ function VerificationStatusFilter({
         aria-expanded={open}
         onClick={() => !disabled && setOpen((o) => !o)}
         className={cn(
-          'inline-flex min-w-[9.5rem] items-center justify-between gap-2 border border-[#c6c6c6] bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-[#fafafa] disabled:opacity-50',
-          open && 'border-[#217346] ring-1 ring-[#217346]/30',
+          'inline-flex min-w-[10rem] items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50',
+          open && 'border-emerald-600 ring-2 ring-emerald-500/20',
         )}
       >
         <span className="truncate">{statusFilterLabel(value)}</span>
@@ -292,53 +377,57 @@ function VerificationStatusFilter({
       </button>
       <div
         className={cn(
-          'absolute left-0 z-50 mt-1 min-w-[11rem] border border-[#c6c6c6] bg-white shadow-lg',
+          'absolute left-0 z-50 mt-1.5 min-w-[12rem] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl',
           open ? 'block' : 'hidden',
         )}
       >
-        <div className="flex items-center justify-between border-b border-[#e8e8e8] px-2 py-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-            Status
+        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-3 py-2">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            Filter status
           </span>
           <button
             type="button"
-            className="text-[10px] font-semibold text-[#217346] hover:underline"
+            className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-50"
             onClick={() => onChange([...DEFAULT_STATUS_FILTERS])}
           >
-            Reset
+            Reset all
           </button>
         </div>
-        <ul className="max-h-52 overflow-y-auto py-1">
+        <ul className="max-h-56 overflow-y-auto py-1">
           {STATUS_FILTER_OPTIONS.map((opt) => {
             const active = value.includes(opt.value);
+            const accent = METRIC_ACCENT[opt.value];
             return (
               <li key={opt.value}>
                 <button
                   type="button"
                   onClick={() => toggle(opt.value)}
                   className={cn(
-                    'flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[11px] hover:bg-[#e8f5ee]',
-                    active ? 'font-semibold text-[#1a5c38]' : 'text-slate-700',
+                    'flex w-full items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors hover:bg-slate-50',
+                    active && 'bg-emerald-50/60',
                   )}
                 >
                   <span
                     className={cn(
-                      'flex h-3.5 w-3.5 shrink-0 items-center justify-center border',
+                      'flex h-4 w-4 shrink-0 items-center justify-center rounded border',
                       active
-                        ? 'border-[#217346] bg-[#217346] text-white'
+                        ? 'border-emerald-600 bg-emerald-600 text-white'
                         : 'border-slate-300 bg-white',
                     )}
                   >
                     {active ? <Check className="h-2.5 w-2.5" /> : null}
                   </span>
-                  {opt.label}
+                  <span className={cn('h-2 w-2 shrink-0 rounded-full', accent.dot)} />
+                  <span className={cn('font-medium', active ? accent.label : 'text-slate-700')}>
+                    {opt.label}
+                  </span>
                 </button>
               </li>
             );
           })}
         </ul>
-        <div className="border-t border-[#e8e8e8] px-2 py-1.5 text-[10px] text-slate-500">
-          Download includes only checked statuses.
+        <div className="border-t border-slate-100 bg-slate-50 px-3 py-2 text-[10px] text-slate-500">
+          Export includes only checked statuses.
         </div>
       </div>
     </div>
@@ -347,7 +436,9 @@ function VerificationStatusFilter({
 
 export function DbAdminBulkEmailVerificationPanel() {
   const inputRef = useRef<HTMLInputElement>(null);
-  const canDownload = useAuthStore((s) => s.hasRole('super_admin'));
+  const canDownload = useAuthStore(
+    (s) => s.hasRole('super_admin') || s.hasRole('db_admin'),
+  );
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
 
@@ -750,21 +841,30 @@ export function DbAdminBulkEmailVerificationPanel() {
         r.correctedEmail.toLowerCase() !== r.generatedEmail.toLowerCase(),
     );
 
-  const handleExportXlsx = async (kind: ExportKind) => {
+  const handleExportXlsx = async (
+    kind: ExportKind,
+    statusesOverride?: EmailVerificationStatus[],
+  ) => {
     if (!selectedBatchId) return;
-    if (!statusFilters.length) {
+    const activeStatuses = statusesOverride?.length ? statusesOverride : statusFilters;
+    if (!activeStatuses.length) {
       toast.error('Select statuses', 'Choose at least one status in the filter before download.');
       return;
     }
     setExporting(true);
     try {
-      const statusesParam = statusFilters.join(',');
+      const statusesParam = activeStatuses.join(',');
       const exportFilters = {
         statuses: statusesParam,
         minScore: minScore === '' ? undefined : Number(minScore),
-        emailKind: kind === 'corrected' ? ('corrected' as const) : undefined,
+        emailKind:
+          kind === 'corrected'
+            ? ('corrected' as const)
+            : kind === 'best'
+              ? ('best' as const)
+              : undefined,
       };
-      const allowed = new Set(statusFilters);
+      const allowed = new Set(activeStatuses);
       const fetched = await bulkEmailVerificationService.listAllRecords(
         selectedBatchId,
         exportFilters,
@@ -774,7 +874,7 @@ export function DbAdminBulkEmailVerificationPanel() {
         items = items.filter(hasCorrectedEmail);
       }
       if (!items.length) {
-        const statusLabel = statusFilters.map((s) => formatStatus(s)).join(', ');
+        const statusLabel = activeStatuses.map((s) => formatStatus(s)).join(', ');
         if (kind === 'corrected') {
           throw new Error(
             `No corrected-email contacts for status: ${statusLabel}. Try other statuses or Re-run verify.`,
@@ -784,8 +884,8 @@ export function DbAdminBulkEmailVerificationPanel() {
           `No contacts with status: ${statusLabel}. Change filter or run Verify again.`,
         );
       }
-      const statusSlug = statusFilters.map((s) => s.replace(/_/g, '-')).join('-');
-      const statusLabel = statusFilters.map((s) => formatStatus(s)).join(', ');
+      const statusSlug = activeStatuses.map((s) => s.replace(/_/g, '-')).join('-');
+      const statusLabel = activeStatuses.map((s) => formatStatus(s)).join(', ');
       const kindSlug =
         kind === 'corrected' ? 'corrected-email' : kind === 'best' ? 'best-email' : statusSlug;
       const sheetName =
@@ -843,21 +943,22 @@ export function DbAdminBulkEmailVerificationPanel() {
     }
   };
 
+  const applyStatusFilter = (status: EmailVerificationStatus) => {
+    setStatusFilters([status]);
+    setRecordPage(1);
+  };
+
   const metrics = useMemo(() => {
     if (!selectedBatch) {
-      return [
-        { label: 'Prospects', value: '—' },
-        { label: 'Verified', value: '—' },
-        { label: 'Likely valid', value: '—' },
-        { label: 'Catch-all', value: '—' },
-      ];
+      return STATUS_METRIC_OPTIONS.map((opt) => ({
+        ...opt,
+        value: '—' as const,
+      }));
     }
-    return [
-      { label: 'Prospects', value: selectedBatch.totalProspects },
-      { label: 'Verified', value: selectedBatch.verifiedCount ?? 0 },
-      { label: 'Likely valid', value: selectedBatch.likelyValidCount ?? 0 },
-      { label: 'Catch-all', value: selectedBatch.catchAllCount ?? 0 },
-    ];
+    return STATUS_METRIC_OPTIONS.map((opt) => ({
+      ...opt,
+      value: opt.getCount(selectedBatch),
+    }));
   }, [selectedBatch]);
 
   return (
@@ -879,66 +980,138 @@ export function DbAdminBulkEmailVerificationPanel() {
         loading={loading}
         hint="Domain only → generate & verify patterns · Email column → verify your address & suggest fix if wrong"
         toolbar={
-          <div className="flex w-full flex-wrap items-center gap-2">
-            <span className="font-medium text-slate-700">
-              Domain only: generate emails from name + domain. Verified = mailbox confirmed (SMTP) or
-              domain has mail (MX). Email column: your address is fully checked — wrong uploads get a
-              corrected pattern.
-            </span>
-            <span className="text-slate-300">|</span>
-            <button type="button" onClick={() => void load({ silent: true })} disabled={loading} className={shellBtn()}>
-              <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
-              Refresh
-            </button>
-            <button type="button" onClick={downloadTemplate} className={shellBtn()}>
-              <Download className="h-3.5 w-3.5" />
-              Template
-            </button>
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              disabled={uploading}
-              className={shellBtn('border-[#6d28d9] bg-[#6d28d9] text-white hover:bg-[#5b21b6]')}
-            >
-              {uploading ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Upload className="h-3.5 w-3.5" />
-              )}
-              Upload file
-            </button>
+          <div className="flex w-full flex-col gap-3">
+            <div className="rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 to-white px-4 py-3 text-xs leading-relaxed text-slate-600 shadow-sm">
+              <p className="font-semibold text-slate-800">How verification works</p>
+              <p className="mt-1">
+                Domain only → generate & verify patterns from name + company. Email column → verify
+                your uploaded address and suggest a corrected pattern when needed.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void load({ silent: true })}
+                disabled={loading}
+                className={shellBtn()}
+              >
+                <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+                Refresh
+              </button>
+              <button type="button" onClick={downloadTemplate} className={shellBtn()}>
+                <Download className="h-3.5 w-3.5" />
+                Template
+              </button>
+              <button
+                type="button"
+                onClick={() => inputRef.current?.click()}
+                disabled={uploading}
+                className={shellBtn(
+                  'border-violet-600 bg-violet-600 text-white shadow-md hover:border-violet-700 hover:bg-violet-700',
+                )}
+              >
+                {uploading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Upload className="h-3.5 w-3.5" />
+                )}
+                Upload file
+              </button>
+            </div>
           </div>
         }
       >
         {loadError ? (
-          <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+          <div className="border-b border-amber-200 bg-gradient-to-r from-amber-50 to-white px-4 py-3 text-sm text-amber-900">
             {loadError}
           </div>
         ) : null}
 
         <div className="bg-white">
           {selectedBatch ? (
-            <p className="border-b border-[#e0e0e0] bg-[#fafafa] px-4 py-2 text-xs text-slate-600">
-              Stats for{' '}
-              <span className="font-semibold text-slate-800">{selectedBatch.sourceFileName}</span>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-white px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  Verification summary
+                </p>
+                <p className="mt-0.5 truncate text-sm font-semibold text-slate-900">
+                  {selectedBatch.sourceFileName}
+                </p>
+              </div>
               {selectedBatch.status === 'processing' ? (
-                <span className="ml-2 text-sky-700">(updating…)</span>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-800">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Updating…
+                </span>
               ) : null}
-            </p>
+            </div>
           ) : (
-            <p className="border-b border-[#e0e0e0] bg-[#fafafa] px-4 py-2 text-xs text-slate-500">
-              Select a file in the month folder below to see its stats.
+            <p className="border-b border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+              Select a file in the month folder below to see verification stats.
             </p>
           )}
-          <div className="grid grid-cols-2 divide-x divide-[#e0e0e0] border-b border-[#e0e0e0] sm:grid-cols-4">
-            {metrics.map((m) => (
-              <div key={m.label} className="px-4 py-4 text-center sm:text-left">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  {m.label}
-                </p>
-                <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">{m.value}</p>
-              </div>
-            ))}
+          <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-6">
+            {metrics.map((m) => {
+              const active =
+                statusFilters.length === 1 && statusFilters[0] === m.status;
+              const accent = METRIC_ACCENT[m.status];
+              const Icon = accent.icon;
+              return (
+                <div
+                  key={m.status}
+                  className={cn(
+                    'group relative overflow-hidden rounded-xl border bg-white p-3 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md',
+                    accent.border,
+                    active && 'ring-2 ring-emerald-500/30',
+                    accent.card,
+                  )}
+                >
+                  <button
+                    type="button"
+                    disabled={!selectedBatch}
+                    onClick={() => applyStatusFilter(m.status)}
+                    className="w-full text-left disabled:cursor-default"
+                    title={`Show only ${m.label}`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p
+                          className={cn(
+                            'text-[10px] font-bold uppercase tracking-wider',
+                            accent.label,
+                          )}
+                        >
+                          {m.label}
+                        </p>
+                        <p className="mt-1.5 text-2xl font-bold tabular-nums text-slate-900">
+                          {m.value}
+                        </p>
+                      </div>
+                      <div
+                        className={cn(
+                          'flex h-8 w-8 items-center justify-center rounded-lg bg-white/80 shadow-sm',
+                          accent.label,
+                        )}
+                      >
+                        <Icon className="h-4 w-4" />
+                      </div>
+                    </div>
+                  </button>
+                  {canDownload && selectedBatch?.status === 'completed' ? (
+                    <button
+                      type="button"
+                      disabled={exporting || m.value === 0 || m.value === '—'}
+                      onClick={() => void handleExportXlsx('status', [m.status])}
+                      className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-white/80 bg-white/90 px-2 py-1.5 text-[10px] font-semibold text-emerald-700 shadow-sm transition-colors hover:bg-white disabled:opacity-40"
+                      title={`Download ${m.label} only`}
+                    >
+                      <Download className="h-3 w-3" />
+                      Download
+                    </button>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         </div>
       </ExcelSheetShell>
@@ -954,7 +1127,7 @@ export function DbAdminBulkEmailVerificationPanel() {
             <select
               value={selectedYear}
               onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="border border-[#c6c6c6] bg-white px-2 py-1 text-xs font-semibold text-slate-700 outline-none"
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
             >
               {availableYears.map((year) => (
                 <option key={year} value={year}>
@@ -962,28 +1135,28 @@ export function DbAdminBulkEmailVerificationPanel() {
                 </option>
               ))}
             </select>
-            <span className="border border-[#c6c6c6] bg-white px-2 py-1 text-[11px] text-slate-700">
+            <span className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-700 shadow-sm">
               12 folders · Jan–Dec
             </span>
-            <span className="border border-[#c6c6c6] bg-white px-2 py-1 text-[11px] text-slate-700">
+            <span className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-700 shadow-sm">
               {totalInYear} job{totalInYear === 1 ? '' : 's'} in {selectedYear}
             </span>
           </div>
         }
       >
-        <div className="grid min-h-[320px] grid-cols-1 overflow-hidden bg-white lg:grid-cols-[minmax(200px,260px)_1fr]">
-          <aside className="border-b border-[#d4d4d4] lg:border-b-0 lg:border-r">
-            <div className="border-b border-[#d4d4d4] bg-[#f2f2f2] px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+        <div className="grid min-h-[320px] grid-cols-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm lg:grid-cols-[minmax(200px,260px)_1fr]">
+          <aside className="border-b border-slate-200 bg-slate-50/40 lg:border-b-0 lg:border-r">
+            <div className="border-b border-slate-200 bg-slate-100/70 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
               {selectedYear} folders
             </div>
             <table className="w-full border-collapse text-xs">
-              <thead className="bg-[#fafafa]">
+              <thead className="bg-white/70">
                 <tr>
-                  <th className="border border-[#e0e0e0] px-2 py-1 text-left text-[10px] uppercase text-slate-500" />
-                  <th className="border border-[#e0e0e0] px-2 py-1 text-left text-[10px] uppercase text-slate-500">
+                  <th className="border-b border-slate-200 px-2 py-1.5 text-left text-[10px] uppercase text-slate-500" />
+                  <th className="border-b border-slate-200 px-2 py-1.5 text-left text-[10px] uppercase text-slate-500">
                     Month
                   </th>
-                  <th className="border border-[#e0e0e0] px-2 py-1 text-right text-[10px] uppercase text-slate-500">
+                  <th className="border-b border-slate-200 px-2 py-1.5 text-right text-[10px] uppercase text-slate-500">
                     #
                   </th>
                 </tr>
@@ -1001,11 +1174,11 @@ export function DbAdminBulkEmailVerificationPanel() {
                         setRecordPage(1);
                       }}
                       className={cn(
-                        'cursor-pointer',
-                        active ? 'bg-[#e2efda]' : 'hover:bg-[#fafafa]',
+                        'cursor-pointer transition-colors',
+                        active ? 'bg-emerald-50' : 'hover:bg-slate-50',
                       )}
                     >
-                      <td className="border border-[#e0e0e0] px-2 py-1.5 text-center">
+                      <td className="border-b border-slate-200 px-2 py-1.5 text-center">
                         <Folder
                           className={cn(
                             'mx-auto h-3.5 w-3.5',
@@ -1013,10 +1186,10 @@ export function DbAdminBulkEmailVerificationPanel() {
                           )}
                         />
                       </td>
-                      <td className="border border-[#e0e0e0] px-2 py-1.5 font-medium text-slate-700">
+                      <td className="border-b border-slate-200 px-2 py-1.5 font-medium text-slate-700">
                         {monthLabel}
                       </td>
-                      <td className="border border-[#e0e0e0] px-2 py-1.5 text-right font-mono text-slate-800">
+                      <td className="border-b border-slate-200 px-2 py-1.5 text-right font-mono text-slate-800">
                         {count}
                       </td>
                     </tr>
@@ -1027,21 +1200,20 @@ export function DbAdminBulkEmailVerificationPanel() {
           </aside>
 
           <section className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#d4d4d4] bg-[#e2efda] px-3 py-2">
-              <div className="flex items-center gap-2 text-sm font-semibold text-[#217346]">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-200 bg-gradient-to-r from-emerald-50 to-white px-4 py-2.5">
+              <div className="flex items-center gap-2 text-sm font-semibold text-emerald-800">
                 <ChevronRight className="h-4 w-4" />
                 <span>{selectedMonthLabel} folder</span>
               </div>
-              <span className="text-xs text-slate-600">
+              <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-medium text-slate-600 shadow-sm">
                 {selectedMonthBatches.length} job
-                {selectedMonthBatches.length === 1 ? '' : 's'} in {selectedMonthLabel}{' '}
-                {selectedYear}
+                {selectedMonthBatches.length === 1 ? '' : 's'} · {selectedYear}
               </span>
             </div>
 
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] border-collapse text-sm">
-                <thead className="bg-[#f8fafc]">
+                <thead className="bg-slate-50/80">
                   <tr>
                     {[
                       'File',
@@ -1054,7 +1226,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                     ].map((label) => (
                       <th
                         key={label}
-                        className="border border-[#e0e0e0] px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-600"
+                        className="border-b border-slate-200 px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500"
                       >
                         {label}
                       </th>
@@ -1066,7 +1238,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                     <tr>
                       <td
                         colSpan={7}
-                        className="border border-[#e0e0e0] px-4 py-10 text-center text-slate-500"
+                        className="px-4 py-12 text-center text-slate-500"
                       >
                         No verification jobs in {selectedMonthLabel} {selectedYear} yet. Upload a
                         file to add one to this folder.
@@ -1100,23 +1272,23 @@ export function DbAdminBulkEmailVerificationPanel() {
                             void refreshBatch(batch.id);
                           }}
                           className={cn(
-                            'cursor-pointer even:bg-[#fafafa]',
-                            selected && 'bg-[#e2efda]/60',
+                            'cursor-pointer transition-colors even:bg-slate-50/50 hover:bg-emerald-50/40',
+                            selected && 'bg-emerald-50/70',
                           )}
                         >
-                          <td className="border border-[#e0e0e0] px-3 py-2">
+                          <td className="border-b border-slate-200 px-3 py-2.5">
                             <div className="font-medium text-slate-900">{batch.sourceFileName}</div>
                           </td>
-                          <td className="border border-[#e0e0e0] px-3 py-2 text-slate-700">
+                          <td className="border-b border-slate-200 px-3 py-2.5 text-slate-700">
                             {formatBatchDate(batch.createdAt)}
                           </td>
-                          <td className="border border-[#e0e0e0] px-3 py-2 text-slate-700">
+                          <td className="border-b border-slate-200 px-3 py-2.5 text-slate-700">
                             {batch.processedProspects}/{batch.totalProspects}
                           </td>
-                          <td className="border border-[#e0e0e0] px-3 py-2 text-slate-700">
+                          <td className="border-b border-slate-200 px-3 py-2.5 text-slate-700">
                             {batch.emailsGenerated}
                           </td>
-                          <td className="border border-[#e0e0e0] px-3 py-2">
+                          <td className="border-b border-slate-200 px-3 py-2.5">
                             <span
                               className={cn(
                                 'inline-flex rounded-full px-2.5 py-1 text-xs font-semibold',
@@ -1126,16 +1298,18 @@ export function DbAdminBulkEmailVerificationPanel() {
                               {STATUS_LABEL[batch.status]}
                             </span>
                           </td>
-                          <td className="border border-[#e0e0e0] px-3 py-2 text-slate-700">
+                          <td className="border-b border-slate-200 px-3 py-2.5 text-slate-700">
                             {batch.status === 'processing' ? (
                               <div className="flex items-center gap-2">
-                                <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-200">
+                                <div className="h-2 w-24 overflow-hidden rounded-full bg-slate-200">
                                   <div
-                                    className="h-full bg-[#217346]"
+                                    className="h-full rounded-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all"
                                     style={{ width: `${batch.progress}%` }}
                                   />
                                 </div>
-                                <span className="text-xs">{batch.progress}%</span>
+                                <span className="text-xs font-semibold text-emerald-700">
+                                  {batch.progress}%
+                                </span>
                               </div>
                             ) : batch.status === 'completed' ? (
                               batch.emailsGenerated > 0
@@ -1146,7 +1320,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                             )}
                           </td>
                           <td
-                            className="border border-[#e0e0e0] px-3 py-2"
+                            className="border-b border-slate-200 px-3 py-2.5"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <div className="flex flex-wrap gap-1">
@@ -1265,104 +1439,108 @@ export function DbAdminBulkEmailVerificationPanel() {
         loading={loading}
         hint="Excel-style results grid"
         toolbar={
-          <div className="flex w-full flex-wrap items-center gap-2">
-            <span className="font-medium text-slate-700">Folder:</span>
-            <span className="border border-[#c6c6c6] bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700">
-              {selectedMonthLabel} {selectedYear}
-            </span>
-            {selectedBatch && (
-              <>
-                <span className="font-medium text-slate-700">File:</span>
-                <span className="border border-[#c6c6c6] bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700">
-                  {selectedBatch.sourceFileName}
-                </span>
-                <button
-                  type="button"
-                  disabled={previewLoadingId === selectedBatch.id}
-                  onClick={() => void viewBatchSourceFile(selectedBatch)}
-                  className={shellBtn()}
-                >
-                  {previewLoadingId === selectedBatch.id ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Eye className="h-3.5 w-3.5" />
-                  )}
-                  View uploaded file
-                </button>
-              </>
-            )}
-            <span className="text-slate-300">|</span>
-            <span className="text-[11px] font-medium text-slate-600">Filter:</span>
-            <VerificationStatusFilter
-              value={statusFilters}
-              disabled={!selectedBatchId}
-              onChange={(next) => {
-                setStatusFilters(next);
-                setRecordPage(1);
-              }}
-            />
-            <select
-              value={minScore === '' ? '' : String(minScore)}
-              onChange={(e) => {
-                setMinScore(e.target.value === '' ? '' : Number(e.target.value));
-                setRecordPage(1);
-              }}
-              className="border border-[#c6c6c6] bg-white px-2 py-1 text-[11px] text-slate-700 outline-none"
-              title="Minimum confidence score"
-            >
-              <option value="">All scores</option>
-              <option value="80">Score 80+</option>
-              <option value="95">Score 95+</option>
-            </select>
-            {canDownload && selectedBatch?.status === 'completed' ? (
-              <>
-                <button
-                  type="button"
-                  disabled={!selectedBatchId || exporting || statusFilters.length === 0}
-                  onClick={() => void handleExportXlsx('status')}
-                  className={shellBtn(
-                    'border-[#217346] bg-[#217346] text-white hover:bg-[#1a5c38]',
-                  )}
-                  title={
-                    statusFilters.length
-                      ? `Full export — statuses: ${statusFilters.map((s) => formatStatus(s)).join(', ')}`
-                      : 'Select at least one status to download'
-                  }
-                >
-                  {exporting ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
+          <div className="flex w-full flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+                {selectedMonthLabel} {selectedYear}
+              </span>
+              {selectedBatch && (
+                <>
+                  <span className="max-w-[220px] truncate rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-800 shadow-sm">
+                    {selectedBatch.sourceFileName}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={previewLoadingId === selectedBatch.id}
+                    onClick={() => void viewBatchSourceFile(selectedBatch)}
+                    className={shellBtn()}
+                  >
+                    {previewLoadingId === selectedBatch.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Eye className="h-3.5 w-3.5" />
+                    )}
+                    View file
+                  </button>
+                </>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 p-2.5">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Filters
+              </span>
+              <VerificationStatusFilter
+                value={statusFilters}
+                disabled={!selectedBatchId}
+                onChange={(next) => {
+                  setStatusFilters(next);
+                  setRecordPage(1);
+                }}
+              />
+              <select
+                value={minScore === '' ? '' : String(minScore)}
+                onChange={(e) => {
+                  setMinScore(e.target.value === '' ? '' : Number(e.target.value));
+                  setRecordPage(1);
+                }}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                title="Minimum confidence score"
+              >
+                <option value="">All scores</option>
+                <option value="80">Score 80+</option>
+                <option value="95">Score 95+</option>
+              </select>
+              {canDownload && selectedBatch?.status === 'completed' ? (
+                <>
+                  <span className="hidden h-5 w-px bg-slate-300 sm:block" />
+                  <button
+                    type="button"
+                    disabled={!selectedBatchId || exporting || statusFilters.length === 0}
+                    onClick={() => void handleExportXlsx('status')}
+                    className={shellBtn(
+                      'border-emerald-600 bg-emerald-600 text-white shadow-md hover:border-emerald-700 hover:bg-emerald-700',
+                    )}
+                    title={
+                      statusFilters.length
+                        ? `Full export — statuses: ${statusFilters.map((s) => formatStatus(s)).join(', ')}`
+                        : 'Select at least one status to download'
+                    }
+                  >
+                    {exporting ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Download className="h-3.5 w-3.5" />
+                    )}
+                    Download
+                    {statusFilters.length > 0 ? (
+                      <span className="font-normal opacity-90">
+                        ({statusFilterLabel(statusFilters)})
+                      </span>
+                    ) : null}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!selectedBatchId || exporting || statusFilters.length === 0}
+                    onClick={() => void handleExportXlsx('corrected')}
+                    className={shellBtn()}
+                    title="Only corrected emails — one Email column per contact"
+                  >
                     <Download className="h-3.5 w-3.5" />
-                  )}
-                  Download
-                  {statusFilters.length > 0 ? (
-                    <span className="font-normal opacity-90">
-                      ({statusFilterLabel(statusFilters)})
-                    </span>
-                  ) : null}
-                </button>
-                <button
-                  type="button"
-                  disabled={!selectedBatchId || exporting || statusFilters.length === 0}
-                  onClick={() => void handleExportXlsx('corrected')}
-                  className={shellBtn()}
-                  title="Only corrected emails — one Email column per contact"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Corrected email
-                </button>
-                <button
-                  type="button"
-                  disabled={!selectedBatchId || exporting || statusFilters.length === 0}
-                  onClick={() => void handleExportXlsx('best')}
-                  className={shellBtn()}
-                  title="Same status filter — one Email column (best/recommended) per contact"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Best email
-                </button>
-              </>
-            ) : null}
+                    Corrected
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!selectedBatchId || exporting || statusFilters.length === 0}
+                    onClick={() => void handleExportXlsx('best')}
+                    className={shellBtn()}
+                    title="Same status filter — one Email column (best/recommended) per contact"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Best email
+                  </button>
+                </>
+              ) : null}
+            </div>
           </div>
         }
       >
@@ -1377,9 +1555,9 @@ export function DbAdminBulkEmailVerificationPanel() {
           </div>
         ) : null}
 
-        <div className="overflow-x-auto bg-white">
-          <table className="w-full min-w-[900px] border-collapse text-sm">
-            <thead className="sticky top-0 z-10 bg-[#f2f2f2]">
+        <div className="overflow-x-auto bg-white p-3">
+          <table className="w-full min-w-[900px] overflow-hidden rounded-xl border border-slate-200 text-sm shadow-sm">
+            <thead className="bg-slate-50/90">
               <tr>
                 {[
                   'Name',
@@ -1394,7 +1572,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                   (label) => (
                     <th
                       key={label}
-                      className="border border-[#c6c6c6] px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-600"
+                      className="border-b border-slate-200 px-3 py-2.5 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500"
                     >
                       {label}
                     </th>
@@ -1402,14 +1580,14 @@ export function DbAdminBulkEmailVerificationPanel() {
                 )}
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-slate-100">
               {!selectedBatchId ? (
                 <tr>
                   <td
                     colSpan={8}
-                    className="border border-[#e0e0e0] px-4 py-10 text-center text-slate-500"
+                    className="px-4 py-12 text-center text-slate-500"
                   >
-                    <Mail className="mx-auto mb-2 h-6 w-6 text-slate-300" />
+                    <Mail className="mx-auto mb-3 h-8 w-8 text-slate-300" />
                     Select a job from the {selectedMonthLabel} folder to view email results.
                   </td>
                 </tr>
@@ -1417,9 +1595,9 @@ export function DbAdminBulkEmailVerificationPanel() {
                 <tr>
                   <td
                     colSpan={8}
-                    className="border border-[#e0e0e0] px-4 py-10 text-center text-slate-500"
+                    className="px-4 py-12 text-center text-slate-500"
                   >
-                    <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-[#217346]" />
+                    <Loader2 className="mx-auto mb-3 h-8 w-8 animate-spin text-emerald-600" />
                     Loading results…
                   </td>
                 </tr>
@@ -1427,9 +1605,9 @@ export function DbAdminBulkEmailVerificationPanel() {
                 <tr>
                   <td
                     colSpan={8}
-                        className="border border-[#e0e0e0] px-4 py-10 text-center text-slate-500"
-                      >
-                        {selectedBatch?.status === 'uploaded' ? (
+                    className="px-4 py-12 text-center text-slate-500"
+                  >
+                    {selectedBatch?.status === 'uploaded' ? (
                           'Click Verify on this job to generate and check emails.'
                         ) : selectedBatch?.status === 'processing' ? (
                           'Verification in progress…'
@@ -1438,7 +1616,7 @@ export function DbAdminBulkEmailVerificationPanel() {
                             No contacts match the current filters.{' '}
                             <button
                               type="button"
-                              className="font-semibold text-[#217346] underline"
+                              className="font-semibold text-emerald-700 underline"
                               onClick={() => {
                                 setStatusFilters([]);
                                 setMinScore('');
@@ -1454,55 +1632,63 @@ export function DbAdminBulkEmailVerificationPanel() {
                         ) : (
                           'No email contacts yet. Click Verify on this job.'
                         )}
-                      </td>
-                    </tr>
-                  ) : (
+                  </td>
+                </tr>
+              ) : (
                 records.map((r) => (
-                  <tr key={r.id} className="even:bg-[#fafafa]">
-                    <td className="border border-[#e0e0e0] px-3 py-2 whitespace-nowrap text-slate-900">
+                  <tr
+                    key={r.id}
+                    className="transition-colors hover:bg-emerald-50/30 even:bg-slate-50/40"
+                  >
+                    <td className="px-3 py-2.5 whitespace-nowrap font-medium text-slate-900">
                       {r.firstName} {r.lastName}
                     </td>
-                    <td className="border border-[#e0e0e0] px-3 py-2 text-slate-700">
-                      {r.companyName || '—'}
+                    <td className="px-3 py-2.5 text-slate-700">{r.companyName || '—'}</td>
+                    <td className="px-3 py-2.5 text-slate-600">{r.domain}</td>
+                    <td className="px-3 py-2.5 font-mono text-xs font-semibold text-emerald-700">
+                      {r.recommendedEmail || r.generatedEmail}
                     </td>
-                    <td className="border border-[#e0e0e0] px-3 py-2 text-slate-700">{r.domain}</td>
-                        <td className="border border-[#e0e0e0] px-3 py-2 font-mono text-xs font-semibold text-[#217346]">
-                          {r.recommendedEmail || r.generatedEmail}
-                        </td>
-                        <td className="border border-[#e0e0e0] px-3 py-2 font-mono text-xs text-slate-600">
-                          {r.correctedEmail && r.correctedEmail !== r.generatedEmail
-                            ? r.correctedEmail
-                            : '—'}
-                        </td>
-                        <td className="border border-[#e0e0e0] px-3 py-2">
-                          <span
-                            className={cn(
-                              'inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize',
-                              RECORD_STATUS[r.verificationStatus],
-                            )}
-                          >
-                            {formatStatus(r.verificationStatus)}
-                          </span>
-                        </td>
-                        <td className="border border-[#e0e0e0] px-3 py-2 text-xs text-slate-600">
-                          {friendlyCheckLabel(r.smtpResponse, r.verificationStatus)}
-                        </td>
-                        <td className="border border-[#e0e0e0] px-3 py-2 font-semibold tabular-nums text-slate-900">
-                          {r.confidenceScore}
-                        </td>
-                      </tr>
-                    ))
+                    <td className="px-3 py-2.5 font-mono text-xs text-slate-600">
+                      {r.correctedEmail && r.correctedEmail !== r.generatedEmail
+                        ? r.correctedEmail
+                        : '—'}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span
+                        className={cn(
+                          'inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize',
+                          RECORD_STATUS[r.verificationStatus],
+                        )}
+                      >
+                        {formatStatus(r.verificationStatus)}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-slate-600">
+                      {friendlyCheckLabel(r.smtpResponse, r.verificationStatus)}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span
+                        className={cn(
+                          'inline-flex min-w-[2.5rem] items-center justify-center rounded-full px-2 py-0.5 text-xs font-bold tabular-nums ring-1 ring-inset',
+                          scoreTone(r.confidenceScore),
+                        )}
+                      >
+                        {r.confidenceScore}
+                      </span>
+                    </td>
+                  </tr>
+                ))
                   )}
             </tbody>
           </table>
         </div>
 
         {recordTotal > 50 && (
-          <div className="flex items-center justify-between border-t border-[#d4d4d4] bg-[#fafafa] px-3 py-2 text-xs text-slate-600">
-            <span>
+          <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+            <span className="font-medium">
               Page {recordPage} of {Math.ceil(recordTotal / 50)} · {recordTotal} contacts
             </span>
-            <div className="flex gap-1">
+            <div className="flex gap-2">
               <button
                 type="button"
                 disabled={recordPage <= 1}

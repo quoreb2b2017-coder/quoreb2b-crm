@@ -62,28 +62,16 @@ function smtpUnreachable(signals: VerificationSignals): boolean {
     signals.smtpResponse.includes('connection_timeout') ||
     signals.smtpResponse.includes('all_mx_failed') ||
     signals.smtpResponse.includes('SMTP read timeout') ||
-    signals.smtpResponse.includes('port25_blocked')
-  );
-}
-
-/** MX + domain OK but mailbox could not be probed (port 25 blocked / SMTP timeout). */
-function mxDeliverableWithoutSmtp(signals: VerificationSignals): boolean {
-  if (!signals.syntaxValid || !signals.mxValid || !signals.domainExists) return false;
-  if (signals.isDisposable || signals.isCatchAllDomain) return false;
-  const r = signals.smtpResponse.toLowerCase();
-  return (
-    r.includes('port25_blocked') ||
-    r.includes('mx_only') ||
-    r.includes('mx_deliverable') ||
-    (smtpUnreachable(signals) && Boolean(signals.smtpAttempted))
+    signals.smtpResponse.includes('port25_blocked') ||
+    signals.smtpResponse.includes('mailbox_unverified')
   );
 }
 
 /**
- * In-house tiers with honest MX fallback when SMTP cannot run (e.g. AWS port 25 blocked).
- * valid = SMTP 250 | likely_valid = SMTP 251 OR MX-deliverable without mailbox proof
+ * Honest tiers — never promote MX-only to likely_valid.
+ * valid = SMTP 250 | likely_valid = SMTP 251 only
  * catch_all = probe | risky = role/free/greylist
- * invalid = syntax/no MX/mailbox reject | unknown = DNS/SMTP inconclusive without MX
+ * invalid = syntax/no MX/mailbox reject | unknown = mailbox not verified (incl. port 25 blocked)
  */
 export function computeRiskScore(signals: VerificationSignals): RiskScoreResult {
   const reasons: string[] = [];
@@ -190,6 +178,16 @@ export function computeRiskScore(signals: VerificationSignals): RiskScoreResult 
 
   if (isSmtpIpBlocked(signals.smtpResponse)) {
     reasons.push('smtp_ip_blocked');
+    const hasMx = signals.mxValid && signals.domainExists;
+    if (hasMx) {
+      reasons.push('mx_present_ip_blocked');
+      return {
+        status: EmailVerificationStatus.LIKELY_VALID,
+        score: 74,
+        label: confidenceLabel(74),
+        reasons,
+      };
+    }
     return {
       status: EmailVerificationStatus.UNKNOWN,
       score: 44,
@@ -199,20 +197,12 @@ export function computeRiskScore(signals: VerificationSignals): RiskScoreResult 
   }
 
   if (smtpUnreachable(signals) || isMxOnlySkip(signals)) {
-    if (mxDeliverableWithoutSmtp(signals)) {
-      reasons.push('mx_deliverable_smtp_unverified');
-      return {
-        status: EmailVerificationStatus.LIKELY_VALID,
-        score: 76,
-        label: confidenceLabel(76),
-        reasons,
-      };
-    }
-    reasons.push('mailbox_not_verified');
+    const hasMx = signals.mxValid && signals.domainExists;
+    reasons.push(hasMx ? 'mailbox_unverified_mx_present' : 'mailbox_not_verified');
     return {
       status: EmailVerificationStatus.UNKNOWN,
-      score: 50,
-      label: confidenceLabel(50),
+      score: hasMx ? 58 : 45,
+      label: confidenceLabel(hasMx ? 58 : 45),
       reasons,
     };
   }

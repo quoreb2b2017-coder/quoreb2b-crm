@@ -439,12 +439,27 @@ export class BulkEmailVerificationService {
     actor: ActivityActor,
     minScore = 85,
     strict = true,
+    statusesCsv?: string,
   ) {
     await this.findOwnedBatch(batchId, actor);
 
-    const statusFilter = strict
-      ? [EmailVerificationStatus.VALID]
-      : [EmailVerificationStatus.VALID, EmailVerificationStatus.LIKELY_VALID];
+    let statusFilter: EmailVerificationStatus[];
+    if (statusesCsv?.trim()) {
+      const allowed = new Set(Object.values(EmailVerificationStatus));
+      statusFilter = statusesCsv
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s): s is EmailVerificationStatus =>
+          allowed.has(s as EmailVerificationStatus),
+        );
+    } else {
+      statusFilter = strict
+        ? [EmailVerificationStatus.VALID]
+        : [EmailVerificationStatus.VALID, EmailVerificationStatus.LIKELY_VALID];
+    }
+    if (!statusFilter.length) {
+      statusFilter = [EmailVerificationStatus.VALID];
+    }
 
     const rows = await this.recordModel
       .aggregate([
@@ -680,7 +695,7 @@ export class BulkEmailVerificationService {
     }
     if (!port25.reachable) {
       hints.push(
-        `Outbound port 25 is blocked from this machine: ${port25.message}. Run the API on a cloud VPS (AWS, DigitalOcean, etc.) where port 25 is allowed.`,
+        `Outbound port 25 is blocked: ${port25.message}. MX-valid emails cannot be mailbox-verified and stay "unknown" (not likely_valid). Request AWS port 25 removal for this EC2 account, or deploy the API on a VPS with port 25 open.`,
       );
     }
     if (

@@ -68,7 +68,7 @@ export class EmailVerificationEngineService implements OnModuleInit {
     this.port25Reachable = port25.reachable;
     if (!port25.reachable) {
       this.logger.warn(
-        `Outbound port 25 blocked — using MX/DNS deliverability estimate (likely_valid) until port 25 is open. ${port25.message}`,
+        `Outbound port 25 blocked — mailbox cannot be verified; MX-valid addresses stay unknown until port 25 is open. ${port25.message}`,
       );
     }
 
@@ -176,9 +176,9 @@ export class EmailVerificationEngineService implements OnModuleInit {
       dns.valid &&
       dns.mxHosts.length > 0;
 
-    if (canVerifySmtp && !this.port25Reachable && this.mxOnlyFallbackEnabled) {
+    if (canVerifySmtp && !this.port25Reachable) {
       smtpStatus = EmailVerificationStatus.UNKNOWN;
-      smtpResponse = 'port25_blocked:mx_deliverable';
+      smtpResponse = 'port25_blocked:mailbox_unverified';
     } else if (canVerifySmtp) {
       const smtp = await verifyEmailSmtp(
         syntax.normalizedEmail,
@@ -224,7 +224,7 @@ export class EmailVerificationEngineService implements OnModuleInit {
       isFreeEmail,
       strictMailboxReject:
         this.config.get<string>('BULK_EMAIL_STRICT_MAILBOX_REJECT') === 'true',
-      smtpAttempted: canVerifySmtp,
+      smtpAttempted: canVerifySmtp && this.port25Reachable,
     };
 
     const risk: RiskScoreResult = computeRiskScore(signals);

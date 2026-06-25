@@ -233,10 +233,20 @@ export const bulkEmailVerificationService = {
     return res.data as Blob;
   },
 
-  async exportPassedCsv(batchId: string, minScore = 95, strict = true) {
+  async exportPassedCsv(
+    batchId: string,
+    options?: { minScore?: number; strict?: boolean; statuses?: string },
+  ) {
     const res = await apiClient.get(
       `/bulk-email-verification/batches/${batchId}/export/passed`,
-      { params: { minScore, strict: strict ? 'true' : 'false' }, responseType: 'blob' },
+      {
+        params: {
+          minScore: options?.minScore,
+          strict: options?.strict === false ? 'false' : undefined,
+          statuses: options?.statuses,
+        },
+        responseType: 'blob',
+      },
     );
     return res.data as Blob;
   },

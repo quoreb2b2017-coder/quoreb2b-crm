@@ -16,6 +16,9 @@ import {
   TrendingUp,
   Award,
   Radio,
+  Server,
+  HardDrive,
+  Search,
 } from 'lucide-react';
 import { WelcomeBanner } from '@/components/dashboard/WelcomeBanner';
 import { CrmOverviewMetrics } from '@/components/dashboard/CrmOverviewMetrics';
@@ -28,12 +31,13 @@ import { useFetch } from '@/hooks/useFetch';
 import { DashboardPageShell } from '@/components/dashboard/DashboardPageShell';
 import { DashboardBarRow } from '@/components/dashboard/DashboardBarRow';
 import {
-  dashboardCard,
-  dashboardCardHeader,
-  dashboardHealthRow,
   dashboardQuickAction,
   dashboardBannerBtn,
-  dashboardSectionTitle,
+  dashboardPanel,
+  dashboardPanelHeaderBlue,
+  dashboardPanelBody,
+  dashboardLivePill,
+  dashboardHealthItem,
 } from '@/components/dashboard/dashboard-ui';
 
 const QUICK_ACTIONS = [
@@ -59,6 +63,39 @@ function healthTone(status: string): 'ok' | 'warn' | 'neutral' {
   if (status === 'up' || status === 'ok' || status === 'connected') return 'ok';
   if (status === 'degraded' || status === 'down' || status === 'connecting') return 'warn';
   return 'neutral';
+}
+
+function HealthCheckItem({
+  label,
+  status,
+  tone,
+  icon: Icon,
+}: {
+  label: string;
+  status: string;
+  tone: 'ok' | 'warn' | 'neutral';
+  icon: typeof Server;
+}) {
+  return (
+    <div className={dashboardHealthItem(tone)}>
+      <span className="dash-health-item__icon">
+        <Icon strokeWidth={2.2} />
+      </span>
+      <div className="dash-health-item__body">
+        <span className="dash-health-item__label">{label}</span>
+        <span
+          className={cn(
+            'dash-health-item__badge',
+            tone === 'ok' && 'dash-health-item__badge--ok',
+            tone === 'warn' && 'dash-health-item__badge--warn',
+            tone === 'neutral' && 'dash-health-item__badge--neutral',
+          )}
+        >
+          {status}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 export function SuperAdminCrmDashboard() {
@@ -143,152 +180,152 @@ export function SuperAdminCrmDashboard() {
       />
 
       {stats && (
-        <div className="dash-section space-y-1">
-          <div className="flex items-center justify-between gap-2 px-0.5">
-            <h3 className={cn(dashboardSectionTitle(), '!mb-0')}>CRM overview</h3>
-            <span className="dash-health-badge dash-health-badge--live inline-flex items-center gap-1.5 normal-case">
+        <div className={cn('dash-section', dashboardPanel)}>
+          <div className={dashboardPanelHeaderBlue}>
+            <h3>CRM overview</h3>
+            <span className={dashboardLivePill}>
               <Radio className="h-3 w-3" />
               Live
             </span>
           </div>
-          <CrmOverviewMetrics
-            metrics={[
-              {
-                label: 'Active users',
-                value: stats.totalUsers,
-                note:
-                  stats.newUsersThisMonth > 0
-                    ? `+${stats.newUsersThisMonth} this month`
-                    : 'No new users this month',
-                icon: Users,
-              },
-              {
-                label: 'Total leads',
-                value: formatLeads(stats.totalLeads),
-                note: 'Master data contacts',
-                icon: Database,
-              },
-              {
-                label: 'Active leads',
-                value: formatLeads(stats.activeLeads),
-                note: `${activePct}% of total`,
-                icon: TrendingUp,
-              },
-              {
-                label: 'Won / Lead status',
-                value: formatLeads(stats.statusLeads),
-                note: 'Status Lead / Won',
-                icon: Award,
-              },
-            ]}
-          />
+          <div className={dashboardPanelBody}>
+            <CrmOverviewMetrics
+              metrics={[
+                {
+                  label: 'Active users',
+                  value: stats.totalUsers,
+                  note:
+                    stats.newUsersThisMonth > 0
+                      ? `+${stats.newUsersThisMonth} this month`
+                      : 'No new users this month',
+                  icon: Users,
+                },
+                {
+                  label: 'Total leads',
+                  value: formatLeads(stats.totalLeads),
+                  note: 'Master data contacts',
+                  icon: Database,
+                },
+                {
+                  label: 'Active leads',
+                  value: formatLeads(stats.activeLeads),
+                  note: `${activePct}% of total`,
+                  icon: TrendingUp,
+                },
+                {
+                  label: 'Won / Lead status',
+                  value: formatLeads(stats.statusLeads),
+                  note: 'Status Lead / Won',
+                  icon: Award,
+                },
+              ]}
+            />
+          </div>
         </div>
       )}
 
       <div className="dash-section grid gap-1 lg:grid-cols-2">
-        <div className={cn(dashboardCard, 'p-1.5 sm:p-2')}>
-          <div className="mb-1 flex items-center justify-between gap-2">
-            <h3 className={dashboardSectionTitle()}>System health</h3>
-            <span className="dash-health-badge dash-health-badge--live normal-case">Live</span>
+        <div className={dashboardPanel}>
+          <div className={dashboardPanelHeaderBlue}>
+            <h3>System health</h3>
+            <span className={dashboardLivePill}>Live</span>
           </div>
-          {!health ? (
-            <p className="text-xs text-slate-500">Health data unavailable</p>
-          ) : (
-            <div className="space-y-2 text-xs">
-              <div className={dashboardHealthRow(healthTone(health.checks.api.status))}>
-                <span className="font-semibold text-slate-800">API server</span>
-                <span className={cn(
-                  'dash-health-badge',
-                  healthTone(health.checks.api.status) === 'ok'
-                    ? 'dash-health-badge--ok'
-                    : 'dash-health-badge--warn',
-                )}>
-                  {healthLabel(health.checks.api.status)}
-                </span>
+          <div className={dashboardPanelBody}>
+            {!health ? (
+              <p className="dash-empty-hint">Health data unavailable</p>
+            ) : (
+              <div className="dash-health-grid">
+                <HealthCheckItem
+                  label="API server"
+                  status={healthLabel(health.checks.api.status)}
+                  tone={healthTone(health.checks.api.status)}
+                  icon={Server}
+                />
+                {health.status !== 'ok' && (
+                  <HealthCheckItem
+                    label="Overall"
+                    status={healthLabel(health.status)}
+                    tone="warn"
+                    icon={Activity}
+                  />
+                )}
+                <HealthCheckItem
+                  label="MongoDB"
+                  status={
+                    healthLabel(health.checks.database.status, 'database') +
+                    (health.checks.database.state &&
+                    health.checks.database.status !== 'up' &&
+                    health.checks.database.status !== 'ok'
+                      ? ` · ${health.checks.database.state}`
+                      : '')
+                  }
+                  tone={healthTone(health.checks.database.status)}
+                  icon={HardDrive}
+                />
+                <HealthCheckItem
+                  label="Redis"
+                  status={healthLabel(health.checks.redis.status)}
+                  tone={healthTone(health.checks.redis.status)}
+                  icon={Layers}
+                />
+                <HealthCheckItem
+                  label="Elasticsearch"
+                  status={healthLabel(health.checks.elasticsearch.status)}
+                  tone={
+                    health.checks.elasticsearch.status === 'degraded'
+                      ? 'warn'
+                      : healthTone(health.checks.elasticsearch.status)
+                  }
+                  icon={Search}
+                />
               </div>
-              {health.status !== 'ok' && (
-                <div className={dashboardHealthRow('warn')}>
-                  <span className="font-semibold text-amber-900">Overall</span>
-                  <span className="dash-health-badge dash-health-badge--warn">
-                    {healthLabel(health.status)}
-                  </span>
-                </div>
-              )}
-              <div className={dashboardHealthRow(healthTone(health.checks.database.status))}>
-                <span className="text-slate-700">MongoDB</span>
-                <span className={cn(
-                  'dash-health-badge',
-                  healthTone(health.checks.database.status) === 'ok'
-                    ? 'dash-health-badge--ok'
-                    : 'dash-health-badge--neutral',
-                )}>
-                  {healthLabel(health.checks.database.status, 'database')}
-                  {health.checks.database.state &&
-                  health.checks.database.status !== 'up' &&
-                  health.checks.database.status !== 'ok'
-                    ? ` · ${health.checks.database.state}`
-                    : ''}
-                </span>
-              </div>
-              <div className={dashboardHealthRow(healthTone(health.checks.redis.status))}>
-                <span className="text-slate-700">Redis</span>
-                <span className="dash-health-badge dash-health-badge--neutral">
-                  {healthLabel(health.checks.redis.status)}
-                </span>
-              </div>
-              <div className={dashboardHealthRow(healthTone(health.checks.elasticsearch.status))}>
-                <span className="text-slate-700">Elasticsearch</span>
-                <span className={cn(
-                  'dash-health-badge',
-                  health.checks.elasticsearch.status === 'degraded'
-                    ? 'dash-health-badge--warn'
-                    : healthTone(health.checks.elasticsearch.status) === 'ok'
-                      ? 'dash-health-badge--ok'
-                      : 'dash-health-badge--neutral',
-                )}>
-                  {healthLabel(health.checks.elasticsearch.status)}
-                </span>
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
-        <div className={cn(dashboardCard, 'p-1.5 sm:p-2')}>
-          <div className="mb-1 flex items-center justify-between gap-2">
-            <h3 className={dashboardSectionTitle()}>Lead status breakdown</h3>
-            <span className="text-[10px] font-medium text-slate-400">Last sync: live</span>
+        <div className={dashboardPanel}>
+          <div className={dashboardPanelHeaderBlue}>
+            <h3>Lead status breakdown</h3>
+            <span className="dash-panel__meta">Last sync: live</span>
           </div>
-          {!chart?.statusBreakdown?.length ? (
-            <p className="text-xs text-slate-500">Upload master data to see status chart</p>
-          ) : (
-            <div className="max-h-36 space-y-1 overflow-auto pr-1">
-              {chart.statusBreakdown.map((item, i) => (
-                <DashboardBarRow
-                  key={item.label}
-                  label={item.label}
-                  count={item.count}
-                  total={chartTotal}
-                  color="bg-gradient-to-r from-[#2568b8] to-[#2e7ad1]"
-                  delay={i * 45}
-                />
-              ))}
-            </div>
-          )}
+          <div className={dashboardPanelBody}>
+            {!chart?.statusBreakdown?.length ? (
+              <div className="dash-empty-state">
+                <BarChart3 className="dash-empty-state__icon" strokeWidth={1.75} />
+                <p className="dash-empty-hint">Upload master data to see status chart</p>
+              </div>
+            ) : (
+              <div className="dash-chart-bars max-h-32 space-y-0.5 overflow-auto pr-1">
+                {chart.statusBreakdown.map((item, i) => (
+                  <DashboardBarRow
+                    key={item.label}
+                    label={item.label}
+                    count={item.count}
+                    total={chartTotal}
+                    color="bg-gradient-to-r from-[#2568b8] to-[#2e7ad1]"
+                    delay={i * 45}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className={cn(dashboardCard, 'dash-section')}>
-        <div className={dashboardCardHeader}>Quick actions</div>
-        <div className="grid grid-cols-1 gap-1 p-2 sm:grid-cols-2 lg:grid-cols-5">
+      <div className={cn('dash-section', dashboardPanel)}>
+        <div className={dashboardPanelHeaderBlue}>
+          <h3>Quick actions</h3>
+        </div>
+        <div className={cn(dashboardPanelBody, 'dash-quick-grid')}>
           {QUICK_ACTIONS.map((a) => {
             const Icon = a.icon;
             return (
               <Link key={a.href} href={a.href} className={dashboardQuickAction}>
                 <span className="dash-quick-icon">
-                  <Icon className="h-4 w-4 text-[#2e7ad1]" />
+                  <Icon className="h-3.5 w-3.5 text-[#2e7ad1]" strokeWidth={2.25} />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-1 text-xs font-bold text-slate-900">
+                  <span className="flex items-center gap-1 text-[11px] font-bold text-slate-900">
                     {a.label}
                     <ChevronRight className="h-3 w-3 text-slate-400 opacity-0 transition-all duration-200 group-hover:translate-x-0.5 group-hover:opacity-100" />
                   </span>

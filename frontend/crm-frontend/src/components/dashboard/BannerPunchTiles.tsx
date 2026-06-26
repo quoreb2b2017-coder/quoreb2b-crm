@@ -82,7 +82,7 @@ function PunchTile({
       disabled={disabled || busy}
       onClick={onClick}
       className={cn(
-        'group relative flex min-w-0 flex-row items-center gap-1.5 rounded-md border px-2 py-1 backdrop-blur-md transition-all duration-200',
+        'group relative flex min-w-0 flex-row items-center gap-1 rounded-md border px-1.5 py-0.5 backdrop-blur-md transition-all duration-200',
         'active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40',
         active ? t.active : t.shell,
       )}
@@ -94,7 +94,7 @@ function PunchTile({
       )}
       <span
         className={cn(
-          'flex h-6 w-6 shrink-0 items-center justify-center rounded-md shadow-sm transition-transform group-hover:scale-105',
+          'flex h-5 w-5 shrink-0 items-center justify-center rounded-md shadow-sm transition-transform group-hover:scale-105',
           t.icon,
         )}
       >
@@ -355,7 +355,7 @@ export function BannerPunchTiles() {
   };
 
   return (
-    <div className="w-full p-1.5 sm:p-2">
+    <div className="w-full p-1 sm:p-1.5 dash-punch-inner">
       <div className="mb-1 flex items-center justify-between gap-1.5">
         <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-white/70">
           <Fingerprint className="h-3 w-3 text-white/80" />

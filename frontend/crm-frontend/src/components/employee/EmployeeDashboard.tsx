@@ -17,11 +17,11 @@ import { AttendanceSummaryCard } from '@/components/attendance/EmployeeAttendanc
 import { DashboardPageShell } from '@/components/dashboard/DashboardPageShell';
 import { DashboardBarRow } from '@/components/dashboard/DashboardBarRow';
 import {
-  dashboardCard,
-  dashboardCardHeader,
   dashboardBannerBtn,
-  dashboardSectionTitle,
   dashboardLink,
+  dashboardPanel,
+  dashboardPanelHeaderBlue,
+  dashboardPanelBody,
 } from '@/components/dashboard/dashboard-ui';
 
 function formatWhen(iso: string) {
@@ -140,15 +140,18 @@ export function EmployeeDashboard() {
         <AttendanceSummaryCard basePath="/employee/attendance" variant="dashboard" />
       </div>
 
-      <div className={cn(dashboardCard, 'dash-section p-1.5 sm:p-2')}>
-        <h3 className={dashboardSectionTitle()}>
-          <Layers className="h-4 w-4 text-[#2e7ad1]" />
-          Lead status breakdown
-        </h3>
+      <div className={cn('dash-section', dashboardPanel)}>
+        <div className={dashboardPanelHeaderBlue}>
+          <h3>Lead status breakdown</h3>
+        </div>
+        <div className={dashboardPanelBody}>
         {data.statusBreakdown.length === 0 ? (
-          <p className="text-xs text-slate-500">No status data in your campaigns yet.</p>
+          <div className="dash-empty-state">
+            <Layers className="dash-empty-state__icon" strokeWidth={1.75} />
+            <p className="dash-empty-hint">No status data in your campaigns yet.</p>
+          </div>
         ) : (
-          <div className="max-h-32 space-y-1 overflow-auto pr-1">
+          <div className="dash-chart-bars max-h-28 space-y-0.5 overflow-auto pr-1">
             {data.statusBreakdown.map((item, i) => (
               <DashboardBarRow
                 key={item.label}
@@ -161,7 +164,7 @@ export function EmployeeDashboard() {
             ))}
           </div>
         )}
-        <div className="mt-2 flex flex-wrap gap-3">
+        <div className="mt-1.5 flex flex-wrap gap-2">
           <Link href="/employee/batches" className={dashboardLink}>
             Open my campaign →
           </Link>
@@ -169,10 +172,14 @@ export function EmployeeDashboard() {
             Activity logs →
           </Link>
         </div>
+        </div>
       </div>
 
-      <div className={cn(dashboardCard, 'dash-section')}>
-        <div className={dashboardCardHeader}>Recent campaigns</div>
+      <div className={cn('dash-section', dashboardPanel)}>
+        <div className={dashboardPanelHeaderBlue}>
+          <h3>Recent campaigns</h3>
+        </div>
+        <div className={cn(dashboardPanelBody, '!p-0')}>
         <div className="dash-table-wrap">
           <table className="dash-table w-full text-xs">
             <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
@@ -211,6 +218,7 @@ export function EmployeeDashboard() {
               )}
             </tbody>
           </table>
+        </div>
         </div>
       </div>
     </DashboardPageShell>

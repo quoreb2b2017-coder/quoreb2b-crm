@@ -40,3 +40,22 @@ export function dashboardHealthRow(tone: 'ok' | 'warn' | 'neutral' = 'neutral') 
 export const dashboardQuickAction = 'dash-quick-action group';
 
 export const dashboardQuickActionViolet = 'dash-quick-action dash-quick-action--violet group';
+
+/** Elevated section panel with optional blue header */
+export const dashboardPanel = 'dash-panel';
+
+export const dashboardPanelHeader = 'dash-panel__header';
+
+export const dashboardPanelHeaderBlue = 'dash-panel__header dash-panel__header--blue';
+
+export const dashboardPanelBody = 'dash-panel__body';
+
+export const dashboardLivePill = 'dash-live-pill';
+
+export function dashboardHealthItem(tone: 'ok' | 'warn' | 'neutral' = 'neutral') {
+  return cn('dash-health-item', {
+    'dash-health-item--ok': tone === 'ok',
+    'dash-health-item--warn': tone === 'warn',
+    'dash-health-item--neutral': tone === 'neutral',
+  });
+}

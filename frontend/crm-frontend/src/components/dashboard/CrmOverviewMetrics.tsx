@@ -10,6 +10,15 @@ export type CrmOverviewMetric = {
   icon: LucideIcon;
 };
 
+const KPI_ACCENTS = [
+  'dash-stat-tile--blue',
+  'dash-stat-tile--indigo',
+  'dash-stat-tile--emerald',
+  'dash-stat-tile--amber',
+  'dash-stat-tile--violet',
+  'dash-stat-tile--rose',
+] as const;
+
 export function CrmOverviewMetrics({
   metrics,
   className,
@@ -18,27 +27,28 @@ export function CrmOverviewMetrics({
   className?: string;
 }) {
   return (
-    <div className={cn('grid grid-cols-2 gap-1 sm:grid-cols-2 xl:grid-cols-4', className)}>
+    <div className={cn('dash-overview-grid', className)}>
       {metrics.map((m, i) => {
         const Icon = m.icon;
         const display =
           typeof m.value === 'number' ? m.value.toLocaleString('en-US') : m.value;
+        const accent = KPI_ACCENTS[i % KPI_ACCENTS.length];
 
         return (
           <div
             key={m.label}
-            className="dash-metric-card group"
-            style={{ animationDelay: `${i * 35}ms` }}
+            className={cn('dash-stat-tile dash-stat-tile--kpi group', accent)}
+            style={{ animationDelay: `${i * 40}ms` }}
             title={m.note}
           >
-            <span className="dash-metric-card__icon">
-              <Icon strokeWidth={2.2} />
-            </span>
-            <div className="dash-metric-card__body">
-              <p className="dash-metric-card__label">{m.label}</p>
-              <p className="dash-metric-card__value">{display}</p>
-              {m.note ? <p className="dash-metric-card__note">{m.note}</p> : null}
+            <div className="dash-stat-tile__kpi-head">
+              <span className="dash-stat-tile__kpi-icon">
+                <Icon strokeWidth={2.25} />
+              </span>
+              <span className="dash-stat-tile__value">{display}</span>
             </div>
+            <span className="dash-stat-tile__label">{m.label}</span>
+            {m.note ? <p className="dash-stat-tile__note">{m.note}</p> : null}
           </div>
         );
       })}

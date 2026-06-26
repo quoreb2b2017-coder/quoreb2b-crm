@@ -82,18 +82,17 @@ export function XlMetricCardSection({
   }[columns];
 
   const headerClass =
-    headerVariant === 'green'
-      ? 'dash-card-header--green'
-      : headerVariant === 'violet'
-        ? 'dash-card-header--violet'
-        : 'dash-card-header';
+    headerVariant === 'green' || headerVariant === 'violet'
+      ? 'dash-panel__header--blue'
+      : '';
 
   return (
-    <div className={cn('dash-section dash-card overflow-hidden', className)}>
-      <div className={cn('dash-card-header border-b px-2.5 py-1', headerClass)}>
-        <h3 className="text-[10px] font-bold uppercase tracking-wider">{title}</h3>
+    <div className={cn('dash-section dash-panel overflow-hidden', className)}>
+      <div className={cn('dash-panel__header', headerClass)}>
+        <h3>{title}</h3>
       </div>
-      <div className={cn('grid gap-1 p-1.5', gridClass, columns === 6 && 'dash-stat-grid--6')}>
+      <div className={cn('dash-panel__body', columns === 6 && 'dash-stat-grid--6')}>
+        <div className={cn('grid gap-1', gridClass)}>
         {rows.map((row, i) => {
           const isLonely = lonelyLast && i === rows.length - 1;
           return (
@@ -105,6 +104,7 @@ export function XlMetricCardSection({
             </div>
           );
         })}
+        </div>
       </div>
     </div>
   );

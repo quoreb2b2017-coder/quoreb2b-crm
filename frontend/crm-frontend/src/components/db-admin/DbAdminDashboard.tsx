@@ -3,7 +3,7 @@
 import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { RefreshCw, Database, Layers, Users } from 'lucide-react';
+import { RefreshCw, Users } from 'lucide-react';
 import { WelcomeBanner } from '@/components/dashboard/WelcomeBanner';
 import { XlMetricCardSection } from '@/components/admin/XlMetricCards';
 import { fetchDbAdminDashboard, type DbAdminDashboardData } from '@/lib/api/analytics.service';
@@ -13,11 +13,12 @@ import { AttendanceSummaryCard } from '@/components/attendance/EmployeeAttendanc
 import { DashboardPageShell } from '@/components/dashboard/DashboardPageShell';
 import { DashboardBarRow } from '@/components/dashboard/DashboardBarRow';
 import {
-  dashboardCard,
-  dashboardCardHeader,
   dashboardBannerBtn,
-  dashboardSectionTitle,
   dashboardLinkViolet,
+  dashboardPanel,
+  dashboardPanelHeaderBlue,
+  dashboardPanelBody,
+  dashboardLink,
 } from '@/components/dashboard/dashboard-ui';
 
 function formatWhen(iso: string) {
@@ -148,27 +149,28 @@ export function DbAdminDashboard() {
       </div>
 
       <div className="dash-section grid gap-1 lg:grid-cols-2">
-        <div className={cn(dashboardCard, 'p-1.5 sm:p-2')}>
-          <h3 className={dashboardSectionTitle()}>
-            <Layers className="h-4 w-4 text-[#2e7ad1]" />
-            Campaign split
-          </h3>
-          <div className="space-y-2">
+        <div className={dashboardPanel}>
+          <div className={dashboardPanelHeaderBlue}>
+            <h3>Campaign split</h3>
+          </div>
+          <div className={dashboardPanelBody}>
+          <div className="space-y-1.5">
             <DashboardBarRow label="Your campaigns" count={b.owned} total={batchTotal} color="bg-gradient-to-r from-[#2568b8] to-emerald-500" />
             <DashboardBarRow label="Admin shared" count={b.sharedWithMe} total={batchTotal} color="bg-gradient-to-r from-violet-600 to-purple-400" delay={60} />
           </div>
-          <Link href="/db-admin/batches" className={dashboardLinkViolet}>
+          <Link href="/db-admin/batches" className={cn(dashboardLinkViolet, 'mt-1.5 inline-block')}>
             Open all campaigns →
           </Link>
+          </div>
         </div>
 
         {data.masterData ? (
-          <div className={cn(dashboardCard, 'p-1.5 sm:p-2')}>
-            <h3 className={dashboardSectionTitle()}>
-              <Database className="h-4 w-4 text-[#2e7ad1]" />
-              Master data usage
-            </h3>
-            <div className="space-y-2">
+          <div className={dashboardPanel}>
+            <div className={dashboardPanelHeaderBlue}>
+              <h3>Master data usage</h3>
+            </div>
+            <div className={dashboardPanelBody}>
+            <div className="space-y-1.5">
               <DashboardBarRow
                 label="In campaigns"
                 count={data.masterData.batchedRows}
@@ -183,18 +185,21 @@ export function DbAdminDashboard() {
                 delay={60}
               />
             </div>
+            </div>
           </div>
         ) : (
-          <div className={cn(dashboardCard, 'flex items-center p-4 text-xs text-slate-500')}>
+          <div className={cn(dashboardPanel, 'flex items-center p-3 text-xs text-slate-500')}>
             <Users className="mr-2 h-4 w-4 shrink-0 text-violet-500" />
             Master data stats appear when admin grants you batch-creation access on the master file.
           </div>
         )}
       </div>
 
-      <div className="dash-section">
-        <div className={dashboardCard}>
-          <div className={dashboardCardHeader}>Recent campaigns</div>
+      <div className={cn('dash-section', dashboardPanel)}>
+        <div className={dashboardPanelHeaderBlue}>
+          <h3>Recent campaigns</h3>
+        </div>
+        <div className={cn(dashboardPanelBody, '!p-0')}>
           <div className="dash-table-wrap">
             <table className="dash-table w-full text-xs">
               <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">

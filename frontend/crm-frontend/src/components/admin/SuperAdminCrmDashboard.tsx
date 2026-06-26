@@ -185,8 +185,8 @@ export function SuperAdminCrmDashboard() {
         </div>
       )}
 
-      <div className="dash-section grid gap-1.5 lg:grid-cols-2">
-        <div className={cn(dashboardCard, 'p-2 sm:p-2.5')}>
+      <div className="dash-section grid gap-1 lg:grid-cols-2">
+        <div className={cn(dashboardCard, 'p-1.5 sm:p-2')}>
           <div className="mb-1 flex items-center justify-between gap-2">
             <h3 className={dashboardSectionTitle()}>System health</h3>
             <span className="dash-health-badge dash-health-badge--live normal-case">Live</span>
@@ -253,7 +253,7 @@ export function SuperAdminCrmDashboard() {
           )}
         </div>
 
-        <div className={cn(dashboardCard, 'p-2 sm:p-2.5')}>
+        <div className={cn(dashboardCard, 'p-1.5 sm:p-2')}>
           <div className="mb-1 flex items-center justify-between gap-2">
             <h3 className={dashboardSectionTitle()}>Lead status breakdown</h3>
             <span className="text-[10px] font-medium text-slate-400">Last sync: live</span>

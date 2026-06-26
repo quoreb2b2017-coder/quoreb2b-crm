@@ -175,7 +175,7 @@ export function WelcomeBanner({ variant, subtitleOverride, toolbar }: WelcomeBan
       <div className="dash-welcome-card dash-banner-shine relative overflow-hidden">
         <div className="dash-welcome-accent" />
 
-        <div className="relative z-10 flex flex-col gap-1 p-2 sm:p-2.5">
+        <div className="relative z-10 flex flex-col gap-0.5 p-1.5 sm:p-2 lg:p-1.5">
           <div className="flex flex-wrap items-center justify-between gap-1">
             <div className="flex min-w-0 items-center gap-1.5">
               <div className="dash-avatar">

@@ -90,10 +90,10 @@ export function XlMetricCardSection({
 
   return (
     <div className={cn('dash-section dash-card overflow-hidden', className)}>
-      <div className={cn('dash-card-header border-b px-3 py-1.5', headerClass)}>
+      <div className={cn('dash-card-header border-b px-2.5 py-1', headerClass)}>
         <h3 className="text-[10px] font-bold uppercase tracking-wider">{title}</h3>
       </div>
-      <div className={cn('grid gap-1.5 p-2', gridClass, columns === 6 && 'dash-stat-grid--6')}>
+      <div className={cn('grid gap-1 p-1.5', gridClass, columns === 6 && 'dash-stat-grid--6')}>
         {rows.map((row, i) => {
           const isLonely = lonelyLast && i === rows.length - 1;
           return (

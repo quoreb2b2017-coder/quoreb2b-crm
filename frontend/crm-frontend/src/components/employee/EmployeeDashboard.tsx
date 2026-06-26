@@ -109,7 +109,7 @@ export function EmployeeDashboard() {
         }
       />
 
-      <div className="dash-section grid gap-1.5 lg:grid-cols-2">
+      <div className="dash-section grid gap-1 lg:grid-cols-2">
         <XlMetricCardSection
           title="My assigned leads"
           headerVariant="green"
@@ -140,7 +140,7 @@ export function EmployeeDashboard() {
         <AttendanceSummaryCard basePath="/employee/attendance" variant="dashboard" />
       </div>
 
-      <div className={cn(dashboardCard, 'dash-section p-2 sm:p-2.5')}>
+      <div className={cn(dashboardCard, 'dash-section p-1.5 sm:p-2')}>
         <h3 className={dashboardSectionTitle()}>
           <Layers className="h-4 w-4 text-[#2e7ad1]" />
           Lead status breakdown

@@ -414,7 +414,7 @@ function SidebarInner({
       {/* ── Logo + collapse btn ── */}
       <div className={cn(
         'flex items-center border-b border-slate-200/80 flex-shrink-0',
-        isCollapsed ? 'justify-center px-0 py-2.5 h-[52px]' : 'justify-between px-3 h-[52px]',
+        isCollapsed ? 'justify-center px-0 py-2 lg:py-1.5 h-[52px] lg:h-11' : 'justify-between px-3 h-[52px] lg:h-11',
       )}>
         {!isCollapsed && (
           <div className="flex items-center gap-2.5 min-w-0">
@@ -649,7 +649,7 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
         {/* ── Logo + collapse btn ── */}
         <div className={cn(
           'flex items-center border-b border-slate-200/80 flex-shrink-0',
-          isCollapsed ? 'justify-center px-0 py-2.5 h-[52px]' : 'justify-between px-3 h-[52px]',
+          isCollapsed ? 'justify-center px-0 py-2 lg:py-1.5 h-[52px] lg:h-11' : 'justify-between px-3 h-[52px] lg:h-11',
         )}>
           {!isCollapsed && (
             <div className="flex items-center gap-2.5 min-w-0">
@@ -988,7 +988,7 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
         <div
           className={cn(
             'crm-content transition-opacity duration-150',
-            edgeToEdge ? 'p-0 !bg-transparent' : 'overflow-auto p-4 sm:p-6',
+            edgeToEdge ? 'p-0 !bg-transparent' : 'overflow-auto p-2 sm:p-3 lg:p-2',
             contentLocked ? 'flex flex-col overflow-hidden' : 'overflow-y-auto overflow-x-hidden',
             (attendancePage || isBulkEmailVerificationPath(pathname)) && 'overflow-y-auto',
             isNavigating && 'opacity-90',

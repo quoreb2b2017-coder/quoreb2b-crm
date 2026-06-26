@@ -13,7 +13,7 @@ export function DashboardPageShell({
   className?: string;
 }) {
   return (
-    <div className={cn('dash-page dash-stagger space-y-1.5', className)}>
+    <div className={cn('dash-page dash-stagger space-y-1', className)}>
       {children}
     </div>
   );

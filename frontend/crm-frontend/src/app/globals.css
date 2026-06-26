@@ -453,6 +453,67 @@ html {
     @apply text-[#2568b8];
   }
 
+  /* Monitor / desktop — tighter global CRM chrome */
+  @media (min-width: 1024px) {
+    .crm-header {
+      height: 2.75rem;
+      padding-left: 0.75rem;
+      padding-right: 0.75rem;
+    }
+
+    .crm-header h1 {
+      font-size: 0.875rem;
+    }
+
+    .crm-btn-primary,
+    .crm-btn-secondary {
+      padding: 0.375rem 0.875rem;
+      font-size: 0.8125rem;
+      border-radius: 0.625rem;
+    }
+
+    .crm-btn-ghost,
+    .crm-icon-btn {
+      padding: 0.375rem;
+      border-radius: 0.625rem;
+    }
+
+    .crm-input {
+      padding: 0.375rem 0.75rem;
+      font-size: 0.8125rem;
+      border-radius: 0.625rem;
+    }
+
+    .crm-surface,
+    .crm-surface-static {
+      border-radius: 0.625rem;
+    }
+
+    .crm-badge {
+      font-size: 0.625rem;
+      padding: 0.125rem 0.5rem;
+    }
+
+    .crm-nav-link {
+      font-size: 0.75rem;
+      gap: 0.375rem;
+    }
+
+    .crm-nav-section {
+      padding-top: 0.375rem;
+      font-size: 0.5625rem;
+    }
+
+    .crm-page-enter {
+      animation-duration: 0.22s;
+    }
+
+    .crm-content .crm-page-enter,
+    .crm-content > div {
+      gap: 0.375rem;
+    }
+  }
+
   /* Date/time inputs in narrow side panels — full width, responsive picker */
   .note-date-input {
     display: block;

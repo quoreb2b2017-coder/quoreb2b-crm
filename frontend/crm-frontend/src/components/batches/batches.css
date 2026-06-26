@@ -792,3 +792,60 @@ button.xl-folder-name:hover {
   gap: 0.5rem;
   margin-bottom: 0.25rem;
 }
+
+@media (min-width: 1024px) {
+  .xl-titlebar {
+    gap: 0.5rem;
+    padding: 0.4375rem 0.75rem;
+  }
+
+  .xl-titlebar-title {
+    font-size: 0.875rem;
+  }
+
+  .xl-titlebar-sub {
+    font-size: 0.6875rem;
+  }
+
+  .xl-badge {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.625rem;
+  }
+
+  .xl-chip {
+    padding: 0.1875rem 0.4375rem;
+    font-size: 0.6875rem;
+  }
+
+  .xl-pathbar {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.6875rem;
+  }
+
+  .xl-sidebar-head {
+    padding: 0.375rem 0.625rem;
+    font-size: 0.6875rem;
+  }
+
+  .xl-sheet-head {
+    padding: 0.375rem 0.625rem;
+  }
+
+  .xl-sheet-head-title {
+    font-size: 0.75rem;
+  }
+
+  .xl-table th {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.6875rem;
+  }
+
+  .xl-table td {
+    padding: 0.1875rem 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .xl-modal-head {
+    padding: 0.625rem 0.875rem;
+  }
+}

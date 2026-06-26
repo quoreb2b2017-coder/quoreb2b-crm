@@ -147,8 +147,8 @@ export function DbAdminDashboard() {
         <AttendanceSummaryCard basePath="/db-admin/attendance" variant="dashboard" accent="violet" />
       </div>
 
-      <div className="dash-section grid gap-1.5 lg:grid-cols-2">
-        <div className={cn(dashboardCard, 'p-2 sm:p-2.5')}>
+      <div className="dash-section grid gap-1 lg:grid-cols-2">
+        <div className={cn(dashboardCard, 'p-1.5 sm:p-2')}>
           <h3 className={dashboardSectionTitle()}>
             <Layers className="h-4 w-4 text-[#2e7ad1]" />
             Campaign split
@@ -163,7 +163,7 @@ export function DbAdminDashboard() {
         </div>
 
         {data.masterData ? (
-          <div className={cn(dashboardCard, 'p-2 sm:p-2.5')}>
+          <div className={cn(dashboardCard, 'p-1.5 sm:p-2')}>
             <h3 className={dashboardSectionTitle()}>
               <Database className="h-4 w-4 text-[#2e7ad1]" />
               Master data usage

@@ -590,3 +590,50 @@
 .al-scroll::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(180deg, #2e7ad1aa, #2e7ad1cc);
 }
+
+@media (min-width: 1024px) {
+  .al-shell {
+    border-radius: 0.625rem;
+  }
+
+  .al-hero-content {
+    padding-top: 0.75rem !important;
+    padding-bottom: 0.75rem !important;
+  }
+
+  .al-kpi {
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.625rem !important;
+  }
+
+  .al-kpi:hover {
+    transform: none;
+  }
+
+  .al-kpi-icon {
+    width: 1.375rem;
+    height: 1.375rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .al-toolbar {
+    padding: 0.375rem 0.5rem !important;
+    gap: 0.375rem !important;
+  }
+
+  .al-body {
+    padding: 0.5rem !important;
+    gap: 0.5rem !important;
+  }
+
+  .al-table-head th,
+  .al-table-row td {
+    padding: 0.3125rem 0.5rem !important;
+    font-size: 0.75rem;
+  }
+
+  .al-filter-chip {
+    padding: 0.125rem 0.5rem;
+    font-size: 0.6875rem;
+  }
+}

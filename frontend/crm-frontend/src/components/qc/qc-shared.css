@@ -419,3 +419,35 @@
   width: 1.125rem;
   height: 1.125rem;
 }
+
+@media (min-width: 1024px) {
+  .qc-workspace-badge {
+    height: 1.5rem;
+    width: 1.5rem;
+    font-size: 0.5rem;
+  }
+
+  .qc-stat-pill {
+    padding: 0.125rem 0.4375rem;
+    font-size: 0.625rem;
+  }
+
+  .qc-stat-pill--titlebar {
+    padding: 0.1875rem 0.5rem;
+    font-size: 0.625rem;
+  }
+
+  .qc-toolbar-bar {
+    padding: 0.25rem 0.5rem !important;
+    gap: 0.375rem !important;
+  }
+
+  .qc-employee-chip {
+    padding: 0.25rem 0.4375rem !important;
+    font-size: 0.6875rem;
+  }
+
+  .qc-pending-folders .qc-month-label {
+    font-size: 0.625rem;
+  }
+}

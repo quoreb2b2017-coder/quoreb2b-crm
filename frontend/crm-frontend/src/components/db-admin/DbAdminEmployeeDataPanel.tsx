@@ -21,6 +21,7 @@ import {
   resolveDuplicatesOpenPath,
   uploadRequestFilePath,
 } from '@/lib/master-data/upload-request-nav';
+import { useUploadRequestRefresh } from '@/hooks/useUploadRequestRefresh';
 
 const FILTERS: Array<MasterDataUploadRequestStatus | 'all'> = [
   'pending_db_admin',
@@ -59,10 +60,8 @@ export function DbAdminEmployeeDataPanel({ onRequestsChanged }: DbAdminEmployeeD
 
   useEffect(() => {
     load();
-    const onRefresh = () => load();
-    window.addEventListener('master-data-updated', onRefresh);
-    return () => window.removeEventListener('master-data-updated', onRefresh);
   }, [load]);
+  useUploadRequestRefresh(load);
 
   const filteredRequests = useMemo(
     () => requests.filter((request) => (filter === 'all' ? true : request.status === filter)),

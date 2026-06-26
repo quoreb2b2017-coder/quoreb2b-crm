@@ -53,6 +53,7 @@ export interface BatchShareResult {
   batch: Record<string, unknown>;
   distributed: BatchShareDistribution[];
   fullShareUserIds: string[];
+  alreadySharedUserIds: string[];
 }
 
 const MAX_LEAD_LOGS_PER_SAVE = 200;
@@ -119,6 +120,16 @@ export class BatchesService {
     const campaignChannel =
       dto.campaignChannel ?? parentChannel ?? detectCampaignChannel(dto.name);
 
+    const isAdmin =
+      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
+    let autoSharedDbAdmins: Types.ObjectId[] = [];
+    if (isAdmin && !sourceId) {
+      const dbAdmins = await this.usersRepository.findActiveByRoles([SystemRole.DB_ADMIN]);
+      autoSharedDbAdmins = dbAdmins.map(
+        (u) => new Types.ObjectId(String((u.toObject ? u.toObject() : u as { _id: Types.ObjectId })._id)),
+      );
+    }
+
     const batch = await this.model.create({
       name: dto.name,
       description: dto.description,
@@ -141,7 +152,7 @@ export class BatchesService {
       createdBy: new Types.ObjectId(actor.id),
       createdByEmail: actor.email,
       createdByName: actor.name,
-      sharedWith: [],
+      sharedWith: autoSharedDbAdmins,
     });
 
     const rootBatchId = sourceId
@@ -176,6 +187,31 @@ export class BatchesService {
     }
 
     void this.bustBatchCaches(actor.id, batch._id.toString());
+
+    if (autoSharedDbAdmins.length > 0) {
+      try {
+        const dbAdminUsers = await this.usersRepository.findByIds(
+          autoSharedDbAdmins.map((id) => id.toString()),
+        );
+        await Promise.all(
+          dbAdminUsers.map((recipient) => {
+            const o = recipient.toObject ? recipient.toObject() : recipient;
+            return this.notifications.notifyUser(String((o as { _id: Types.ObjectId })._id), {
+              type: 'info',
+              title: 'New campaign available',
+              message: `Campaign "${batch.name}" is ready in your library`,
+              priority: 'medium',
+              actionUrl: '/db-admin/batches',
+              actionLabel: 'Open campaign library',
+              metadata: { batchId: batch._id.toString(), batchName: batch.name },
+            });
+          }),
+        );
+      } catch {
+        /* non-blocking */
+      }
+    }
+
     return this.toResponse(batch);
   }
 
@@ -347,21 +383,43 @@ export class BatchesService {
 
     const validIds = dto.userIds.filter((id) => Types.ObjectId.isValid(id));
     const existing = (batch.sharedWith as Types.ObjectId[]).map((u) => u.toString());
-    const toAddIds = validIds.filter((id) => !existing.includes(id));
-    if (toAddIds.length === 0) {
-      return {
-        batch: this.toResponse(batch),
-        distributed: [],
-        fullShareUserIds: [],
-      };
+
+    const childDocs = await this.model
+      .find({ sourceBatchId: batch._id })
+      .select('sharedWith')
+      .lean()
+      .exec();
+    const alreadyAssignedEmployee = new Set<string>();
+    for (const child of childDocs) {
+      for (const uid of (child.sharedWith as Types.ObjectId[]) ?? []) {
+        alreadyAssignedEmployee.add(uid.toString());
+      }
     }
 
-    const recipientUsers = await this.usersRepository.findByIds(toAddIds);
+    const recipientUsers = await this.usersRepository.findByIds(validIds);
     const userRoleMap = new Map<string, string[]>();
     for (const u of recipientUsers) {
       const o = u.toObject ? u.toObject() : u;
       const id = String((o as { _id: Types.ObjectId })._id);
       userRoleMap.set(id, ((o as { roles?: string[] }).roles ?? []) as string[]);
+    }
+
+    const alreadySharedUserIds = validIds.filter((id) => {
+      const userRoles = userRoleMap.get(id) ?? [];
+      if (userRoles.includes(SystemRole.EMPLOYEE)) {
+        return alreadyAssignedEmployee.has(id);
+      }
+      return existing.includes(id);
+    });
+
+    const toAddIds = validIds.filter((id) => !alreadySharedUserIds.includes(id));
+    if (toAddIds.length === 0) {
+      return {
+        batch: this.toResponse(batch),
+        distributed: [],
+        fullShareUserIds: [],
+        alreadySharedUserIds,
+      };
     }
 
     const dbAdminToAdd: Types.ObjectId[] = [];
@@ -399,25 +457,17 @@ export class BatchesService {
         throw new BadRequestException('Campaign has no rows to distribute to employees');
       }
 
-      const childDocs = await this.model
-        .find({ sourceBatchId: batch._id })
-        .select('headers rows parentSourceRowIndices sharedWith')
-        .lean()
-        .exec();
-
-      const alreadyAssignedEmployee = new Set<string>();
-      for (const child of childDocs) {
-        for (const uid of (child.sharedWith as Types.ObjectId[]) ?? []) {
-          alreadyAssignedEmployee.add(uid.toString());
-        }
-      }
-
       const employeesToDistribute = employeeToAdd.filter(
         (id) => !alreadyAssignedEmployee.has(id.toString()),
       );
 
       if (employeesToDistribute.length > 0) {
-        const assigned = assignedParentRowIndices(parentHeaders, parentRows, childDocs);
+        const childDocsFull = await this.model
+          .find({ sourceBatchId: batch._id })
+          .select('headers rows parentSourceRowIndices sharedWith')
+          .lean()
+          .exec();
+        const assigned = assignedParentRowIndices(parentHeaders, parentRows, childDocsFull);
         const unassigned = unassignedParentRowIndices(parentRows.length, assigned);
 
         if (unassigned.length < employeesToDistribute.length) {
@@ -562,6 +612,7 @@ export class BatchesService {
       batch: this.toResponse(batch),
       distributed,
       fullShareUserIds: dbAdminToAdd.map((id) => id.toString()),
+      alreadySharedUserIds,
     };
   }
 

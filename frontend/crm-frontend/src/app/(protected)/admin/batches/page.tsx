@@ -12,6 +12,7 @@ import { useCrmDataCleared } from '@/hooks/useCrmDataCleared';
 import { BatchMonthExplorer } from '@/components/batches/BatchMonthExplorer';
 import { BatchActionButton, BatchXlButton } from '@/components/batches/batch-action-buttons';
 import { toastBatchShareResult } from '@/lib/batches/share-result-toast';
+import { cn } from '@/lib/utils/cn';
 
 function Initials({ name }: { name: string }) {
   const p = name.trim().split(' ');
@@ -38,6 +39,7 @@ export default function AdminBatchesPage() {
   const [usersLoading, setUsersLoading] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
+  const [alreadySharedIds, setAlreadySharedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState<string | null>(null);
 
   const loadBatches = useCallback(async () => {
@@ -61,19 +63,27 @@ export default function AdminBatchesPage() {
 
   const openShareModal = async (batch: BatchRecord) => {
     setShareModal(batch);
-    setSelectedUserIds(new Set(batch.sharedWith));
+    setSelectedUserIds(new Set());
+    setAlreadySharedIds(new Set());
     setUsersLoading(true);
     try {
-      const { data } = await usersService.list({ limit: 500 });
-      const outer = (data as { data?: unknown })?.data;
+      const [usersRes, hierarchy] = await Promise.all([
+        usersService.list({ limit: 500 }),
+        batchesService.getHierarchy(batch.id),
+      ]);
+      const outer = (usersRes.data as { data?: unknown })?.data;
       const list: Record<string, unknown>[] = Array.isArray(outer)
         ? outer
         : Array.isArray((outer as { data?: unknown[] })?.data)
           ? (outer as { data: Record<string, unknown>[] }).data
           : [];
+      const assigned = new Set(
+        hierarchy.directEmployees.map((m) => m.user.id),
+      );
+      setAlreadySharedIds(assigned);
       const filtered = list.filter((u) => {
         const roles = Array.isArray(u.roles) ? (u.roles as string[]) : [];
-        return roles.includes('employee') || roles.includes('db_admin');
+        return roles.includes('employee');
       });
       setUsers(
         filtered.map((u) => ({
@@ -92,9 +102,14 @@ export default function AdminBatchesPage() {
 
   const handleShare = async () => {
     if (!shareModal) return;
+    const toShare = Array.from(selectedUserIds).filter((id) => !alreadySharedIds.has(id));
+    if (toShare.length === 0) {
+      toast.info('Nothing to share', 'Selected employees are already shared or none selected');
+      return;
+    }
     setSharing(true);
     try {
-      const result = await batchesService.share(shareModal.id, Array.from(selectedUserIds));
+      const result = await batchesService.share(shareModal.id, toShare);
       toastBatchShareResult(result);
       setShareModal(null);
       await loadBatches();
@@ -131,6 +146,7 @@ export default function AdminBatchesPage() {
   };
 
   const toggleUser = (id: string) => {
+    if (alreadySharedIds.has(id)) return;
     setSelectedUserIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -193,29 +209,32 @@ export default function AdminBatchesPage() {
               </div>
               <div className="px-6 py-4">
                 <p className="mb-3 rounded-lg border border-emerald-100 bg-emerald-50/80 px-3 py-2 text-xs leading-relaxed text-emerald-900">
+                  <span className="font-semibold">DB Administrators</span> already receive every new
+                  campaign automatically — no need to share with them here.{' '}
                   <span className="font-semibold">Employees</span> receive an{' '}
-                  <span className="font-semibold">equal, unique slice</span> of leads — no duplicate
-                  contacts across team members.{' '}
-                  <span className="font-semibold">DB Administrators</span> receive the full batch to
-                  split and assign further.
+                  <span className="font-semibold">equal, unique slice</span> of leads with no duplicate
+                  contacts across team members.
                 </p>
                 <div className="mb-3 flex items-center justify-between">
                   <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Select users
+                    Select employees
                   </p>
                   {users.length > 0 && (
                     <button
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
+                        const selectable = users.filter((u) => !alreadySharedIds.has(u.id));
                         setSelectedUserIds(
-                          selectedUserIds.size === users.length
+                          selectedUserIds.size === selectable.length
                             ? new Set()
-                            : new Set(users.map((u) => u.id)),
-                        )
-                      }
+                            : new Set(selectable.map((u) => u.id)),
+                        );
+                      }}
                       className="text-xs font-medium text-[#2e7ad1] hover:underline"
                     >
-                      {selectedUserIds.size === users.length ? 'Deselect all' : 'Select all'}
+                      {selectedUserIds.size === users.filter((u) => !alreadySharedIds.has(u.id)).length
+                        ? 'Deselect all'
+                        : 'Select all'}
                     </button>
                   )}
                 </div>
@@ -225,24 +244,35 @@ export default function AdminBatchesPage() {
                   <p className="py-4 text-center text-sm text-slate-400">No users found</p>
                 ) : (
                   <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
-                    {users.map((u) => (
+                    {users.map((u) => {
+                      const isAlreadyShared = alreadySharedIds.has(u.id);
+                      return (
                       <label
                         key={u.id}
-                        className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-slate-50"
+                        className={cn(
+                          'flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors',
+                          isAlreadyShared ? 'cursor-default bg-slate-50/80 opacity-80' : 'cursor-pointer hover:bg-slate-50',
+                        )}
                       >
                         <input
                           type="checkbox"
-                          checked={selectedUserIds.has(u.id)}
+                          checked={isAlreadyShared || selectedUserIds.has(u.id)}
+                          disabled={isAlreadyShared}
                           onChange={() => toggleUser(u.id)}
-                          className="h-4 w-4 rounded border-slate-300 text-[#2e7ad1]"
+                          className="h-4 w-4 rounded border-slate-300 text-[#2e7ad1] disabled:opacity-50"
                         />
                         <Initials name={u.name} />
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium text-slate-800">{u.name}</p>
                           <p className="truncate text-xs text-slate-400">{u.email}</p>
                         </div>
+                        {isAlreadyShared && (
+                          <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-800">
+                            Already shared
+                          </span>
+                        )}
                       </label>
-                    ))}
+                    );})}
                   </div>
                 )}
               </div>

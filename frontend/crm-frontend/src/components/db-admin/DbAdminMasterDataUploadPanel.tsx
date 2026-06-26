@@ -28,6 +28,7 @@ import {
   uploadRequestFilePath,
 } from '@/lib/master-data/upload-request-nav';
 import { useCanExportSpreadsheet } from '@/hooks/useSpreadsheetCopyGuard';
+import { useUploadRequestRefresh } from '@/hooks/useUploadRequestRefresh';
 
 const ACCEPT = '.csv,.xlsx,.xls';
 const FILTERS: Array<MasterDataUploadRequestStatus | 'all'> = [
@@ -73,6 +74,7 @@ export function DbAdminMasterDataUploadPanel() {
   useEffect(() => {
     load();
   }, [load]);
+  useUploadRequestRefresh(load);
 
   const handleTemplateDownload = async () => {
     if (!template) return;
@@ -255,7 +257,7 @@ export function DbAdminMasterDataUploadPanel() {
         title="Upload folders sent to Super Admin"
         requests={filteredRequests}
         loading={loading}
-        hint="Month-wise upload history"
+        hint="Upload history · stays in your panel until Super Admin deletes the request"
         statusColumnLabel="Super Admin status"
         emptyFolderMessage="No uploads in this month yet."
         onOpenRequest={openRequestFile}

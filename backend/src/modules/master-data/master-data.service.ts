@@ -11,6 +11,13 @@ import { Types } from 'mongoose';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { SaveMasterDataDto } from './dto/save-master-data.dto';
+import { SearchMasterDataDto } from './dto/search-master-data.dto';
+import { buildMasterDataFilterSchema } from './master-data-filter-schema.util';
+import {
+  distinctColumnValues,
+  filterMasterDataRows,
+  hasMasterDataSearchCriteria,
+} from './master-data-search.util';
 import { ShareMasterDataDto } from './dto/share-master-data.dto';
 import {
   CreateMasterDataUploadRequestDto,
@@ -550,13 +557,7 @@ export class MasterDataService {
 
   async listEmployeeUploadRequestsForDbAdmin(query: ListMasterDataUploadRequestsDto) {
     const filter: Record<string, unknown> = {
-      $or: [
-        { sourceRole: 'employee' },
-        {
-          sourceRole: { $exists: false },
-          status: { $in: ['pending_db_admin', 'active', 'pending_admin'] },
-        },
-      ],
+      sourceRole: 'employee',
     };
     if (query.status) {
       filter.status = query.status;
@@ -747,6 +748,7 @@ export class MasterDataService {
     if (query.status) {
       filter.status = query.status;
     }
+    // All statuses (including approved / merged) stay visible until Super Admin deletes the request.
     const docs = await this.uploadRequestModel.find(filter).sort({ createdAt: -1 }).exec();
     return docs.map((doc) => this.toUploadRequestResponse(doc));
   }
@@ -830,51 +832,14 @@ export class MasterDataService {
     return this.toUploadRequestResponse(request);
   }
 
-  private async removeMergedRowsFromMaster(request: MasterDataUploadRequest) {
-    const masterDoc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
-    if (!masterDoc?.rows?.length) return 0;
-
-    const rowsToRemove =
-      request.workRows?.length && request.sourceRole === 'employee'
-        ? request.workRows
-        : request.rows;
-    if (!rowsToRemove.length) return 0;
-
-    const keysToRemove = new Set(
-      rowsToRemove.map((row) =>
-        this.rowKey(this.normalizeRowToHeaders(row, request.headers, masterDoc.headers)),
-      ),
-    );
-
-    const nextRows = masterDoc.rows.filter((row) => {
-      const key = this.rowKey(
-        this.normalizeRowToHeaders(row, masterDoc.headers, masterDoc.headers),
-      );
-      return !keysToRemove.has(key);
-    });
-
-    const removed = masterDoc.rows.length - nextRows.length;
-    if (removed <= 0) return 0;
-
-    await this.masterDataModel.updateOne(
-      { key: MASTER_DATA_KEY },
-      { rows: nextRows },
-    );
-    void this.bustMasterCaches();
-    return removed;
-  }
-
   async deleteUploadRequest(requestId: string, actor: ActivityActor) {
     const request = await this.uploadRequestModel.findById(requestId).exec();
     if (!request) {
       throw new NotFoundException('Upload request not found');
     }
 
-    let removedFromMaster = 0;
-    if (request.status === 'approved') {
-      removedFromMaster = await this.removeMergedRowsFromMaster(request);
-    }
-
+    // Upload requests are removed from employee/DB Admin panels only.
+    // Rows already merged into master data stay in the master file.
     await this.uploadRequestModel.deleteOne({ _id: request._id }).exec();
     await this.notifications.deleteByUploadRequestId(requestId);
 
@@ -885,9 +850,7 @@ export class MasterDataService {
       await this.notifications.notifyUser(request.submittedBy.toString(), {
         type: 'warning',
         title: isEmployeeRequest ? 'Your data file was deleted' : 'Master data request deleted',
-        message: `${request.fileName} was removed by Admin${
-          removedFromMaster > 0 ? ` (${removedFromMaster} row(s) removed from master file)` : ''
-        }`,
+        message: `${request.fileName} was removed from your panel. Master file contacts are unchanged.`,
         priority: 'medium',
         actionUrl: submitterActionUrl,
         actionLabel: 'Open My Data',
@@ -929,7 +892,6 @@ export class MasterDataService {
           rowCount: request.rowCount,
           status: request.status,
           sourceRole: request.sourceRole ?? 'db_admin',
-          removedFromMaster,
         },
       });
     } catch (err) {
@@ -942,13 +904,17 @@ export class MasterDataService {
       deleted: true,
       id: requestId,
       sourceRole: request.sourceRole ?? 'db_admin',
-      removedFromMaster,
     };
   }
 
-  async getBatchCoverage() {
+  async getBatchCoverage(roles: string[] = []) {
+    const isDbAdminOnly =
+      roles.includes(SystemRole.DB_ADMIN) &&
+      !roles.includes(SystemRole.ADMIN) &&
+      !roles.includes(SystemRole.SUPER_ADMIN);
+
     return this.cache.wrap(
-      'master:coverage:summary',
+      isDbAdminOnly ? 'master:coverage:summary:dba' : 'master:coverage:summary',
       cacheTtlSeconds(this.config, 'long'),
       async () => {
         const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
@@ -963,7 +929,14 @@ export class MasterDataService {
             batchedByRow: {},
           };
         }
-        return this.batchesService.getMasterBatchCoverage(doc.headers, doc.rows);
+        const coverage = await this.batchesService.getMasterBatchCoverage(
+          doc.headers,
+          doc.rows,
+        );
+        if (isDbAdminOnly) {
+          return { summary: coverage.summary, batchedByRow: {} };
+        }
+        return coverage;
       },
     );
   }
@@ -983,11 +956,117 @@ export class MasterDataService {
           if (!doc) {
             throw new NotFoundException('No master data uploaded yet');
           }
-          return this.toResponse(doc);
+          return this.toMetadataResponse(doc);
         },
       );
     }
     throw new ForbiddenException('Access denied');
+  }
+
+  async searchForUser(dto: SearchMasterDataDto, _actorId: string, roles: string[] = []) {
+    const isAdmin =
+      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
+    const isDbAdmin = roles.includes(SystemRole.DB_ADMIN);
+    if (!isAdmin && !isDbAdmin) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+    if (!doc) {
+      throw new NotFoundException('No master data uploaded yet');
+    }
+
+    const query = dto.query?.trim() ?? '';
+    const columnFilters = dto.columnFilters ?? [];
+    if (!isAdmin && isDbAdmin && !hasMasterDataSearchCriteria(dto)) {
+      throw new BadRequestException('Apply at least one filter before searching master data');
+    }
+
+    const headers = doc.headers as string[];
+    const allRows = doc.rows as string[][];
+    const indices = filterMasterDataRows(allRows, headers, {
+      query,
+      columnFilters,
+      columnValueFilters: dto.columnValueFilters,
+      columnDateRangeFilters: dto.columnDateRangeFilters,
+      mustExistColumns: dto.mustExistColumns,
+      filters: dto.filters,
+    });
+
+    const totalMatches = indices.length;
+    const page = dto.page ?? 1;
+    const limit = Math.min(dto.limit ?? 100, 2000);
+    const start = (page - 1) * limit;
+    const pageIndices = indices.slice(start, start + limit);
+    const rows = pageIndices.map((i) => allRows[i]);
+
+    const fullCoverage = await this.batchesService.getMasterBatchCoverage(headers, allRows);
+    const batchedByRow: Record<string, Array<{ id: string; name: string }>> = {};
+    for (const idx of pageIndices) {
+      const key = String(idx);
+      const refs = fullCoverage.batchedByRow[key];
+      if (refs?.length) batchedByRow[key] = refs;
+    }
+
+    return {
+      headers,
+      rows,
+      sourceRowIndices: pageIndices,
+      totalMatches,
+      totalRows: allRows.length,
+      page,
+      limit,
+      batchedByRow,
+    };
+  }
+
+  async getFilterSchema(roles: string[] = []) {
+    const isAdmin =
+      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
+    const isDbAdmin = roles.includes(SystemRole.DB_ADMIN);
+    if (!isAdmin && !isDbAdmin) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+    if (!doc) {
+      throw new NotFoundException('No master data uploaded yet');
+    }
+
+    const headers = doc.headers as string[];
+    const rows = doc.rows as string[][];
+    const columns = buildMasterDataFilterSchema(headers, rows);
+
+    return {
+      totalRows: rows.length,
+      headers,
+      columns,
+    };
+  }
+
+  async getColumnOptions(header: string, q?: string, limit = 40, roles: string[] = []) {
+    const isAdmin =
+      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
+    const isDbAdmin = roles.includes(SystemRole.DB_ADMIN);
+    if (!isAdmin && !isDbAdmin) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+    if (!doc) {
+      throw new NotFoundException('No master data uploaded yet');
+    }
+
+    const headers = doc.headers as string[];
+    const rows = doc.rows as string[][];
+    if (!headers.some((h) => h.toLowerCase() === header.toLowerCase())) {
+      throw new BadRequestException('Unknown column');
+    }
+
+    return {
+      header,
+      options: distinctColumnValues(headers, rows, header, q, limit),
+    };
   }
 
   async shareWithDbAdmins(dto: ShareMasterDataDto, actor: ActivityActor) {
@@ -1158,6 +1237,25 @@ export class MasterDataService {
     }
 
     return counts;
+  }
+
+  private toMetadataResponse(doc: MasterDataRecord) {
+    return {
+      id: doc._id.toString(),
+      fileName: doc.fileName,
+      sheetName: doc.sheetName,
+      headers: doc.headers,
+      rows: [] as string[][],
+      rowCount: doc.rows.length,
+      columnCount: doc.headers.length,
+      uploadedByEmail: doc.uploadedByEmail,
+      filterRequired: true,
+      sharedWithDbAdmins: ((doc.sharedWithDbAdmins as Types.ObjectId[]) ?? []).map((u) =>
+        u.toString(),
+      ),
+      updatedAt: (doc as MasterDataRecord & { updatedAt?: Date }).updatedAt,
+      createdAt: (doc as MasterDataRecord & { createdAt?: Date }).createdAt,
+    };
   }
 
   private toResponse(doc: MasterDataRecord) {

@@ -49,6 +49,8 @@ interface ExcelPreviewGridProps {
   editable?: boolean;
   /** Rows already used in a batch (master row index → batch names) */
   batchedByRow?: Record<string, Array<{ id: string; name: string }>>;
+  /** When set, controls which rows appear (replaces hide-batched checkbox) */
+  campaignRowFilter?: 'all' | 'in_campaign' | 'remaining';
   hideBatchedRows?: boolean;
   onHideBatchedRowsChange?: (hide: boolean) => void;
   onCreateBatch?: (payload: {
@@ -57,6 +59,8 @@ interface ExcelPreviewGridProps {
     sourceRowIndices: number[];
   }) => void;
   fillHeight?: boolean;
+  /** When set, maps each data row index to master/source row index (for server-paginated views) */
+  externalSourceIndices?: number[];
   /** Fired when user focuses or edits a data row (lead tracking) */
   onLeadCellFocus?: (sourceRowIndex: number, colIndex: number) => void;
   /** Source row indices to highlight as suppression duplicates */
@@ -65,6 +69,12 @@ interface ExcelPreviewGridProps {
   markedRowIndices?: number[];
   /** Read-only row click (e.g. QC decision menu) */
   onDisplayRowClick?: (displayRowIndex: number, event: React.MouseEvent) => void;
+  /** Optional row selection column (master source row indices) */
+  selectable?: boolean;
+  selectedSourceRows?: Set<number>;
+  onToggleSourceRow?: (sourceRow: number) => void;
+  pageAllSelected?: boolean;
+  onTogglePageSelection?: () => void;
 }
 
 export function ExcelPreviewGrid({
@@ -75,14 +85,21 @@ export function ExcelPreviewGrid({
   onDataChange,
   editable: editableProp,
   batchedByRow,
+  campaignRowFilter,
   hideBatchedRows = false,
   onHideBatchedRowsChange,
   onCreateBatch,
   fillHeight,
+  externalSourceIndices,
   onLeadCellFocus,
   duplicateRowIndices,
   markedRowIndices,
   onDisplayRowClick,
+  selectable = false,
+  selectedSourceRows,
+  onToggleSourceRow,
+  pageAllSelected = false,
+  onTogglePageSelection,
 }: ExcelPreviewGridProps) {
   const editable = editableProp ?? Boolean(onDataChange);
   const canExport = useCanExportSpreadsheet();
@@ -128,18 +145,44 @@ export function ExcelPreviewGrid({
 
   const { rows: displayRows, sourceIndices } = useMemo(() => {
     const base = applyColumnFiltersWithIndices(sourceRows, headers, filters);
-    if (!hideBatchedRows || batchedSet.size === 0) return base;
+    const mapIndices = (indices: number[]) =>
+      externalSourceIndices?.length === sourceRows.length
+        ? indices.map((i) => externalSourceIndices[i] ?? i)
+        : indices;
+
+    const effectiveCampaignFilter =
+      campaignRowFilter ?? (hideBatchedRows ? 'remaining' : 'all');
+
+    if (effectiveCampaignFilter === 'all' || batchedSet.size === 0) {
+      return { rows: base.rows, sourceIndices: mapIndices(base.sourceIndices) };
+    }
     const rows: string[][] = [];
     const indices: number[] = [];
     base.rows.forEach((row, i) => {
       const src = base.sourceIndices[i];
-      if (src == null || !batchedSet.has(src)) {
+      if (src == null) return;
+      const masterIdx =
+        externalSourceIndices?.length === sourceRows.length
+          ? (externalSourceIndices[src] ?? src)
+          : src;
+      const isBatched = batchedSet.has(masterIdx);
+      const include =
+        effectiveCampaignFilter === 'remaining' ? !isBatched : isBatched;
+      if (include) {
         rows.push(row);
         indices.push(src);
       }
     });
-    return { rows, sourceIndices: indices };
-  }, [sourceRows, headers, filters, hideBatchedRows, batchedSet]);
+    return { rows, sourceIndices: mapIndices(indices) };
+  }, [
+    sourceRows,
+    headers,
+    filters,
+    campaignRowFilter,
+    hideBatchedRows,
+    batchedSet,
+    externalSourceIndices,
+  ]);
 
   const createBatchStats = useMemo(() => {
     let available = 0;
@@ -158,7 +201,17 @@ export function ExcelPreviewGrid({
   useEffect(() => { onFilteredDataChangeRef.current = onFilteredDataChange; });
   useEffect(() => { onFilteredViewChangeRef.current = onFilteredViewChange; });
 
-  const viewFiltered = hasActiveFilters(filters) || hideBatchedRows;
+  const effectiveCampaignFilter =
+    campaignRowFilter ?? (hideBatchedRows ? 'remaining' : 'all');
+  const hasColumnViewFilter = hasActiveFilters(filters);
+  const hasCampaignViewFilter = effectiveCampaignFilter !== 'all';
+  const viewFiltered = hasColumnViewFilter || hasCampaignViewFilter;
+  const campaignViewLabel =
+    effectiveCampaignFilter === 'in_campaign'
+      ? 'In campaign'
+      : effectiveCampaignFilter === 'remaining'
+        ? 'Available'
+        : null;
 
   useEffect(() => {
     onFilteredDataChangeRef.current?.(displayRows);
@@ -419,41 +472,46 @@ export function ExcelPreviewGrid({
         !canExport && 'select-none',
       )}
     >
-      <div className="flex flex-shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-200/90 bg-gradient-to-r from-[#f8fafc] via-white to-[#f8fafc] px-3 py-2 text-xs text-slate-600 shadow-sm">
-        <span>
-          <span className="font-medium text-slate-800">{data.sheetName}</span>
-          {' · '}
-          {displayRows.length} / {sourceRows.length} contacts
-          {viewFiltered && (
-            <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-[#e8f1fb] px-2 py-0.5 text-[11px] font-semibold text-[#2568b8] ring-1 ring-[#2e7ad1]/25">
-              <Filter className="h-3 w-3" />
-              Filtered view
+      <div className="flex flex-shrink-0 flex-col gap-1.5 border-b border-slate-200/90 bg-white px-3 py-2.5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-600">
+            <span className="font-semibold text-slate-900">{data.sheetName}</span>
+            <span className="hidden text-slate-300 sm:inline">·</span>
+            <span className="tabular-nums">
+              <span className="font-semibold text-slate-800">
+                {displayRows.length.toLocaleString('en-US')}
+              </span>
+              <span className="text-slate-500">
+                {' '}
+                / {sourceRows.length.toLocaleString('en-US')} contacts
+              </span>
             </span>
-          )}
-          {batchedByRow && Object.keys(batchedByRow).length > 0 && (
-            <span className="text-amber-800">
-              {' · '}
-              <span className="inline-block h-2 w-2 rounded-sm bg-[#fff8e6] border border-amber-300 align-middle" />{' '}
-              = already in a batch (still in master DB)
-            </span>
-          )}
-          {editable && (
-            <span className="text-slate-500">
-              {' · '}
-              <span className="inline-flex items-center gap-0.5 rounded bg-slate-200/80 px-1 font-medium text-slate-600">
-                ↑ ↓ ← →
-              </span>{' '}
-              navigate · double-click or type to edit · changes auto-save
-            </span>
-          )}
-          {showRestrictionHint && (
-            <span className="text-amber-800">
-              {' · '}
-              Copy/download restricted — paste shows ++++++
-            </span>
-          )}
-        </span>
-        <div className="flex flex-wrap items-center gap-2">
+            {campaignViewLabel && (
+              <span
+                className={cn(
+                  'inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
+                  effectiveCampaignFilter === 'in_campaign'
+                    ? 'bg-amber-50 text-amber-900 ring-1 ring-amber-200/80'
+                    : 'bg-[#e8f1fb] text-[#2568b8] ring-1 ring-[#2e7ad1]/20',
+                )}
+              >
+                {campaignViewLabel}
+              </span>
+            )}
+            {hasColumnViewFilter && (
+              <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-700 ring-1 ring-slate-200">
+                <Filter className="h-3 w-3" />
+                Column filters
+              </span>
+            )}
+            {batchedByRow && Object.keys(batchedByRow).length > 0 && !campaignRowFilter && (
+              <span className="hidden items-center gap-1 text-amber-800 lg:inline-flex">
+                <span className="inline-block h-2 w-2 rounded-sm border border-amber-300 bg-[#fff8e6]" />
+                = in a batch
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           {editable && (
             <>
               <button
@@ -486,7 +544,7 @@ export function ExcelPreviewGrid({
               Clear filters
             </button>
           )}
-          {batchedByRow && onHideBatchedRowsChange && (
+          {batchedByRow && onHideBatchedRowsChange && campaignRowFilter == null && (
             <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-slate-700">
               <input
                 type="checkbox"
@@ -516,7 +574,7 @@ export function ExcelPreviewGrid({
               disabled={createBatchStats.available === 0}
               title={
                 createBatchStats.available === 0
-                  ? 'No new contacts — uncheck "Hide contacts already in a campaign" or pick contacts not yet in a campaign'
+                  ? 'No new contacts — switch to Remaining tab or pick contacts not yet in a campaign'
                   : undefined
               }
               className="inline-flex items-center gap-1.5 rounded-lg bg-[#2e7ad1] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-[#2568b8] disabled:opacity-50"
@@ -524,11 +582,29 @@ export function ExcelPreviewGrid({
               <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 4v16m8-8H4" />
               </svg>
-              Create campaign ({createBatchStats.available} new
-              {createBatchStats.batched > 0 ? ` · ${createBatchStats.batched} in campaign` : ''})
+              Create campaign
+              <span className="rounded-md bg-white/20 px-1.5 py-0.5 text-[10px] font-bold tabular-nums">
+                {createBatchStats.available.toLocaleString('en-US')}
+              </span>
             </button>
           )}
+          </div>
         </div>
+        {(editable || showRestrictionHint) && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-400">
+            {editable && (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1.5 py-px font-medium text-slate-500">
+                  ↑ ↓ ← →
+                </span>
+                Navigate · double-click to edit · auto-save
+              </span>
+            )}
+            {showRestrictionHint && (
+              <span className="text-amber-700">Copy/download restricted — paste shows ++++++</span>
+            )}
+          </div>
+        )}
       </div>
 
       <div
@@ -575,6 +651,9 @@ export function ExcelPreviewGrid({
           <thead className="sticky top-0 z-20">
             <tr>
               <th className="sticky left-0 z-40 w-10 border border-[#c6c6c6] bg-[#e6e6e6] p-0" />
+              {selectable && (
+                <th className="sticky left-10 z-40 w-9 border border-[#c6c6c6] bg-[#e6e6e6] p-0" />
+              )}
               {headers.map((_, i) => (
                 <th
                   key={`letter-${i}`}
@@ -588,6 +667,17 @@ export function ExcelPreviewGrid({
               <th className="sticky left-0 z-40 w-10 border border-[#c6c6c6] bg-[#f2f2f2] text-center text-[11px] font-semibold text-slate-500">
                 #
               </th>
+              {selectable && (
+                <th className="sticky left-10 z-40 w-9 border border-[#c6c6c6] bg-[#f2f2f2] p-0 text-center">
+                  <input
+                    type="checkbox"
+                    checked={pageAllSelected}
+                    onChange={() => onTogglePageSelection?.()}
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-[#2e7ad1] focus:ring-[#2e7ad1]"
+                    title="Select page"
+                  />
+                </th>
+              )}
               {headers.map((header, colIndex) => {
                 const editingHeader =
                   editTarget?.kind === 'header' && editTarget.col === colIndex;
@@ -595,7 +685,7 @@ export function ExcelPreviewGrid({
                   <th
                     key={`h-${colIndex}`}
                     className={cn(
-                      'relative min-w-[130px] border border-[#c6c6c6] bg-[#f2f2f2] p-0 font-semibold text-slate-800',
+                      'relative min-w-[140px] border border-[#c6c6c6] bg-[#f2f2f2] p-0 font-semibold text-slate-800',
                       isColumnFiltered(colIndex) && 'bg-[#dce6f1]',
                     )}
                   >
@@ -659,7 +749,7 @@ export function ExcelPreviewGrid({
             {displayRows.length === 0 ? (
               <tr>
                 <td
-                  colSpan={headers.length + 1}
+                  colSpan={headers.length + 1 + (selectable ? 1 : 0)}
                   className="border border-[#e0e0e0] px-4 py-10 text-center text-slate-500"
                 >
                   {sourceRows.length === 0 && editable
@@ -722,6 +812,25 @@ export function ExcelPreviewGrid({
                         </span>
                       )}
                     </td>
+                    {selectable && sourceRow != null && (
+                      <td
+                        className={cn(
+                          'sticky left-10 z-10 w-9 border border-[#e0e0e0] bg-[#fafafa] text-center',
+                          selectedSourceRows?.has(sourceRow) && 'bg-[#e8f5ee]',
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedSourceRows?.has(sourceRow) ?? false}
+                          onChange={() => onToggleSourceRow?.(sourceRow)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="h-3.5 w-3.5 rounded border-slate-300 text-[#2e7ad1] focus:ring-[#2e7ad1]"
+                        />
+                      </td>
+                    )}
+                    {selectable && sourceRow == null && (
+                      <td className="sticky left-10 z-10 w-9 border border-[#e0e0e0] bg-[#fafafa]" />
+                    )}
                     {headers.map((_, colIndex) => {
                       const editingCell =
                         editTarget?.kind === 'cell' &&
@@ -759,8 +868,14 @@ export function ExcelPreviewGrid({
                               className="w-full min-w-[120px] border-0 bg-white px-2 py-1 text-[13px] outline-none"
                             />
                           ) : (
-                            <div className="max-w-[280px] truncate px-2 py-1 whitespace-nowrap">
-                              {value}
+                            <div
+                              className={cn(
+                                'px-2 py-1 whitespace-nowrap',
+                                !editable ? 'min-w-[88px]' : 'max-w-[280px] truncate',
+                              )}
+                              title={value}
+                            >
+                              {value || '\u00a0'}
                             </div>
                           )}
                         </td>

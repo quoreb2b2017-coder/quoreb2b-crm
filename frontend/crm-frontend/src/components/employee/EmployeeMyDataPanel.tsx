@@ -26,6 +26,7 @@ import {
   uploadRequestDuplicatesPath,
 } from '@/lib/master-data/upload-request-nav';
 import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
+import { useUploadRequestRefresh } from '@/hooks/useUploadRequestRefresh';
 
 const ACCEPT = '.csv,.xlsx,.xls';
 const FILTERS: Array<MasterDataUploadRequestStatus | 'all'> = [
@@ -60,10 +61,8 @@ export function EmployeeMyDataPanel() {
 
   useEffect(() => {
     load();
-    const onRefresh = () => load();
-    window.addEventListener('master-data-updated', onRefresh);
-    return () => window.removeEventListener('master-data-updated', onRefresh);
   }, [load]);
+  useUploadRequestRefresh(load);
 
   const filteredRequests = useMemo(
     () => requests.filter((request) => (filter === 'all' ? true : request.status === filter)),
@@ -206,7 +205,7 @@ export function EmployeeMyDataPanel() {
         title="My data folders"
         requests={filteredRequests}
         loading={loading}
-        hint="Month folders · upload month decides folder"
+        hint="Month folders · your files stay here until Super Admin removes them"
         emptyFolderMessage="No files in this month yet. Uploads appear in the folder for the month you uploaded."
         onOpenRequest={openRequestInExcel}
         renderDetails={(monthRequests, meta) => (

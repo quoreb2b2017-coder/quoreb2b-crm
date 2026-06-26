@@ -27,6 +27,48 @@ export interface MasterDataRecord {
   addedRows?: number;
   skippedDuplicates?: number;
   mode?: MasterDataSaveMode;
+  /** DB Admin: rows hidden until filter search */
+  filterRequired?: boolean;
+}
+
+export interface MasterDataColumnFilter {
+  header: string;
+  value: string;
+  match?: 'contains' | 'equals' | 'startsWith';
+}
+
+export interface MasterDataSearchParams {
+  query?: string;
+  columnFilters?: MasterDataColumnFilter[];
+  columnValueFilters?: Array<{ header: string; values: string[] }>;
+  columnDateRangeFilters?: Array<{ header: string; from?: string; to?: string }>;
+  mustExistColumns?: string[];
+  page?: number;
+  limit?: number;
+}
+
+export interface MasterDataFilterSchemaResponse {
+  totalRows: number;
+  headers: string[];
+  columns: MasterDataColumnFilterSchema[];
+}
+
+export interface MasterDataColumnFilterSchema {
+  header: string;
+  kind: 'text' | 'select' | 'status' | 'email' | 'phone';
+  options: string[];
+  filledCount: number;
+}
+
+export interface MasterDataSearchResult {
+  headers: string[];
+  rows: string[][];
+  sourceRowIndices: number[];
+  totalMatches: number;
+  totalRows: number;
+  page: number;
+  limit: number;
+  batchedByRow: Record<string, Array<{ id: string; name: string }>>;
 }
 
 export type MasterDataUploadRequestStatus =
@@ -123,6 +165,16 @@ export const masterDataService = {
       if (status === 404 || status === 403) return null;
       throw err;
     }
+  },
+
+  search: async (params: MasterDataSearchParams): Promise<MasterDataSearchResult> => {
+    const { data } = await apiClient.post('/master-data/search', params);
+    return unwrap<MasterDataSearchResult>({ data });
+  },
+
+  getFilterSchema: async (): Promise<MasterDataFilterSchemaResponse> => {
+    const { data } = await apiClient.get('/master-data/filter-schema');
+    return unwrap<MasterDataFilterSchemaResponse>({ data });
   },
 
   createUploadRequest: async (
@@ -242,11 +294,10 @@ export const masterDataService = {
 
   deleteUploadRequest: async (
     requestId: string,
-  ): Promise<{ deleted: boolean; id: string; removedFromMaster?: number }> => {
+  ): Promise<{ deleted: boolean; id: string; sourceRole?: string }> => {
     const { data } = await apiClient.delete(`/master-data/upload-requests/${requestId}`);
-    const result = unwrap<{ deleted: boolean; id: string; removedFromMaster?: number }>({ data });
+    const result = unwrap<{ deleted: boolean; id: string; sourceRole?: string }>({ data });
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('master-data-updated'));
       window.dispatchEvent(
         new CustomEvent('upload-request-deleted', { detail: { id: requestId } }),
       );

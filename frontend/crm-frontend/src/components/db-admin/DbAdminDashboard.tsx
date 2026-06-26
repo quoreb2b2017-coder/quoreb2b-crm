@@ -3,10 +3,11 @@
 import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { RefreshCw, Users } from 'lucide-react';
+import { RefreshCw, Users, FileSpreadsheet } from 'lucide-react';
 import { WelcomeBanner } from '@/components/dashboard/WelcomeBanner';
 import { XlMetricCardSection } from '@/components/admin/XlMetricCards';
 import { fetchDbAdminDashboard, type DbAdminDashboardData } from '@/lib/api/analytics.service';
+import { masterDataService, type MasterDataUploadRequest } from '@/lib/api/master-data.service';
 import { extractApiError } from '@/lib/api/errors';
 import { cn } from '@/lib/utils/cn';
 import { AttendanceSummaryCard } from '@/components/attendance/EmployeeAttendanceSummaryCard';
@@ -20,6 +21,7 @@ import {
   dashboardPanelBody,
   dashboardLink,
 } from '@/components/dashboard/dashboard-ui';
+import { useUploadRequestRefresh } from '@/hooks/useUploadRequestRefresh';
 
 function formatWhen(iso: string) {
   if (!iso) return '—';
@@ -32,6 +34,7 @@ function formatWhen(iso: string) {
 
 export function DbAdminDashboard() {
   const [data, setData] = useState<DbAdminDashboardData | null>(null);
+  const [myUploads, setMyUploads] = useState<MasterDataUploadRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const hasDataRef = useRef(false);
@@ -51,12 +54,23 @@ export function DbAdminDashboard() {
     }
   }, []);
 
+  const loadMyUploads = useCallback(async () => {
+    try {
+      const uploads = await masterDataService.getMyUploadRequests('all');
+      setMyUploads(uploads);
+    } catch {
+      setMyUploads([]);
+    }
+  }, []);
+
   useEffect(() => {
     void load();
+    void loadMyUploads();
     const onRefresh = () => void load({ silent: true });
     window.addEventListener('master-data-updated', onRefresh);
     return () => window.removeEventListener('master-data-updated', onRefresh);
-  }, [load]);
+  }, [load, loadMyUploads]);
+  useUploadRequestRefresh(loadMyUploads);
 
   if (loading && !data) {
     return (
@@ -195,7 +209,41 @@ export function DbAdminDashboard() {
         )}
       </div>
 
-      <div className={cn('dash-section', dashboardPanel)}>
+      <div className="dash-section grid gap-1 lg:grid-cols-2">
+        <div className={dashboardPanel}>
+          <div className={dashboardPanelHeaderBlue}>
+            <h3>My master data uploads</h3>
+          </div>
+          <div className={dashboardPanelBody}>
+            {myUploads.length === 0 ? (
+              <div className="dash-empty-state dash-empty-state--compact">
+                <FileSpreadsheet className="dash-empty-state__icon" strokeWidth={1.75} />
+                <p className="dash-empty-hint">No uploads yet. Files stay in Master Data until Admin removes them.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs text-slate-500">
+                  {myUploads.length} upload{myUploads.length === 1 ? '' : 's'} visible in your panel
+                </p>
+                <ul className="space-y-1 text-xs">
+                  {myUploads.slice(0, 4).map((upload) => (
+                    <li key={upload.id} className="flex items-center justify-between gap-2 rounded-md bg-slate-50 px-2 py-1.5">
+                      <span className="truncate font-medium text-slate-800">{upload.fileName}</span>
+                      <span className="shrink-0 rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-600 ring-1 ring-slate-200">
+                        {upload.status.replace(/_/g, ' ')}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <Link href="/db-admin/master-data" className={cn(dashboardLink, 'mt-2 inline-block')}>
+              Open Master Data →
+            </Link>
+          </div>
+        </div>
+
+        <div className={dashboardPanel}>
         <div className={dashboardPanelHeaderBlue}>
           <h3>Recent campaigns</h3>
         </div>
@@ -243,6 +291,7 @@ export function DbAdminDashboard() {
               </tbody>
             </table>
           </div>
+        </div>
         </div>
       </div>
     </DashboardPageShell>

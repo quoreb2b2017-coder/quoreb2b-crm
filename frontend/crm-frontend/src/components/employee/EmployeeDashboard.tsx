@@ -3,13 +3,14 @@
 import { WORKSPACE_TIMEZONE } from '@/lib/constants/workspace-timezone';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { RefreshCw, Layers } from 'lucide-react';
+import { RefreshCw, Layers, FileSpreadsheet } from 'lucide-react';
 import { WelcomeBanner } from '@/components/dashboard/WelcomeBanner';
 import { XlMetricCardSection } from '@/components/admin/XlMetricCards';
 import {
   fetchEmployeeDashboard,
   type EmployeeDashboardData,
 } from '@/lib/api/analytics.service';
+import { masterDataService, type MasterDataUploadRequest } from '@/lib/api/master-data.service';
 import { extractApiError } from '@/lib/api/errors';
 import { cn } from '@/lib/utils/cn';
 import { useWorkTimer } from '@/hooks/useWorkTimer';
@@ -23,6 +24,7 @@ import {
   dashboardPanelHeaderBlue,
   dashboardPanelBody,
 } from '@/components/dashboard/dashboard-ui';
+import { useUploadRequestRefresh } from '@/hooks/useUploadRequestRefresh';
 
 function formatWhen(iso: string) {
   if (!iso) return '—';
@@ -35,6 +37,7 @@ function formatWhen(iso: string) {
 
 export function EmployeeDashboard() {
   const [data, setData] = useState<EmployeeDashboardData | null>(null);
+  const [myUploads, setMyUploads] = useState<MasterDataUploadRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const workTimer = useWorkTimer(true);
@@ -55,9 +58,20 @@ export function EmployeeDashboard() {
     }
   }, []);
 
+  const loadMyUploads = useCallback(async () => {
+    try {
+      const uploads = await masterDataService.getMyUploadRequests('all');
+      setMyUploads(uploads);
+    } catch {
+      setMyUploads([]);
+    }
+  }, []);
+
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadMyUploads();
+  }, [load, loadMyUploads]);
+  useUploadRequestRefresh(loadMyUploads);
 
   if (loading && !data) {
     return (
@@ -173,6 +187,42 @@ export function EmployeeDashboard() {
                   Activity logs →
                 </Link>
               </div>
+            </div>
+          </div>
+
+          <div className={dashboardPanel}>
+            <div className={dashboardPanelHeaderBlue}>
+              <h3>My data uploads</h3>
+            </div>
+            <div className={dashboardPanelBody}>
+              {myUploads.length === 0 ? (
+                <div className="dash-empty-state dash-empty-state--compact">
+                  <FileSpreadsheet className="dash-empty-state__icon" strokeWidth={1.75} />
+                  <p className="dash-empty-hint">No uploads yet. Files stay here until Admin removes them.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-500">
+                    {myUploads.length} file{myUploads.length === 1 ? '' : 's'} in My Data
+                    {myUploads.some((r) => r.status === 'approved')
+                      ? ' · merged rows also stay in master file'
+                      : ''}
+                  </p>
+                  <ul className="space-y-1 text-xs">
+                    {myUploads.slice(0, 4).map((upload) => (
+                      <li key={upload.id} className="flex items-center justify-between gap-2 rounded-md bg-slate-50 px-2 py-1.5">
+                        <span className="truncate font-medium text-slate-800">{upload.fileName}</span>
+                        <span className="shrink-0 rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-600 ring-1 ring-slate-200">
+                          {upload.status.replace(/_/g, ' ')}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <Link href="/employee/my-data" className={cn(dashboardLink, 'mt-2 inline-block')}>
+                Open My Data →
+              </Link>
             </div>
           </div>
 

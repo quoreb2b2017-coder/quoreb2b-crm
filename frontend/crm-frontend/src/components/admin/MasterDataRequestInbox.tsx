@@ -15,6 +15,7 @@ import {
   resolveDuplicatesOpenPath,
   uploadRequestFilePath,
 } from '@/lib/master-data/upload-request-nav';
+import { useUploadRequestRefresh } from '@/hooks/useUploadRequestRefresh';
 
 const FILTERS: Array<MasterDataUploadRequestStatus | 'all'> = [
   'pending',
@@ -48,6 +49,7 @@ export function MasterDataRequestInbox() {
   useEffect(() => {
     load();
   }, [load]);
+  useUploadRequestRefresh(load);
 
   const pendingCount = useMemo(
     () =>
@@ -105,23 +107,15 @@ export function MasterDataRequestInbox() {
       request.sourceRole === 'employee'
         ? `employee (${request.submittedByEmail ?? 'unknown'})`
         : 'DB Admin';
-    const approvedNote =
-      request.status === 'approved'
-        ? ' Merged contacts will also be removed from the master file.'
-        : '';
     const ok = window.confirm(
-      `Delete "${request.fileName}" from ${who}? This removes it from Admin, DB Admin, and Employee views everywhere.${approvedNote}`,
+      `Delete "${request.fileName}" from ${who}? This removes the upload from employee/DB Admin panels only. Master file contacts stay unchanged.`,
     );
     if (!ok) return;
 
     setActionLoadingId(request.id);
     try {
-      const result = await masterDataService.deleteUploadRequest(request.id);
-      const masterNote =
-        result.removedFromMaster && result.removedFromMaster > 0
-          ? ` ${result.removedFromMaster} contact(s) removed from master file.`
-          : '';
-      toast.success('Request deleted', `Removed from all panels.${masterNote}`);
+      await masterDataService.deleteUploadRequest(request.id);
+      toast.success('Request deleted', 'Removed from upload panels. Master file is unchanged.');
       await load();
     } catch (err) {
       toast.error('Delete failed', extractApiError(err, 'Could not delete request'));

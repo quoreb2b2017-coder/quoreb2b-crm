@@ -91,6 +91,7 @@ export interface BatchShareResult {
     rowCount: number;
   }>;
   fullShareUserIds: string[];
+  alreadySharedUserIds?: string[];
 }
 
 export interface BatchHierarchyResponse {

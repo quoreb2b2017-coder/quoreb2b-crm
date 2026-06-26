@@ -12,6 +12,8 @@ import {
 } from '@nestjs/common';
 import { MasterDataService } from './master-data.service';
 import { SaveMasterDataDto } from './dto/save-master-data.dto';
+import { SearchMasterDataDto } from './dto/search-master-data.dto';
+import { MasterDataColumnOptionsQueryDto } from './dto/column-options.dto';
 import {
   CreateMasterDataUploadRequestDto,
   DbReviewEmployeeUploadDto,
@@ -48,8 +50,37 @@ export class MasterDataController {
 
   @Get('batch-coverage')
   @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
-  getBatchCoverage() {
-    return this.masterDataService.getBatchCoverage();
+  getBatchCoverage(@CurrentUser() user: Parameters<typeof actorFromJwt>[0]) {
+    return this.masterDataService.getBatchCoverage(user.roles ?? []);
+  }
+
+  @Post('search')
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
+  search(
+    @Body() dto: SearchMasterDataDto,
+    @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
+  ) {
+    return this.masterDataService.searchForUser(dto, user.id, user.roles ?? []);
+  }
+
+  @Get('filter-schema')
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
+  getFilterSchema(@CurrentUser() user: Parameters<typeof actorFromJwt>[0]) {
+    return this.masterDataService.getFilterSchema(user.roles ?? []);
+  }
+
+  @Get('column-options')
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
+  getColumnOptions(
+    @Query() query: MasterDataColumnOptionsQueryDto,
+    @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
+  ) {
+    return this.masterDataService.getColumnOptions(
+      query.header,
+      query.q,
+      query.limit,
+      user.roles ?? [],
+    );
   }
 
   @Post('upload-requests')

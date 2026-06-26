@@ -6,6 +6,7 @@ import { DbAdminMasterDataUploadPanel } from '@/components/db-admin/DbAdminMaste
 import { DbAdminEmployeeDataPanel } from '@/components/db-admin/DbAdminEmployeeDataPanel';
 import { masterDataService } from '@/lib/api/master-data.service';
 import { cn } from '@/lib/utils/cn';
+import { useUploadRequestRefresh } from '@/hooks/useUploadRequestRefresh';
 
 type MasterDataTab = 'mine' | 'employee';
 
@@ -33,10 +34,8 @@ export default function DbAdminMasterDataPage() {
 
   useEffect(() => {
     loadPendingEmployeeCount();
-    const onRefresh = () => loadPendingEmployeeCount();
-    window.addEventListener('master-data-updated', onRefresh);
-    return () => window.removeEventListener('master-data-updated', onRefresh);
   }, [loadPendingEmployeeCount]);
+  useUploadRequestRefresh(loadPendingEmployeeCount);
 
   const selectTab = (next: MasterDataTab) => {
     setTab(next);

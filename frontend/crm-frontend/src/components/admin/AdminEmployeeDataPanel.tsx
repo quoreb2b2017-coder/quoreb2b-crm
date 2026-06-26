@@ -17,6 +17,7 @@ import {
   uploadRequestFilePath,
 } from '@/lib/master-data/upload-request-nav';
 import { cn } from '@/lib/utils/cn';
+import { useUploadRequestRefresh } from '@/hooks/useUploadRequestRefresh';
 
 const FILTERS: Array<MasterDataUploadRequestStatus | 'all'> = [
   'all',
@@ -50,10 +51,8 @@ export function AdminEmployeeDataPanel() {
 
   useEffect(() => {
     load();
-    const onRefresh = () => load();
-    window.addEventListener('master-data-updated', onRefresh);
-    return () => window.removeEventListener('master-data-updated', onRefresh);
   }, [load]);
+  useUploadRequestRefresh(load);
 
   const filteredRequests = useMemo(
     () => requests.filter((request) => (filter === 'all' ? true : request.status === filter)),
@@ -118,7 +117,7 @@ export function AdminEmployeeDataPanel() {
   const remove = async (request: MasterDataUploadRequest) => {
     if (
       !confirm(
-        `Delete "${request.fileName}" from employee ${request.submittedByEmail ?? ''}? Approved contacts are removed from master file too.`,
+        `Delete "${request.fileName}" from employee ${request.submittedByEmail ?? ''}? This removes the upload from employee panels only. Master file contacts stay unchanged.`,
       )
     ) {
       return;
@@ -126,7 +125,7 @@ export function AdminEmployeeDataPanel() {
     setActionLoadingId(request.id);
     try {
       await masterDataService.deleteUploadRequest(request.id);
-      toast.success('Deleted', 'Removed from all panels');
+      toast.success('Deleted', 'Removed from employee panel. Master file is unchanged.');
       await load();
     } catch (err) {
       toast.error('Delete failed', extractApiError(err));

@@ -3,7 +3,7 @@
 import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Upload, Download, Trash2, Cloud, Loader2, Save } from 'lucide-react';
+import { Upload, Download, Trash2, Cloud, Loader2, Save, Database, Megaphone, CircleDot } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { ExcelPreviewGrid } from '@/components/admin/ExcelPreviewGrid';
 import {
@@ -28,6 +28,46 @@ import { MasterDataClearConfirmModal } from '@/components/master-data/MasterData
 import { DbAdminCampaignWizard } from '@/components/db-admin/DbAdminCampaignWizard';
 
 const ACCEPT = '.csv,.xlsx,.xls';
+
+type MasterDataViewTab = 'total' | 'in_campaign' | 'remaining';
+
+const MASTER_DATA_VIEW_TABS: Array<{
+  id: MasterDataViewTab;
+  label: string;
+  shortLabel: string;
+  description: string;
+  filter: 'all' | 'in_campaign' | 'remaining';
+  icon: typeof Database;
+  tone: 'slate' | 'amber' | 'blue';
+}> = [
+  {
+    id: 'total',
+    label: 'Total data',
+    shortLabel: 'Total',
+    description: 'All contacts in master DB',
+    filter: 'all',
+    icon: Database,
+    tone: 'slate',
+  },
+  {
+    id: 'in_campaign',
+    label: 'Used in campaign',
+    shortLabel: 'In campaign',
+    description: 'Already assigned to a campaign',
+    filter: 'in_campaign',
+    icon: Megaphone,
+    tone: 'amber',
+  },
+  {
+    id: 'remaining',
+    label: 'Remaining data',
+    shortLabel: 'Remaining',
+    description: 'Available for new campaigns',
+    filter: 'remaining',
+    icon: CircleDot,
+    tone: 'blue',
+  },
+];
 
 function mergeHeaders(existing: string[], incoming: string[]) {
   const seen = new Set(existing);
@@ -129,7 +169,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   const [dirty, setDirty] = useState(false);
   // ── Batch create modal state ──
   const [coverage, setCoverage] = useState<MasterBatchCoverage | null>(null);
-  const [hideBatchedRows, setHideBatchedRows] = useState(false);
+  const [dataViewTab, setDataViewTab] = useState<MasterDataViewTab>('total');
   const [batchModal, setBatchModal] = useState<{
     rows: string[][];
     headers: string[];
@@ -419,6 +459,21 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
 
   const busy = parsing || savingDb || loadingDb;
 
+  const coverageStats = {
+    total: coverage?.summary.totalRows ?? totalRows,
+    inCampaign: coverage?.summary.batchedRows ?? 0,
+    remaining: coverage?.summary.availableRows ?? totalRows,
+  };
+
+  const activeViewTab =
+    MASTER_DATA_VIEW_TABS.find((tab) => tab.id === dataViewTab) ?? MASTER_DATA_VIEW_TABS[0];
+
+  const tabCounts: Record<MasterDataViewTab, number> = {
+    total: coverageStats.total,
+    in_campaign: coverageStats.inCampaign,
+    remaining: coverageStats.remaining,
+  };
+
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
       {/* ── Toolbar ── */}
@@ -436,17 +491,6 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
               <span className="max-w-[140px] truncate text-xs text-slate-600 sm:max-w-[200px]" title={data.fileName}>
                 {data.fileName}
               </span>
-              <span className="text-xs font-medium text-slate-700">{totalRows} contacts in DB</span>
-              {coverage && coverage.summary.totalRows > 0 && (
-                <>
-                  <span className="text-xs text-amber-800">
-                    {coverage.summary.batchedRows.toLocaleString('en-US')} in campaign
-                  </span>
-                  <span className="text-xs font-medium text-[#2e7ad1]">
-                    {coverage.summary.availableRows.toLocaleString('en-US')} available
-                  </span>
-                </>
-              )}
             </>
           ) : (
             <span className="text-xs text-slate-500">No data in master database yet</span>
@@ -512,6 +556,91 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
         </div>
       </div>
 
+      {!isDbAdminView && data && (
+        <div className="border-b border-slate-200/90 bg-gradient-to-b from-slate-50 to-white px-3 py-3 sm:px-4">
+          <div
+            className="grid grid-cols-1 gap-2 sm:grid-cols-3"
+            role="tablist"
+            aria-label="Master data views"
+          >
+            {MASTER_DATA_VIEW_TABS.map((tab) => {
+              const active = dataViewTab === tab.id;
+              const Icon = tab.icon;
+              const count = tabCounts[tab.id].toLocaleString('en-US');
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setDataViewTab(tab.id)}
+                  className={cn(
+                    'group relative flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-all duration-200',
+                    active
+                      ? tab.tone === 'amber'
+                        ? 'border-amber-300/80 bg-gradient-to-br from-amber-50 to-white shadow-md shadow-amber-100/60 ring-2 ring-amber-400/35'
+                        : tab.tone === 'blue'
+                          ? 'border-[#2e7ad1]/35 bg-gradient-to-br from-[#e8f1fb] to-white shadow-md shadow-[#2e7ad1]/10 ring-2 ring-[#2e7ad1]/30'
+                          : 'border-slate-300/80 bg-white shadow-md shadow-slate-200/50 ring-2 ring-[#2e7ad1]/25'
+                      : 'border-slate-200/90 bg-white/80 hover:border-slate-300 hover:bg-white hover:shadow-sm',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border transition-colors',
+                      active
+                        ? tab.tone === 'amber'
+                          ? 'border-amber-200 bg-amber-100 text-amber-800'
+                          : tab.tone === 'blue'
+                            ? 'border-[#2e7ad1]/25 bg-[#2e7ad1] text-white'
+                            : 'border-slate-200 bg-slate-100 text-slate-700'
+                        : 'border-slate-200 bg-slate-50 text-slate-500 group-hover:bg-slate-100 group-hover:text-slate-700',
+                    )}
+                  >
+                    <Icon className="h-4 w-4" strokeWidth={2.25} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      <span className="hidden sm:inline">{tab.label}</span>
+                      <span className="sm:hidden">{tab.shortLabel}</span>
+                    </span>
+                    <span
+                      className={cn(
+                        'mt-0.5 block text-xl font-bold tabular-nums leading-none tracking-tight',
+                        active
+                          ? tab.tone === 'amber'
+                            ? 'text-amber-950'
+                            : tab.tone === 'blue'
+                              ? 'text-[#1d5a9e]'
+                              : 'text-slate-900'
+                          : 'text-slate-800',
+                      )}
+                    >
+                      {count}
+                    </span>
+                    <span className="mt-1 hidden text-[11px] leading-snug text-slate-500 sm:block">
+                      {tab.description}
+                    </span>
+                  </span>
+                  {active && (
+                    <span
+                      className={cn(
+                        'absolute bottom-0 left-4 right-4 h-0.5 rounded-full',
+                        tab.tone === 'amber'
+                          ? 'bg-amber-500'
+                          : tab.tone === 'blue'
+                            ? 'bg-[#2e7ad1]'
+                            : 'bg-slate-400',
+                      )}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <input ref={inputRef} type="file" accept={ACCEPT} className="sr-only" onChange={onFileChange} />
 
       {error && !data && (
@@ -558,8 +687,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
             onFilteredDataChange={setFilteredRows}
             onFilteredViewChange={({ hasActiveViewFilter }) => setFilteredViewActive(hasActiveViewFilter)}
             batchedByRow={coverage?.batchedByRow}
-            hideBatchedRows={hideBatchedRows}
-            onHideBatchedRowsChange={setHideBatchedRows}
+            campaignRowFilter={!isDbAdminView ? activeViewTab.filter : undefined}
             onCreateBatch={openBatchModal}
             fillHeight
           />

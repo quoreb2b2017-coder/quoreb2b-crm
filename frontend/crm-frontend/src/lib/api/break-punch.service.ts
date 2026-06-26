@@ -138,3 +138,14 @@ export function formatRemainingShort(totalSeconds: number): string {
   const rem = s % 60;
   return `${m}:${String(rem).padStart(2, '0')}`;
 }
+
+/** Human-readable break time used (e.g. "5m", "2m 30s"). */
+export function formatBreakDuration(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  if (m === 0 && rem === 0) return '0m';
+  if (rem === 0) return `${m}m`;
+  if (m === 0) return `${rem}s`;
+  return `${m}m ${rem}s`;
+}

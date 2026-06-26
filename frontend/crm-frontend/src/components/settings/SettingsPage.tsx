@@ -40,6 +40,18 @@ const PANEL_THEME: Record<string, { gradient: string; accent: string }> = {
   employee: CRM_THEME,
 };
 
+const ROLE_LABELS: Record<string, string> = {
+  admin: 'Super Admin',
+  db_admin: 'Database Administrator',
+  employee: 'Employee',
+};
+
+const ROLE_HERO: Record<string, string> = {
+  admin: 'Manage your account, security policies, and system health.',
+  db_admin: 'Your profile, password, and notification preferences.',
+  employee: 'Your profile, password, and notification preferences.',
+};
+
 function userInitials(firstName?: string, lastName?: string, email?: string) {
   const name = [firstName, lastName].filter(Boolean).join(' ').trim();
   if (name) {
@@ -62,73 +74,82 @@ export function SettingsPage() {
   );
 
   const theme = PANEL_THEME[panel ?? 'admin'] ?? PANEL_THEME.admin;
+  const roleLabel = ROLE_LABELS[panel ?? 'employee'] ?? 'User';
+  const heroLine = ROLE_HERO[panel ?? 'employee'] ?? ROLE_HERO.employee;
   const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() || user?.email || 'User';
+  const activeMeta = visibleSections.find((s) => s.id === activeSection);
 
   return (
     <div
-      className="st-root mx-auto w-full max-w-5xl"
+      className="st-page"
       style={{ '--st-accent': theme.accent } as React.CSSProperties}
     >
-      <div className="st-shell">
-        {/* Hero */}
-        <div className={cn('st-hero px-5 py-5 text-white sm:px-6', theme.gradient)}>
-          <div className="st-hero-content flex items-center gap-4">
-            <span className="st-hero-icon flex h-11 w-11 shrink-0 items-center justify-center rounded-xl">
-              <Settings className="h-5 w-5" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <h1 className="text-lg font-bold tracking-tight sm:text-xl">Settings</h1>
-              <p className="mt-0.5 text-sm text-white/80">
-                {displayName} — account, security & preferences
-              </p>
+      <div className="st-root w-full">
+        <div className="st-shell">
+          <div className="st-hero">
+            <div className="st-hero-content flex items-center gap-3 sm:gap-4">
+              <span className="st-hero-icon">
+                <Settings className="h-5 w-5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1>Settings</h1>
+                  <span className="st-hero-badge">{roleLabel}</span>
+                </div>
+                <p className="st-hero-sub">
+                  {displayName} — {heroLine}
+                </p>
+              </div>
+              <span className="st-profile-avatar hidden shrink-0 sm:flex" style={{ backgroundColor: theme.accent }}>
+                {userInitials(user?.firstName, user?.lastName, user?.email)}
+              </span>
             </div>
-            <span className="st-profile-avatar hidden shrink-0 sm:flex" style={{ backgroundColor: theme.accent }}>
-              {userInitials(user?.firstName, user?.lastName, user?.email)}
-            </span>
           </div>
-        </div>
 
-        <div className="st-layout">
-          <nav className="st-nav" aria-label="Settings sections">
-            {visibleSections.map((section, idx) => {
-              const Icon = section.icon;
-              const isActive = activeSection === section.id;
-              return (
-                <button
-                  key={section.id}
-                  type="button"
-                  onClick={() => setActiveSection(section.id)}
-                  style={{ animationDelay: `${idx * 40}ms` }}
-                  className={cn(
-                    'st-nav-item',
-                    isActive && 'st-nav-item--active',
-                    isActive ? 'text-[var(--st-accent)]' : 'text-slate-600',
-                  )}
-                >
-                  <Icon
+          <div className="st-layout">
+            <nav className="st-nav" aria-label="Settings sections">
+              {visibleSections.map((section, idx) => {
+                const Icon = section.icon;
+                const isActive = activeSection === section.id;
+                return (
+                  <button
+                    key={section.id}
+                    type="button"
+                    onClick={() => setActiveSection(section.id)}
+                    style={{ animationDelay: `${idx * 40}ms` }}
                     className={cn(
-                      'mt-0.5 h-4 w-4 shrink-0 transition-colors',
-                      isActive ? 'text-[var(--st-accent)]' : 'text-slate-400',
+                      'st-nav-item',
+                      isActive && 'st-nav-item--active',
+                      isActive ? 'text-[var(--st-accent)]' : 'text-slate-700',
                     )}
-                  />
-                  <span className="min-w-0">
-                    <span className="block font-medium">{section.label}</span>
-                    <span className="mt-0.5 hidden text-[10px] font-normal text-slate-500 lg:block">
-                      {section.description}
+                  >
+                    <span className="st-nav-icon">
+                      <Icon className="h-4 w-4" />
                     </span>
-                  </span>
-                </button>
-              );
-            })}
-          </nav>
+                    <span className="min-w-0">
+                      <span className="block font-medium leading-tight">{section.label}</span>
+                      <span className="st-nav-desc hidden md:block">{section.description}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </nav>
 
-          <div className="st-content">
-            <div key={activeSection} className="st-panel">
-              {activeSection === 'account' && <AccountSettingsPanel />}
-              {activeSection === 'system-health' && isAdmin && <SystemHealthPanel />}
-              {activeSection === 'security' && isAdmin && <SecuritySettingsPanel />}
-              {activeSection === 'notifications' && <NotificationSettingsPanel />}
-              {activeSection === 'change-password' && <ChangePasswordForm variant="inline" />}
+            <div className="st-content">
+              {activeMeta && (
+                <div className="st-content-head">
+                  <p className="st-content-head__label">Settings</p>
+                  <h2 className="st-content-head__title">{activeMeta.label}</h2>
+                  <p className="st-section-sub mt-1">{activeMeta.description}</p>
+                </div>
+              )}
+              <div key={activeSection} className="st-panel">
+                {activeSection === 'account' && <AccountSettingsPanel />}
+                {activeSection === 'system-health' && isAdmin && <SystemHealthPanel />}
+                {activeSection === 'security' && isAdmin && <SecuritySettingsPanel />}
+                {activeSection === 'notifications' && <NotificationSettingsPanel />}
+                {activeSection === 'change-password' && <ChangePasswordForm variant="inline" />}
+              </div>
             </div>
           </div>
         </div>

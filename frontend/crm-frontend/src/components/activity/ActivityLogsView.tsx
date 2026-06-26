@@ -35,8 +35,6 @@ import {
   actionBadgeClass,
   avatarHue,
   roleBadgeClass,
-  ROLE_BADGE_PILL,
-  ACTION_BADGE_PILL,
   splitDateTime,
   topActionLabel,
   parseUserPickerOptions,
@@ -80,22 +78,14 @@ function KpiCard({
   accent?: 'green' | 'blue' | 'violet';
   icon: React.ComponentType<{ className?: string }>;
 }) {
-  const valueColor = {
-    green: 'text-[#2e7ad1]',
-    blue: 'text-sky-700',
-    violet: 'text-violet-700',
-  }[accent];
-
   return (
-    <div className={cn('al-kpi min-w-[128px] px-4 py-3', `al-kpi--${accent}`)}>
+    <div className={cn('al-kpi al-kpi--compact', `al-kpi--${accent}`)}>
       <span className={cn('al-kpi-icon', `al-kpi-icon--${accent}`)}>
-        <Icon className="h-3.5 w-3.5" />
+        <Icon className="h-3 w-3" />
       </span>
-      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{label}</p>
-      <p className={cn('mt-1 text-2xl font-bold tabular-nums leading-none', valueColor)}>
-        {value}
-      </p>
-      {sub && <p className="mt-1 max-w-[140px] truncate text-[10px] text-slate-400">{sub}</p>}
+      <p className="al-kpi__label">{label}</p>
+      <p className={cn('al-kpi__value', `al-kpi__value--${accent}`)}>{value}</p>
+      {sub && <p className="al-kpi__sub">{sub}</p>}
     </div>
   );
 }
@@ -334,18 +324,18 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
     <div className="al-root mx-auto w-full max-w-[1680px]">
       <div className="al-shell">
         {/* Hero header */}
-        <div className="al-hero px-5 py-5 sm:px-6 sm:py-6">
+        <div className="al-hero px-3 py-3 sm:px-4 sm:py-3.5">
           <span className="al-hero-orb al-hero-orb--1" aria-hidden />
           <span className="al-hero-orb al-hero-orb--2" aria-hidden />
 
-          <div className="al-hero-content flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-start gap-4">
-              <span className="al-hero-icon flex h-12 w-12 shrink-0 items-center justify-center rounded-xl">
-                <Activity className="h-5 w-5 text-white" />
+          <div className="al-hero-content flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-start gap-3">
+              <span className="al-hero-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-lg">
+                <Activity className="h-4 w-4 text-white" />
               </span>
               <div>
-                <div className="mb-1.5 flex flex-wrap items-center gap-2">
-                  <h1 className="text-lg font-bold tracking-tight text-white sm:text-xl">{heading}</h1>
+                <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                  <h1 className="text-base font-bold tracking-tight text-white sm:text-lg">{heading}</h1>
                   {isLive && (
                     <span className="al-live-badge">
                       <span className="al-live-dot" />
@@ -353,10 +343,10 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
                     </span>
                   )}
                 </div>
-                <p className="max-w-xl text-sm leading-relaxed text-white/80">{sub}</p>
+                <p className="max-w-xl text-xs leading-relaxed text-white/80 sm:text-sm">{sub}</p>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2.5">
+            <div className="flex flex-wrap gap-1.5">
               <KpiCard
                 label="Records"
                 value={loading && !total ? '—' : total.toLocaleString('en-US')}
@@ -385,7 +375,7 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
         </div>
 
         {/* Toolbar */}
-        <div className="al-toolbar px-4 py-3.5 sm:px-5">
+        <div className="al-toolbar px-3 py-2 sm:px-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="al-period-toggle flex rounded-lg p-0.5">
               {(['today', 'month'] as const).map((p) => (
@@ -658,7 +648,7 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
                             </td>
                             <td className="al-role-cell al-badge-cell px-3 py-3">
                               <span
-                                className={cn(ROLE_BADGE_PILL, roleBadgeClass(log.userRole))}
+                                className={roleBadgeClass(log.userRole)}
                                 title={formatRoleLabel(log.userRole)}
                               >
                                 {formatRoleLabel(log.userRole)}
@@ -678,7 +668,7 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
 
                         <td className="al-action-cell al-badge-cell px-3 py-3">
                           <span
-                            className={cn(ACTION_BADGE_PILL, actionBadgeClass(log.action))}
+                            className={actionBadgeClass(log.action)}
                             title={actionLabel}
                           >
                             {actionLabel}

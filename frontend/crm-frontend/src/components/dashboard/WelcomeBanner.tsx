@@ -54,7 +54,7 @@ const config: Record<
 > = {
   admin: {
     roleLabel: 'Super Admin',
-    subtitle: 'CRM control center — users, master data, campaigns & analytics',
+    subtitle: 'Your command center — manage teams, data, and performance in one place.',
     Icon: Shield,
     ...bannerShared,
     decoTiles: [
@@ -66,7 +66,7 @@ const config: Record<
   },
   db_admin: {
     roleLabel: 'Database Administrator',
-    subtitle: 'Database operations — campaigns, master data & team assignments',
+    subtitle: 'Keep campaigns and master data flowing — your team is counting on you.',
     Icon: Database,
     ...bannerShared,
     decoTiles: [
@@ -78,7 +78,7 @@ const config: Record<
   },
   employee: {
     roleLabel: 'Employee',
-    subtitle: 'Your workspace — assigned campaigns, leads & activity',
+    subtitle: 'Stay on top of your leads, hours, and breaks — you’ve got this.',
     Icon: Briefcase,
     ...bannerShared,
     decoTiles: [
@@ -110,7 +110,18 @@ function useLiveClock() {
     const id = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(id);
   }, []);
-  return now.toLocaleTimeString('en-US', { timeZone: WORKSPACE_TIMEZONE,  hour: '2-digit', minute: '2-digit' });
+  const liveTime = now.toLocaleTimeString('en-US', {
+    timeZone: WORKSPACE_TIMEZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  const dateShort = now.toLocaleDateString('en-US', {
+    timeZone: WORKSPACE_TIMEZONE,
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
+  return { liveTime, dateShort };
 }
 
 function BannerDecor({
@@ -159,67 +170,69 @@ export function WelcomeBanner({ variant, subtitleOverride, toolbar }: WelcomeBan
   const name = user?.firstName ?? user?.email?.split('@')[0] ?? 'there';
   const c = config[variant];
   const Icon = c.Icon;
-  const liveTime = useLiveClock();
+  const { liveTime, dateShort } = useLiveClock();
   const showWorkTimer = WORK_TIMER_VARIANTS.includes(variant);
-
-  const dateShort = new Date().toLocaleDateString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-  });
-
+  const subtitle = subtitleOverride ?? c.subtitle;
   const empId = user?.employeeId;
 
   return (
     <div className="dash-section animate-fade-in">
-      <div className="dash-welcome-card dash-banner-shine relative overflow-hidden">
-        <div className="dash-welcome-accent" />
-
-        <div className="relative z-10 flex flex-col gap-0.5 p-1.5 sm:p-2 lg:p-1.5">
-          <div className="flex flex-wrap items-center justify-between gap-1">
-            <div className="flex min-w-0 items-center gap-1.5">
+      <div className="dash-welcome-stack">
+        <div className="dash-welcome-card dash-banner-shine relative overflow-hidden">
+          <div className="dash-welcome-accent" />
+          <div className="relative z-10 flex items-center justify-between gap-2 p-2 sm:p-2.5 lg:px-3 lg:py-2">
+            <div className="flex min-w-0 items-center gap-2">
               <div className="dash-avatar">
                 {initials(user?.firstName, user?.lastName, user?.email)}
               </div>
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-1">
-                  <h2 className="text-sm font-bold leading-none tracking-tight text-slate-900">
-                    {timeGreeting()}, {name}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <h2 className="text-sm font-bold leading-tight text-slate-900 sm:text-base">
+                    {timeGreeting()}, {name}!
                   </h2>
                   <span className="inline-flex items-center gap-0.5 rounded bg-[#e8f1fb] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-[#2568b8]">
                     <Icon className="h-2.5 w-2.5" />
                     {c.roleLabel}
                   </span>
                   {empId && (
-                    <span className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[8px] text-slate-500">
+                    <span className="hidden rounded bg-slate-100 px-1 py-0.5 font-mono text-[8px] text-slate-500 sm:inline">
                       {empId}
                     </span>
                   )}
                 </div>
+                <p className="dash-welcome-sub mt-0.5 max-w-xl text-[11px] leading-snug text-slate-500 sm:text-xs">
+                  {subtitle}
+                </p>
               </div>
             </div>
-
-            <div className="flex items-center gap-1">
-              {toolbar}
-              <div className="dash-clock-widget hidden md:block">
-                <p className="dash-clock-time">{liveTime}</p>
-                <p className="dash-clock-date">{dateShort}</p>
+            {!showWorkTimer && (
+              <div className="flex shrink-0 items-center gap-1.5">
+                {toolbar}
+                <div className="dash-clock-widget">
+                  <p className="dash-clock-time">{liveTime}</p>
+                  <p className="dash-clock-date">{dateShort}</p>
+                </div>
               </div>
-            </div>
+            )}
           </div>
-
-          {showWorkTimer ? (
-            <div className="dash-punch-strip">
-              <BannerPunchTiles />
-            </div>
-          ) : (
-            <BannerDecor variant={variant} MainIcon={Icon} tiles={c.decoTiles} />
-          )}
-
-          {showWorkTimer && (
-            <WorkTimerStrip variant="light" compact />
-          )}
         </div>
+
+        {showWorkTimer ? (
+          <div className="dash-welcome-work">
+            <div className="dash-punch-strip">
+              <BannerPunchTiles
+                headerActions={toolbar}
+                liveTime={liveTime}
+                dateShort={dateShort}
+              />
+            </div>
+            <WorkTimerStrip variant="light" compact className="dash-work-timer--compact" />
+          </div>
+        ) : (
+          <div className="dash-welcome-card p-1.5">
+            <BannerDecor variant={variant} MainIcon={Icon} tiles={c.decoTiles} />
+          </div>
+        )}
       </div>
     </div>
   );

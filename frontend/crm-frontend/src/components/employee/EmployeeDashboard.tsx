@@ -136,89 +136,93 @@ export function EmployeeDashboard() {
         />
       </div>
 
-      <div className="dash-section">
-        <AttendanceSummaryCard basePath="/employee/attendance" variant="dashboard" />
-      </div>
+      <div className="dash-section dash-employee-stack">
+        <div className="dash-employee-unified">
+          <AttendanceSummaryCard basePath="/employee/attendance" variant="dashboard" />
 
-      <div className={cn('dash-section', dashboardPanel)}>
-        <div className={dashboardPanelHeaderBlue}>
-          <h3>Lead status breakdown</h3>
-        </div>
-        <div className={dashboardPanelBody}>
-        {data.statusBreakdown.length === 0 ? (
-          <div className="dash-empty-state">
-            <Layers className="dash-empty-state__icon" strokeWidth={1.75} />
-            <p className="dash-empty-hint">No status data in your campaigns yet.</p>
-          </div>
-        ) : (
-          <div className="dash-chart-bars max-h-28 space-y-0.5 overflow-auto pr-1">
-            {data.statusBreakdown.map((item, i) => (
-              <DashboardBarRow
-                key={item.label}
-                label={item.label}
-                count={item.count}
-                total={assignedTotal}
-                color="bg-[#2e7ad1]"
-                delay={i * 45}
-              />
-            ))}
-          </div>
-        )}
-        <div className="mt-1.5 flex flex-wrap gap-2">
-          <Link href="/employee/batches" className={dashboardLink}>
-            Open my campaign →
-          </Link>
-          <Link href="/employee/activity-logs" className={dashboardLink}>
-            Activity logs →
-          </Link>
-        </div>
-        </div>
-      </div>
-
-      <div className={cn('dash-section', dashboardPanel)}>
-        <div className={dashboardPanelHeaderBlue}>
-          <h3>Recent campaigns</h3>
-        </div>
-        <div className={cn(dashboardPanelBody, '!p-0')}>
-        <div className="dash-table-wrap">
-          <table className="dash-table w-full text-xs">
-            <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
-              <tr className="border-b border-slate-100">
-                <th className="px-2 py-1.5 text-left font-semibold">Name</th>
-                <th className="px-2 py-1.5 text-right font-semibold">Contacts</th>
-                <th className="px-2 py-1.5 text-right font-semibold">Updated</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {data.recentBatches.length === 0 ? (
-                <tr>
-                  <td colSpan={3} className="px-2 py-4 text-center text-slate-400">
-                    No campaigns assigned yet
-                  </td>
-                </tr>
+          <div className="dash-employee-stack__insights">
+            <div className={dashboardPanel}>
+            <div className={dashboardPanelHeaderBlue}>
+              <h3>Lead status breakdown</h3>
+            </div>
+            <div className={dashboardPanelBody}>
+              {data.statusBreakdown.length === 0 ? (
+                <div className="dash-empty-state dash-empty-state--compact">
+                  <Layers className="dash-empty-state__icon" strokeWidth={1.75} />
+                  <p className="dash-empty-hint">No status data in your campaigns yet.</p>
+                </div>
               ) : (
-                data.recentBatches.map((batch) => (
-                  <tr key={batch.id} className="hover:bg-[#e8f1fb]/40">
-                    <td className="px-2 py-1.5">
-                      <Link
-                        href={`/employee/batches/${batch.id}`}
-                        className="font-medium text-[#2e7ad1] hover:underline"
-                      >
-                        {batch.name}
-                      </Link>
-                    </td>
-                    <td className="px-2 py-1.5 text-right font-mono text-slate-700">
-                      {batch.rowCount.toLocaleString('en-US')}
-                    </td>
-                    <td className="px-2 py-1.5 text-right text-slate-500">
-                      {formatWhen(batch.updatedAt)}
-                    </td>
-                  </tr>
-                ))
+                <div className="dash-chart-bars max-h-28 space-y-0.5 overflow-auto pr-1">
+                  {data.statusBreakdown.map((item, i) => (
+                    <DashboardBarRow
+                      key={item.label}
+                      label={item.label}
+                      count={item.count}
+                      total={assignedTotal}
+                      color="bg-[#2e7ad1]"
+                      delay={i * 45}
+                    />
+                  ))}
+                </div>
               )}
-            </tbody>
-          </table>
-        </div>
+              <div className="mt-1.5 flex flex-wrap gap-2">
+                <Link href="/employee/batches" className={dashboardLink}>
+                  Open my campaign →
+                </Link>
+                <Link href="/employee/activity-logs" className={dashboardLink}>
+                  Activity logs →
+                </Link>
+              </div>
+            </div>
+          </div>
+
+          <div className={dashboardPanel}>
+            <div className={dashboardPanelHeaderBlue}>
+              <h3>Recent campaigns</h3>
+            </div>
+            <div className={cn(dashboardPanelBody, '!p-0')}>
+              <div className="dash-table-wrap">
+                <table className="dash-table w-full text-xs">
+                  <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+                    <tr className="border-b border-slate-100">
+                      <th className="px-2 py-1.5 text-left font-semibold">Name</th>
+                      <th className="px-2 py-1.5 text-right font-semibold">Contacts</th>
+                      <th className="px-2 py-1.5 text-right font-semibold">Updated</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {data.recentBatches.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="px-2 py-4 text-center text-slate-400">
+                          No campaigns assigned yet
+                        </td>
+                      </tr>
+                    ) : (
+                      data.recentBatches.map((batch) => (
+                        <tr key={batch.id} className="hover:bg-[#e8f1fb]/40">
+                          <td className="px-2 py-1.5">
+                            <Link
+                              href={`/employee/batches/${batch.id}`}
+                              className="font-medium text-[#2e7ad1] hover:underline"
+                            >
+                              {batch.name}
+                            </Link>
+                          </td>
+                          <td className="px-2 py-1.5 text-right font-mono text-slate-700">
+                            {batch.rowCount.toLocaleString('en-US')}
+                          </td>
+                          <td className="px-2 py-1.5 text-right text-slate-500">
+                            {formatWhen(batch.updatedAt)}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          </div>
         </div>
       </div>
     </DashboardPageShell>

@@ -1,5 +1,7 @@
 'use client';
 
+import './attendance.css';
+
 import { usePaidLeaveBalance } from '@/hooks/usePaidLeaveBalance';
 import { cn } from '@/lib/utils/cn';
 import { ANNUAL_PAID_LEAVE_ALLOWANCE } from '@/lib/attendance/leave-balance';
@@ -26,55 +28,37 @@ export function PaidLeaveBalanceCard({
   ];
 
   return (
-    <div
-      className={cn(
-        'overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm transition-all duration-200 hover:shadow-md',
-        className,
-      )}
-    >
-      <div className="flex items-center justify-between bg-gradient-to-r from-[#2568b8] to-[#2e7ad1] px-4 py-2.5 text-white">
-        <div className="flex items-center gap-2">
-          <span className="flex h-5 w-5 items-center justify-center rounded-md bg-white/20 text-[9px] font-bold">
-            PL
-          </span>
-          <span className="text-xs font-semibold">Paid leave {year}</span>
+    <div className={cn('att-sheet', className)}>
+      <div className="att-sheet__head">
+        <div className="flex items-center gap-1.5">
+          <span className="att-sheet__head-badge">PL</span>
+          <span>Paid leave {year}</span>
         </div>
         {!compact && !loading && (
-          <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-[10px] font-semibold">
-            {remaining} left
-          </span>
+          <span className="att-sheet__meta">{remaining} left</span>
         )}
       </div>
 
-      <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-1.5 text-[11px] text-slate-600">
-        January – December · {total} days per year
-      </div>
+      {!compact && (
+        <div className="att-sheet__note">January – December · {total} days per year</div>
+      )}
 
       <div className="grid grid-cols-3 divide-x divide-slate-100 bg-white">
-        {cells.map((cell, i) => (
-          <div
-            key={cell.label}
-            className={cn(
-              'px-2 py-3 text-center transition-colors duration-150 hover:bg-[#e8f1fb]/40',
-              i === 1 && 'bg-slate-50/50',
-            )}
-          >
-            <p className="text-[9px] font-bold uppercase tracking-wide text-slate-500">{cell.label}</p>
-            <p className={cn('mt-0.5 text-lg font-bold tabular-nums', cell.color)}>{cell.value}</p>
+        {cells.map((cell) => (
+          <div key={cell.label} className="att-leave-cell">
+            <p className="att-leave-cell__label">{cell.label}</p>
+            <p className={cn('att-leave-cell__value', cell.color)}>{cell.value}</p>
           </div>
         ))}
       </div>
 
-      <div className="border-t border-slate-100 bg-white px-4 py-2.5">
-        <div className="mb-1.5 flex justify-between text-[10px] font-semibold text-slate-500">
+      <div className="att-progress">
+        <div className="att-progress__labels">
           <span>{usedPct}% used</span>
           <span className="text-[#2e7ad1]">{remaining} remaining</span>
         </div>
-        <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-[#2568b8] to-[#2e7ad1] transition-all duration-500 ease-out"
-            style={{ width: `${usedPct}%` }}
-          />
+        <div className="att-progress__track">
+          <div className="att-progress__fill" style={{ width: `${usedPct}%` }} />
         </div>
       </div>
     </div>

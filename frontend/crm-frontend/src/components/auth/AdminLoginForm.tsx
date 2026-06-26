@@ -86,8 +86,8 @@ export function AdminLoginForm() {
             onChange={(e) => setPassword(e.target.value)}
             required
           />
-          <Button type="submit" fullWidth disabled={loading} className="mt-2">
-            <LogIn className="h-4 w-4" />
+          <Button type="submit" fullWidth disabled={loading} className="mt-2 gap-2">
+            <LogIn className="h-4 w-4 shrink-0" strokeWidth={2} />
             {loading ? 'Signing in...' : 'Sign in'}
           </Button>
         </form>
@@ -127,15 +127,15 @@ export function AdminLoginForm() {
           {devOtpHint && process.env.NODE_ENV === 'development' && (
             <p className="text-xs text-amber-800">Dev OTP: {devOtpHint}</p>
           )}
-          <Button type="submit" fullWidth disabled={loading} className="mt-2">
+          <Button type="submit" fullWidth disabled={loading} className="mt-2 gap-2">
             {!otpSent ? (
               <>
-                <Mail className="h-4 w-4" />
+                <Mail className="h-4 w-4 shrink-0" strokeWidth={2} />
                 {loading ? 'Sending...' : 'Send OTP'}
               </>
             ) : (
               <>
-                <KeyRound className="h-4 w-4" />
+                <KeyRound className="h-4 w-4 shrink-0" strokeWidth={2} />
                 {loading ? 'Verifying...' : 'Verify & sign in'}
               </>
             )}

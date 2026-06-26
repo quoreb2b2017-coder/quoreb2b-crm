@@ -108,11 +108,11 @@
   overflow: visible;
 }
 
-/* Hero */
+/* Hero — CRM blue (matches dashboard) */
 .al-hero {
   position: relative;
   overflow: hidden;
-  background: linear-gradient(128deg, #0c2419 0%, #143d2b 28%, #2e7ad1 58%, #2d9a62 100%);
+  background: linear-gradient(135deg, #1d5a9e 0%, #2568b8 38%, #2e7ad1 72%, #3380d4 100%);
 }
 
 .al-hero::before {
@@ -120,9 +120,8 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 55% 80% at 8% 120%, rgba(45, 154, 98, 0.45), transparent 55%),
-    radial-gradient(ellipse 40% 60% at 92% -10%, rgba(255, 255, 255, 0.12), transparent 50%),
-    radial-gradient(circle at 70% 60%, rgba(16, 185, 129, 0.18), transparent 40%);
+    radial-gradient(ellipse 50% 70% at 100% 0%, rgba(255, 255, 255, 0.14), transparent 55%),
+    radial-gradient(ellipse 40% 50% at 0% 100%, rgba(29, 90, 158, 0.35), transparent 50%);
   pointer-events: none;
 }
 
@@ -154,17 +153,17 @@
 .al-hero-orb--1 {
   top: -30px;
   right: 12%;
-  width: 140px;
-  height: 140px;
-  background: rgba(52, 211, 153, 0.22);
+  width: 120px;
+  height: 120px;
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .al-hero-orb--2 {
   bottom: -40px;
   left: 35%;
-  width: 100px;
-  height: 100px;
-  background: rgba(255, 255, 255, 0.08);
+  width: 90px;
+  height: 90px;
+  background: rgba(46, 122, 209, 0.2);
   animation-delay: -3s;
 }
 
@@ -198,39 +197,63 @@
 }
 
 .al-live-dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 9999px;
-  background: #34d399;
+  background: #7dd3fc;
   animation: al-pulse-live 2s ease-in-out infinite;
 }
 
-/* KPI cards */
+/* KPI cards — compact */
 .al-kpi {
   position: relative;
   overflow: hidden;
-  border-radius: 0.875rem;
-  border: 1px solid rgba(255, 255, 255, 0.5);
-  background: linear-gradient(
-    145deg,
-    rgba(255, 255, 255, 0.95) 0%,
-    rgba(255, 255, 255, 0.82) 100%
-  );
-  backdrop-filter: blur(12px);
-  box-shadow:
-    0 4px 20px rgba(0, 0, 0, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
-  transition:
-    transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 0.28s ease;
-  animation: al-kpi-glow 4s ease-in-out infinite;
+  min-width: 6.5rem;
+  border-radius: 0.4375rem;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 250, 252, 0.88) 100%);
+  padding: 0.375rem 0.5rem;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08);
+  transition: box-shadow 0.2s ease;
 }
 
 .al-kpi:hover {
-  transform: translateY(-3px) scale(1.02);
-  box-shadow:
-    0 12px 32px rgba(0, 0, 0, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 1);
+  transform: none;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.1);
+}
+
+.al-kpi--compact {
+  min-width: 5.75rem;
+}
+
+.al-kpi__label {
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.al-kpi__value {
+  margin-top: 0.125rem;
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.al-kpi__value--green { color: #2568b8; }
+.al-kpi__value--blue { color: #0284c7; }
+.al-kpi__value--violet { color: #6d28d9; }
+
+.al-kpi__sub {
+  margin-top: 0.125rem;
+  max-width: 7.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.5625rem;
+  color: #94a3b8;
 }
 
 .al-kpi::before {
@@ -259,10 +282,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  margin-bottom: 6px;
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 0.3125rem;
+  margin-bottom: 0.25rem;
 }
 
 .al-kpi-icon--green {
@@ -331,15 +354,14 @@
 .al-filter-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 10px;
+  gap: 0.25rem;
+  padding: 0.125rem 0.4375rem;
   border-radius: 9999px;
-  font-size: 11px;
+  font-size: 0.625rem;
   font-weight: 600;
-  color: #2e7ad1;
-  background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%);
-  border: 1px solid rgba(46, 122, 209, 0.25);
-  box-shadow: 0 1px 2px rgba(46, 122, 209, 0.08);
+  color: #2568b8;
+  background: #e8f1fb;
+  border: 1px solid rgba(46, 122, 209, 0.22);
 }
 
 /* Main body */
@@ -368,8 +390,8 @@
 }
 
 .al-table-head {
-  background: linear-gradient(180deg, #f0faf4 0%, #f8faf9 100%);
-  border-bottom: 2px solid rgba(46, 122, 209, 0.15);
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  border-bottom: 1px solid rgba(46, 122, 209, 0.15);
 }
 
 .al-table-head th {
@@ -394,7 +416,7 @@
 }
 
 .al-table-row:hover {
-  background: linear-gradient(90deg, rgba(240, 250, 244, 0.95) 0%, rgba(248, 250, 252, 0.6) 100%) !important;
+  background: linear-gradient(90deg, rgba(232, 241, 251, 0.95) 0%, rgba(248, 250, 252, 0.6) 100%) !important;
   box-shadow: inset 3px 0 0 #2e7ad1;
 }
 
@@ -417,18 +439,145 @@
     0 0 0 2px rgba(46, 122, 209, 0.25);
 }
 
-.al-action-badge {
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+.al-table-row:hover .al-resource-path {
+  background: #e8f1fb;
+  border-color: #bfdbfe;
+}
+
+/* Role & action pills — semantic color coding */
+.al-role-pill,
+.al-action-pill {
+  display: inline-flex;
+  shrink: 0;
+  align-items: center;
   white-space: nowrap;
-  line-height: 1;
+  border-radius: 0.25rem;
+  padding: 0.125rem 0.4375rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1.2;
   letter-spacing: -0.01em;
+  border: 1px solid transparent;
+}
+
+.al-role-pill--super_admin {
+  background: #1e293b;
+  color: #f8fafc;
+  border-color: #334155;
+}
+
+.al-role-pill--admin {
+  background: #ede9fe;
+  color: #5b21b6;
+  border-color: #c4b5fd;
+}
+
+.al-role-pill--db_admin {
+  background: #e0f2fe;
+  color: #0369a1;
+  border-color: #7dd3fc;
+}
+
+.al-role-pill--employee {
+  background: #e8f1fb;
+  color: #2568b8;
+  border-color: #93c5fd;
+}
+
+.al-role-pill--client {
+  background: #fffbeb;
+  color: #b45309;
+  border-color: #fcd34d;
+}
+
+.al-role-pill--default {
+  background: #f1f5f9;
+  color: #475569;
+  border-color: #e2e8f0;
+}
+
+.al-action-pill--login {
+  background: #ecfdf5;
+  color: #047857;
+  border-color: #6ee7b7;
+}
+
+.al-action-pill--logout {
+  background: #f1f5f9;
+  color: #475569;
+  border-color: #cbd5e1;
+}
+
+.al-action-pill--idle {
+  background: #fff7ed;
+  color: #c2410c;
+  border-color: #fdba74;
+}
+
+.al-action-pill--session {
+  background: #f0f9ff;
+  color: #0369a1;
+  border-color: #7dd3fc;
+}
+
+.al-action-pill--lead {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-color: #93c5fd;
+}
+
+.al-action-pill--lead_view {
+  background: #e0e7ff;
+  color: #4338ca;
+  border-color: #a5b4fc;
+}
+
+.al-action-pill--user {
+  background: #ede9fe;
+  color: #6d28d9;
+  border-color: #c4b5fd;
+}
+
+.al-action-pill--master {
+  background: #ccfbf1;
+  color: #0f766e;
+  border-color: #5eead4;
+}
+
+.al-action-pill--batch {
+  background: #cffafe;
+  color: #0e7490;
+  border-color: #67e8f9;
+}
+
+.al-action-pill--warn {
+  background: #fef3c7;
+  color: #b45309;
+  border-color: #fcd34d;
+}
+
+.al-action-pill--danger {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: #fca5a5;
+}
+
+.al-action-pill--default {
+  background: #e8f1fb;
+  color: #2568b8;
+  border-color: #93c5fd;
+}
+
+.al-action-badge {
+  box-shadow: none;
+  transition: transform 0.12s ease;
+  white-space: nowrap;
+  line-height: 1.2;
 }
 
 .al-role-badge {
   white-space: nowrap;
-  line-height: 1;
-  letter-spacing: -0.01em;
+  line-height: 1.2;
   min-width: max-content;
 }
 
@@ -524,7 +673,7 @@
 }
 
 .al-chart-hero {
-  background: linear-gradient(145deg, #0f2e22 0%, #2568b8 35%, #2e7ad1 70%, #2d9a62 100%);
+  background: linear-gradient(145deg, #1d5a9e 0%, #2568b8 45%, #2e7ad1 100%);
   position: relative;
   overflow: hidden;
 }
@@ -593,47 +742,52 @@
 
 @media (min-width: 1024px) {
   .al-shell {
-    border-radius: 0.625rem;
+    border-radius: 0.5rem;
   }
 
-  .al-hero-content {
-    padding-top: 0.75rem !important;
-    padding-bottom: 0.75rem !important;
+  .al-hero {
+    padding: 0.5rem 0.75rem !important;
   }
 
   .al-kpi {
-    border-radius: 0.5rem;
-    padding: 0.5rem 0.625rem !important;
+    min-width: 5.25rem;
+    padding: 0.3125rem 0.4375rem;
   }
 
-  .al-kpi:hover {
-    transform: none;
+  .al-kpi__value {
+    font-size: 1rem;
   }
 
   .al-kpi-icon {
-    width: 1.375rem;
-    height: 1.375rem;
-    margin-bottom: 0.25rem;
+    width: 1.125rem;
+    height: 1.125rem;
+    margin-bottom: 0.125rem;
   }
 
   .al-toolbar {
-    padding: 0.375rem 0.5rem !important;
-    gap: 0.375rem !important;
+    padding: 0.3125rem 0.4375rem !important;
   }
 
   .al-body {
-    padding: 0.5rem !important;
-    gap: 0.5rem !important;
+    padding: 0.375rem !important;
+    gap: 0.375rem !important;
   }
 
   .al-table-head th,
   .al-table-row td {
-    padding: 0.3125rem 0.5rem !important;
-    font-size: 0.75rem;
+    padding: 0.25rem 0.4375rem !important;
+    font-size: 0.6875rem;
   }
 
-  .al-filter-chip {
-    padding: 0.125rem 0.5rem;
-    font-size: 0.6875rem;
+  .al-role-pill,
+  .al-action-pill {
+    font-size: 0.5625rem;
+    padding: 0.0625rem 0.3125rem;
+  }
+
+  .al-avatar {
+    height: 1.625rem;
+    width: 1.625rem;
+    font-size: 0.5625rem;
   }
 }

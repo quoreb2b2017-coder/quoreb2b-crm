@@ -23,6 +23,8 @@ interface AttendanceDashboardStatsProps {
   attendancePct?: number;
   loading?: boolean;
   compact?: boolean;
+  /** Hide duplicate month banner when parent already shows period */
+  hideMonthBanner?: boolean;
   className?: string;
 }
 
@@ -39,36 +41,64 @@ function StatRow({
   isToday?: boolean;
   compact?: boolean;
 }) {
+  if (compact) {
+    return (
+      <div
+        className={cn(
+          'flex items-center justify-between gap-2 rounded-lg border px-2 py-1.5',
+          isToday
+            ? 'border-emerald-200 bg-emerald-50/80'
+            : 'border-slate-100 bg-slate-50/70',
+        )}
+      >
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span
+            className="h-2 w-2 shrink-0 rounded-full"
+            style={{ backgroundColor: color }}
+          />
+          <span
+            className={cn(
+              'truncate text-[11px] font-medium text-slate-600',
+              isToday && 'font-semibold text-[#2568b8]',
+            )}
+          >
+            {label}
+          </span>
+        </div>
+        <span
+          className={cn(
+            'shrink-0 text-sm font-bold tabular-nums text-slate-900',
+            isToday && 'text-[#2568b8]',
+          )}
+        >
+          {value}
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
         'flex items-center justify-between gap-3 border-b border-slate-100 last:border-b-0',
-        compact ? 'py-1.5' : 'gap-4 py-2.5',
+        'gap-4 py-2.5',
         isToday && 'border-b-0 pt-1',
       )}
     >
-      <div className={cn('flex min-w-0 items-center', compact ? 'gap-2' : 'gap-2.5')}>
+      <div className="flex min-w-0 items-center gap-2.5">
         <span
-          className={cn(
-            'shrink-0 rounded-full',
-            isToday ? 'h-2.5 w-2.5' : compact ? 'h-1.5 w-1.5' : 'h-2 w-2',
-          )}
+          className={cn('shrink-0 rounded-full', isToday ? 'h-2.5 w-2.5' : 'h-2 w-2')}
           style={{ backgroundColor: color }}
         />
         <span
-          className={cn(
-            'text-slate-600',
-            compact ? 'text-xs' : 'text-sm',
-            isToday && 'font-medium text-[#2e7ad1]',
-          )}
+          className={cn('text-slate-600 text-sm', isToday && 'font-medium text-[#2e7ad1]')}
         >
           {label}
         </span>
       </div>
       <span
         className={cn(
-          'shrink-0 font-semibold tabular-nums text-slate-800',
-          compact ? 'text-sm' : 'text-base',
+          'shrink-0 font-semibold tabular-nums text-slate-800 text-base',
           isToday && 'text-[#2e7ad1]',
         )}
       >
@@ -93,6 +123,7 @@ export function AttendanceDashboardStats({
   attendancePct = 0,
   loading,
   compact,
+  hideMonthBanner,
   className,
 }: AttendanceDashboardStatsProps) {
   const rows = [
@@ -112,99 +143,87 @@ export function AttendanceDashboardStats({
       : '—';
 
   return (
-    <div className={cn('flex h-full min-h-0 flex-col', className)}>
-      <div
-        className={cn(
-          'mb-3 flex items-baseline justify-between gap-2 rounded-lg bg-slate-50/80 px-2.5 py-2',
-          !compact && 'mb-4 gap-3 px-3 py-2.5',
-        )}
-      >
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-[#2e7ad1]/80">This month</p>
-          <p className={cn('mt-0.5 font-semibold text-slate-800', compact ? 'text-sm' : 'text-base')}>
-            {monthLabel}
-          </p>
+    <div className={cn('flex h-full min-h-0 flex-col att-dash-stats', className)}>
+      {!hideMonthBanner ? (
+        <div
+          className={cn(
+            'att-dash-stats__banner flex items-baseline justify-between gap-2 rounded-lg border border-slate-100 bg-gradient-to-r from-slate-50 to-white px-2.5 py-1.5',
+            compact ? 'mb-2' : 'mb-4 gap-3 px-3 py-2.5',
+          )}
+        >
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-[#2e7ad1]/80">This month</p>
+            <p className={cn('mt-0.5 font-semibold text-slate-800', compact ? 'text-sm' : 'text-base')}>
+              {monthLabel}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Rate</p>
+            <p className={cn('font-bold tabular-nums text-[#2e7ad1]', compact ? 'text-base' : 'text-lg')}>
+              {attendancePct}%
+            </p>
+          </div>
         </div>
-        <div className="text-right">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Rate</p>
-          <p className={cn('font-bold tabular-nums text-[#2e7ad1]', compact ? 'text-base' : 'text-lg')}>
-            {attendancePct}%
-          </p>
+      ) : (
+        <div className="att-dash-stats__rate-row">
+          <span className="att-dash-stats__rate-label">Attendance rate</span>
+          <span className="att-dash-stats__rate-value">{attendancePct}%</span>
         </div>
-      </div>
+      )}
 
       {loading ? (
         <p className={cn('text-center text-slate-400', compact ? 'py-6 text-xs' : 'py-10 text-sm')}>
           Loading…
         </p>
+      ) : compact ? (
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+            {rows.map((row) => (
+              <StatRow
+                key={row.status}
+                label={row.label}
+                value={row.value}
+                color={ATTENDANCE_STATUS_COLORS[row.status]}
+                compact
+              />
+            ))}
+          </div>
+          <StatRow
+            label="Today"
+            value={todayLabel}
+            color={ATTENDANCE_STATUS_COLORS.present}
+            isToday
+            compact
+          />
+        </div>
       ) : (
-        <div
-          className={cn(
-            'grid flex-1',
-            compact ? 'grid-cols-1 sm:grid-cols-2 sm:gap-x-4' : 'gap-x-6 sm:grid-cols-2',
-          )}
-        >
-          {compact ? (
-            <>
-              <div>
-                {rows.slice(0, 4).map((row) => (
-                  <StatRow
-                    key={row.status}
-                    label={row.label}
-                    value={row.value}
-                    color={ATTENDANCE_STATUS_COLORS[row.status]}
-                    compact
-                  />
-                ))}
-              </div>
-              <div>
-                {rows.slice(4).map((row) => (
-                  <StatRow
-                    key={row.status}
-                    label={row.label}
-                    value={row.value}
-                    color={ATTENDANCE_STATUS_COLORS[row.status]}
-                    compact
-                  />
-                ))}
-              </div>
-            </>
-          ) : (
-            <>
-              <div>
-                {rows.slice(0, 4).map((row) => (
-                  <StatRow
-                    key={row.status}
-                    label={row.label}
-                    value={row.value}
-                    color={ATTENDANCE_STATUS_COLORS[row.status]}
-                  />
-                ))}
-              </div>
-              <div>
-                {rows.slice(4).map((row) => (
-                  <StatRow
-                    key={row.status}
-                    label={row.label}
-                    value={row.value}
-                    color={ATTENDANCE_STATUS_COLORS[row.status]}
-                  />
-                ))}
-              </div>
-            </>
-          )}
-          <div
-            className={cn(
-              'mt-1 rounded-lg border border-emerald-100 bg-emerald-50/50 px-2',
-              'sm:col-span-2',
-            )}
-          >
+        <div className="grid flex-1 gap-x-6 sm:grid-cols-2">
+          <div>
+            {rows.slice(0, 4).map((row) => (
+              <StatRow
+                key={row.status}
+                label={row.label}
+                value={row.value}
+                color={ATTENDANCE_STATUS_COLORS[row.status]}
+              />
+            ))}
+          </div>
+          <div>
+            {rows.slice(4).map((row) => (
+              <StatRow
+                key={row.status}
+                label={row.label}
+                value={row.value}
+                color={ATTENDANCE_STATUS_COLORS[row.status]}
+              />
+            ))}
+          </div>
+          <div className="mt-1 rounded-lg border border-emerald-100 bg-emerald-50/50 px-2 sm:col-span-2">
             <StatRow
               label="Today"
               value={todayLabel}
               color={ATTENDANCE_STATUS_COLORS.present}
               isToday
-              compact={compact}
             />
           </div>
         </div>

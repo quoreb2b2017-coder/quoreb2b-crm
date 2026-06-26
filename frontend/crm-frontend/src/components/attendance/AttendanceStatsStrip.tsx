@@ -1,9 +1,10 @@
 'use client';
 
+import './attendance.css';
+
 import { ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { ANNUAL_PAID_LEAVE_ALLOWANCE } from '@/lib/attendance/leave-balance';
-import { xlHeaderClass, xlScrollClass } from '@/lib/attendance/xl-sheet-theme';
 
 export interface AttendanceStatItem {
   label: string;
@@ -13,12 +14,12 @@ export interface AttendanceStatItem {
   onCheckHistory?: () => void;
 }
 
-const toneValue: Record<string, string> = {
-  green: 'text-[#2e7ad1]',
-  red: 'text-[#c00000]',
-  blue: 'text-[#2e75b6]',
-  violet: 'text-violet-700',
-  neutral: 'text-slate-900',
+const toneClass: Record<string, string> = {
+  green: 'att-metric__value--green',
+  red: 'att-metric__value--red',
+  blue: 'att-metric__value--blue',
+  violet: 'att-metric__value--violet',
+  neutral: 'att-metric__value--neutral',
 };
 
 function isPaidLeaveStat(label: string) {
@@ -36,33 +37,6 @@ function splitStats(stats: AttendanceStatItem[]) {
   return { attendance, paidLeave };
 }
 
-function XlSheetHeader({
-  title,
-  variant = 'green',
-  meta,
-}: {
-  title: string;
-  variant?: 'green' | 'violet';
-  meta?: string;
-}) {
-  return (
-    <div
-      className={cn(
-        'flex flex-shrink-0 items-center justify-between px-3 py-1.5 text-white',
-        xlHeaderClass(variant),
-      )}
-    >
-      <div className="flex items-center gap-2">
-        <span className="flex h-5 w-5 items-center justify-center rounded bg-white/20 text-[9px] font-bold tracking-tight">
-          XL
-        </span>
-        <span className="text-xs font-semibold">{title}</span>
-      </div>
-      {meta && <span className="text-[11px] text-white/75">{meta}</span>}
-    </div>
-  );
-}
-
 function AttendanceMetric({ stat, index }: { stat: AttendanceStatItem; index: number }) {
   const tone = stat.tone ?? 'neutral';
   const showHistory =
@@ -70,32 +44,16 @@ function AttendanceMetric({ stat, index }: { stat: AttendanceStatItem; index: nu
     stat.label.toLowerCase().includes('present');
 
   return (
-    <div
-      className={cn(
-        'flex min-h-[76px] flex-1 flex-col justify-center border-r border-slate-100 px-3 py-3 text-center last:border-r-0',
-        'transition-colors duration-150 ease-out hover:bg-[#e8f1fb]/35',
-        index % 2 === 0 ? 'bg-white' : 'bg-slate-50/60',
-      )}
-      style={{ animationDelay: `${index * 40}ms` }}
-    >
-      <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">{stat.label}</p>
-      <p className={cn('mt-1 text-2xl font-bold tabular-nums leading-none', toneValue[tone])}>
-        {stat.value}
-      </p>
+    <div className="att-metric" style={{ animationDelay: `${index * 35}ms` }}>
+      <p className="att-metric__label">{stat.label}</p>
+      <p className={cn('att-metric__value', toneClass[tone])}>{stat.value}</p>
       {showHistory &&
         (stat.checkHistoryHref ? (
-          <a
-            href={stat.checkHistoryHref}
-            className="mt-2 inline-flex items-center justify-center gap-0.5 text-[11px] font-semibold text-[#2e7ad1] hover:underline"
-          >
+          <a href={stat.checkHistoryHref} className="att-metric__link inline-flex items-center gap-0.5">
             View history <ChevronRight className="h-3 w-3" />
           </a>
         ) : (
-          <button
-            type="button"
-            onClick={stat.onCheckHistory}
-            className="mt-2 text-[11px] font-semibold text-[#2e7ad1] hover:underline"
-          >
+          <button type="button" onClick={stat.onCheckHistory} className="att-metric__link">
             View history →
           </button>
         ))}
@@ -103,7 +61,7 @@ function AttendanceMetric({ stat, index }: { stat: AttendanceStatItem; index: nu
   );
 }
 
-function PaidLeaveXlPanel({ stats }: { stats: AttendanceStatItem[] }) {
+function PaidLeavePanel({ stats }: { stats: AttendanceStatItem[] }) {
   const total =
     stats.find((s) => s.label.toLowerCase().includes('total paid'))?.value ??
     ANNUAL_PAID_LEAVE_ALLOWANCE;
@@ -118,45 +76,36 @@ function PaidLeaveXlPanel({ stats }: { stats: AttendanceStatItem[] }) {
 
   const cells = [
     { label: 'Total paid', value: allowance, tone: 'text-slate-900' },
-    { label: 'Paid used', value: used, tone: 'text-[#2e75b6]' },
+    { label: 'Paid used', value: used, tone: 'text-[#2568b8]' },
     { label: 'Remaining', value: remaining, tone: 'text-[#2e7ad1]' },
     { label: 'Unpaid used', value: unpaid, tone: 'text-[#c00000]' },
   ];
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm transition-all duration-200 hover:shadow-md">
-      <XlSheetHeader
-        title="Paid leave balance"
-        variant="green"
-        meta={`Jan – Dec · ${allowance} days`}
-      />
-      <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-1.5 text-[11px] text-slate-600">
-        Auto-updates when leave is approved
+    <div className="att-sheet">
+      <div className="att-sheet__head">
+        <div className="flex items-center gap-1.5">
+          <span className="att-sheet__head-badge">PL</span>
+          <span>Paid leave balance</span>
+        </div>
+        <span className="att-sheet__meta">Jan – Dec · {allowance} days</span>
       </div>
-      <div className="grid grid-cols-2 divide-x divide-slate-100 border-b border-slate-100 md:grid-cols-4">
-        {cells.map((cell, i) => (
-          <div
-            key={cell.label}
-            className={cn(
-              'px-3 py-3 text-center transition-colors duration-150 hover:bg-[#e8f1fb]/40',
-              i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50',
-            )}
-          >
-            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{cell.label}</p>
-            <p className={cn('mt-1 text-2xl font-bold tabular-nums', cell.tone)}>{cell.value}</p>
+      <div className="att-sheet__note">Auto-updates when leave is approved</div>
+      <div className="att-leave-grid">
+        {cells.map((cell) => (
+          <div key={cell.label} className="att-leave-cell">
+            <p className="att-leave-cell__label">{cell.label}</p>
+            <p className={cn('att-leave-cell__value', cell.tone)}>{cell.value}</p>
           </div>
         ))}
       </div>
-      <div className="bg-white px-4 py-3">
-        <div className="mb-1.5 flex justify-between text-[10px] font-semibold text-slate-500">
+      <div className="att-progress">
+        <div className="att-progress__labels">
           <span>Used {used} ({usedPct}%)</span>
           <span className="text-[#2e7ad1]">{remaining} remaining</span>
         </div>
-        <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-[#2568b8] to-[#2e7ad1] transition-all duration-500 ease-out"
-            style={{ width: `${Math.min(100, usedPct)}%` }}
-          />
+        <div className="att-progress__track">
+          <div className="att-progress__fill" style={{ width: `${Math.min(100, usedPct)}%` }} />
         </div>
       </div>
     </div>
@@ -180,17 +129,17 @@ export function AttendanceStatsStrip({
   const { attendance, paidLeave } = splitStats(stats);
 
   return (
-    <div
-      className={cn(
-        'xl-stagger w-full space-y-3',
-        loading && 'pointer-events-none opacity-70',
-        className,
-      )}
-    >
+    <div className={cn('att-stats-wrap', loading && 'pointer-events-none opacity-70', className)}>
       {attendance.length > 0 && (
-        <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm transition-all duration-200 hover:shadow-md">
-          <XlSheetHeader title="Attendance summary" meta={`${attendance.length} metrics`} />
-          <div className="flex flex-wrap sm:flex-nowrap">
+        <div className="att-sheet">
+          <div className="att-sheet__head">
+            <div className="flex items-center gap-1.5">
+              <span className="att-sheet__head-badge">XL</span>
+              <span>Attendance summary</span>
+            </div>
+            <span className="att-sheet__meta">{attendance.length} metrics</span>
+          </div>
+          <div className="att-metrics-row">
             {attendance.map((stat, i) => (
               <AttendanceMetric key={stat.label} stat={stat} index={i} />
             ))}
@@ -198,7 +147,7 @@ export function AttendanceStatsStrip({
         </div>
       )}
 
-      {paidLeave.length > 0 && <PaidLeaveXlPanel stats={paidLeave} />}
+      {paidLeave.length > 0 && <PaidLeavePanel stats={paidLeave} />}
     </div>
   );
 }

@@ -87,11 +87,7 @@ export function SystemHealthPanel() {
 
   return (
     <div>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="st-section-head mb-0">
-          <h2 className="st-section-title">System health</h2>
-          <p className="st-section-sub">Live status of API and connected services</p>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <button type="button" onClick={load} disabled={loading} className="st-refresh-btn">
           <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
           Refresh
@@ -105,7 +101,7 @@ export function SystemHealthPanel() {
       )}
 
       {health && (
-        <div className="mt-5 space-y-4">
+        <div className="mt-4 space-y-4">
           <div className={cn('st-health-banner border', bannerStyle)}>
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/60 shadow-sm">
               <Activity className="h-5 w-5" />

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import {
   Coffee,
   UtensilsCrossed,
@@ -13,7 +13,7 @@ import {
 import { cn } from '@/lib/utils/cn';
 import { useBreakPunch } from '@/hooks/useBreakPunch';
 import { toast } from '@/stores/toast.store';
-import { formatRemainingShort, type BreakType } from '@/lib/api/break-punch.service';
+import { formatRemainingShort, formatBreakDuration, type BreakType } from '@/lib/api/break-punch.service';
 import { attendanceService } from '@/lib/api/attendance.service';
 import { activityLogsService } from '@/lib/api/activity-logs.service';
 import apiClient from '@/lib/api/client';
@@ -57,6 +57,7 @@ const toneStyles: Record<
 
 function PunchTile({
   label,
+  meta,
   sublabel,
   tone,
   icon: Icon,
@@ -66,6 +67,7 @@ function PunchTile({
   onClick,
 }: {
   label: string;
+  meta?: string;
   sublabel?: string;
   tone: TileTone;
   icon: typeof Coffee;
@@ -82,8 +84,8 @@ function PunchTile({
       disabled={disabled || busy}
       onClick={onClick}
       className={cn(
-        'group relative flex min-w-0 flex-row items-center gap-1 rounded-md border px-1.5 py-0.5 backdrop-blur-md transition-all duration-200',
-        'active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40',
+        'group relative flex min-w-0 flex-col items-stretch gap-1 rounded-lg border px-2 py-1.5 backdrop-blur-md transition-all duration-200 dash-punch-tile',
+        'active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45',
         active ? t.active : t.shell,
       )}
     >
@@ -92,23 +94,28 @@ function PunchTile({
           className={cn('absolute right-1.5 top-1.5 h-1.5 w-1.5 animate-pulse rounded-full', t.dot)}
         />
       )}
-      <span
-        className={cn(
-          'flex h-5 w-5 shrink-0 items-center justify-center rounded-md shadow-sm transition-transform group-hover:scale-105',
-          t.icon,
-        )}
-      >
-        <Icon className="h-3.5 w-3.5" strokeWidth={2} />
-      </span>
-      <span className="min-w-0 flex-1 text-left">
-        <span className="block truncate text-[10px] font-bold leading-tight text-white">
-          {busy ? '…' : label}
+      <span className="flex min-w-0 items-center gap-1.5">
+        <span
+          className={cn(
+            'flex h-7 w-7 shrink-0 items-center justify-center rounded-md shadow-sm transition-transform group-hover:scale-105 dash-punch-tile__icon',
+            t.icon,
+          )}
+        >
+          <Icon className="h-4 w-4" strokeWidth={2} />
         </span>
-        {sublabel && (
-          <span className="block truncate font-mono text-[8px] tabular-nums text-white/60">
-            {sublabel}
+        <span className="min-w-0 flex-1 text-left">
+          <span className="dash-punch-tile__label block truncate font-bold leading-tight text-white">
+            {busy ? '…' : label}
           </span>
-        )}
+          {(meta || sublabel) && (
+            <span
+              className="dash-punch-tile__meta block truncate font-mono tabular-nums text-white/80"
+              title={[meta, sublabel].filter(Boolean).join(' · ')}
+            >
+              {[meta, sublabel].filter(Boolean).join(' · ')}
+            </span>
+          )}
+        </span>
       </span>
     </button>
   );
@@ -127,30 +134,34 @@ function WorkDayClosedTile({
   return (
     <div
       className={cn(
-        'relative flex min-w-0 flex-row items-stretch overflow-hidden rounded-xl border backdrop-blur-md',
+        'relative flex min-w-0 flex-row items-stretch overflow-hidden rounded-lg border backdrop-blur-md dash-punch-eod dash-punch-eod--closed',
         t.shell,
       )}
     >
-      <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 py-2.5">
-        <span className={cn('flex h-7 w-7 items-center justify-center rounded-lg shadow-sm', t.icon)}>
-          <LogIn className="h-3.5 w-3.5" strokeWidth={2} />
+      <div className="flex min-w-0 flex-1 items-center justify-center gap-1 px-2 py-1.5">
+        <span className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded-md shadow-sm', t.icon)}>
+          <LogIn className="h-3 w-3" strokeWidth={2} />
         </span>
-        <span className="text-[8px] font-bold uppercase tracking-wide text-white/50">Login</span>
-        <span className="w-full truncate text-center font-mono text-[10px] font-semibold tabular-nums text-white">
-          {loginTime ?? '—'}
-        </span>
+        <div className="min-w-0 text-left">
+          <span className="text-[8px] font-bold uppercase tracking-wide text-white/50">Login</span>
+          <span className="block truncate font-mono text-[10px] font-semibold tabular-nums text-white">
+            {loginTime ?? '—'}
+          </span>
+        </div>
       </div>
 
       <div className="w-px shrink-0 self-stretch bg-white/30" aria-hidden />
 
-      <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 py-2.5">
-        <span className={cn('flex h-7 w-7 items-center justify-center rounded-lg shadow-sm', t.icon)}>
-          <LogOut className="h-3.5 w-3.5" strokeWidth={2} />
+      <div className="flex min-w-0 flex-1 items-center justify-center gap-1 px-2 py-1.5">
+        <span className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded-md shadow-sm', t.icon)}>
+          <LogOut className="h-3 w-3" strokeWidth={2} />
         </span>
-        <span className="text-[8px] font-bold uppercase tracking-wide text-white/50">Logout</span>
-        <span className="w-full truncate text-center font-mono text-[10px] font-semibold tabular-nums text-white">
-          {logoutTime ?? '—'}
-        </span>
+        <div className="min-w-0 text-left">
+          <span className="text-[8px] font-bold uppercase tracking-wide text-white/50">Logout</span>
+          <span className="block truncate font-mono text-[10px] font-semibold tabular-nums text-white">
+            {logoutTime ?? '—'}
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -171,22 +182,24 @@ function WorkEodSplitTile({
   return (
     <div
       className={cn(
-        'relative flex min-w-0 flex-row items-stretch overflow-hidden rounded-xl border backdrop-blur-md',
+        'relative flex min-w-0 flex-row items-stretch overflow-hidden rounded-lg border backdrop-blur-md dash-punch-eod',
         t.active,
       )}
     >
       <span
-        className={cn('absolute right-1.5 top-1.5 z-10 h-1.5 w-1.5 animate-pulse rounded-full', t.dot)}
+        className={cn('absolute right-1 top-1 z-10 h-1 w-1 animate-pulse rounded-full lg:right-1 lg:top-1', t.dot)}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 py-2.5">
-        <span className={cn('flex h-7 w-7 items-center justify-center rounded-lg shadow-sm', t.icon)}>
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 px-2.5 py-2">
+        <span className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-md shadow-sm dash-punch-tile__icon', t.icon)}>
           <LogIn className="h-3.5 w-3.5" strokeWidth={2} />
         </span>
-        <span className="text-[8px] font-bold uppercase tracking-wide text-white/50">Login</span>
-        <span className="w-full truncate text-center font-mono text-[10px] font-semibold tabular-nums text-white">
-          {loginTime ?? '—'}
-        </span>
+        <div className="min-w-0 text-left">
+          <span className="dash-punch-tile__label block text-[8px] font-bold uppercase tracking-wide text-white/55">Login</span>
+          <span className="dash-punch-tile__meta block truncate font-mono text-white">
+            {loginTime ?? '—'}
+          </span>
+        </div>
       </div>
 
       <div className="w-px shrink-0 self-stretch bg-white/30" aria-hidden />
@@ -196,21 +209,31 @@ function WorkEodSplitTile({
         disabled={busy}
         onClick={onEodLogout}
         className={cn(
-          'flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 py-2.5 transition-colors',
+          'flex min-w-0 flex-1 items-center gap-1.5 px-2.5 py-2 transition-colors',
           'hover:bg-white/10 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50',
         )}
       >
-        <span className={cn('flex h-7 w-7 items-center justify-center rounded-lg shadow-sm', t.icon)}>
+        <span className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-md shadow-sm dash-punch-tile__icon', t.icon)}>
           <LogOut className="h-3.5 w-3.5" strokeWidth={2} />
         </span>
-        <span className="text-[10px] font-bold leading-tight text-white">{busy ? '…' : 'EOD'}</span>
-        <span className="text-[8px] font-semibold uppercase tracking-wide text-white/70">Logout</span>
+        <div className="min-w-0 text-left">
+          <span className="dash-punch-tile__label block text-[8px] font-bold uppercase tracking-wide text-white/55">EOD</span>
+          <span className="dash-punch-tile__meta block text-[11px] font-bold text-white">{busy ? '…' : 'Logout'}</span>
+        </div>
       </button>
     </div>
   );
 }
 
-export function BannerPunchTiles() {
+export function BannerPunchTiles({
+  headerActions,
+  liveTime,
+  dateShort,
+}: {
+  headerActions?: ReactNode;
+  liveTime?: string;
+  dateShort?: string;
+}) {
   const user = useAuthStore((s) => s.user);
   const refreshToken = useAuthStore((s) => s.refreshToken);
   const clearAuth = useAuthStore((s) => s.clearAuth);
@@ -223,6 +246,7 @@ export function BannerPunchTiles() {
     meetingNeedsApproval,
     meetingPending,
     liveRemainingSeconds,
+    activeElapsed,
     reload,
   } = useBreakPunch(true);
   const [workIn, setWorkIn] = useState(false);
@@ -282,20 +306,35 @@ export function BannerPunchTiles() {
   const onBreak = !!data.activeType;
   const activeType = data.activeType;
 
-  const breakSublabel = (type: BreakKey) => {
+  const breakInfo = (type: BreakKey) => {
     if (type === 'meeting' && meetingPending && !data.meeting.isActive) {
-      return 'Pending admin';
+      return { meta: 'Pending', sublabel: 'Awaiting admin approval' };
     }
     const s = data[type];
-    if (s.isActive) {
-      const sec =
-        activeType === type && liveRemainingSeconds != null
-          ? liveRemainingSeconds
-          : s.remainingSeconds;
-      return formatRemainingShort(sec);
+    const isLive = activeType === type && s.isActive;
+    const usedSeconds = s.usedMinutes * 60 + (isLive ? activeElapsed : 0);
+    const usedLabel = formatBreakDuration(usedSeconds);
+
+    if (isLive) {
+      const rem =
+        liveRemainingSeconds != null ? liveRemainingSeconds : s.remainingSeconds;
+      return {
+        meta: `${usedLabel} used`,
+        sublabel: `${formatRemainingShort(rem)} remaining`,
+      };
     }
-    if (s.remainingMinutes <= 0) return 'Done';
-    return `${s.remainingMinutes}m left`;
+
+    if (s.remainingMinutes <= 0) {
+      return {
+        meta: `${usedLabel} used`,
+        sublabel: s.usedMinutes > 0 ? 'Daily limit reached' : `Allowance ${s.hint}`,
+      };
+    }
+
+    return {
+      meta: `${usedLabel} used`,
+      sublabel: `${s.remainingMinutes}m left`,
+    };
   };
 
   const handleBreak = async (type: BreakKey) => {
@@ -355,27 +394,17 @@ export function BannerPunchTiles() {
   };
 
   return (
-    <div className="w-full p-1 sm:p-1.5 dash-punch-inner">
-      <div className="mb-1 flex items-center justify-between gap-1.5">
-        <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-white/70">
-          <Fingerprint className="h-3 w-3 text-white/80" />
-          Quick punch
-        </p>
-        <button
-          type="button"
-          onClick={handleSync}
-          disabled={syncing || toggling !== null || requestingMeeting || eodLoggingOut}
-          className="inline-flex items-center gap-1 rounded-md border border-white/20 bg-white/10 px-1.5 py-0.5 text-[9px] font-semibold text-white/80 transition hover:bg-white/20 disabled:opacity-50"
-        >
-          <RefreshCw className={cn('h-3 w-3', syncing && 'animate-spin')} />
-          Sync
-        </button>
-      </div>
+    <div className="dash-punch-inner">
+      <p className="dash-punch-meta__label">
+        <Fingerprint className="h-3.5 w-3.5 shrink-0" />
+        Quick punch
+      </p>
 
-      <div className="grid grid-cols-1 gap-1 sm:grid-cols-4">
+      <div className="dash-punch-grid">
         {onBreak ? (
           <PunchTile
             label="End break"
+            meta={activeType ? formatBreakDuration(activeElapsed) : undefined}
             sublabel="Back to work"
             tone="work"
             icon={LogIn}
@@ -394,60 +423,68 @@ export function BannerPunchTiles() {
         ) : (
           <div
             className={cn(
-              'relative flex min-w-0 flex-col items-center gap-1 rounded-lg border px-1.5 py-1.5 backdrop-blur-md',
+              'relative flex min-w-0 items-center gap-1.5 rounded-lg border px-2 py-1.5 backdrop-blur-md dash-punch-off-duty',
               toneStyles.work.shell,
             )}
           >
             <span
               className={cn(
-                'flex h-7 w-7 items-center justify-center rounded-md shadow-sm',
+                'flex h-6 w-6 shrink-0 items-center justify-center rounded-md shadow-sm',
                 toneStyles.work.icon,
               )}
             >
-              <LogOut className="h-4 w-4" strokeWidth={2} />
+              <LogOut className="h-3.5 w-3.5" strokeWidth={2} />
             </span>
-            <span className="w-full truncate text-center text-[10px] font-bold leading-tight text-white">
-              Off duty
-            </span>
-            <span className="w-full truncate text-center font-mono text-[9px] tabular-nums text-white/60">
-              Use CRM login
+            <span className="min-w-0 text-left">
+              <span className="block truncate text-[10px] font-bold leading-tight text-white">Off duty</span>
+              <span className="block truncate font-mono text-[8px] tabular-nums text-white/60">Use CRM login</span>
             </span>
           </div>
         )}
-        <PunchTile
-          label="Tea"
-          sublabel={breakSublabel('tea')}
-          tone="tea"
-          icon={Coffee}
-          active={activeType === 'tea'}
-          busy={toggling === 'tea'}
-          disabled={(onBreak && activeType !== 'tea') || (!data.tea.isActive && data.tea.remainingMinutes <= 0)}
-          onClick={() => handleBreak('tea')}
-        />
-        <PunchTile
-          label="Lunch"
-          sublabel={breakSublabel('lunch')}
-          tone="lunch"
-          icon={UtensilsCrossed}
-          active={activeType === 'lunch'}
-          busy={toggling === 'lunch'}
-          disabled={(onBreak && activeType !== 'lunch') || (!data.lunch.isActive && data.lunch.remainingMinutes <= 0)}
-          onClick={() => handleBreak('lunch')}
-        />
-        <PunchTile
-          label="Meeting"
-          sublabel={breakSublabel('meeting')}
-          tone="meeting"
-          icon={Users}
-          active={activeType === 'meeting'}
-          busy={toggling === 'meeting' || requestingMeeting}
-          disabled={
-            (onBreak && activeType !== 'meeting') ||
-            meetingPending ||
-            (!data.meeting.isActive && data.meeting.remainingMinutes <= 0)
-          }
-          onClick={() => handleBreak('meeting')}
-        />
+        <span className="dash-punch-sep" aria-hidden />
+        {(['tea', 'lunch', 'meeting'] as const).map((type) => {
+          const info = breakInfo(type);
+          const labels = { tea: 'Tea', lunch: 'Lunch', meeting: 'Meeting' };
+          const icons = { tea: Coffee, lunch: UtensilsCrossed, meeting: Users };
+          const Icon = icons[type];
+          return (
+            <PunchTile
+              key={type}
+              label={labels[type]}
+              meta={info.meta}
+              sublabel={info.sublabel}
+              tone={type}
+              icon={Icon}
+              active={activeType === type}
+              busy={toggling === type || (type === 'meeting' && requestingMeeting)}
+              disabled={
+                (onBreak && activeType !== type) ||
+                (type === 'meeting' && meetingPending) ||
+                (!data[type].isActive && data[type].remainingMinutes <= 0)
+              }
+              onClick={() => handleBreak(type)}
+            />
+          );
+        })}
+      </div>
+
+      <div className="dash-punch-meta__tools">
+        {liveTime && (
+          <div className="dash-punch-clock" title={dateShort}>
+            <p className="dash-punch-clock__time">{liveTime}</p>
+            {dateShort && <p className="dash-punch-clock__date">{dateShort}</p>}
+          </div>
+        )}
+        {headerActions && <div className="dash-punch-meta__actions">{headerActions}</div>}
+        <button
+          type="button"
+          onClick={handleSync}
+          disabled={syncing || toggling !== null || requestingMeeting || eodLoggingOut}
+          className="dash-punch-sync"
+        >
+          <RefreshCw className={cn('h-3.5 w-3.5', syncing && 'animate-spin')} />
+          Sync
+        </button>
       </div>
     </div>
   );

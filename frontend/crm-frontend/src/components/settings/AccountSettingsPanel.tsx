@@ -16,7 +16,7 @@ const ROLE_BADGE: Record<string, string> = {
   super_admin: 'bg-slate-700 text-white',
   admin: 'bg-violet-100 text-[#2568b8] ring-1 ring-violet-200',
   db_admin: 'bg-sky-100 text-sky-800 ring-1 ring-sky-200',
-  employee: 'bg-emerald-100 text-[#2568b8] ring-1 ring-emerald-200',
+  employee: 'bg-[#e8f1fb] text-[#2568b8] ring-1 ring-[#cfe0f5]',
 };
 
 export function AccountSettingsPanel() {
@@ -40,15 +40,10 @@ export function AccountSettingsPanel() {
   ];
 
   return (
-    <div>
-      <div className="st-section-head">
-        <h2 className="st-section-title">My account</h2>
-        <p className="st-section-sub">Your profile information on this portal</p>
-      </div>
-
-      <div className="mb-5 flex items-center gap-4 rounded-xl border border-slate-200/90 bg-gradient-to-r from-slate-50 to-white p-4 shadow-sm">
+    <div className="st-account-body">
+      <div className="st-profile-card">
         <span
-          className="st-profile-avatar flex h-14 w-14 shrink-0 items-center justify-center rounded-xl text-base"
+          className="st-profile-avatar shrink-0"
           style={{ backgroundColor: avatarHue(name) }}
         >
           {initials}
@@ -67,7 +62,7 @@ export function AccountSettingsPanel() {
         </div>
       </div>
 
-      <div className="st-card">
+      <div className="st-card st-info-grid">
         {rows.map((row) => {
           const Icon = row.icon;
           return (

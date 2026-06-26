@@ -6,6 +6,7 @@ import { ChevronRight, RefreshCw } from 'lucide-react';
 import { attendanceService, type AttendanceAnalytics } from '@/lib/api/attendance.service';
 import { useAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils/cn';
+import './attendance.css';
 import { AttendanceDashboardStats } from '@/components/attendance/AttendanceDashboardStats';
 import { AttendanceMonthCalendar } from '@/components/attendance/AttendanceMonthCalendar';
 import { AttendanceMonthYearNav } from '@/components/attendance/AttendanceMonthYearNav';
@@ -126,36 +127,19 @@ export function AttendanceSummaryCard({
 
   if (variant === 'dashboard') {
     return (
-      <div className="overflow-hidden rounded-lg border border-slate-200/80 bg-white shadow-sm">
-        <div className="flex flex-col gap-1.5 border-b border-slate-100 bg-slate-50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center justify-between gap-2 sm:block">
-            <div>
-              <p className="text-xs font-semibold text-slate-800">Attendance</p>
-              <p className="text-[10px] text-slate-500">{monthLabel}</p>
-            </div>
-            <button
-              type="button"
-              onClick={load}
-              disabled={loading}
-              className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 shadow-sm hover:text-slate-700 disabled:opacity-50 sm:hidden"
-              title="Refresh"
-            >
-              <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
-            </button>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+      <div className="att-dash-card overflow-hidden">
+        <div className="att-dash-card__head">
+          <p className="att-dash-card__title">Attendance</p>
+          <div className="att-dash-card__head-tools">
             {periodNav}
-            <Link
-              href={yearlySheetHref}
-              className="hidden text-xs font-semibold text-[#2e7ad1] hover:underline lg:inline"
-            >
+            <Link href={yearlySheetHref} className="att-dash-card__link hidden md:inline">
               12-month report →
             </Link>
             <button
               type="button"
               onClick={load}
               disabled={loading}
-              className="hidden rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 shadow-sm hover:text-slate-700 disabled:opacity-50 sm:inline-flex"
+              className="att-dash-card__refresh"
               title="Refresh"
             >
               <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
@@ -163,27 +147,28 @@ export function AttendanceSummaryCard({
           </div>
         </div>
 
-        <div className="grid gap-2 p-2 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start lg:gap-2.5">
-          <AttendanceDashboardStats
-            present={present}
-            absent={absent}
-            late={late}
-            leave={leave}
-            paidLeave={paidLeave}
-            holiday={holiday}
-            halfDay={halfDay}
-            weekend={weekend}
-            todayStatus={todayStatus}
-            todayDay={todayDay}
-            monthLabel={monthLabel}
-            attendancePct={pct}
-            loading={loading}
-            compact
-          />
-          <div className="mx-auto w-full max-w-[200px] shrink-0 rounded-md border border-slate-200/70 bg-slate-50/50 p-1.5 lg:mx-0">
-            <p className="mb-1 text-center text-[8px] font-bold uppercase tracking-wider text-slate-400">
-              {DAILY_NET_WORK_TARGET_LABEL} target
-            </p>
+        <div className="att-dash-card__body att-dash-card__body--vertical">
+          <div className="att-dash-card__stats">
+            <AttendanceDashboardStats
+              present={present}
+              absent={absent}
+              late={late}
+              leave={leave}
+              paidLeave={paidLeave}
+              holiday={holiday}
+              halfDay={halfDay}
+              weekend={weekend}
+              todayStatus={todayStatus}
+              todayDay={todayDay}
+              monthLabel={monthLabel}
+              attendancePct={pct}
+              loading={loading}
+              compact
+              hideMonthBanner
+            />
+          </div>
+          <div className="att-dash-card__calendar att-dash-card__calendar--short">
+            <p className="att-dash-card__cal-target">{DAILY_NET_WORK_TARGET_LABEL} target · Calendar</p>
             <AttendanceMonthCalendar
               year={year}
               month={month}
@@ -194,23 +179,18 @@ export function AttendanceSummaryCard({
               appearance="soft"
               weekStart="sun"
               hideHeader
-              compactCells
+              fillWidth
+              className="att-dash-cal"
             />
           </div>
         </div>
-        <div className="border-t border-slate-100 px-3 py-1.5 sm:hidden">
+        <div className="att-dash-card__foot sm:hidden">
           <div className="flex flex-wrap gap-3">
-            <Link
-              href={monthlySheetHref}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-[#2e7ad1] hover:underline"
-            >
+            <Link href={monthlySheetHref} className="att-dash-card__link inline-flex items-center gap-1">
               This month
               <ChevronRight className="h-3.5 w-3.5" />
             </Link>
-            <Link
-              href={yearlySheetHref}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-[#2e7ad1] hover:underline"
-            >
+            <Link href={yearlySheetHref} className="att-dash-card__link inline-flex items-center gap-1">
               12-month report
               <ChevronRight className="h-3.5 w-3.5" />
             </Link>

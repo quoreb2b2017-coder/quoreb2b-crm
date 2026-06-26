@@ -1,5 +1,7 @@
 'use client';
 
+import './attendance.css';
+
 import { useCallback, useEffect, useState } from 'react';
 import { Plus, RefreshCw } from 'lucide-react';
 import { leaveService, type LeaveApplication, type LeaveStatus } from '@/lib/api/leave.service';
@@ -16,31 +18,16 @@ const FILTERS: { id: LeaveStatus | 'all'; label: string }[] = [
   { id: 'rejected', label: 'Rejected' },
 ];
 
-const THEMES = {
-  admin: {
-    header: 'from-[#2568b8] via-[#2e7ad1] to-[#1e5fa8] ring-[#2e7ad1]/25',
-    filterActive: 'bg-[#2e7ad1] text-white shadow-sm',
-    applyBtn: 'text-[#2568b8] hover:bg-[#e8f1fb]',
-  },
-  db_admin: {
-    header: 'from-[#2568b8] via-[#2e7ad1] to-[#1e5fa8] ring-[#2e7ad1]/25',
-    filterActive: 'bg-[#2e7ad1] text-white shadow-sm',
-    applyBtn: 'text-[#2568b8] hover:bg-[#e8f1fb]',
-  },
-} as const;
-
 interface LeaveApprovalsPanelProps {
-  variant: keyof typeof THEMES;
+  variant: 'admin' | 'db_admin';
   title?: string;
   subtitle?: string;
 }
 
 export function LeaveApprovalsPanel({
-  variant,
   title = 'Leave Requests',
   subtitle = 'Review and approve leave applications from all employees',
 }: LeaveApprovalsPanelProps) {
-  const theme = THEMES[variant];
   const panel = useAttendancePanelOptional();
   const [leaves, setLeaves] = useState<LeaveApplication[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,11 +51,11 @@ export function LeaveApprovalsPanel({
   }, [filter]);
 
   useEffect(() => {
-    fetchLeaves();
+    void fetchLeaves();
   }, [fetchLeaves]);
 
   useEffect(() => {
-    const onRefresh = () => fetchLeaves();
+    const onRefresh = () => void fetchLeaves();
     window.addEventListener('attendance:refresh', onRefresh);
     return () => window.removeEventListener('attendance:refresh', onRefresh);
   }, [fetchLeaves]);
@@ -79,7 +66,6 @@ export function LeaveApprovalsPanel({
       await leaveService.approve(leaveId);
       await fetchLeaves();
     } catch (err: unknown) {
-      console.error('Failed to approve:', err);
       setError(extractApiError(err, 'Failed to approve leave'));
     } finally {
       setActionLoading(null);
@@ -92,7 +78,6 @@ export function LeaveApprovalsPanel({
       await leaveService.reject(leaveId, 'Not approved');
       await fetchLeaves();
     } catch (err: unknown) {
-      console.error('Failed to reject:', err);
       setError(extractApiError(err, 'Failed to reject leave'));
     } finally {
       setActionLoading(null);
@@ -102,43 +87,31 @@ export function LeaveApprovalsPanel({
   const pendingCount = leaves.filter((l) => l.status === 'pending').length;
 
   return (
-    <AttendanceFullBleed className="xl-stagger gap-4 py-3 sm:py-4 md:gap-5 animate-fade-in">
-      <div
-        className={cn(
-          'relative overflow-hidden rounded-2xl bg-gradient-to-br px-5 py-5 text-white shadow-crm ring-1 transition-all duration-200 hover:shadow-crm-lg',
-          theme.header,
-        )}
-      >
-        <div className="relative flex flex-wrap items-center justify-between gap-4">
+    <AttendanceFullBleed className="att-page xl-stagger animate-fade-in">
+      <div className="att-hero">
+        <div className="att-hero__inner">
           <div>
-            <h1 className="text-xl font-bold md:text-2xl">{title}</h1>
-            <p className="mt-1 text-sm text-white/75">{subtitle}</p>
+            <h1 className="att-hero__title">{title}</h1>
+            <p className="att-hero__sub">{subtitle}</p>
             {!loading && filter === 'pending' && pendingCount > 0 && (
-              <p className="mt-2 text-xs font-semibold text-amber-200">
+              <p className="mt-1 text-[10px] font-semibold text-amber-200">
                 {pendingCount} pending request{pendingCount !== 1 ? 's' : ''} awaiting approval
               </p>
             )}
           </div>
-          <div className="flex gap-2">
+          <div className="att-hero__actions">
             <button
               type="button"
-              onClick={fetchLeaves}
+              onClick={() => void fetchLeaves()}
               disabled={loading}
-              className="rounded-xl border border-white/30 bg-white/10 p-2.5 backdrop-blur-sm transition-all duration-150 hover:bg-white/18 disabled:opacity-50"
+              className={cn('att-btn-icon', loading && 'opacity-70')}
               title="Refresh"
             >
-              <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
+              <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
             </button>
             {panel && (
-              <button
-                type="button"
-                onClick={() => panel.openLeave()}
-                className={cn(
-                  'inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold shadow-md transition-all duration-150 active:scale-[0.98]',
-                  theme.applyBtn,
-                )}
-              >
-                <Plus className="h-4 w-4" />
+              <button type="button" onClick={() => panel.openLeave()} className="att-btn-primary">
+                <Plus className="h-3.5 w-3.5" />
                 Apply My Leave
               </button>
             )}
@@ -146,24 +119,15 @@ export function LeaveApprovalsPanel({
         </div>
       </div>
 
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
+      {error && <div className="att-alert">{error}</div>}
 
-      <div className="flex flex-wrap gap-2">
+      <div className="att-filters">
         {FILTERS.map((f) => (
           <button
             key={f.id}
             type="button"
             onClick={() => setFilter(f.id)}
-            className={cn(
-              'rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all duration-150',
-              filter === f.id
-                ? theme.filterActive
-                : 'border border-slate-200 bg-white text-slate-600 hover:border-[#2e7ad1]/30 hover:bg-[#e8f1fb]/40',
-            )}
+            className={cn('att-filter-pill', filter === f.id && 'att-filter-pill--active')}
           >
             {f.label}
           </button>

@@ -137,6 +137,29 @@ html {
     box-shadow: 0 0 0 3px rgba(46, 122, 209, 0.14);
   }
 
+  .crm-input-wrap--icon {
+    position: relative;
+  }
+
+  .crm-input-icon {
+    pointer-events: none;
+    position: absolute;
+    left: 0.875rem;
+    top: 50%;
+    z-index: 1;
+    display: inline-flex;
+    height: 1rem;
+    width: 1rem;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+    transform: translateY(-50%);
+  }
+
+  .crm-input--has-icon {
+    padding-left: 2.625rem;
+  }
+
   .crm-header {
     @apply sticky top-0 z-30 flex h-16 flex-shrink-0 items-center justify-between;
     @apply border-b border-slate-200/70 bg-white/90 px-4 backdrop-blur-xl sm:px-6;
@@ -479,9 +502,14 @@ html {
     }
 
     .crm-input {
-      padding: 0.375rem 0.75rem;
+      padding-block: 0.375rem;
+      padding-inline: 0.75rem;
       font-size: 0.8125rem;
       border-radius: 0.625rem;
+    }
+
+    .crm-input--has-icon {
+      padding-left: 2.625rem;
     }
 
     .crm-surface,

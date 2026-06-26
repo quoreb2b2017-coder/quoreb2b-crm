@@ -41,11 +41,6 @@ const TONE_ICON: Record<string, string> = {
 export function SecuritySettingsPanel() {
   return (
     <div>
-      <div className="st-section-head">
-        <h2 className="st-section-title">Security</h2>
-        <p className="st-section-sub">Session and access policies for your account</p>
-      </div>
-
       <div className="st-policy-grid">
         {ITEMS.map((item) => {
           const Icon = item.icon;

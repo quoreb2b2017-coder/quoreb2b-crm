@@ -155,14 +155,10 @@ export function ChangePasswordForm({ variant = 'inline', onClose }: ChangePasswo
 
   if (variant === 'inline') {
     return (
-      <div className="mx-auto w-full max-w-lg">
-        <div className="st-section-head">
-          <h2 className="st-section-title">Change password</h2>
-          <p className="st-section-sub">Use at least 8 characters. Avoid reusing old passwords.</p>
-        </div>
+      <div className="w-full">
         <div className="st-card overflow-hidden">
-          <div className="flex items-center gap-3 border-b border-slate-100 bg-gradient-to-r from-indigo-50/80 to-white px-4 py-4 sm:px-5">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-[#2e7ad1] shadow-sm">
+          <div className="flex items-center gap-3 border-b border-slate-100 bg-gradient-to-r from-[#e8f1fb]/80 to-white px-4 py-4 sm:px-5">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#e8f1fb] text-[#2568b8] shadow-sm">
               <ShieldCheck className="h-5 w-5" />
             </span>
             <p className="text-xs leading-relaxed text-slate-500">

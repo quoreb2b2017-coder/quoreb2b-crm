@@ -117,6 +117,7 @@ function CalendarDayButton({
   soft,
   largeCells,
   compactCells,
+  embedCompact,
 }: {
   cell: CalendarGridCell;
   isToday: boolean;
@@ -127,6 +128,7 @@ function CalendarDayButton({
   soft?: boolean;
   largeCells?: boolean;
   compactCells?: boolean;
+  embedCompact?: boolean;
 }) {
   const isOutside = cell.type === 'outside';
   const status = cell.calendarStatus;
@@ -150,8 +152,10 @@ function CalendarDayButton({
           compactCells
             ? 'max-w-[28px] text-[10px] sm:max-w-[30px]'
             : largeCells
-              ? 'max-w-[44px] text-sm sm:max-w-[48px]'
-              : 'max-w-[34px] text-[11px] sm:max-w-[36px]',
+              ? 'max-w-[40px] text-xs sm:max-w-[44px] md:max-w-[48px]'
+              : embedCompact
+                ? 'max-w-[30px] text-[10px] sm:max-w-[32px]'
+                : 'max-w-[34px] text-[11px] sm:max-w-[36px]',
           !isOutside && 'hover:brightness-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60',
           isOutside && 'cursor-default border-transparent',
           isToday && cell.type === 'day' && 'shadow-sm ring-2 ring-[#2e7ad1]/30',
@@ -337,6 +341,8 @@ export function AttendanceMonthCalendar({
 
   const todayKey = useMemo(() => todayDateKey(), []);
 
+  const embedCompact = hideHeader && soft && !largeCells && !compactCells;
+
   const selectedDay = selectedDate
     ? cells.find((c) => c.type === 'day' && c.dateKey === selectedDate)
     : null;
@@ -346,7 +352,9 @@ export function AttendanceMonthCalendar({
       ? '3px'
       : largeCells
         ? '8px'
-        : '5px'
+        : hideHeader
+          ? '3px'
+          : '5px'
     : minimal
       ? '4px'
       : '6px';
@@ -398,7 +406,8 @@ export function AttendanceMonthCalendar({
               'w-full',
               fillWidth && soft && 'mx-auto max-w-[340px]',
               compactCells && soft && 'mx-auto w-full max-w-[228px]',
-              largeCells && soft && !compactCells && 'mx-auto w-full max-w-[min(100%,520px)]',
+              embedCompact && soft && 'mx-auto w-full max-w-[min(100%,300px)]',
+              largeCells && soft && !compactCells && 'mx-auto w-full max-w-[min(100%,480px)]',
               !fillWidth && !minimal && !soft && 'mx-auto max-w-2xl',
               !fillWidth && minimal && 'mx-auto max-w-[260px]',
             )}
@@ -420,7 +429,9 @@ export function AttendanceMonthCalendar({
                         ? 'h-5 text-[8px] tracking-wide text-slate-400'
                         : largeCells
                           ? 'h-8 text-[11px] tracking-wider text-slate-400'
-                          : 'h-6 text-[9px] tracking-wider text-slate-400'
+                          : hideHeader
+                            ? 'h-5 text-[8px] tracking-wider text-slate-400'
+                            : 'h-6 text-[9px] tracking-wider text-slate-400'
                       : minimal
                         ? 'h-6 text-[9px] tracking-wide text-slate-400 sm:text-[10px]'
                         : 'aspect-square text-slate-400',
@@ -450,6 +461,7 @@ export function AttendanceMonthCalendar({
                   soft={soft}
                   largeCells={largeCells}
                   compactCells={compactCells}
+                  embedCompact={embedCompact}
                   onSelect={() => {
                     if (cell.type === 'day') {
                       setSelectedDate((prev) => (prev === cell.dateKey ? null : cell.dateKey));
@@ -488,7 +500,7 @@ export function AttendanceMonthCalendar({
         )}
       </div>
 
-      {soft && !hideLegend && !loading && <CompactLegend dense={compactCells} />}
+      {soft && !hideLegend && !loading && <CompactLegend dense={compactCells || hideHeader} />}
       {isDashboard && !soft && !hideLegend && !loading && <DashboardLegend />}
     </div>
   );

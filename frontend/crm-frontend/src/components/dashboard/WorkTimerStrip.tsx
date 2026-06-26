@@ -86,7 +86,7 @@ export function WorkTimerStrip({ className, variant = 'light', compact = false }
 
   if (compact) {
     return (
-      <div className={cn('dash-timer-bar', className)}>
+      <div className={cn('dash-timer-bar dash-work-timer--compact', className)}>
         <div className="dash-timer-stat">
           <span className="dash-timer-stat__label">Today</span>
           <span className="dash-timer-stat__value">{todayLiveFormatted}</span>
@@ -132,7 +132,7 @@ export function WorkTimerStrip({ className, variant = 'light', compact = false }
   }
 
   return (
-    <div className={cn('w-full', compact ? 'space-y-1' : 'space-y-1.5', className)}>
+    <div className={cn('w-full dash-work-timer', compact && 'dash-work-timer--compact', className)}>
       {!compact && (todayFirstLoginTime || todayLastLogoutTime || isOnDuty) && (
         <div
           className={cn(
@@ -157,25 +157,25 @@ export function WorkTimerStrip({ className, variant = 'light', compact = false }
 
       <div
         className={cn(
-          'grid gap-1.5',
+          'grid gap-1',
           compact
-            ? 'sm:grid-cols-[minmax(0,96px)_1fr_minmax(0,88px)] sm:items-center'
+            ? 'sm:grid-cols-[minmax(0,4.5rem)_1fr_minmax(0,4.25rem)] sm:items-center lg:grid-cols-[4rem_1fr_4rem]'
             : 'lg:grid-cols-[minmax(0,118px)_1fr_minmax(0,108px)] lg:items-center lg:gap-2.5',
         )}
       >
         <div
           className={cn(
-            'flex items-center justify-between gap-1.5 rounded-md border',
-            compact ? 'px-1.5 py-1' : 'rounded-lg px-2 py-2 lg:flex-col lg:items-start lg:justify-center',
+            'flex items-center justify-between gap-1 rounded-md border',
+            compact ? 'px-1 py-0.5 lg:px-1 lg:py-0.5' : 'rounded-lg px-2 py-2 lg:flex-col lg:items-start lg:justify-center',
             t.panel,
           )}
         >
           <div>
-            <p className={cn('flex items-center gap-1 text-[8px] font-bold uppercase tracking-wider', t.label)}>
-              <Timer className="h-2.5 w-2.5" />
+            <p className={cn('flex items-center gap-0.5 text-[8px] font-bold uppercase tracking-wider', t.label)}>
+              <Timer className="h-2 w-2 lg:h-2 lg:w-2" />
               Today
             </p>
-            <p className={cn('font-mono font-bold tabular-nums leading-none', compact ? 'text-base' : 'mt-0.5 text-xl', t.value)}>
+            <p className={cn('font-mono font-bold tabular-nums leading-none', compact ? 'text-sm lg:text-xs' : 'mt-0.5 text-xl', t.value)}>
               {todayLiveFormatted}
             </p>
             {!compact && (
@@ -203,10 +203,10 @@ export function WorkTimerStrip({ className, variant = 'light', compact = false }
           )}
         </div>
 
-        <div className={cn('min-w-0 rounded-md border', compact ? 'px-1.5 py-1' : 'rounded-lg px-2 py-2', t.panel)}>
-          <div className={cn('flex items-center justify-between gap-1', compact ? 'mb-0.5' : 'mb-1')}>
-            <p className={cn('flex items-center gap-1 text-[8px] font-bold uppercase tracking-wider', t.label)}>
-              <CalendarDays className="h-2.5 w-2.5" />
+        <div className={cn('min-w-0 rounded-md border', compact ? 'px-1 py-0.5 lg:px-1 lg:py-0.5' : 'rounded-lg px-2 py-2', t.panel)}>
+          <div className={cn('flex items-center justify-between gap-0.5', compact ? 'mb-0' : 'mb-1')}>
+            <p className={cn('flex items-center gap-0.5 text-[8px] font-bold uppercase tracking-wider', t.label)}>
+              <CalendarDays className="h-2 w-2" />
               {compact ? 'Month' : `Net hours · target ${DAILY_NET_WORK_TARGET_LABEL}`}
             </p>
             <div className="flex items-center gap-0.5">
@@ -231,7 +231,7 @@ export function WorkTimerStrip({ className, variant = 'light', compact = false }
 
           <div
             ref={scrollRef}
-            className="flex gap-1.5 overflow-x-auto px-0.5 pb-0.5 pt-0.5 scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="flex gap-0.5 overflow-x-auto px-0.5 py-0 scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             {days.length === 0 ? (
               <p className={cn('py-1.5 text-[11px]', t.label)}>No time logged this month</p>
@@ -249,8 +249,8 @@ export function WorkTimerStrip({ className, variant = 'light', compact = false }
                   <div
                     key={day.date}
                     className={cn(
-                      'flex shrink-0 flex-col items-center rounded px-1 py-1 text-center',
-                      compact ? 'min-w-[52px]' : 'min-w-[68px] rounded-md px-1.5 py-1.5',
+                      'flex shrink-0 flex-col items-center rounded px-0.5 py-0.5 text-center',
+                      compact ? 'min-w-[2.75rem] lg:min-w-[2.5rem]' : 'min-w-[68px] rounded-md px-1.5 py-1.5',
                       day.isToday ? t.dayToday : t.dayNormal,
                       targetMet && !day.isToday && t.dayMet,
                     )}

@@ -77,23 +77,21 @@ function HealthCheckItem({
   icon: typeof Server;
 }) {
   return (
-    <div className={dashboardHealthItem(tone)}>
-      <span className="dash-health-item__icon">
-        <Icon strokeWidth={2.2} />
+    <div className={cn(dashboardHealthItem(tone), 'dash-health-item--compact')}>
+      <span className="dash-health-item__icon dash-health-item__icon--sm">
+        <Icon strokeWidth={2.2} className="h-3 w-3" />
       </span>
-      <div className="dash-health-item__body">
-        <span className="dash-health-item__label">{label}</span>
-        <span
-          className={cn(
-            'dash-health-item__badge',
-            tone === 'ok' && 'dash-health-item__badge--ok',
-            tone === 'warn' && 'dash-health-item__badge--warn',
-            tone === 'neutral' && 'dash-health-item__badge--neutral',
-          )}
-        >
-          {status}
-        </span>
-      </div>
+      <span className="dash-health-item__label">{label}</span>
+      <span
+        className={cn(
+          'dash-health-item__badge',
+          tone === 'ok' && 'dash-health-item__badge--ok',
+          tone === 'warn' && 'dash-health-item__badge--warn',
+          tone === 'neutral' && 'dash-health-item__badge--neutral',
+        )}
+      >
+        {status}
+      </span>
     </div>
   );
 }
@@ -150,190 +148,171 @@ export function SuperAdminCrmDashboard() {
   };
 
   return (
-    <DashboardPageShell>
+    <DashboardPageShell className="dash-page--comfortable !space-y-4 lg:!space-y-5">
       <WelcomeBanner
         variant="admin"
-          toolbar={
-            <div className="flex flex-wrap gap-1.5">
-              <button
-                type="button"
-                onClick={() => void handleRefresh()}
-                disabled={loading}
-                className={dashboardBannerBtn}
-              >
-                <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
-                Refresh
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  openPicker();
-                  router.push('/admin');
-                }}
-                className={dashboardBannerBtn}
-              >
-                <ArrowLeftRight className="h-3.5 w-3.5" />
-                Switch
-              </button>
-            </div>
-          }
+        toolbar={
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void handleRefresh()}
+              disabled={loading}
+              className={dashboardBannerBtn}
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+              Refresh
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                openPicker();
+                router.push('/admin');
+              }}
+              className={dashboardBannerBtn}
+            >
+              <ArrowLeftRight className="h-3.5 w-3.5" />
+              Switch
+            </button>
+          </div>
+        }
       />
 
-      {stats && (
-        <div className={cn('dash-section', dashboardPanel)}>
-          <div className={dashboardPanelHeaderBlue}>
-            <h3>CRM overview</h3>
-            <span className={dashboardLivePill}>
-              <Radio className="h-3 w-3" />
-              Live
-            </span>
-          </div>
-          <div className={dashboardPanelBody}>
-            <CrmOverviewMetrics
-              metrics={[
-                {
-                  label: 'Active users',
-                  value: stats.totalUsers,
-                  note:
-                    stats.newUsersThisMonth > 0
-                      ? `+${stats.newUsersThisMonth} this month`
-                      : 'No new users this month',
-                  icon: Users,
-                },
-                {
-                  label: 'Total leads',
-                  value: formatLeads(stats.totalLeads),
-                  note: 'Master data contacts',
-                  icon: Database,
-                },
-                {
-                  label: 'Active leads',
-                  value: formatLeads(stats.activeLeads),
-                  note: `${activePct}% of total`,
-                  icon: TrendingUp,
-                },
-                {
-                  label: 'Won / Lead status',
-                  value: formatLeads(stats.statusLeads),
-                  note: 'Status Lead / Won',
-                  icon: Award,
-                },
-              ]}
-            />
-          </div>
-        </div>
-      )}
-
-      <div className="dash-section grid gap-1 lg:grid-cols-2">
-        <div className={dashboardPanel}>
-          <div className={dashboardPanelHeaderBlue}>
-            <h3>System health</h3>
-            <span className={dashboardLivePill}>Live</span>
-          </div>
-          <div className={dashboardPanelBody}>
-            {!health ? (
-              <p className="dash-empty-hint">Health data unavailable</p>
-            ) : (
-              <div className="dash-health-grid">
-                <HealthCheckItem
-                  label="API server"
-                  status={healthLabel(health.checks.api.status)}
-                  tone={healthTone(health.checks.api.status)}
-                  icon={Server}
+      <div className="dash-section dash-admin-layout">
+        <div className="dash-admin-layout__main space-y-4">
+          {stats && (
+            <div className={dashboardPanel}>
+              <div className={dashboardPanelHeaderBlue}>
+                <h3>CRM overview</h3>
+                <span className={dashboardLivePill}>
+                  <Radio className="h-3 w-3" />
+                  Live
+                </span>
+              </div>
+              <div className={cn(dashboardPanelBody, 'space-y-3')}>
+                <CrmOverviewMetrics
+                  metrics={[
+                    {
+                      label: 'Active users',
+                      value: stats.totalUsers,
+                      note:
+                        stats.newUsersThisMonth > 0
+                          ? `+${stats.newUsersThisMonth} this month`
+                          : 'No new users this month',
+                      icon: Users,
+                    },
+                    {
+                      label: 'Total leads',
+                      value: formatLeads(stats.totalLeads),
+                      note: 'Master data contacts',
+                      icon: Database,
+                    },
+                    {
+                      label: 'Active leads',
+                      value: formatLeads(stats.activeLeads),
+                      note: `${activePct}% of total`,
+                      icon: TrendingUp,
+                    },
+                    {
+                      label: 'Won / Lead status',
+                      value: formatLeads(stats.statusLeads),
+                      note: 'Status Lead / Won',
+                      icon: Award,
+                    },
+                  ]}
                 />
-                {health.status !== 'ok' && (
-                  <HealthCheckItem
-                    label="Overall"
-                    status={healthLabel(health.status)}
-                    tone="warn"
-                    icon={Activity}
-                  />
+
+                {health && (
+                  <div className="dash-health-strip dash-health-strip--spacious">
+                    <HealthCheckItem
+                      label="API server"
+                      status={healthLabel(health.checks.api.status)}
+                      tone={healthTone(health.checks.api.status)}
+                      icon={Server}
+                    />
+                    {health.status !== 'ok' && (
+                      <HealthCheckItem
+                        label="Overall"
+                        status={healthLabel(health.status)}
+                        tone="warn"
+                        icon={Activity}
+                      />
+                    )}
+                    <HealthCheckItem
+                      label="MongoDB"
+                      status={healthLabel(health.checks.database.status, 'database')}
+                      tone={healthTone(health.checks.database.status)}
+                      icon={HardDrive}
+                    />
+                    <HealthCheckItem
+                      label="Redis"
+                      status={healthLabel(health.checks.redis.status)}
+                      tone={healthTone(health.checks.redis.status)}
+                      icon={Layers}
+                    />
+                    <HealthCheckItem
+                      label="Elasticsearch"
+                      status={healthLabel(health.checks.elasticsearch.status)}
+                      tone={
+                        health.checks.elasticsearch.status === 'degraded'
+                          ? 'warn'
+                          : healthTone(health.checks.elasticsearch.status)
+                      }
+                      icon={Search}
+                    />
+                  </div>
                 )}
-                <HealthCheckItem
-                  label="MongoDB"
-                  status={
-                    healthLabel(health.checks.database.status, 'database') +
-                    (health.checks.database.state &&
-                    health.checks.database.status !== 'up' &&
-                    health.checks.database.status !== 'ok'
-                      ? ` · ${health.checks.database.state}`
-                      : '')
-                  }
-                  tone={healthTone(health.checks.database.status)}
-                  icon={HardDrive}
-                />
-                <HealthCheckItem
-                  label="Redis"
-                  status={healthLabel(health.checks.redis.status)}
-                  tone={healthTone(health.checks.redis.status)}
-                  icon={Layers}
-                />
-                <HealthCheckItem
-                  label="Elasticsearch"
-                  status={healthLabel(health.checks.elasticsearch.status)}
-                  tone={
-                    health.checks.elasticsearch.status === 'degraded'
-                      ? 'warn'
-                      : healthTone(health.checks.elasticsearch.status)
-                  }
-                  icon={Search}
-                />
               </div>
-            )}
-          </div>
+            </div>
+          )}
+
+          {chart?.statusBreakdown && chart.statusBreakdown.length > 0 && (
+            <div className={dashboardPanel}>
+              <div className={dashboardPanelHeaderBlue}>
+                <h3>Lead status breakdown</h3>
+              </div>
+              <div className={dashboardPanelBody}>
+                <div className="dash-chart-bars max-h-36 space-y-1 overflow-auto pr-1">
+                  {chart.statusBreakdown.map((item, i) => (
+                    <DashboardBarRow
+                      key={item.label}
+                      label={item.label}
+                      count={item.count}
+                      total={chartTotal}
+                      color="bg-gradient-to-r from-[#2568b8] to-[#2e7ad1]"
+                      delay={i * 45}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className={dashboardPanel}>
+        <div className={cn('dash-admin-layout__side', dashboardPanel)}>
           <div className={dashboardPanelHeaderBlue}>
-            <h3>Lead status breakdown</h3>
-            <span className="dash-panel__meta">Last sync: live</span>
+            <h3>Quick actions</h3>
           </div>
-          <div className={dashboardPanelBody}>
-            {!chart?.statusBreakdown?.length ? (
-              <div className="dash-empty-state">
-                <BarChart3 className="dash-empty-state__icon" strokeWidth={1.75} />
-                <p className="dash-empty-hint">Upload master data to see status chart</p>
-              </div>
-            ) : (
-              <div className="dash-chart-bars max-h-32 space-y-0.5 overflow-auto pr-1">
-                {chart.statusBreakdown.map((item, i) => (
-                  <DashboardBarRow
-                    key={item.label}
-                    label={item.label}
-                    count={item.count}
-                    total={chartTotal}
-                    color="bg-gradient-to-r from-[#2568b8] to-[#2e7ad1]"
-                    delay={i * 45}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className={cn('dash-section', dashboardPanel)}>
-        <div className={dashboardPanelHeaderBlue}>
-          <h3>Quick actions</h3>
-        </div>
-        <div className={cn(dashboardPanelBody, 'dash-quick-grid')}>
-          {QUICK_ACTIONS.map((a) => {
-            const Icon = a.icon;
-            return (
-              <Link key={a.href} href={a.href} className={dashboardQuickAction}>
-                <span className="dash-quick-icon">
-                  <Icon className="h-3.5 w-3.5 text-[#2e7ad1]" strokeWidth={2.25} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-1 text-[11px] font-bold text-slate-900">
-                    {a.label}
-                    <ChevronRight className="h-3 w-3 text-slate-400 opacity-0 transition-all duration-200 group-hover:translate-x-0.5 group-hover:opacity-100" />
+          <div className={cn(dashboardPanelBody, 'dash-quick-grid dash-quick-grid--comfortable')}>
+            {QUICK_ACTIONS.map((a) => {
+              const Icon = a.icon;
+              return (
+                <Link key={a.href} href={a.href} className={dashboardQuickAction}>
+                  <span className="dash-quick-icon">
+                    <Icon className="h-4 w-4 text-[#2e7ad1]" strokeWidth={2.25} />
                   </span>
-                  <span className="block truncate text-[10px] text-slate-500">{a.desc}</span>
-                </span>
-              </Link>
-            );
-          })}
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1 text-xs font-bold text-slate-900">
+                      {a.label}
+                      <ChevronRight className="h-3 w-3 text-slate-400 opacity-0 transition-all group-hover:translate-x-0.5 group-hover:opacity-100" />
+                    </span>
+                    <span className="dash-quick-desc mt-0.5 block text-[11px] leading-snug text-slate-500">
+                      {a.desc}
+                    </span>
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
         </div>
       </div>
     </DashboardPageShell>

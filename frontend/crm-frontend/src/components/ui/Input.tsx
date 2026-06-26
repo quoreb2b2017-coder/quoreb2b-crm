@@ -17,17 +17,17 @@ export function Input({ label, error, icon: Icon, className, id, ...props }: Inp
           {label}
         </label>
       )}
-      <div className="relative">
+      <div className={cn('relative', Icon && 'crm-input-wrap--icon')}>
         {Icon && (
-          <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors duration-150">
-            <Icon className="h-4 w-4" aria-hidden />
+          <span className="crm-input-icon" aria-hidden>
+            <Icon className="h-4 w-4 shrink-0" strokeWidth={2} />
           </span>
         )}
         <input
           id={inputId}
           className={cn(
             'crm-input',
-            Icon && 'pl-10 pr-4',
+            Icon && 'crm-input--has-icon',
             error && 'border-red-300 focus:border-red-400 focus:ring-red-400/20',
             className,
           )}

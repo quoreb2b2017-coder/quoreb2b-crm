@@ -50,8 +50,8 @@ export function IdLoginForm({ panel }: IdLoginFormProps) {
           minLength={8}
           autoComplete="current-password"
         />
-        <Button type="submit" fullWidth disabled={loading} className="mt-2">
-          <LogIn className="h-4 w-4" />
+        <Button type="submit" fullWidth disabled={loading} className="mt-2 gap-2">
+          <LogIn className="h-4 w-4 shrink-0" strokeWidth={2} />
           {loading ? 'Signing in...' : 'Sign in'}
         </Button>
       </form>

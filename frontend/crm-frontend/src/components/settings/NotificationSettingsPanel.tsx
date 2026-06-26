@@ -105,7 +105,7 @@ function ToggleRow({
           className={cn(
             'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-all duration-300',
             checked
-              ? 'border-emerald-200 bg-gradient-to-br from-emerald-50 to-white text-[#2e7ad1] shadow-sm shadow-emerald-100/80'
+              ? 'border-[#cfe0f5] bg-gradient-to-br from-[#e8f1fb] to-white text-[#2568b8] shadow-sm shadow-[#2e7ad1]/10'
               : 'border-slate-200 bg-slate-50 text-slate-400',
           )}
         >
@@ -118,7 +118,7 @@ function ToggleRow({
               className={cn(
                 'rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide transition-colors duration-300',
                 checked
-                  ? 'bg-emerald-100 text-[#2e7ad1]'
+                  ? 'bg-[#e8f1fb] text-[#2568b8]'
                   : 'bg-slate-100 text-slate-500',
               )}
             >
@@ -170,12 +170,7 @@ export function NotificationSettingsPanel() {
 
   return (
     <div className="min-w-0">
-      <div className="st-section-head">
-        <h2 className="st-section-title">Notifications</h2>
-        <p className="st-section-sub">Control in-app alerts and popup toasts</p>
-      </div>
-
-      <div className="mb-4 rounded-xl border border-emerald-200/80 bg-gradient-to-r from-emerald-50/90 to-white px-4 py-3 text-xs leading-relaxed text-[#2568b8] shadow-sm">
+      <div className="mb-4 rounded-xl border border-[#cfe0f5] bg-gradient-to-r from-[#e8f1fb] to-white px-4 py-3 text-xs leading-relaxed text-[#2568b8] shadow-sm">
         Attendance is counted <strong>late after {ATTENDANCE_ON_TIME_LABEL}</strong> Eastern. Late entries include
         check-in time in notifications when enabled below.
       </div>

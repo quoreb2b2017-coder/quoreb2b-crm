@@ -10,6 +10,25 @@
     --crm-primary: #2e7ad1;
     --crm-primary-dark: #2568b8;
     --crm-primary-light: #e8f1fb;
+    --crm-page-gutter-x: 0.625rem;
+  }
+
+  @media (min-width: 1024px) {
+    :root {
+      --crm-page-gutter-x: 1.25rem;
+    }
+  }
+
+  @media (min-width: 1280px) {
+    :root {
+      --crm-page-gutter-x: 1.5rem;
+    }
+  }
+
+  @media (min-width: 1536px) {
+    :root {
+      --crm-page-gutter-x: 2rem;
+    }
   }
   body {
     @apply bg-[#f8fafc] text-slate-900 antialiased;

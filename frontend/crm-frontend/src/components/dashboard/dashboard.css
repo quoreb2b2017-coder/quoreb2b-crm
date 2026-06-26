@@ -61,7 +61,7 @@
 .dash-page {
   width: 100%;
   min-width: 0;
-  padding: 0.25rem 0.5rem 0.375rem;
+  padding: 0.25rem var(--crm-page-gutter-x, 0.5rem) 0.375rem;
   animation: dash-page-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
   background:
     radial-gradient(ellipse 90% 60% at 50% -30%, rgba(46, 122, 209, 0.05) 0%, transparent 55%),
@@ -70,7 +70,8 @@
 
 @media (min-width: 640px) {
   .dash-page {
-    padding: 0.375rem 0.625rem 0.5rem;
+    padding-top: 0.375rem;
+    padding-bottom: 0.5rem;
   }
 }
 
@@ -1741,7 +1742,10 @@
 /* ── Monitor / desktop — compact density ── */
 @media (min-width: 1024px) {
   .dash-page {
-    padding: 0.125rem 0.375rem 0.25rem;
+    padding-top: 0.375rem;
+    padding-bottom: 0.625rem;
+    padding-left: var(--crm-page-gutter-x, 1.25rem);
+    padding-right: var(--crm-page-gutter-x, 1.25rem);
   }
 
   .dash-card {
@@ -2120,7 +2124,7 @@
 
 /* ── Comfortable admin dashboard — less congested ── */
 .dash-page--comfortable {
-  padding: 0.625rem 0.75rem 0.875rem;
+  padding: 0.625rem var(--crm-page-gutter-x, 0.75rem) 0.875rem;
 }
 
 .dash-admin-layout {
@@ -2138,7 +2142,10 @@
 
 @media (min-width: 1024px) {
   .dash-page--comfortable {
-    padding: 0.75rem 1rem 1.25rem;
+    padding-top: 0.75rem;
+    padding-bottom: 1.25rem;
+    padding-left: var(--crm-page-gutter-x, 1.25rem);
+    padding-right: var(--crm-page-gutter-x, 1.25rem);
   }
 
   .dash-admin-layout {
@@ -2274,6 +2281,15 @@
   .dash-admin-layout {
     grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
     gap: 1.5rem;
+  }
+}
+
+@media (min-width: 1536px) {
+  .dash-page,
+  .dash-page--comfortable {
+    max-width: 100rem;
+    margin-left: auto;
+    margin-right: auto;
   }
 }
 

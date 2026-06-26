@@ -36,7 +36,7 @@
 .st-page {
   width: 100%;
   min-height: 100%;
-  padding: 0.5rem 0.625rem 1rem;
+  padding: 0.5rem var(--crm-page-gutter-x, 0.625rem) 1rem;
   background:
     radial-gradient(ellipse 90% 50% at 50% -20%, rgba(46, 122, 209, 0.05) 0%, transparent 55%),
     #f4f7fb;
@@ -504,7 +504,10 @@
 
 @media (min-width: 1024px) {
   .st-page {
-    padding: 0.625rem 0.875rem 1.25rem;
+    padding-top: 0.625rem;
+    padding-bottom: 1.25rem;
+    padding-left: var(--crm-page-gutter-x, 1.25rem);
+    padding-right: var(--crm-page-gutter-x, 1.25rem);
   }
 
   .st-hero {
@@ -522,5 +525,13 @@
   .st-nav-item {
     padding: 0.625rem 0.6875rem;
     font-size: 0.8125rem;
+  }
+}
+
+@media (min-width: 1536px) {
+  .st-root {
+    max-width: 72rem;
+    margin-left: auto;
+    margin-right: auto;
   }
 }

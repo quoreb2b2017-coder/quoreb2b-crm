@@ -152,12 +152,15 @@ function findFilterColumn(
 export type CuratedFilterField =
   | { type: 'dateRange'; column: MasterDataColumnFilterSchema }
   | { type: 'text'; column: MasterDataColumnFilterSchema; placeholder: string }
-  | { type: 'select'; column: MasterDataColumnFilterSchema };
+  | { type: 'select'; column: MasterDataColumnFilterSchema; multiple?: boolean };
+
+const CURATED_MULTI_SELECT_PATTERNS: RegExp[] = [
+  /^industry type$/i,
+  /^standard industry$/i,
+];
 
 const CURATED_SELECT_PATTERNS: RegExp[] = [
   /^country$/i,
-  /^industry type$/i,
-  /^standard industry$/i,
   /^state$/i,
   /employee size category/i,
   /revenue size category/i,
@@ -178,8 +181,20 @@ export function buildCuratedQuickFilters(
 
   const leadType = findFilterColumn(columns, /^lead type$/i);
   if (leadType) {
-    fields.push({ type: 'text', column: leadType, placeholder: 'e.g. CDQA, MQL…' });
+    if (leadType.options.length > 0) {
+      fields.push({ type: 'select', column: leadType, multiple: true });
+    } else {
+      fields.push({ type: 'text', column: leadType, placeholder: 'e.g. CDQA, MQL…' });
+    }
     used.add(leadType.header);
+  }
+
+  for (const pattern of CURATED_MULTI_SELECT_PATTERNS) {
+    const col = findFilterColumn(columns, pattern);
+    if (!col || used.has(col.header)) continue;
+    if (col.options.length < 2) continue;
+    fields.push({ type: 'select', column: col, multiple: true });
+    used.add(col.header);
   }
 
   for (const pattern of CURATED_SELECT_PATTERNS) {
@@ -191,6 +206,33 @@ export function buildCuratedQuickFilters(
   }
 
   return fields;
+}
+
+export function sortCategoryOptions(options: string[]): string[] {
+  return [...options].sort((a, b) => categoryOptionSortKey(a) - categoryOptionSortKey(b));
+}
+
+/** Numeric sort key for employee/revenue category labels (e.g. "1-10", "11-50"). */
+export function categoryOptionSortKey(option: string): number {
+  const s = option.trim();
+  const range = s.match(/(\d[\d,]*)\s*[-–—to]+\s*(\d[\d,]*)/i);
+  if (range) return parseInt(range[1].replace(/,/g, ''), 10);
+  const leading = s.match(/^(\d[\d,]*)/);
+  if (leading) return parseInt(leading[1].replace(/,/g, ''), 10);
+  const lower = s.toLowerCase();
+  if (/micro|self|solo|freelance/i.test(lower)) return 1;
+  if (/small/i.test(lower)) return 10;
+  if (/medium|mid/i.test(lower)) return 100;
+  if (/large|enterprise/i.test(lower)) return 1000;
+  return lower.charCodeAt(0);
+}
+
+export function isSizeCategoryHeader(header: string): boolean {
+  return /employee size category|revenue size category/i.test(header);
+}
+
+export function isMultiSelectHeader(header: string): boolean {
+  return CURATED_MULTI_SELECT_PATTERNS.some((p) => p.test(header.trim()));
 }
 
 export function curatedSelectDropdownCount(fields: CuratedFilterField[]): number {

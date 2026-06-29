@@ -1,8 +1,24 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Calendar, ChevronDown, ChevronUp, Loader2, Mail, Phone, Search, SlidersHorizontal } from 'lucide-react';
+import {
+  Building2,
+  Calendar,
+  ChevronDown,
+  ChevronUp,
+  DollarSign,
+  Globe,
+  Loader2,
+  Mail,
+  MapPin,
+  Phone,
+  Search,
+  SlidersHorizontal,
+  Tag,
+  Users,
+} from 'lucide-react';
 import { XlToolbarSelect } from '@/components/admin/XlToolbarSelect';
+import { XlToolbarMultiSelect } from '@/components/admin/XlToolbarMultiSelect';
 import type {
   DynamicMasterDbFilters,
   MasterDataColumnFilterSchema,
@@ -11,7 +27,9 @@ import {
   buildCuratedQuickFilters,
   filterAdvancedColumns,
   isExcludedDropdownColumn,
+  isSizeCategoryHeader,
 } from './master-database-columns';
+import { CategoryRangeSlider } from './CategoryRangeSlider';
 
 interface MasterDatabaseQuickFiltersProps {
   columns: MasterDataColumnFilterSchema[];
@@ -62,6 +80,20 @@ export function MasterDatabaseQuickFilters({
     onSearch();
   };
 
+  const setColumnMultiValues = (header: string, values: Set<string>) => {
+    const columnValues = { ...filters.columnValues };
+    if (values.size) columnValues[header] = values;
+    else delete columnValues[header];
+    onChange({ ...filters, columnValues });
+  };
+
+  const setColumnRangeValues = (header: string, values: string[]) => {
+    const columnValues = { ...filters.columnValues };
+    if (values.length) columnValues[header] = new Set(values);
+    else delete columnValues[header];
+    onChange({ ...filters, columnValues });
+  };
+
   const setColumnText = (header: string, value: string) => {
     const columnText = { ...filters.columnText, [header]: value };
     if (!value.trim()) delete columnText[header];
@@ -87,7 +119,7 @@ export function MasterDatabaseQuickFilters({
   };
 
   const placeholder = headers.length
-    ? `Search all fields — company, email, name…`
+    ? `Search company, email, name…`
     : 'Search master data…';
 
   const selectOptions = (col: MasterDataColumnFilterSchema) => [
@@ -98,13 +130,46 @@ export function MasterDatabaseQuickFilters({
     })),
   ];
 
+  const multiSelectOptions = (col: MasterDataColumnFilterSchema) =>
+    col.options.slice(0, 80).map((opt) => ({
+      value: opt,
+      label: opt.length > 48 ? `${opt.slice(0, 46)}…` : opt,
+    }));
+
+  const shortFilterLabel = (header: string) => {
+    if (/lead type/i.test(header)) return 'Lead type';
+    if (/employee size category/i.test(header)) return 'Employee size';
+    if (/revenue size category/i.test(header)) return 'Revenue size';
+    if (/industry type/i.test(header)) return 'Industry type';
+    if (/standard industry/i.test(header)) return 'Standard industry';
+    if (/^country$/i.test(header)) return 'Country';
+    if (/^state$/i.test(header)) return 'State';
+    return header;
+  };
+
+  const fieldIcon = (header: string) => {
+    if (/lead type/i.test(header)) return Tag;
+    if (/industry/i.test(header)) return Building2;
+    if (/employee size/i.test(header)) return Users;
+    if (/revenue size/i.test(header)) return DollarSign;
+    if (/^country$/i.test(header)) return Globe;
+    if (/^state$/i.test(header)) return MapPin;
+    return null;
+  };
+
+  const blockClass = (header: string, multi?: boolean, sizeCategory?: boolean) => {
+    if (sizeCategory) return 'mdb-filter-block mdb-filter-block--category';
+    if (multi) return 'mdb-filter-block mdb-filter-block--multi';
+    return 'mdb-filter-block';
+  };
+
   return (
     <div className={`mdb-quick${variant === 'sidebar' ? ' mdb-quick--sidebar' : ''}`}>
       {variant !== 'sidebar' && (
         <div className="mdb-quick__head">
           <div className="mdb-quick__head-left">
-            <Search className="h-4 w-4" />
-            <span>Search &amp; filter</span>
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+            <span>Quick filters</span>
           </div>
           {searching && (
             <span className="mdb-quick__loading">
@@ -149,9 +214,9 @@ export function MasterDatabaseQuickFilters({
             if (field.type === 'dateRange') {
               const range = filters.columnDateRanges[column.header] ?? {};
               return (
-                <div key={column.header} className="mdb-filter-block">
+                <div key={column.header} className="mdb-filter-block mdb-filter-block--date">
                   <span className="mdb-filter-block__label">
-                    <Calendar className="h-3.5 w-3.5" />
+                    <Calendar className="h-3 w-3" />
                     {column.header}
                   </span>
                   <div className="mdb-date-range">
@@ -178,9 +243,13 @@ export function MasterDatabaseQuickFilters({
 
             if (field.type === 'text') {
               const value = filters.columnText[column.header] ?? '';
+              const Icon = fieldIcon(column.header);
               return (
-                <div key={column.header} className="mdb-filter-block">
-                  <span className="mdb-filter-block__label">{column.header}</span>
+                <div key={column.header} className={blockClass(column.header)}>
+                  <span className="mdb-filter-block__label">
+                    {Icon ? <Icon className="h-3 w-3" /> : null}
+                    {shortFilterLabel(column.header)}
+                  </span>
                   <input
                     type="text"
                     className="mdb-filter-block__input"
@@ -194,27 +263,66 @@ export function MasterDatabaseQuickFilters({
               );
             }
 
-            const selected = filters.columnValues[column.header];
-            const value = selected?.size === 1 ? [...selected][0] : '';
+            const selected = filters.columnValues[column.header] ?? new Set<string>();
+            const value = selected.size === 1 ? [...selected][0] : '';
+            const isSizeCategory = isSizeCategoryHeader(column.header);
+            const isMultiSelect = field.type === 'select' && field.multiple;
+            const Icon = fieldIcon(column.header);
 
             return (
-              <div key={column.header} className="mdb-filter-block">
-                <span className="mdb-filter-block__label">{column.header}</span>
-                <XlToolbarSelect
-                  tone="light"
-                  className="mdb-filter-block__select"
-                  menuMinWidth={260}
-                  value={value}
-                  placeholder="All"
-                  onChange={(v) => setColumnValue(column.header, v)}
-                  options={selectOptions(column)}
-                />
+              <div
+                key={column.header}
+                className={blockClass(column.header, isMultiSelect, isSizeCategory)}
+              >
+                <span className="mdb-filter-block__label">
+                  {Icon ? <Icon className="h-3 w-3" /> : null}
+                  {shortFilterLabel(column.header)}
+                  {isMultiSelect && selected.size > 0 && (
+                    <span className="mdb-filter-block__badge">{selected.size}</span>
+                  )}
+                </span>
+                {isSizeCategory && column.options.length >= 2 && (
+                  <CategoryRangeSlider
+                    options={column.options}
+                    selected={selected}
+                    onChange={(values) => setColumnRangeValues(column.header, values)}
+                    onCommit={onSearch}
+                  />
+                )}
+                {isMultiSelect ? (
+                  <XlToolbarMultiSelect
+                    tone="light"
+                    className="mdb-filter-block__select"
+                    menuMinWidth={300}
+                    values={selected}
+                    placeholder="All"
+                    onChange={(next) => setColumnMultiValues(column.header, next)}
+                    onApply={onSearch}
+                    options={multiSelectOptions(column)}
+                  />
+                ) : (
+                  <XlToolbarSelect
+                    tone="light"
+                    className="mdb-filter-block__select"
+                    menuMinWidth={isSizeCategory ? 300 : 240}
+                    value={value}
+                    placeholder={
+                      isSizeCategory
+                        ? selected.size > 1
+                          ? `${selected.size} selected`
+                          : 'Pick one'
+                        : 'All'
+                    }
+                    onChange={(v) => setColumnValue(column.header, v)}
+                    options={selectOptions(column)}
+                  />
+                )}
               </div>
             );
           })}
 
           <button type="button" className="mdb-btn mdb-btn--ghost mdb-quick__clear" onClick={onClear}>
-            Clear all
+            Reset filters
           </button>
         </div>
       )}
@@ -248,7 +356,8 @@ export function MasterDatabaseQuickFilters({
               <div className="mdb-advanced-filters">
                 {advancedColumns.map((col) => {
                   const selected = filters.columnValues[col.header] ?? new Set<string>();
-                  const value = selected?.size === 1 ? [...selected][0] : '';
+                  const value = selected.size === 1 ? [...selected][0] : '';
+                  const isSizeCategory = isSizeCategoryHeader(col.header);
 
                   if (col.kind === 'email' || col.kind === 'phone') {
                     const checked = filters.mustExist.has(col.header);
@@ -266,14 +375,31 @@ export function MasterDatabaseQuickFilters({
                   }
 
                   return (
-                    <div key={col.header} className="mdb-advanced-filters__field">
+                    <div
+                      key={col.header}
+                      className={`mdb-advanced-filters__field${isSizeCategory ? ' mdb-advanced-filters__field--category' : ''}`}
+                    >
                       <span className="mdb-advanced-filters__label">{col.header}</span>
+                      {isSizeCategory && col.options.length >= 2 && (
+                        <CategoryRangeSlider
+                          options={col.options}
+                          selected={selected}
+                          onChange={(values) => setColumnRangeValues(col.header, values)}
+                          onCommit={onSearch}
+                        />
+                      )}
                       <XlToolbarSelect
                         tone="light"
                         className="mdb-filter-block__select"
-                        menuMinWidth={260}
+                        menuMinWidth={isSizeCategory ? 320 : 260}
                         value={value}
-                        placeholder="All"
+                        placeholder={
+                          isSizeCategory
+                            ? selected.size > 1
+                              ? `${selected.size} selected`
+                              : 'Select option'
+                            : 'All'
+                        }
                         onChange={(v) => setColumnValue(col.header, v)}
                         options={selectOptions(col)}
                       />

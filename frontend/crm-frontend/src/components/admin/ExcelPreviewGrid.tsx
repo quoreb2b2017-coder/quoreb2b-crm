@@ -15,6 +15,8 @@ import { useEditableSpreadsheet } from '@/hooks/useEditableSpreadsheet';
 import { useExcelTableNavigation } from '@/hooks/useExcelTableNavigation';
 import { useCanExportSpreadsheet, useShowSpreadsheetRestrictionHint } from '@/hooks/useSpreadsheetCopyGuard';
 import { spreadsheetGuardProps } from '@/lib/spreadsheet/spreadsheet-access';
+import { GridScrollRails } from '@/components/spreadsheet/GridScrollRails';
+import { useDragToScroll } from '@/hooks/useDragToScroll';
 
 function colLetter(index: number): string {
   let n = index;
@@ -75,6 +77,18 @@ interface ExcelPreviewGridProps {
   onToggleSourceRow?: (sourceRow: number) => void;
   pageAllSelected?: boolean;
   onTogglePageSelection?: () => void;
+  /** Click-drag pan on grid (default: true when not editable) */
+  enableDragScroll?: boolean;
+  /** Row/column scrubber under grid (default: true when fillHeight) */
+  showScrollRails?: boolean;
+  /** Full dataset row count for 0…N scrubber */
+  datasetRowCount?: number;
+  /** Global 0-based index of first visible row (pagination) */
+  datasetRowOffset?: number;
+  /** Jump to global row when scrubber crosses page boundary */
+  onDatasetRowSeek?: (globalRowIndex: number) => void;
+  /** Scroll to this display row when value changes */
+  focusDisplayRow?: number;
 }
 
 export function ExcelPreviewGrid({
@@ -100,6 +114,12 @@ export function ExcelPreviewGrid({
   onToggleSourceRow,
   pageAllSelected = false,
   onTogglePageSelection,
+  enableDragScroll,
+  showScrollRails,
+  datasetRowCount,
+  datasetRowOffset = 0,
+  onDatasetRowSeek,
+  focusDisplayRow,
 }: ExcelPreviewGridProps) {
   const editable = editableProp ?? Boolean(onDataChange);
   const canExport = useCanExportSpreadsheet();
@@ -236,6 +256,21 @@ export function ExcelPreviewGrid({
       startEdit({ kind: 'cell', sourceRow, col: pos.col }, seed);
     },
   });
+
+  const dragScrollEnabled = enableDragScroll ?? false;
+  const scrollRailsEnabled = showScrollRails ?? false;
+  useDragToScroll(containerRef, dragScrollEnabled);
+
+  useEffect(() => {
+    if (focusDisplayRow == null || !containerRef.current) return;
+    const el = containerRef.current;
+    const row = Math.max(0, focusDisplayRow);
+    const cell = el.querySelector<HTMLElement>(`tbody td[data-grid-row="${row}"]`);
+    if (!cell) return;
+    const thead = el.querySelector('thead');
+    const headerHeight = thead?.getBoundingClientRect().height ?? 0;
+    el.scrollTop = Math.max(0, cell.offsetTop - headerHeight);
+  }, [focusDisplayRow, dataResetKey, displayRows.length]);
 
   const startEdit = useCallback((target: EditTarget, seed?: string) => {
     if (!editable || !target) return;
@@ -610,7 +645,8 @@ export function ExcelPreviewGrid({
       <div
         ref={containerRef}
         className={cn(
-          'overflow-auto scroll-smooth',
+          'xl-scroll overflow-auto scroll-smooth',
+          dragScrollEnabled && 'xl-drag-scroll',
           fillHeight ? 'min-h-0 flex-1' : '',
         )}
         style={
@@ -888,6 +924,16 @@ export function ExcelPreviewGrid({
           </tbody>
         </table>
       </div>
+
+      {scrollRailsEnabled && displayRows.length > 0 && (
+        <GridScrollRails
+          containerRef={containerRef}
+          displayRowCount={displayRows.length}
+          datasetRowCount={datasetRowCount}
+          datasetRowOffset={datasetRowOffset}
+          onDatasetRowSeek={onDatasetRowSeek}
+        />
+      )}
 
       {openCol != null &&
         filterMenuPos &&

@@ -322,6 +322,87 @@ html {
     background: #2e7ad199;
   }
 
+  .xl-drag-scroll {
+    cursor: grab;
+  }
+
+  .xl-drag-scroll.xl-drag-scrolling {
+    cursor: grabbing;
+    user-select: none;
+  }
+
+  .xl-scroll-rails {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    border-top: 1px solid #e8ecf0;
+    background: linear-gradient(180deg, #fafbfc 0%, #f4f6f8 100%);
+    padding: 0.4rem 0.65rem;
+  }
+
+  .xl-scroll-rail {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 1.35rem;
+  }
+
+  .xl-scroll-rail__label {
+    flex-shrink: 0;
+    width: 3.25rem;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #64748b;
+  }
+
+  .xl-scroll-rail__value,
+  .xl-scroll-rail__total {
+    flex-shrink: 0;
+    min-width: 2.5rem;
+    font-size: 11px;
+    font-weight: 600;
+    color: #334155;
+  }
+
+  .xl-scroll-rail__total {
+    text-align: right;
+    color: #64748b;
+    font-weight: 500;
+  }
+
+  .xl-scroll-rail__hint {
+    flex-shrink: 0;
+    font-size: 10px;
+    color: #94a3b8;
+  }
+
+  .xl-scroll-rail__track {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    height: 0.5rem;
+    border-radius: 9999px;
+    background: #e2e8f0;
+    cursor: pointer;
+    touch-action: none;
+  }
+
+  .xl-scroll-rail__thumb {
+    position: absolute;
+    top: 50%;
+    width: 0.875rem;
+    height: 0.875rem;
+    border-radius: 9999px;
+    background: linear-gradient(180deg, #3a85d8 0%, #2e7ad1 100%);
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgb(46 122 209 / 35%);
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+
   .xl-stagger > * {
     animation: slideUp 0.4s cubic-bezier(0.22, 1, 0.36, 1) backwards;
   }

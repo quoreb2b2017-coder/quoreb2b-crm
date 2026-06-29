@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { clearAuthCookie, syncAuthCookie } from '@/lib/auth/cookie';
+import { clearAuthSessionTracking } from '@/lib/auth/sleep-logout';
 import type { LoginPanel, User } from '@/types/auth';
 
 interface AuthState {
@@ -53,6 +54,7 @@ export const useAuthStore = create<AuthState>()(
           localStorage.removeItem('accessToken');
           localStorage.removeItem('refreshToken');
           localStorage.removeItem('sessionId');
+          clearAuthSessionTracking();
         }
         clearAuthCookie();
         set({

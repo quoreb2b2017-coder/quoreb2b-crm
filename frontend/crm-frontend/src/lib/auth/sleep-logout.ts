@@ -5,10 +5,10 @@ const SESSION_ALIVE_KEY = 'crm-session-alive';
 const HIDDEN_SINCE_KEY = 'crm-hidden-since';
 
 /**
- * JS timers did not run for this long ⇒ PC sleep / screen lock (timers frozen).
- * Kept below idle timeout so sleep always signs out before 5 min idle.
+ * JS timers did not run for this long while the tab stayed visible ⇒ PC sleep / screen lock.
+ * Must be well above normal background-tab timer throttling (do not use for hidden tabs).
  */
-export const SLEEP_GAP_MS = 25_000;
+export const SLEEP_GAP_MS = 90_000;
 
 export function setSleepLogoutFlag(): void {
   if (typeof sessionStorage === 'undefined') return;
@@ -40,6 +40,23 @@ export function clearTabHidden(): void {
   sessionStorage.removeItem(HIDDEN_SINCE_KEY);
 }
 
+/** Wipe sleep/idle tracking — call on manual logout so the next login is not treated as stale. */
+export function clearSessionTracking(): void {
+  if (typeof sessionStorage === 'undefined') return;
+  sessionStorage.removeItem(SLEEP_LOGOUT_FLAG);
+  sessionStorage.removeItem(FRESH_LOGIN_MARKER);
+  sessionStorage.removeItem(SESSION_ALIVE_KEY);
+  sessionStorage.removeItem(HIDDEN_SINCE_KEY);
+}
+
+/** Clear alive markers on sign-out but keep sleep flag when redirecting after sleep logout. */
+export function clearAuthSessionTracking(): void {
+  if (typeof sessionStorage === 'undefined') return;
+  sessionStorage.removeItem(FRESH_LOGIN_MARKER);
+  sessionStorage.removeItem(SESSION_ALIVE_KEY);
+  sessionStorage.removeItem(HIDDEN_SINCE_KEY);
+}
+
 export function hiddenDurationMs(): number {
   if (typeof sessionStorage === 'undefined') return 0;
   const raw = sessionStorage.getItem(HIDDEN_SINCE_KEY);
@@ -58,7 +75,9 @@ export function sessionIdleGapMs(): number {
   return Math.max(0, Date.now() - t);
 }
 
+/** Only meaningful while the tab is visible — hidden tabs pause the alive heartbeat. */
 export function shouldLogoutStaleSession(thresholdMs = SLEEP_GAP_MS): boolean {
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return false;
   const gap = sessionIdleGapMs();
   return gap > 0 && gap >= thresholdMs;
 }
@@ -71,7 +90,7 @@ export function markFreshLogin(): void {
   touchSessionAlive();
 }
 
-export function isRecentFreshLogin(maxAgeMs = 8000): boolean {
+export function isRecentFreshLogin(maxAgeMs = 15_000): boolean {
   if (typeof sessionStorage === 'undefined') return false;
   const raw = sessionStorage.getItem(FRESH_LOGIN_MARKER);
   if (!raw) return false;

@@ -132,18 +132,32 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
       setFilterColumns(schema.columns);
       setHeaders(schema.headers);
       setMasterTotalRows(schema.totalRows);
-    } catch {
+      return true;
+    } catch (err) {
       setFilterColumns([]);
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 404) {
+        toast.error(
+          'Backend outdated',
+          'filter-schema API missing — redeploy backend: bash deploy/ec2/deploy-backend.sh',
+        );
+      }
+      return false;
     }
   }, []);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      await loadFilterSchema();
+      const schemaOk = await loadFilterSchema();
       const record = await masterDataService.getCurrent();
       if (!record) {
         setAllRows([]);
+        setDisplayRows([]);
+        setSourceIndices([]);
+        setMasterTotalRows(0);
+        setFilteredTotal(0);
+        setHasSearched(false);
         return;
       }
       setHeaders(record.headers);
@@ -155,6 +169,12 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
         setSourceIndices([]);
         setHasSearched(false);
         setFilteredTotal(0);
+        if (!schemaOk) {
+          toast.error(
+            'Master database unavailable',
+            'Apply filters after backend is redeployed with latest master-data APIs.',
+          );
+        }
       } else {
         setAllRows(record.rows);
         if (!isDbAdmin) {
@@ -165,8 +185,12 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
         }
       }
       await loadCoverage();
-    } catch {
-      toast.error('Could not load master database');
+    } catch (err) {
+      const msg = extractApiError(
+        err,
+        'Could not load master database. Check API URL and backend deploy.',
+      );
+      toast.error('Master database load failed', msg);
     } finally {
       setLoading(false);
     }

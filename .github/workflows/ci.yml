@@ -38,7 +38,7 @@ jobs:
       - run: npm install
       - run: npm run build
         env:
-          NEXT_PUBLIC_API_URL: https://13-232-248-18.sslip.io/api/v1
+          NEXT_PUBLIC_API_URL: https://api.quoreb2b.com/api/v1
 
   lint-and-build-client-frontend:
     name: Client Frontend Build
@@ -54,7 +54,7 @@ jobs:
       - run: npm install
       - run: npm run build
         env:
-          NEXT_PUBLIC_API_URL: https://13-232-248-18.sslip.io/api/v1
+          NEXT_PUBLIC_API_URL: https://api.quoreb2b.com/api/v1
 
   docker-build:
     name: Docker Build

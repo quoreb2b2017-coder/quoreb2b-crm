@@ -55,6 +55,7 @@ docker run -d \
   --restart unless-stopped \
   --network host \
   --env-file "$ENV_FILE" \
+  -e "BUILD_SHA=$(git -C "$APP_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)" \
   "$IMAGE_NAME"
 
 echo "==> Waiting for API..."

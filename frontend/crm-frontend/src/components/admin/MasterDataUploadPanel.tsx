@@ -295,27 +295,60 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   }, []);
 
   const loadFromDb = useCallback(async () => {
-    setLoadingDb(true); setError('');
+    setLoadingDb(true);
+    setError('');
     try {
       const record = await masterDataService.getCurrent();
-      if (record) applyRecord(record);
+      if (!record) {
+        setData(null);
+        setTotalRows(0);
+        setFilteredRows([]);
+        setFilteredViewActive(false);
+        await loadCoverage();
+        return;
+      }
+      if (record.filterRequired) {
+        const msg =
+          'Master data exists but row data was not returned for this role. Open as Super Admin, or redeploy the latest backend.';
+        setError(msg);
+        setTotalRows(record.rowCount);
+        toast.error('Cannot load master grid', msg);
+        return;
+      }
+      if (record.rowCount > 0 && (record.rows?.length ?? 0) === 0) {
+        const msg =
+          'Master data row count is set but no rows arrived from the API. Check backend deploy, CORS, and API timeout.';
+        setError(msg);
+        setTotalRows(record.rowCount);
+        toast.error('Master data incomplete', msg);
+        return;
+      }
+      applyRecord(record);
       await loadCoverage();
-    } catch {
+    } catch (err) {
       setCoverage(null);
-    } finally { setLoadingDb(false); }
+      const msg = extractApiError(
+        err,
+        'Could not load master data from API. Check NEXT_PUBLIC_API_URL and backend deploy.',
+      );
+      setError(msg);
+      toast.error('Master data load failed', msg);
+    } finally {
+      setLoadingDb(false);
+    }
   }, [applyRecord, loadCoverage]);
 
   useEffect(() => { loadFromDb(); }, [loadFromDb]);
 
   useEffect(() => {
-    const refresh = () => loadCoverage();
+    const refresh = () => void loadFromDb();
     window.addEventListener('master-data-updated', refresh);
     window.addEventListener('batch-created', refresh);
     return () => {
       window.removeEventListener('master-data-updated', refresh);
       window.removeEventListener('batch-created', refresh);
     };
-  }, [loadCoverage]);
+  }, [loadFromDb]);
 
   const processFile = useCallback(async (file: File) => {
     setParsing(true); setError('');
@@ -643,7 +676,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
 
       <input ref={inputRef} type="file" accept={ACCEPT} className="sr-only" onChange={onFileChange} />
 
-      {error && !data && (
+      {error && (
         <div className="px-4 py-2 text-xs text-red-800 bg-red-50 border-b border-red-200">{error}</div>
       )}
 

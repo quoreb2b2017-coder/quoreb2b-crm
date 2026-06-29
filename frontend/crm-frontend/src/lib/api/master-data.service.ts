@@ -1,6 +1,9 @@
 import apiClient from './client';
 import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
 
+/** Master file payloads can be large — production needs a longer timeout than default 30s. */
+const MASTER_DATA_TIMEOUT_MS = 120_000;
+
 export type MasterDataSaveMode = 'append' | 'replace';
 
 export interface MasterBatchCoverage {
@@ -130,13 +133,17 @@ function statusQuery(status?: MasterDataUploadRequestStatus | 'all') {
 
 export const masterDataService = {
   save: async (payload: SpreadsheetData, mode: MasterDataSaveMode = 'append') => {
-    const { data } = await apiClient.post('/master-data', {
-      fileName: payload.fileName,
-      sheetName: payload.sheetName,
-      headers: payload.headers,
-      rows: payload.rows,
-      mode,
-    });
+    const { data } = await apiClient.post(
+      '/master-data',
+      {
+        fileName: payload.fileName,
+        sheetName: payload.sheetName,
+        headers: payload.headers,
+        rows: payload.rows,
+        mode,
+      },
+      { timeout: MASTER_DATA_TIMEOUT_MS },
+    );
     return unwrap<MasterDataRecord>({ data });
   },
 
@@ -158,7 +165,9 @@ export const masterDataService = {
 
   getCurrent: async (): Promise<MasterDataRecord | null> => {
     try {
-      const { data } = await apiClient.get('/master-data/current');
+      const { data } = await apiClient.get('/master-data/current', {
+        timeout: MASTER_DATA_TIMEOUT_MS,
+      });
       return unwrap<MasterDataRecord>({ data });
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } })?.response?.status;
@@ -168,12 +177,16 @@ export const masterDataService = {
   },
 
   search: async (params: MasterDataSearchParams): Promise<MasterDataSearchResult> => {
-    const { data } = await apiClient.post('/master-data/search', params);
+    const { data } = await apiClient.post('/master-data/search', params, {
+      timeout: MASTER_DATA_TIMEOUT_MS,
+    });
     return unwrap<MasterDataSearchResult>({ data });
   },
 
   getFilterSchema: async (): Promise<MasterDataFilterSchemaResponse> => {
-    const { data } = await apiClient.get('/master-data/filter-schema');
+    const { data } = await apiClient.get('/master-data/filter-schema', {
+      timeout: MASTER_DATA_TIMEOUT_MS,
+    });
     return unwrap<MasterDataFilterSchemaResponse>({ data });
   },
 

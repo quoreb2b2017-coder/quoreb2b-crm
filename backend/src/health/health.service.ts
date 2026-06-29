@@ -89,6 +89,7 @@ export class HealthService {
       timestamp: new Date().toISOString(),
       service: 'quoreb2b-crm-api',
       version: '1.0.0',
+      buildSha: process.env.BUILD_SHA || null,
       checks: {
         api: { status: 'up', label: 'API Server' },
         database: {

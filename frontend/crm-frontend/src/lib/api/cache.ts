@@ -47,26 +47,27 @@ const pendingRequests = new Map<string, Promise<any>>();
 export async function deduplicatedFetch<T>(
   key: string,
   fetcher: () => Promise<T>,
+  ttlMs = 60_000,
 ): Promise<T> {
   // Check cache first
   const cached = getCached<T>(key);
   if (cached) return cached;
-  
+
   // Check if request is already in flight
   if (pendingRequests.has(key)) {
     return pendingRequests.get(key)!;
   }
-  
+
   // Make new request
   const promise = fetcher()
-    .then(data => {
-      setCached(key, data);
+    .then((data) => {
+      setCached(key, data, ttlMs);
       return data;
     })
     .finally(() => {
       pendingRequests.delete(key);
     });
-  
+
   pendingRequests.set(key, promise);
   return promise;
 }

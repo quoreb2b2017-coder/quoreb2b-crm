@@ -19,12 +19,27 @@ async function pingElasticsearch(node: string): Promise<boolean> {
 
 @Injectable()
 export class HealthService {
+  private cachedStatus: Awaited<ReturnType<HealthService['computeStatus']>> | null = null;
+  private cachedAt = 0;
+  private static readonly CACHE_MS = 12_000;
+
   constructor(
     private config: ConfigService,
     @InjectConnection() private mongoose: Connection,
   ) {}
 
   async getStatus() {
+    const now = Date.now();
+    if (this.cachedStatus && now - this.cachedAt < HealthService.CACHE_MS) {
+      return this.cachedStatus;
+    }
+    const status = await this.computeStatus();
+    this.cachedStatus = status;
+    this.cachedAt = now;
+    return status;
+  }
+
+  private async computeStatus() {
     const dbState = this.mongoose.readyState;
     const dbStatus =
       dbState === 1 ? 'up' : dbState === 2 ? 'connecting' : 'down';

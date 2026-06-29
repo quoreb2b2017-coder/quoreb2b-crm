@@ -4,13 +4,13 @@ import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-time
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { RefreshCw, Users, FileSpreadsheet } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { WelcomeBanner } from '@/components/dashboard/WelcomeBanner';
 import { XlMetricCardSection } from '@/components/admin/XlMetricCards';
 import { fetchDbAdminDashboard, type DbAdminDashboardData } from '@/lib/api/analytics.service';
 import { masterDataService, type MasterDataUploadRequest } from '@/lib/api/master-data.service';
 import { extractApiError } from '@/lib/api/errors';
 import { cn } from '@/lib/utils/cn';
-import { AttendanceSummaryCard } from '@/components/attendance/EmployeeAttendanceSummaryCard';
 import { DashboardPageShell } from '@/components/dashboard/DashboardPageShell';
 import { DashboardBarRow } from '@/components/dashboard/DashboardBarRow';
 import {
@@ -22,6 +22,14 @@ import {
   dashboardLink,
 } from '@/components/dashboard/dashboard-ui';
 import { useUploadRequestRefresh } from '@/hooks/useUploadRequestRefresh';
+
+const AttendanceSummaryCard = dynamic(
+  () =>
+    import('@/components/attendance/EmployeeAttendanceSummaryCard').then((m) => ({
+      default: m.AttendanceSummaryCard,
+    })),
+  { ssr: false, loading: () => <div className="h-24 animate-pulse rounded-xl bg-slate-100" /> },
+);
 
 function formatWhen(iso: string) {
   if (!iso) return '—';
@@ -39,11 +47,11 @@ export function DbAdminDashboard() {
   const [error, setError] = useState('');
   const hasDataRef = useRef(false);
 
-  const load = useCallback(async (opts?: { silent?: boolean }) => {
+  const load = useCallback(async (opts?: { silent?: boolean; refresh?: boolean }) => {
     if (!opts?.silent || !hasDataRef.current) setLoading(true);
     setError('');
     try {
-      const next = await fetchDbAdminDashboard();
+      const next = await fetchDbAdminDashboard(opts?.refresh ? { refresh: true } : undefined);
       setData(next);
       hasDataRef.current = true;
     } catch (e) {
@@ -66,7 +74,7 @@ export function DbAdminDashboard() {
   useEffect(() => {
     void load();
     void loadMyUploads();
-    const onRefresh = () => void load({ silent: true });
+    const onRefresh = () => void load({ silent: true, refresh: true });
     window.addEventListener('master-data-updated', onRefresh);
     return () => window.removeEventListener('master-data-updated', onRefresh);
   }, [load, loadMyUploads]);
@@ -110,7 +118,7 @@ export function DbAdminDashboard() {
           toolbar={
             <button
               type="button"
-              onClick={() => void load({ silent: true })}
+              onClick={() => void load({ silent: true, refresh: true })}
               disabled={loading}
               className={dashboardBannerBtn}
             >

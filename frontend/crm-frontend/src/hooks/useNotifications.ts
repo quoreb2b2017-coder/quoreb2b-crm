@@ -1,11 +1,45 @@
 'use client';
 
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback } from 'react';
 import { connectSocket, disconnectSocket } from '@/lib/socket/socket.client';
 import { useAuthStore } from '@/store/auth.store';
 import { useNotificationStore } from '@/store/notification.store';
 import { notificationService } from '@/lib/notifications/notification.service';
 import { useNotificationPreferencesStore } from '@/store/notification-preferences.store';
+
+/** Read/update notifications without re-initializing socket (use in NotificationBell). */
+export function useNotificationActions() {
+  const markAsRead = useNotificationStore((s) => s.markAsRead);
+  const markAllAsRead = useNotificationStore((s) => s.markAllAsRead);
+  const removeNotification = useNotificationStore((s) => s.removeNotification);
+
+  const handleMarkAsRead = useCallback((id: string) => {
+    markAsRead(id);
+    void notificationService.markAsRead(id).catch(() => {});
+  }, [markAsRead]);
+
+  const handleMarkAllAsRead = useCallback(() => {
+    markAllAsRead();
+    void notificationService.markAllAsRead().catch(() => {});
+  }, [markAllAsRead]);
+
+  const handleDelete = useCallback((id: string) => {
+    removeNotification(id);
+    void notificationService.deleteNotification(id).catch(() => {});
+  }, [removeNotification]);
+
+  return {
+    markAsRead: handleMarkAsRead,
+    markAllAsRead: handleMarkAllAsRead,
+    deleteNotification: handleDelete,
+  };
+}
+
+let notificationsBootstrapped = false;
+
+export function resetNotificationsBootstrap(): void {
+  notificationsBootstrapped = false;
+}
 
 export function useNotifications() {
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -16,14 +50,13 @@ export function useNotifications() {
   const markAllAsRead = useNotificationStore((s) => s.markAllAsRead);
   const removeNotification = useNotificationStore((s) => s.removeNotification);
   const clearAll = useNotificationStore((s) => s.clearAll);
-  const initializedRef = useRef(false);
 
   useEffect(() => {
     if (!accessToken || !isAuthenticated) {
       notificationService.unsubscribe();
       disconnectSocket();
       clearAll();
-      initializedRef.current = false;
+      resetNotificationsBootstrap();
       return;
     }
 
@@ -31,8 +64,8 @@ export function useNotifications() {
     notificationService.setSocket(socket);
     notificationService.subscribe();
 
-    if (!initializedRef.current) {
-      initializedRef.current = true;
+    if (!notificationsBootstrapped) {
+      notificationsBootstrapped = true;
       void (async () => {
         const [notifs, count] = await Promise.all([
           notificationService.fetchNotifications(),

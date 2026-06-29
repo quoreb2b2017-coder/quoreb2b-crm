@@ -14,7 +14,8 @@ import {
   Clock,
   type LucideIcon,
 } from 'lucide-react';
-import { useNotifications } from '@/hooks/useNotifications';
+import { useNotificationStore } from '@/store/notification.store';
+import { useNotificationActions } from '@/hooks/useNotifications';
 import { Notification, type NotificationType } from '@/types/notifications';
 import { cn } from '@/lib/utils/cn';
 
@@ -58,13 +59,13 @@ export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
   const [filter, setFilter] = useState<NotificationFilter>('unread');
   const panelRef = useRef<HTMLDivElement>(null);
+  const notifications = useNotificationStore((s) => s.notifications);
+  const unreadCount = useNotificationStore((s) => s.unreadCount);
   const {
-    notifications,
-    unreadCount,
     markAsRead,
     markAllAsRead,
     deleteNotification,
-  } = useNotifications();
+  } = useNotificationActions();
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {

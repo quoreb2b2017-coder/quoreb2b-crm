@@ -256,8 +256,9 @@ export class BatchesService {
   async getMasterBatchCoverage(
     masterHeaders: string[],
     masterRows: string[][],
+    masterRevision = 0,
   ): Promise<MasterBatchCoverageResult> {
-    const cacheKey = `master:coverage:${masterRows.length}:${masterHeaders.length}`;
+    const cacheKey = `master:coverage:${masterRows.length}:${masterHeaders.length}:${masterRevision}`;
     return this.cache.wrap(cacheKey, cacheTtlSeconds(this.config, 'long'), async () => {
       const batches = await this.model
         .find({ $or: [{ sourceBatchId: { $exists: false } }, { sourceBatchId: null }] })

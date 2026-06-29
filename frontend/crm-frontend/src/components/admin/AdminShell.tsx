@@ -94,7 +94,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     loadPendingRequests();
     const intervalId = window.setInterval(() => {
       if (!document.hidden) void loadPendingRequests();
-    }, 30000);
+    }, 90_000);
     const onMasterDataUpdated = () => {
       void loadPendingRequests();
     };

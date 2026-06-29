@@ -124,11 +124,11 @@ export class AnalyticsService {
     const [batches, masterDoc, recentLogs, health] = await Promise.all([
       this.batchModel
         .find({ $or: [{ createdBy: oid }, { sharedWith: oid }] })
-        .select('name rowCount columnCount createdAt updatedAt createdBy sharedWith headers rows batchMonth batchYear status')
+        .select('name rowCount columnCount createdAt updatedAt createdBy sharedWith batchMonth batchYear status')
         .sort({ updatedAt: -1 })
         .lean()
         .exec(),
-      this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).select('headers rows sharedWithDbAdmins').lean().exec(),
+      this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).select('headers rows sharedWithDbAdmins updatedAt').lean().exec(),
       this.activityLogModel
         .find({
           userId: oid,
@@ -141,26 +141,36 @@ export class AnalyticsService {
       this.healthService.getStatus(),
     ]);
 
+    const dbCheck = health.checks.database;
+    const mongoLabel =
+      dbCheck.status === 'up'
+        ? 'Connected'
+        : dbCheck.status === 'connecting'
+          ? 'Connecting'
+          : 'Down';
+
     const owned = batches.filter((b) => b.createdBy?.toString() === actorId);
     const sharedWithMe = batches.filter((b) => b.createdBy?.toString() !== actorId);
 
     let totalRowsInBatches = 0;
+    let employeesWithAccess = 0;
     let activeLeads = 0;
     let wonLeads = 0;
-    let employeesWithAccess = 0;
 
     for (const b of batches) {
-      totalRowsInBatches += (b.rowCount as number) ?? (b.rows as string[][])?.length ?? 0;
+      totalRowsInBatches += (b.rowCount as number) ?? 0;
       if (b.createdBy?.toString() === actorId) {
         employeesWithAccess += ((b.sharedWith as Types.ObjectId[]) ?? []).length;
       }
-      const rows = b.rows as string[][] | undefined;
-      const headers = (b.headers as string[]) ?? [];
-      if (rows?.length && headers.length) {
-        const c = countFromSheet(headers, rows);
-        activeLeads += c.active;
-        wonLeads += c.leads;
-      }
+    }
+
+    if (masterDoc?.rows?.length && (masterDoc.headers as string[])?.length) {
+      const masterCounts = countFromSheet(
+        masterDoc.headers as string[],
+        masterDoc.rows as string[][],
+      );
+      activeLeads = masterCounts.active;
+      wonLeads = masterCounts.leads;
     }
 
     const hasMasterAccess = !!masterDoc?.rows?.length;
@@ -173,9 +183,11 @@ export class AnalyticsService {
     } | null = null;
 
     if (hasMasterAccess && masterDoc?.rows?.length) {
+      const masterUpdatedAt = (masterDoc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? 0;
       const coverage = await this.batchesService.getMasterBatchCoverage(
         masterDoc.headers as string[],
         masterDoc.rows as string[][],
+        masterUpdatedAt,
       );
       masterData = {
         totalRows: masterDoc.rows.length,
@@ -184,14 +196,6 @@ export class AnalyticsService {
         batchesFromMaster: coverage.summary.batchesFromMaster,
       };
     }
-
-    const dbCheck = health.checks.database;
-    const mongoLabel =
-      dbCheck.status === 'up'
-        ? 'Connected'
-        : dbCheck.status === 'connecting'
-          ? 'Connecting'
-          : 'Down';
 
     return {
       health: {
@@ -274,6 +278,8 @@ export class AnalyticsService {
         .exec(),
       this.activityLogModel
         .find({ userId: oid, occurredAt: { $gte: monthStart, $lte: monthEnd } })
+        .sort({ occurredAt: -1 })
+        .limit(2500)
         .lean()
         .exec(),
       this.activityLogModel
@@ -488,45 +494,21 @@ export class AnalyticsService {
       this.userModel.countDocuments({ isActive: true }),
       this.userModel.countDocuments({ createdAt: { $gte: startOfMonth } }),
       this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).select('headers rows').lean().exec(),
-      this.batchModel.find().select('headers rows').lean().exec(),
+      this.batchModel.find().select('rowCount').lean().exec(),
     ]);
 
     let totalLeads = 0;
     let activeLeads = 0;
     let statusLeads = 0;
 
-    // Count from master data
     if (masterData?.rows?.length) {
       const c = countFromSheet(
         (masterData as { headers?: string[] }).headers ?? [],
         masterData.rows as string[][],
       );
-      totalLeads += c.total;
-      activeLeads += c.active;
-      statusLeads += c.leads;
-    }
-
-    // Only include batch stats while master data exists (admin purge removes both)
-    if (masterData?.rows?.length) {
-      const masterCounts = countFromSheet(
-        (masterData as { headers?: string[] }).headers ?? [],
-        masterData.rows as string[][],
-      );
-      // Recalculate: master only for totals, master+batches for active
-      totalLeads = masterCounts.total;
-      activeLeads = masterCounts.active;
-      statusLeads = masterCounts.leads;
-
-      // Add from batches too (batches may have updated Status values)
-      for (const batch of batches) {
-        if (!batch.rows?.length) continue;
-        const c = countFromSheet(
-          (batch.headers as string[]) ?? [],
-          batch.rows as string[][],
-        );
-        activeLeads += c.active;
-        statusLeads += c.leads;
-      }
+      totalLeads = c.total;
+      activeLeads = c.active;
+      statusLeads = c.leads;
     }
 
     const batchCount = batches.length;
@@ -556,9 +538,9 @@ export class AnalyticsService {
   }
 
   private async loadChartData() {
-    const [masterData, batches] = await Promise.all([
+    const [masterData, batchCount] = await Promise.all([
       this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).select('headers rows').lean().exec(),
-      this.batchModel.find().select('headers rows').lean().exec(),
+      this.batchModel.countDocuments().exec(),
     ]);
 
     const combinedMap = new Map<string, number>();
@@ -571,17 +553,6 @@ export class AnalyticsService {
       );
       totalLeads = c.total;
       c.statusBreakdown.forEach((v, k) => combinedMap.set(k, (combinedMap.get(k) ?? 0) + v));
-    }
-
-    if (masterData?.rows?.length) {
-      for (const batch of batches) {
-        if (!batch.rows?.length) continue;
-        const c = countFromSheet(
-          (batch.headers as string[]) ?? [],
-          batch.rows as string[][],
-        );
-        c.statusBreakdown.forEach((v, k) => combinedMap.set(k, (combinedMap.get(k) ?? 0) + v));
-      }
     }
 
     if (combinedMap.size === 0) {
@@ -606,7 +577,7 @@ export class AnalyticsService {
       totalLeads,
       trackedRows: breakdownTotal,
       uniqueStatuses: statusBreakdown.length,
-      batchCount: batches.length,
+      batchCount,
       topStatus,
       topStatusPct,
     };

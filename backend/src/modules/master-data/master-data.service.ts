@@ -932,6 +932,7 @@ export class MasterDataService {
         const coverage = await this.batchesService.getMasterBatchCoverage(
           doc.headers,
           doc.rows,
+          (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? 0,
         );
         if (isDbAdminOnly) {
           return { summary: coverage.summary, batchedByRow: {} };
@@ -1000,7 +1001,12 @@ export class MasterDataService {
     const pageIndices = indices.slice(start, start + limit);
     const rows = pageIndices.map((i) => allRows[i]);
 
-    const fullCoverage = await this.batchesService.getMasterBatchCoverage(headers, allRows);
+    const masterRevision = (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? 0;
+    const fullCoverage = await this.batchesService.getMasterBatchCoverage(
+      headers,
+      allRows,
+      masterRevision,
+    );
     const batchedByRow: Record<string, Array<{ id: string; name: string }>> = {};
     for (const idx of pageIndices) {
       const key = String(idx);
@@ -1028,20 +1034,31 @@ export class MasterDataService {
       throw new ForbiddenException('Access denied');
     }
 
-    const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+    const doc = await this.masterDataModel
+      .findOne({ key: MASTER_DATA_KEY })
+      .select('headers rows updatedAt')
+      .lean()
+      .exec();
     if (!doc) {
       throw new NotFoundException('No master data uploaded yet');
     }
 
-    const headers = doc.headers as string[];
-    const rows = doc.rows as string[][];
-    const columns = buildMasterDataFilterSchema(headers, rows);
-
-    return {
-      totalRows: rows.length,
-      headers,
-      columns,
-    };
+    const revision =
+      (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? doc.rows?.length ?? 0;
+    return this.cache.wrap(
+      `master:filter-schema:${revision}`,
+      cacheTtlSeconds(this.config, 'long'),
+      async () => {
+        const headers = doc.headers as string[];
+        const rows = doc.rows as string[][];
+        const columns = buildMasterDataFilterSchema(headers, rows);
+        return {
+          totalRows: rows.length,
+          headers,
+          columns,
+        };
+      },
+    );
   }
 
   async getColumnOptions(header: string, q?: string, limit = 40, roles: string[] = []) {

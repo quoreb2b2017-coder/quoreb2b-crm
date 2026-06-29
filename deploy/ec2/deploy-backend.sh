@@ -37,7 +37,8 @@ if [ ! -f "$ENV_FILE" ]; then
 fi
 
 echo "==> Pulling latest code..."
-git pull origin main
+git fetch origin main
+git reset --hard origin/main
 
 echo "==> Ensuring Redis is running..."
 bash "$APP_DIR/deploy/ec2/ensure-redis.sh"

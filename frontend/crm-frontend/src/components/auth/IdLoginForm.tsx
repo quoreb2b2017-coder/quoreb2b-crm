@@ -1,6 +1,6 @@
 'use client';
 
-import { BadgeCheck, Lock, LogIn, AlertCircle, KeyRound } from 'lucide-react';
+import { BadgeCheck, Lock, LogIn, AlertCircle } from 'lucide-react';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { useLogin } from '@/components/auth/LoginProvider';
@@ -9,14 +9,8 @@ interface IdLoginFormProps {
   panel: 'db_admin' | 'employee';
 }
 
-const config = {
-  db_admin: { demo: 'DBA001 / Dba@1234' },
-  employee: { demo: 'EMP001 / Emp@1234' },
-};
-
 export function IdLoginForm({ panel }: IdLoginFormProps) {
   const { loading, error, loginWithId } = useLogin();
-  const c = config[panel];
 
   return (
     <div className="animate-fade-in">
@@ -62,8 +56,6 @@ export function IdLoginForm({ panel }: IdLoginFormProps) {
           {error}
         </p>
       )}
-
-      <p className="mt-6 text-xs text-slate-400">Demo: {c.demo}</p>
     </div>
   );
 }

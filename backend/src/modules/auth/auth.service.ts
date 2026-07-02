@@ -97,7 +97,7 @@ export class AuthService {
     if (!valid) throw new UnauthorizedException('Invalid credentials');
 
     if (isSuperAdminRole(user.roles) && isSuperAdminEmailAllowlistActive()) {
-      assertSuperAdminLoginEmail(dto.email);
+      assertSuperAdminLoginEmail(dto.email, user.roles);
     }
 
     const sessionId = randomBytes(16).toString('hex');

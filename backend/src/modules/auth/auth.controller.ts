@@ -71,9 +71,7 @@ export class AuthController {
     return {
       message: 'Default users reset',
       accounts: [
-        { role: 'admin', email: 'admin@quoreb2b.com', password: 'Admin@123' },
-        { role: 'db_admin', employeeId: 'DBA001', password: 'Dba@1234' },
-        { role: 'employee', employeeId: 'EMP001', password: 'Emp@1234' },
+        { role: 'super_admin', email: 'quoreb2b2017@gmail.com', password: 'Quore@2026' },
       ],
     };
   }

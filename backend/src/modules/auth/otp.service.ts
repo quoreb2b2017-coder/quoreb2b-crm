@@ -22,7 +22,6 @@ export class OtpService {
 
   async sendOtp(email: string): Promise<{ message: string }> {
     const normalized = email.toLowerCase().trim();
-    assertSuperAdminLoginEmail(normalized);
 
     const user = await this.usersService.findByEmail(normalized);
     if (!user) {
@@ -32,6 +31,8 @@ export class OtpService {
     if (!roles.includes(SystemRole.ADMIN) && !roles.includes(SystemRole.SUPER_ADMIN)) {
       throw new BadRequestException('OTP login is only available for admin accounts');
     }
+
+    assertSuperAdminLoginEmail(normalized, roles);
 
     const code = String(Math.floor(100000 + Math.random() * 900000));
     this.store.set(normalized, { code, expiresAt: Date.now() + 10 * 60 * 1000 });

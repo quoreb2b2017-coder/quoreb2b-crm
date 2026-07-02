@@ -15,15 +15,8 @@ interface SeedUser {
   employeeId?: string;
 }
 
+/** Only the primary bootstrap super admin — no dummy employees or db admins. */
 const DEFAULT_USERS: SeedUser[] = [
-  {
-    email: 'admin@quoreb2b.com',
-    password: 'Admin@123',
-    firstName: 'Super',
-    lastName: 'Admin',
-    roles: [SystemRole.SUPER_ADMIN, SystemRole.ADMIN],
-    panel: PanelType.CRM,
-  },
   {
     email: 'quoreb2b2017@gmail.com',
     password: 'Quore@2026',
@@ -32,41 +25,17 @@ const DEFAULT_USERS: SeedUser[] = [
     roles: [SystemRole.SUPER_ADMIN, SystemRole.ADMIN],
     panel: PanelType.CRM,
   },
-  {
-    email: 'rohit@quoreb2b.com',
-    password: 'Rohit@Quore2026',
-    firstName: 'Rohit',
-    lastName: 'Admin',
-    roles: [SystemRole.SUPER_ADMIN, SystemRole.ADMIN],
-    panel: PanelType.CRM,
-  },
-  {
-    email: 'sadik@quoreb2b.com',
-    password: 'Sadik@Quore2026',
-    firstName: 'Sadik',
-    lastName: 'Admin',
-    roles: [SystemRole.SUPER_ADMIN, SystemRole.ADMIN],
-    panel: PanelType.CRM,
-  },
-  {
-    email: 'dba@quoreb2b.com',
-    password: 'Dba@1234',
-    firstName: 'Database',
-    lastName: 'Admin',
-    employeeId: 'DBA001',
-    roles: [SystemRole.DB_ADMIN],
-    panel: PanelType.DB_ADMIN,
-  },
-  {
-    email: 'employee@quoreb2b.com',
-    password: 'Emp@1234',
-    firstName: 'John',
-    lastName: 'Employee',
-    employeeId: 'EMP001',
-    roles: [SystemRole.EMPLOYEE],
-    panel: PanelType.CRM,
-  },
 ];
+
+const LEGACY_SEED_EMAILS = [
+  'admin@quoreb2b.com',
+  'rohit@quoreb2b.com',
+  'sadik@quoreb2b.com',
+  'dba@quoreb2b.com',
+  'employee@quoreb2b.com',
+];
+
+const LEGACY_SEED_EMPLOYEE_IDS = ['DBA001', 'EMP001'];
 
 @Injectable()
 export class SeedService implements OnModuleInit {
@@ -79,7 +48,21 @@ export class SeedService implements OnModuleInit {
   }
 
   async reseed() {
+    await this.removeLegacySeedUsers();
     await this.seedDefaultUsers();
+  }
+
+  private async removeLegacySeedUsers() {
+    const emails = LEGACY_SEED_EMAILS.map((e) => e.toLowerCase().trim());
+    const result = await this.userModel.deleteMany({
+      $or: [
+        { email: { $in: emails } },
+        { employeeId: { $in: LEGACY_SEED_EMPLOYEE_IDS } },
+      ],
+    });
+    if (result.deletedCount > 0) {
+      this.logger.log(`Removed ${result.deletedCount} legacy seed user(s)`);
+    }
   }
 
   private async seedDefaultUsers() {
@@ -111,9 +94,7 @@ export class SeedService implements OnModuleInit {
         await this.userModel.updateOne({ employeeId }, { $set: doc }, { upsert: true });
       }
 
-      this.logger.log(
-        `Default user ready: ${email}${employeeId ? ` (${employeeId})` : ''} → password: ${u.password}`,
-      );
+      this.logger.log(`Default user ready: ${email}`);
     }
   }
 }

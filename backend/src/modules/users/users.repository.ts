@@ -4,11 +4,8 @@ import { Model, Types } from 'mongoose';
 import { BaseRepository } from '../../common/repositories/base.repository';
 import { User } from './schemas/user.schema';
 
-/** Maps default employee IDs to seeded emails (fallback login lookup). */
-export const EMPLOYEE_ID_EMAIL_MAP: Record<string, string> = {
-  DBA001: 'dba@quoreb2b.com',
-  EMP001: 'employee@quoreb2b.com',
-};
+/** Fallback employee-ID lookup (empty — no demo accounts). */
+export const EMPLOYEE_ID_EMAIL_MAP: Record<string, string> = {};
 
 @Injectable()
 export class UsersRepository extends BaseRepository<User> {

@@ -67,6 +67,9 @@ export class UsersService {
   }
 
   async createByAdmin(dto: CreateUserDto, actor?: ActivityActor) {
+    const roles = this.normalizeAdminRoles(dto.roles);
+    this.assertRoleAssignmentAllowed(roles, actor);
+
     const existing = await this.repository.findByEmail(dto.email);
     if (existing) throw new ConflictException('Email already registered');
 
@@ -75,7 +78,13 @@ export class UsersService {
       if (existingId) throw new ConflictException('Employee ID already in use');
     }
 
-    const panel = dto.panel ?? this.panelForRoles(dto.roles);
+    const needsEmployeeId =
+      roles.includes(SystemRole.EMPLOYEE) || roles.includes(SystemRole.DB_ADMIN);
+    if (needsEmployeeId && !dto.employeeId?.trim()) {
+      throw new BadRequestException('Employee ID is required for this role');
+    }
+
+    const panel = dto.panel ?? this.panelForRoles(roles);
     const passwordHash = await bcrypt.hash(dto.password, 12);
 
     const user = await this.repository.create({
@@ -85,7 +94,7 @@ export class UsersService {
       firstName: dto.firstName,
       lastName: dto.lastName,
       employeeId: dto.employeeId?.toUpperCase(),
-      roles: dto.roles,
+      roles,
       panel,
       permissions: [],
       isActive: true,
@@ -288,6 +297,37 @@ export class UsersService {
       { userId: new Types.ObjectId(userId), isRevoked: false },
       { $set: { isRevoked: true } },
     );
+  }
+
+  private normalizeAdminRoles(roles: SystemRole[]): SystemRole[] {
+    if (roles.includes(SystemRole.SUPER_ADMIN)) {
+      return [SystemRole.SUPER_ADMIN, SystemRole.ADMIN];
+    }
+    return roles;
+  }
+
+  private assertRoleAssignmentAllowed(targetRoles: SystemRole[], actor?: ActivityActor) {
+    const actorRoles = actor?.roles ?? [];
+    const actorIsSuperAdmin = actorRoles.includes(SystemRole.SUPER_ADMIN);
+
+    const allowedTargets = new Set<SystemRole>([
+      SystemRole.EMPLOYEE,
+      SystemRole.DB_ADMIN,
+      SystemRole.SUPER_ADMIN,
+      SystemRole.ADMIN,
+    ]);
+
+    for (const role of targetRoles) {
+      if (!allowedTargets.has(role)) {
+        throw new ForbiddenException(`Role "${role}" cannot be assigned from admin panel`);
+      }
+    }
+
+    const assignsAdmin =
+      targetRoles.includes(SystemRole.SUPER_ADMIN) || targetRoles.includes(SystemRole.ADMIN);
+    if (assignsAdmin && !actorIsSuperAdmin) {
+      throw new ForbiddenException('Only Super Admin can create admin accounts');
+    }
   }
 
   private assertManageable(user: User) {

@@ -51,7 +51,7 @@ restore_from_container() {
   fi
   echo "==> Restoring $ENV_FILE from running container $CONTAINER_NAME..."
   docker inspect "$CONTAINER_NAME" --format '{{range .Config.Env}}{{println .}}{{end}}' \
-    | grep -E '^(NODE_ENV|PORT|API_|APP_|CORS_|SOCKET_|MONGODB_|REDIS_|JWT_|THROTTLE_|SENTRY_|LOG_|BULLMQ_|ELASTICSEARCH_|BULK_|LOGIN_)=' \
+    | grep -E '^(NODE_ENV|PORT|API_|APP_|CORS_|SOCKET_|MONGODB_|REDIS_|JWT_|THROTTLE_|SENTRY_|LOG_|BULLMQ_|ELASTICSEARCH_|BULK_|LOGIN_|SUPER_ADMIN_|RESEND_)=' \
     | sort -u > "$ENV_FILE"
 }
 
@@ -83,6 +83,7 @@ set_env_var LOGIN_ALLOWED_IPS "${LOGIN_ALLOWED_IPS:-125.18.195.150}" "$ENV_FILE"
 set_env_var BULK_EMAIL_SKIP_SMTP_PROBE "${BULK_EMAIL_SKIP_SMTP_PROBE:-true}" "$ENV_FILE"
 set_env_var BULK_EMAIL_MX_ONLY_FALLBACK "${BULK_EMAIL_MX_ONLY_FALLBACK:-true}" "$ENV_FILE"
 set_env_var BULK_EMAIL_SKIP_CATCH_ALL_PROBE "${BULK_EMAIL_SKIP_CATCH_ALL_PROBE:-true}" "$ENV_FILE"
+set_env_var SUPER_ADMIN_LOGIN_EMAILS "${SUPER_ADMIN_LOGIN_EMAILS:-rohit@quoreb2b.com,sadik@quoreb2b.com}" "$ENV_FILE"
 
 REQUIRED_CORS_ORIGINS=(
   "https://crm.quoreb2b.com"

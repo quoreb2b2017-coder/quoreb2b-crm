@@ -14,6 +14,18 @@ const config: Config = {
           700: '#1d4ed8',
           900: '#1e3a8a',
         },
+        quore: {
+          50: '#ecfdf7',
+          100: '#d1faee',
+          200: '#a7f3dc',
+          300: '#6ee7bf',
+          400: '#34d399',
+          500: '#00d19e',
+          600: '#00b386',
+          700: '#009972',
+          800: '#047857',
+          900: '#065f46',
+        },
         crm: {
           sidebar: '#f0f4f8',
           primary: '#2e7ad1',
@@ -22,6 +34,7 @@ const config: Config = {
         },
       },
       boxShadow: {
+        quore: '0 8px 28px rgba(0, 209, 158, 0.22)',
         crm: '0 4px 20px rgba(46, 122, 209, 0.12)',
         'crm-lg': '0 8px 32px rgba(46, 122, 209, 0.14)',
         soft: '0 1px 3px rgba(15, 23, 42, 0.05), 0 4px 16px rgba(15, 23, 42, 0.04)',

@@ -12,16 +12,17 @@ import { IdLoginForm } from './IdLoginForm';
 import { LoginProvider } from './LoginProvider';
 import type { LoginPanel } from '@/types/auth';
 import { IDLE_TIMEOUT_MINUTES } from '@/lib/constants/session';
+import './public-hub.css';
 
 const tabs: { id: LoginPanel; label: string; icon: typeof Shield }[] = [
   { id: 'admin', label: 'Super Admin', icon: Shield },
-  { id: 'db_admin', label: 'DB Administrator', icon: Database },
+  { id: 'db_admin', label: 'DB Admin', icon: Database },
   { id: 'employee', label: 'Employee', icon: Users },
 ];
 
 const features = [
-  { icon: BarChart3, title: 'Role-based dashboards', desc: 'Tailored KPIs and workflows per role.' },
-  { icon: Bell, title: 'Real-time alerts', desc: 'Instant updates on leads and campaigns.' },
+  { icon: BarChart3, title: 'Role-based dashboards', desc: 'KPIs tailored to every team.' },
+  { icon: Bell, title: 'Real-time alerts', desc: 'Live updates on leads and campaigns.' },
   { icon: Lock, title: 'Enterprise security', desc: 'JWT, RBAC, OTP, and audit trails.' },
 ];
 
@@ -36,56 +37,54 @@ export function LoginHub() {
 
   return (
     <LoginProvider>
-    <div className="flex min-h-screen flex-col bg-white">
-      <PublicNavbar />
+      <div className="public-hub">
+        <PublicNavbar />
 
-      {(logoutReason === 'idle' || logoutReason === 'sleep') && (
-        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-center text-sm text-amber-900">
-          {logoutReason === 'sleep'
-            ? 'You were signed out because your PC slept or the screen was locked. Please sign in again.'
-            : `You were signed out after ${IDLE_TIMEOUT_MINUTES} minutes of inactivity. Please sign in again.`}
-        </div>
-      )}
+        {(logoutReason === 'idle' || logoutReason === 'sleep') && (
+          <div className="public-hub__alert">
+            {logoutReason === 'sleep'
+              ? 'You were signed out because your PC slept or the screen was locked. Please sign in again.'
+              : `You were signed out after ${IDLE_TIMEOUT_MINUTES} minutes of inactivity. Please sign in again.`}
+          </div>
+        )}
 
-      <main className="flex-1">
-        <section className="border-b border-slate-100">
-          <div className="mx-auto grid max-w-7xl items-start gap-12 px-4 pt-10 pb-16 sm:px-6 lg:grid-cols-2 lg:gap-20 lg:px-8 lg:pt-12 lg:pb-20">
-            <div className="flex flex-col">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-600">
-                Enterprise portal
-              </p>
-              <h1 className="mt-4 text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl">
-                QuoreB2B CRM
-              </h1>
-              <p className="mt-5 max-w-md text-base leading-relaxed text-slate-600">
-                Secure sign-in for administrators, database teams, and employees. One gateway for
-                your entire organization.
+        <div className="public-hub__body">
+          <aside className="public-hub__brand" aria-label="QuoreB2B">
+            <div className="public-hub__brand-glow public-hub__brand-glow--a" />
+            <div className="public-hub__brand-glow public-hub__brand-glow--b" />
+
+            <div className="public-hub__brand-copy">
+              <h1>Your organization&apos;s secure CRM gateway</h1>
+              <p>
+                Master data, campaigns, attendance, and analytics — one platform for your entire
+                team.
               </p>
 
-              <ul className="mt-12 space-y-6 border-t border-slate-100 pt-10">
+              <ul className="public-hub__points">
                 {features.map((f) => {
                   const Icon = f.icon;
                   return (
-                    <li key={f.title} className="flex gap-4">
-                      <Icon className="mt-0.5 h-5 w-5 shrink-0 text-slate-400" strokeWidth={1.5} />
+                    <li key={f.title} className="public-hub__point">
+                      <span className="public-hub__point-icon">
+                        <Icon className="h-4 w-4" strokeWidth={2} />
+                      </span>
                       <div>
-                        <p className="font-medium text-slate-900">{f.title}</p>
-                        <p className="mt-1 text-sm text-slate-500">{f.desc}</p>
+                        <p className="public-hub__point-title">{f.title}</p>
+                        <p className="public-hub__point-desc">{f.desc}</p>
                       </div>
                     </li>
                   );
                 })}
               </ul>
             </div>
+          </aside>
 
-            <div id="sign-in" className="flex flex-col lg:border-l lg:border-slate-100 lg:pl-16">
-              <h2 className="text-2xl font-semibold text-slate-900">Sign in</h2>
-              <p className="mt-1 text-sm text-slate-500">Select your role and enter credentials</p>
+          <main className="public-hub__signin" id="sign-in">
+            <div className="public-hub__signin-inner">
+              <h2 className="public-hub__signin-title">Sign in</h2>
+              <p className="public-hub__signin-sub">Choose your role and enter credentials</p>
 
-              <nav
-                className="mt-8 flex gap-6 border-b border-slate-200"
-                aria-label="Sign in role"
-              >
+              <nav className="public-hub__roles" aria-label="Sign in role">
                 {tabs.map((tab) => {
                   const Icon = tab.icon;
                   const isActive = active === tab.id;
@@ -95,35 +94,32 @@ export function LoginHub() {
                       type="button"
                       onClick={() => setActive(tab.id)}
                       className={cn(
-                        'flex items-center gap-2 border-b-2 pb-3 text-sm font-medium transition-colors -mb-px',
-                        isActive
-                          ? 'border-slate-900 text-slate-900'
-                          : 'border-transparent text-slate-500 hover:text-slate-700',
+                        'public-hub__role',
+                        isActive ? 'public-hub__role--active' : 'public-hub__role--idle',
                       )}
                     >
-                      <Icon className="h-4 w-4" strokeWidth={1.75} />
+                      <Icon className="h-3.5 w-3.5" strokeWidth={2} />
                       {tab.label}
                     </button>
                   );
                 })}
               </nav>
 
-              <div className="mt-10 max-w-md animate-slide-up" key={active}>
+              <div className="public-hub__form animate-slide-up" key={active}>
                 {active === 'admin' && <AdminLoginForm />}
                 {active === 'db_admin' && <IdLoginForm panel="db_admin" />}
                 {active === 'employee' && <IdLoginForm panel="employee" />}
               </div>
 
-              <p className="mt-10 text-xs text-slate-400">
-                Authorized personnel only. All access is logged.
+              <p className="public-hub__fineprint">
+                Authorized personnel only. All access is logged and monitored.
               </p>
             </div>
-          </div>
-        </section>
-      </main>
+          </main>
+        </div>
 
-      <PublicFooter />
-    </div>
+        <PublicFooter />
+      </div>
     </LoginProvider>
   );
 }

@@ -7,7 +7,12 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
 export const metadata: Metadata = {
   title: 'QuoreB2B CRM',
-  description: 'Enterprise B2B CRM - Admin, Employee & DB Admin Panels',
+  description: 'Enterprise B2B CRM — Admin, Employee & DB Admin Panels',
+  icons: {
+    icon: [{ url: '/brand/quore-icon.png', type: 'image/png' }],
+    apple: '/brand/quore-icon.png',
+    shortcut: '/brand/quore-icon.png',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

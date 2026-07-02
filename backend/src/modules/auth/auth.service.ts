@@ -13,6 +13,11 @@ import { randomBytes } from 'crypto';
 import { Request } from 'express';
 import { extractClientIp } from '../../common/utils/client-ip.util';
 import { assertLoginIpAllowed } from '../../config/login-ip-restriction.util';
+import {
+  assertSuperAdminLoginEmail,
+  isSuperAdminRole,
+  isSuperAdminEmailAllowlistActive,
+} from '../../config/super-admin-login.util';
 import { UsersService } from '../users/users.service';
 import { LoginDto, RegisterDto } from './dto/login.dto';
 import { EmployeeIdLoginDto } from './dto/employee-login.dto';
@@ -90,6 +95,10 @@ export class AuthService {
 
     const valid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!valid) throw new UnauthorizedException('Invalid credentials');
+
+    if (isSuperAdminRole(user.roles) && isSuperAdminEmailAllowlistActive()) {
+      assertSuperAdminLoginEmail(dto.email);
+    }
 
     const sessionId = randomBytes(16).toString('hex');
     const meta = req ? extractMeta(req) : { ip: 'unknown', userAgent: 'unknown' };

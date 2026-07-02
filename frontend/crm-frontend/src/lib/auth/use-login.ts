@@ -17,6 +17,7 @@ import { extractApiError } from '@/lib/api/errors';
 import { markFreshLogin } from '@/lib/auth/sleep-logout';
 import { stashLoginPunch } from '@/lib/auth/login-punch';
 import { stashLoginWelcome } from '@/lib/auth/login-welcome';
+import { isLoginIpDeniedError } from '@/lib/auth/login-errors';
 
 function formatLoginError(e: unknown): string {
   const err = e as { code?: string; message?: string };
@@ -36,6 +37,25 @@ export function useLoginCore() {
   const setAuth = useAuthStore((s) => s.setAuth);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [ipDenied, setIpDenied] = useState(false);
+
+  const handleLoginFailure = (e: unknown) => {
+    if (isLoginIpDeniedError(e)) {
+      setIpDenied(true);
+      setError('');
+    } else {
+      setError(formatLoginError(e));
+    }
+    setLoading(false);
+  };
+
+  const clearIpDenied = () => setIpDenied(false);
+
+  const beginLoginAttempt = () => {
+    setLoading(true);
+    setError('');
+    setIpDenied(false);
+  };
 
   const completeLogin = (tokens: AuthTokens, panel: LoginPanel) => {
     markFreshLogin();
@@ -67,8 +87,7 @@ export function useLoginCore() {
   };
 
   const loginAdminPassword = async (email: string, password: string) => {
-    setLoading(true);
-    setError('');
+    beginLoginAttempt();
     try {
       const tokens = await loginWithEmail(email, password);
       const roles = tokens.user.roles ?? [];
@@ -77,36 +96,31 @@ export function useLoginCore() {
       }
       completeLogin(tokens, 'admin');
     } catch (e: unknown) {
-      setError(formatLoginError(e));
-      setLoading(false);
+      handleLoginFailure(e);
     }
   };
 
   const loginAdminOtpRequest = async (
     email: string,
-  ): Promise<{ ok: boolean; devOtp?: string }> => {
-    setLoading(true);
-    setError('');
+  ): Promise<{ ok: boolean }> => {
+    beginLoginAttempt();
     try {
-      const result = await requestAdminOtp(email);
+      await requestAdminOtp(email);
       setLoading(false);
-      return { ok: true, devOtp: result.devOtp };
+      return { ok: true };
     } catch (e: unknown) {
-      setError(formatLoginError(e));
-      setLoading(false);
+      handleLoginFailure(e);
       return { ok: false };
     }
   };
 
   const loginAdminOtpVerify = async (email: string, otp: string) => {
-    setLoading(true);
-    setError('');
+    beginLoginAttempt();
     try {
       const tokens = await loginWithOtp(email, otp);
       completeLogin(tokens, 'admin');
     } catch (e: unknown) {
-      setError(formatLoginError(e));
-      setLoading(false);
+      handleLoginFailure(e);
     }
   };
 
@@ -115,8 +129,7 @@ export function useLoginCore() {
     password: string,
     panel: 'db_admin' | 'employee',
   ) => {
-    setLoading(true);
-    setError('');
+    beginLoginAttempt();
     try {
       const tokens = await loginWithEmployeeId(employeeId, password);
       const roles = tokens.user.roles ?? [];
@@ -128,8 +141,7 @@ export function useLoginCore() {
       }
       completeLogin(tokens, panel);
     } catch (e: unknown) {
-      setError(formatLoginError(e));
-      setLoading(false);
+      handleLoginFailure(e);
     }
   };
 
@@ -137,6 +149,8 @@ export function useLoginCore() {
     loading,
     error,
     setError,
+    ipDenied,
+    clearIpDenied,
     loginAdminPassword,
     loginAdminOtpRequest,
     loginAdminOtpVerify,

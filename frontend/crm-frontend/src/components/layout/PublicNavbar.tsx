@@ -1,24 +1,20 @@
-import Link from 'next/link';
-import { LogIn, LayoutDashboard } from 'lucide-react';
+import { ArrowRight, LogIn } from 'lucide-react';
+import { BrandLogo } from '@/components/brand/BrandLogo';
 
 export function PublicNavbar() {
   return (
-    <header className="sticky top-0 z-50 border-b border-slate-200 bg-white">
-      <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link href="/" className="flex items-center gap-2.5">
-          <LayoutDashboard className="h-5 w-5 text-slate-900" strokeWidth={2} />
-          <span className="text-sm font-semibold tracking-tight text-slate-900">
-            QuoreB2B <span className="font-normal text-slate-500">CRM</span>
-          </span>
-        </Link>
+    <header className="public-hub__nav">
+      <div className="public-hub__nav-accent" aria-hidden />
+      <div className="public-hub__nav-shell">
+        <div className="public-hub__nav-inner">
+          <BrandLogo variant="navbar" showSubtitle={false} />
 
-        <a
-          href="#sign-in"
-          className="inline-flex items-center gap-2 text-sm font-medium text-slate-700 transition-colors hover:text-brand-600"
-        >
-          <LogIn className="h-4 w-4" />
-          Sign in
-        </a>
+          <a href="#sign-in" className="public-hub__nav-cta">
+            <LogIn className="h-4 w-4" strokeWidth={2.25} />
+            <span>Sign in</span>
+            <ArrowRight className="public-hub__nav-cta-arrow h-3.5 w-3.5" strokeWidth={2.5} />
+          </a>
+        </div>
       </div>
     </header>
   );

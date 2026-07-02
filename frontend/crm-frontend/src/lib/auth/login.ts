@@ -30,9 +30,8 @@ export async function loginWithEmployeeId(
   return payload;
 }
 
-export async function requestAdminOtp(email: string): Promise<{ devOtp?: string }> {
-  const { data } = await authService.sendOtp({ email });
-  return unwrapApiData<{ message: string; devOtp?: string }>({ data });
+export async function requestAdminOtp(email: string): Promise<void> {
+  await authService.sendOtp({ email });
 }
 
 export async function loginWithOtp(email: string, otp: string): Promise<AuthTokens> {

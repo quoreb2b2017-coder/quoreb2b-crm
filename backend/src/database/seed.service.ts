@@ -25,6 +25,22 @@ const DEFAULT_USERS: SeedUser[] = [
     panel: PanelType.CRM,
   },
   {
+    email: 'rohit@quoreb2b.com',
+    password: 'Rohit@Quore2026',
+    firstName: 'Rohit',
+    lastName: 'Admin',
+    roles: [SystemRole.SUPER_ADMIN, SystemRole.ADMIN],
+    panel: PanelType.CRM,
+  },
+  {
+    email: 'sadik@quoreb2b.com',
+    password: 'Sadik@Quore2026',
+    firstName: 'Sadik',
+    lastName: 'Admin',
+    roles: [SystemRole.SUPER_ADMIN, SystemRole.ADMIN],
+    panel: PanelType.CRM,
+  },
+  {
     email: 'dba@quoreb2b.com',
     password: 'Dba@1234',
     firstName: 'Database',

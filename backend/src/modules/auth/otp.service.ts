@@ -1,6 +1,9 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { UsersService } from '../users/users.service';
 import { SystemRole } from '../../common/constants/roles.constant';
+import { assertSuperAdminLoginEmail } from '../../config/super-admin-login.util';
+import { ResendMailService } from './resend-mail.service';
 
 interface OtpEntry {
   code: string;
@@ -11,10 +14,17 @@ interface OtpEntry {
 export class OtpService {
   private readonly store = new Map<string, OtpEntry>();
 
-  constructor(private usersService: UsersService) {}
+  constructor(
+    private usersService: UsersService,
+    private resendMail: ResendMailService,
+    private config: ConfigService,
+  ) {}
 
-  async sendOtp(email: string): Promise<{ message: string; devOtp?: string }> {
-    const user = await this.usersService.findByEmail(email.toLowerCase());
+  async sendOtp(email: string): Promise<{ message: string }> {
+    const normalized = email.toLowerCase().trim();
+    assertSuperAdminLoginEmail(normalized);
+
+    const user = await this.usersService.findByEmail(normalized);
     if (!user) {
       throw new BadRequestException('No admin account found for this email');
     }
@@ -24,20 +34,30 @@ export class OtpService {
     }
 
     const code = String(Math.floor(100000 + Math.random() * 900000));
-    const key = email.toLowerCase();
-    this.store.set(key, { code, expiresAt: Date.now() + 10 * 60 * 1000 });
+    this.store.set(normalized, { code, expiresAt: Date.now() + 10 * 60 * 1000 });
 
-    const response: { message: string; devOtp?: string } = {
-      message: 'OTP sent to your email',
-    };
-    if (process.env.NODE_ENV !== 'production') {
-      response.devOtp = code;
+    const devFallback =
+      this.config.get<string>('NODE_ENV') !== 'production' &&
+      process.env.OTP_DEV_FALLBACK === 'true';
+
+    if (this.resendMail.isConfigured()) {
+      await this.resendMail.sendOtpEmail(normalized, code);
+      return { message: 'OTP sent to your email' };
     }
-    return response;
+
+    if (devFallback) {
+      // Local-only escape hatch — never enabled in production.
+      console.warn(`[OTP_DEV_FALLBACK] code for ${normalized}: ${code}`);
+      return { message: 'OTP sent to your email' };
+    }
+
+    throw new InternalServerErrorException(
+      'Email service is not configured. Set RESEND_API_KEY on the server.',
+    );
   }
 
   verifyOtp(email: string, otp: string): boolean {
-    const key = email.toLowerCase();
+    const key = email.toLowerCase().trim();
     const entry = this.store.get(key);
     if (!entry || entry.expiresAt < Date.now()) {
       this.store.delete(key);

@@ -38,6 +38,9 @@ export default () => ({
   LOG_LEVEL: process.env.LOG_LEVEL || 'debug',
   /** Production login IP allowlist (comma-separated). Empty = no IP restriction. */
   LOGIN_ALLOWED_IPS: process.env.LOGIN_ALLOWED_IPS || '',
+  SUPER_ADMIN_LOGIN_EMAILS: process.env.SUPER_ADMIN_LOGIN_EMAILS || '',
+  RESEND_API_KEY: process.env.RESEND_API_KEY || '',
+  RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL || '',
   SOCKET_CORS_ORIGINS: process.env.SOCKET_CORS_ORIGINS,
   BULK_EMAIL_SMTP_FROM: process.env.BULK_EMAIL_SMTP_FROM,
   BULK_EMAIL_DOMAIN_CACHE_TTL_MS: parseInt(

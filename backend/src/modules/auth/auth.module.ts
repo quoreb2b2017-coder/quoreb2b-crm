@@ -6,6 +6,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { OtpService } from './otp.service';
+import { ResendMailService } from './resend-mail.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RefreshToken, RefreshTokenSchema } from './schemas/refresh-token.schema';
 import { UsersModule } from '../users/users.module';
@@ -27,7 +28,7 @@ import { AttendanceModule } from '../attendance/attendance.module';
     MongooseModule.forFeature([{ name: RefreshToken.name, schema: RefreshTokenSchema }]),
   ],
   controllers: [AuthController],
-  providers: [AuthService, OtpService, JwtStrategy],
+  providers: [AuthService, OtpService, ResendMailService, JwtStrategy],
   exports: [AuthService, JwtModule],
 })
 export class AuthModule {}

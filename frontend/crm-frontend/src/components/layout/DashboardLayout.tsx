@@ -17,6 +17,7 @@ import {
   useAttendancePanelOptional,
 } from '@/components/attendance/AttendancePanelContext';
 import { CRM_SHELL_THEME } from '@/lib/theme/crm-colors';
+import { BrandLogo } from '@/components/brand/BrandLogo';
 
 export type DashboardVariant = 'admin' | 'db_admin' | 'employee';
 
@@ -417,24 +418,10 @@ function SidebarInner({
         isCollapsed ? 'justify-center px-0 py-2 lg:py-1.5 h-[52px] lg:h-11' : 'justify-between px-3 h-[52px] lg:h-11',
       )}>
         {!isCollapsed && (
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0', t.badgeBg)}>
-              <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
-              </svg>
-            </div>
-            <div className="min-w-0">
-              <p className="text-slate-900 font-bold text-sm leading-none">QuoreB2B</p>
-              <p className="text-[10px] text-slate-500 mt-0.5">CRM Platform</p>
-            </div>
-          </div>
+          <BrandLogo variant="sidebar" href="/" />
         )}
         {isCollapsed && (
-          <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center', t.badgeBg)}>
-            <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
-            </svg>
-          </div>
+          <BrandLogo variant="icon" href="/" />
         )}
         {!isMobile && !isCollapsed && (
           <button onClick={onCollapse} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors flex-shrink-0" title="Collapse sidebar">
@@ -652,24 +639,10 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
           isCollapsed ? 'justify-center px-0 py-2 lg:py-1.5 h-[52px] lg:h-11' : 'justify-between px-3 h-[52px] lg:h-11',
         )}>
           {!isCollapsed && (
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0', t.badgeBg)}>
-                <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                </svg>
-              </div>
-              <div className="min-w-0">
-                <p className="text-slate-900 font-bold text-sm leading-none">QuoreB2B</p>
-                <p className="text-[10px] text-slate-500 mt-0.5">CRM Platform</p>
-              </div>
-            </div>
+            <BrandLogo variant="sidebar" href="/" />
           )}
           {isCollapsed && (
-            <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center', t.badgeBg)}>
-              <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
-              </svg>
-            </div>
+            <BrandLogo variant="icon" href="/" />
           )}
           {!isMobile && !isCollapsed && (
             <button

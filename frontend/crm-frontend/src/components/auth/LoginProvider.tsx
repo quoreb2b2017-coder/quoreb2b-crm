@@ -3,6 +3,7 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import { useLoginCore } from '@/lib/auth/use-login';
 import { LoginLoadingOverlay } from '@/components/auth/LoginLoadingOverlay';
+import { LoginAccessDeniedModal } from '@/components/auth/LoginAccessDeniedModal';
 
 type LoginContextValue = ReturnType<typeof useLoginCore>;
 
@@ -15,6 +16,7 @@ export function LoginProvider({ children }: { children: ReactNode }) {
     <LoginContext.Provider value={login}>
       {children}
       <LoginLoadingOverlay visible={login.loading} />
+      <LoginAccessDeniedModal open={login.ipDenied} onClose={login.clearIpDenied} />
     </LoginContext.Provider>
   );
 }

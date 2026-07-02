@@ -10,6 +10,11 @@ import {
   MasterDataUploadRequest,
   MasterDataUploadRequestSchema,
 } from './schemas/master-data-upload-request.schema';
+import {
+  MasterDataChunk,
+  MasterDataChunkSchema,
+} from './schemas/master-data-chunk.schema';
+import { MasterDataRowStore } from './master-data-row.store';
 import { ActivityLogsModule } from '../activity-logs/activity-logs.module';
 import { BatchesModule } from '../batches/batches.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -22,10 +27,11 @@ import { NotificationsModule } from '../notifications/notifications.module';
     MongooseModule.forFeature([
       { name: MasterDataRecord.name, schema: MasterDataSchema },
       { name: MasterDataUploadRequest.name, schema: MasterDataUploadRequestSchema },
+      { name: MasterDataChunk.name, schema: MasterDataChunkSchema },
     ]),
   ],
   controllers: [MasterDataController],
-  providers: [MasterDataService],
+  providers: [MasterDataService, MasterDataRowStore],
   exports: [MasterDataService],
 })
 export class MasterDataModule {}

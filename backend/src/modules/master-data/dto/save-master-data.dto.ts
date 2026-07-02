@@ -25,7 +25,7 @@ export class SaveMasterDataDto {
   headers: string[];
 
   @IsArray()
-  @ArrayMaxSize(50000)
+  @ArrayMaxSize(1000000)
   @IsArray({ each: true })
   rows: string[][];
 

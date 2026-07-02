@@ -6,8 +6,8 @@ import { useRouter } from 'next/navigation';
 import { Upload, Download, Trash2, Cloud, Loader2, Save, Database, Megaphone, CircleDot } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { ExcelPreviewGrid } from '@/components/admin/ExcelPreviewGrid';
+import { downloadMasterDataTemplate } from '@/lib/spreadsheet/master-data-template';
 import {
-  getSampleMasterData,
   parseSpreadsheetFile,
   type SpreadsheetData,
 } from '@/lib/spreadsheet/parse-spreadsheet';
@@ -315,6 +315,21 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
         toast.error('Cannot load master grid', msg);
         return;
       }
+      if (record.largeDataset || (record.rowCount > 5000 && (record.rows?.length ?? 0) === 0)) {
+        setData({
+          fileName: record.fileName,
+          sheetName: record.sheetName,
+          headers: record.headers,
+          rows: [],
+        });
+        setFilteredRows([]);
+        setFilteredViewActive(false);
+        setTotalRows(record.rowCount);
+        setSavedAt(record.updatedAt ?? record.createdAt ?? new Date().toISOString());
+        setDirty(false);
+        await loadCoverage();
+        return;
+      }
       if (record.rowCount > 0 && (record.rows?.length ?? 0) === 0) {
         const msg =
           'Master data row count is set but no rows arrived from the API. Check backend deploy, CORS, and API timeout.';
@@ -353,15 +368,28 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   const processFile = useCallback(async (file: File) => {
     setParsing(true); setError('');
     try {
+      const mode = replaceOnUpload ? 'replace' : 'append';
+      if (masterDataService.shouldUseServerImport(file)) {
+        toast.info('Uploading large file…', 'Processing on server — this may take several minutes');
+        const record = await masterDataService.importFile(file, mode);
+        applyRecord(record);
+        await logUploadActivity(mode, record, file.name);
+        toast.success(
+          mode === 'append' ? 'Added to master database' : 'Saved to database',
+          `${record.rowCount.toLocaleString()} contacts in master data`,
+        );
+        window.dispatchEvent(new CustomEvent('master-data-updated'));
+        return;
+      }
       const parsed = await parseSpreadsheetFile(file);
-      await persistToDb(parsed, replaceOnUpload ? 'replace' : 'append');
+      await persistToDb(parsed, mode);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to read file';
       setError(msg);
       if (!(e as { response?: unknown })?.response) setData(null);
       toast.error('Upload failed', extractApiError(e, msg));
     } finally { setParsing(false); }
-  }, [persistToDb, replaceOnUpload]);
+  }, [applyRecord, logUploadActivity, persistToDb, replaceOnUpload]);
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -407,11 +435,13 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
     }
   };
 
-  const handleSampleTemplate = async () => {
+  const handleSampleTemplate = () => {
     try {
-      await downloadSpreadsheetXlsx(getSampleMasterData(), 'master-data-template.xlsx');
+      downloadMasterDataTemplate();
       toast.info('Template downloaded', 'Fill and upload');
-    } catch { toast.error('Download failed', 'Could not create template'); }
+    } catch {
+      toast.error('Download failed', 'Could not download template');
+    }
   };
 
   const confirmClearData = async () => {

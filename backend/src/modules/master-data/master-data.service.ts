@@ -40,14 +40,17 @@ import { NotificationTriggerService } from '../notifications/notification-trigge
 import { AppCacheService } from '../../redis/app-cache.service';
 import { ConfigService } from '@nestjs/config';
 import { cacheTtlSeconds } from '../../redis/cache.util';
+import { MasterDataRowStore, MASTER_DATA_LARGE_UI_ROW_LIMIT } from './master-data-row.store';
+import { parseSpreadsheetBuffer } from './master-data-import.util';
 
-const MAX_TOTAL_ROWS = 50000;
+const DEFAULT_MAX_TOTAL_ROWS = 1_000_000;
 const DUPLICATE_PREVIEW_LIMIT = 100;
 
 /** CRM collections wiped on admin clear — user login accounts are kept. */
 const CRM_OPERATIONAL_COLLECTIONS = [
   'batches',
   'master_data',
+  'master_data_chunks',
   'master_data_upload_requests',
   'qcentries',
   'activitylogs',
@@ -82,7 +85,66 @@ export class MasterDataService {
     private notifications: NotificationTriggerService,
     private cache: AppCacheService,
     private config: ConfigService,
+    private rowStore: MasterDataRowStore,
   ) {}
+
+  private maxTotalRows(): number {
+    const configured = Number(this.config.get<string>('MASTER_DATA_MAX_ROWS'));
+    return Number.isFinite(configured) && configured > 0
+      ? configured
+      : DEFAULT_MAX_TOTAL_ROWS;
+  }
+
+  private async loadExistingRows(
+    doc: Pick<MasterDataRecord, 'key' | 'rows' | 'storage' | 'rowCount'> | null,
+  ): Promise<string[][]> {
+    if (!doc) return [];
+    return this.rowStore.loadAllRows(doc);
+  }
+
+  private async persistMasterSheet(
+    params: {
+      headers: string[];
+      rows: string[][];
+      fileName: string;
+      sheetName: string;
+      actor: ActivityActor;
+    },
+  ): Promise<MasterDataRecord> {
+    const { headers, rows, fileName, sheetName, actor } = params;
+    const rowCount = rows.length;
+
+    if (rowCount > this.maxTotalRows()) {
+      throw new BadRequestException(
+        `Master data limit is ${this.maxTotalRows()} rows. Current total would be ${rowCount}.`,
+      );
+    }
+
+    const useChunked = this.rowStore.shouldUseChunkedStorage(rowCount);
+    if (useChunked) {
+      await this.rowStore.saveRows(rows);
+    } else {
+      await this.rowStore.deleteChunks();
+    }
+
+    return this.masterDataModel
+      .findOneAndUpdate(
+        { key: MASTER_DATA_KEY },
+        {
+          key: MASTER_DATA_KEY,
+          fileName,
+          sheetName,
+          headers,
+          rows: useChunked ? [] : rows,
+          rowCount,
+          storage: useChunked ? 'chunked' : 'inline',
+          uploadedBy: actor.id,
+          uploadedByEmail: actor.email,
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      )
+      .exec() as Promise<MasterDataRecord>;
+  }
 
   private rowKey(row: string[]) {
     return row.join('\u001f');
@@ -113,7 +175,7 @@ export class MasterDataService {
 
     const existingKeys = new Set(
       masterDoc
-        ? masterDoc.rows.map((row) =>
+        ? (await this.loadExistingRows(masterDoc)).map((row) =>
             this.rowKey(this.normalizeRowToHeaders(row, masterDoc.headers, headers)),
           )
         : [],
@@ -191,21 +253,16 @@ export class MasterDataService {
       addedRows = rows.length;
       skippedDuplicates = 0;
     } else {
-      const beforeCount = existing.rows.length;
+      const existingRows = await this.loadExistingRows(existing);
+      const beforeCount = existingRows.length;
       const merged = mergeAppendSheets(
-        { headers: existing.headers, rows: existing.rows },
+        { headers: existing.headers, rows: existingRows },
         incoming,
       );
       headers = merged.headers;
       rows = merged.rows;
       addedRows = rows.length - beforeCount;
       skippedDuplicates = incoming.rows.length - addedRows;
-    }
-
-    if (rows.length > MAX_TOTAL_ROWS) {
-      throw new BadRequestException(
-        `Master data limit is ${MAX_TOTAL_ROWS} rows. Current total would be ${rows.length}.`,
-      );
     }
 
     const fileName =
@@ -215,19 +272,13 @@ export class MasterDataService {
           ? existing.fileName.replace(/\(\d+ rows\)$/, `(${rows.length} rows)`)
           : `${existing.fileName} + ${dto.fileName} (${rows.length} rows)`;
 
-    const doc = await this.masterDataModel.findOneAndUpdate(
-      { key: MASTER_DATA_KEY },
-      {
-        key: MASTER_DATA_KEY,
-        fileName,
-        sheetName: dto.sheetName || existing?.sheetName || 'Master Data',
-        headers,
-        rows,
-        uploadedBy: actor.id,
-        uploadedByEmail: actor.email,
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
-    );
+    const doc = await this.persistMasterSheet({
+      headers,
+      rows,
+      fileName,
+      sheetName: dto.sheetName || existing?.sheetName || 'Master Data',
+      actor,
+    });
 
     const detailAction =
       mode === 'replace' ? 'MASTER_DATA_REPLACE' : 'MASTER_DATA_APPEND';
@@ -255,11 +306,30 @@ export class MasterDataService {
 
     void this.bustMasterCaches();
     return {
-      ...this.toResponse(doc),
+      ...(await this.toResponse(doc)),
       addedRows,
       skippedDuplicates,
       mode,
     };
+  }
+
+  async importFromFile(
+    buffer: Buffer,
+    fileName: string,
+    mode: 'append' | 'replace',
+    actor: ActivityActor,
+  ) {
+    const parsed = parseSpreadsheetBuffer(buffer, fileName);
+    return this.save(
+      {
+        fileName: parsed.fileName,
+        sheetName: parsed.sheetName,
+        headers: parsed.headers,
+        rows: parsed.rows,
+        mode,
+      },
+      actor,
+    );
   }
 
   async getCurrent() {
@@ -271,7 +341,7 @@ export class MasterDataService {
         if (!doc) {
           throw new NotFoundException('No master data uploaded yet');
         }
-        return this.toResponse(doc);
+        return await this.toResponse(doc);
       },
     );
   }
@@ -929,9 +999,10 @@ export class MasterDataService {
             batchedByRow: {},
           };
         }
+        const allRows = await this.loadExistingRows(doc);
         const coverage = await this.batchesService.getMasterBatchCoverage(
           doc.headers,
-          doc.rows,
+          allRows,
           (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? 0,
         );
         if (isDbAdminOnly) {
@@ -984,7 +1055,8 @@ export class MasterDataService {
     }
 
     const headers = doc.headers as string[];
-    const allRows = doc.rows as string[][];
+    const allRows = await this.loadExistingRows(doc);
+    const rowCount = this.rowStore.getRowCount(doc);
     const indices = filterMasterDataRows(allRows, headers, {
       query,
       columnFilters,
@@ -1019,7 +1091,7 @@ export class MasterDataService {
       rows,
       sourceRowIndices: pageIndices,
       totalMatches,
-      totalRows: allRows.length,
+      totalRows: rowCount,
       page,
       limit,
       batchedByRow,
@@ -1044,16 +1116,17 @@ export class MasterDataService {
     }
 
     const revision =
-      (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? doc.rows?.length ?? 0;
+      (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ??
+      this.rowStore.getRowCount(doc);
     return this.cache.wrap(
       `master:filter-schema:${revision}`,
       cacheTtlSeconds(this.config, 'long'),
       async () => {
         const headers = doc.headers as string[];
-        const rows = doc.rows as string[][];
+        const rows = await this.loadExistingRows(doc);
         const columns = buildMasterDataFilterSchema(headers, rows);
         return {
-          totalRows: rows.length,
+          totalRows: this.rowStore.getRowCount(doc),
           headers,
           columns,
         };
@@ -1075,7 +1148,7 @@ export class MasterDataService {
     }
 
     const headers = doc.headers as string[];
-    const rows = doc.rows as string[][];
+    const rows = await this.loadExistingRows(doc);
     if (!headers.some((h) => h.toLowerCase() === header.toLowerCase())) {
       throw new BadRequestException('Unknown column');
     }
@@ -1110,7 +1183,7 @@ export class MasterDataService {
       );
     }
 
-    return this.toResponse(doc);
+    return await this.toResponse(doc);
   }
 
   async assertBatchCreatorAccess(actorId: string) {
@@ -1135,12 +1208,13 @@ export class MasterDataService {
       throw new BadRequestException('Select at least one row from the master file');
     }
 
+    const rowCount = this.rowStore.getRowCount(doc);
     const seen = new Set<number>();
     const indices: number[] = [];
     for (const raw of masterSourceRowIndices) {
       const idx = Number(raw);
       if (!Number.isInteger(idx) || seen.has(idx)) continue;
-      if (idx < 0 || idx >= doc.rows.length) {
+      if (idx < 0 || idx >= rowCount) {
         throw new BadRequestException(`Invalid master row selection (row ${idx + 1})`);
       }
       seen.add(idx);
@@ -1150,7 +1224,7 @@ export class MasterDataService {
       throw new BadRequestException('Select at least one row from the master file');
     }
 
-    const rows = indices.map((idx) => doc.rows[idx].map((cell) => String(cell ?? '')));
+    const rows = await this.rowStore.getRowsByIndices(doc, indices);
     return {
       headers: [...doc.headers],
       rows,
@@ -1263,10 +1337,11 @@ export class MasterDataService {
       sheetName: doc.sheetName,
       headers: doc.headers,
       rows: [] as string[][],
-      rowCount: doc.rows.length,
+      rowCount: this.rowStore.getRowCount(doc),
       columnCount: doc.headers.length,
       uploadedByEmail: doc.uploadedByEmail,
       filterRequired: true,
+      largeDataset: true,
       sharedWithDbAdmins: ((doc.sharedWithDbAdmins as Types.ObjectId[]) ?? []).map((u) =>
         u.toString(),
       ),
@@ -1275,15 +1350,21 @@ export class MasterDataService {
     };
   }
 
-  private toResponse(doc: MasterDataRecord) {
+  private async toResponse(doc: MasterDataRecord) {
+    const rowCount = this.rowStore.getRowCount(doc);
+    const largeDataset =
+      this.rowStore.isChunked(doc) || rowCount > MASTER_DATA_LARGE_UI_ROW_LIMIT;
+    const rows = largeDataset ? [] : await this.loadExistingRows(doc);
+
     return {
       id: doc._id.toString(),
       fileName: doc.fileName,
       sheetName: doc.sheetName,
       headers: doc.headers,
-      rows: doc.rows,
-      rowCount: doc.rows.length,
+      rows,
+      rowCount,
       columnCount: doc.headers.length,
+      largeDataset,
       uploadedByEmail: doc.uploadedByEmail,
       sharedWithDbAdmins: ((doc.sharedWithDbAdmins as Types.ObjectId[]) ?? []).map((u) =>
         u.toString(),

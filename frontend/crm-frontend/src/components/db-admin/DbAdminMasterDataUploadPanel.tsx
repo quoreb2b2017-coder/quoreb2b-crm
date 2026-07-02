@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Download, Loader2, RefreshCw, Upload } from 'lucide-react';
 import { parseSpreadsheetFile } from '@/lib/spreadsheet/parse-spreadsheet';
-import { downloadSpreadsheetXlsx } from '@/lib/spreadsheet/export-spreadsheet';
+import { downloadMasterDataTemplate } from '@/lib/spreadsheet/master-data-template';
 import {
   masterDataService,
   type MasterDataRecord,
@@ -76,21 +76,12 @@ export function DbAdminMasterDataUploadPanel() {
   }, [load]);
   useUploadRequestRefresh(load);
 
-  const handleTemplateDownload = async () => {
-    if (!template) return;
+  const handleTemplateDownload = () => {
     try {
-      await downloadSpreadsheetXlsx(
-        {
-          fileName: 'master-template.xlsx',
-          sheetName: template.sheetName || 'Master Template',
-          headers: template.headers,
-          rows: [],
-        },
-        'master-data-template.xlsx',
-      );
-      toast.success('Template downloaded', 'Use this format for DB admin upload requests');
+      downloadMasterDataTemplate();
+      toast.success('Template downloaded', 'Use this format for master data upload');
     } catch {
-      toast.error('Download failed', 'Could not create template');
+      toast.error('Download failed', 'Could not download template');
     }
   };
 
@@ -179,7 +170,7 @@ export function DbAdminMasterDataUploadPanel() {
             <button
               type="button"
               onClick={handleTemplateDownload}
-              disabled={!template}
+              disabled={false}
               className="inline-flex items-center gap-1.5 rounded-xl border border-white/30 bg-white/10 px-3 py-2 text-sm font-semibold text-white backdrop-blur-sm transition-all hover:bg-white/18 disabled:opacity-50"
             >
               <Download className="h-4 w-4" />

@@ -24,8 +24,8 @@ import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
 import { ExcelPreviewGrid } from '@/components/admin/ExcelPreviewGrid';
 import { XlToolbarSelect } from '@/components/admin/XlToolbarSelect';
 import { WORKSPACE_TIMEZONE } from '@/lib/constants/workspace-timezone';
+import { downloadMasterDataTemplate } from '@/lib/spreadsheet/master-data-template';
 import {
-  getSampleMasterData,
   parseSpreadsheetFile,
 } from '@/lib/spreadsheet/parse-spreadsheet';
 import { downloadSpreadsheetXlsx } from '@/lib/spreadsheet/export-spreadsheet';
@@ -593,19 +593,24 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
     if (!file) return;
     setParsing(true);
     try {
-      const parsed = await parseSpreadsheetFile(file);
-      const record = await masterDataService.save(parsed, 'append');
-      const sheet = recordToSpreadsheet(record);
-      setHeaders(sheet.headers);
-      setAllRows(sheet.rows);
-      setDisplayRows(sheet.rows);
-      setSourceIndices(sheet.rows.map((_, i) => i));
+      let record;
+      if (masterDataService.shouldUseServerImport(file)) {
+        toast.info('Uploading…', 'Large file is processed on the server');
+        record = await masterDataService.importFile(file, 'append');
+      } else {
+        const parsed = await parseSpreadsheetFile(file);
+        record = await masterDataService.save(parsed, 'append');
+      }
+      setHeaders(record.headers);
+      setAllRows(record.rows ?? []);
+      setDisplayRows(record.largeDataset ? [] : record.rows ?? []);
+      setSourceIndices((record.rows ?? []).map((_, i) => i));
       setMasterTotalRows(record.rowCount);
       setFilteredTotal(record.rowCount);
-      setHasSearched(true);
+      setHasSearched(record.largeDataset ? false : true);
       setFileName(record.fileName);
       await loadCoverage();
-      toast.success('Data imported', `${record.rowCount} contacts in master database`);
+      toast.success('Data imported', `${record.rowCount.toLocaleString()} contacts in master database`);
       window.dispatchEvent(new CustomEvent('master-data-updated'));
     } catch (err) {
       toast.error('Upload failed', extractApiError(err));
@@ -701,7 +706,7 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
                 <button
                   type="button"
                   className="mdb-btn"
-                  onClick={() => void downloadSpreadsheetXlsx(getSampleMasterData(), 'master-data-template.xlsx')}
+                  onClick={() => downloadMasterDataTemplate()}
                 >
                   <Download className="h-3.5 w-3.5" />
                   Template

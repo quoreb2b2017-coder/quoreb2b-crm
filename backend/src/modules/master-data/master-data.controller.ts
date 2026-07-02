@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import {
   Body,
   Controller,
@@ -8,8 +9,12 @@ import {
   Param,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { MasterDataService } from './master-data.service';
 import { SaveMasterDataDto } from './dto/save-master-data.dto';
 import { SearchMasterDataDto } from './dto/search-master-data.dto';
@@ -27,6 +32,9 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { SystemRole } from '../../common/constants/roles.constant';
 import { actorFromJwt } from '../activity-logs/activity-user.util';
+import { ImportMasterDataFileDto } from './dto/import-master-data-file.dto';
+
+const MASTER_IMPORT_MAX_BYTES = 250 * 1024 * 1024;
 
 @Controller({ path: 'master-data', version: '1' })
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -40,6 +48,30 @@ export class MasterDataController {
     @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
   ) {
     return this.masterDataService.save(dto, actorFromJwt(user));
+  }
+
+  @Post('import-file')
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: MASTER_IMPORT_MAX_BYTES },
+    }),
+  )
+  importFile(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() dto: ImportMasterDataFileDto,
+    @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
+  ) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('Spreadsheet file is required');
+    }
+    return this.masterDataService.importFromFile(
+      file.buffer,
+      file.originalname || 'upload.xlsx',
+      dto.mode ?? 'replace',
+      actorFromJwt(user),
+    );
   }
 
   @Get('current')

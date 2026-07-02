@@ -2,7 +2,8 @@ import apiClient from './client';
 import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
 
 /** Master file payloads can be large — production needs a longer timeout than default 30s. */
-const MASTER_DATA_TIMEOUT_MS = 120_000;
+const MASTER_DATA_TIMEOUT_MS = 600_000;
+const MASTER_IMPORT_THRESHOLD_BYTES = 2 * 1024 * 1024;
 
 export type MasterDataSaveMode = 'append' | 'replace';
 
@@ -32,6 +33,8 @@ export interface MasterDataRecord {
   mode?: MasterDataSaveMode;
   /** DB Admin: rows hidden until filter search */
   filterRequired?: boolean;
+  /** Large dataset — rows omitted; browse via Master File search */
+  largeDataset?: boolean;
 }
 
 export interface MasterDataColumnFilter {
@@ -145,6 +148,22 @@ export const masterDataService = {
       { timeout: MASTER_DATA_TIMEOUT_MS },
     );
     return unwrap<MasterDataRecord>({ data });
+  },
+
+  importFile: async (file: File, mode: MasterDataSaveMode = 'replace') => {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('mode', mode);
+    const { data } = await apiClient.post('/master-data/import-file', form, {
+      timeout: MASTER_DATA_TIMEOUT_MS,
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return unwrap<MasterDataRecord>({ data });
+  },
+
+  shouldUseServerImport(file: File): boolean {
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+    return file.size >= MASTER_IMPORT_THRESHOLD_BYTES || ext === 'xlsx' || ext === 'xls';
   },
 
   getBatchCoverage: async (): Promise<MasterBatchCoverage> => {

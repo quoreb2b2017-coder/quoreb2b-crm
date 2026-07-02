@@ -20,6 +20,12 @@ export class MasterDataRecord extends Document {
   @Prop({ type: [[String]], required: true, default: [] })
   rows: string[][];
 
+  @Prop({ default: 0 })
+  rowCount: number;
+
+  @Prop({ enum: ['inline', 'chunked'], default: 'inline' })
+  storage: 'inline' | 'chunked';
+
   @Prop({ type: Types.ObjectId, ref: 'User' })
   uploadedBy?: Types.ObjectId;
 

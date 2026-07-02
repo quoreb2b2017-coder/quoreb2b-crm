@@ -32,8 +32,8 @@ async function bootstrap() {
   app.use(compression());
 
   // Increase body size limit for large payloads (e.g. master-data bulk imports)
-  app.use(require('express').json({ limit: '50mb' }));
-  app.use(require('express').urlencoded({ limit: '50mb', extended: true }));
+  app.use(require('express').json({ limit: '100mb' }));
+  app.use(require('express').urlencoded({ limit: '100mb', extended: true }));
 
   app.enableCors({
     origin: config.get<string>('CORS_ORIGINS')?.split(',') ?? ['http://localhost:3000'],

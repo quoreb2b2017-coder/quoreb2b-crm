@@ -33,8 +33,9 @@ import {
   masterDataService,
   recordToSpreadsheet,
   type MasterBatchCoverage,
-  type MasterDataImportProgress,
 } from '@/lib/api/master-data.service';
+import { enqueueMasterDataImport } from '@/lib/master-data/master-data-import-tracker';
+import { useMasterDataImportStore } from '@/store/master-data-import.store';
 import { batchesService } from '@/lib/api/batches.service';
 import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
@@ -100,8 +101,10 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
   const [filterSidebarOpen, setFilterSidebarOpen] = useState(true);
 
   const [parsing, setParsing] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<MasterDataImportProgress | null>(null);
-  const [uploadFileName, setUploadFileName] = useState('');
+  const importProgress = useMasterDataImportStore((s) =>
+    s.uiPhase === 'active' ? s.progress : null,
+  );
+  const importFileName = useMasterDataImportStore((s) => s.fileName);
   const [clearModalOpen, setClearModalOpen] = useState(false);
   const [batchModal, setBatchModal] = useState<{
     rows: string[][];
@@ -596,16 +599,17 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
     e.target.value = '';
     if (!file) return;
     setParsing(true);
-    setUploadFileName(file.name);
     try {
-      let record;
       if (masterDataService.shouldUseServerImport(file)) {
-        setUploadProgress({ percent: 0, phase: 'uploading', message: 'Starting upload…' });
-        record = await masterDataService.importFile(file, 'append', setUploadProgress);
-      } else {
-        const parsed = await parseSpreadsheetFile(file);
-        record = await masterDataService.save(parsed, 'append');
+        await enqueueMasterDataImport(file, 'append');
+        toast.success(
+          'Import started',
+          'Large file import runs in the background — switch pages or tabs freely.',
+        );
+        return;
       }
+      const parsed = await parseSpreadsheetFile(file);
+      const record = await masterDataService.save(parsed, 'append');
       setHeaders(record.headers);
       setAllRows(record.rows ?? []);
       setDisplayRows(record.largeDataset ? [] : record.rows ?? []);
@@ -621,8 +625,6 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
       toast.error('Upload failed', extractApiError(err));
     } finally {
       setParsing(false);
-      setUploadProgress(null);
-      setUploadFileName('');
     }
   };
 
@@ -1031,9 +1033,9 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
       )}
 
       <MasterDataUploadProgressModal
-        open={Boolean(uploadProgress)}
-        progress={uploadProgress}
-        fileName={uploadFileName}
+        open={Boolean(importProgress)}
+        progress={importProgress}
+        fileName={importFileName}
       />
 
       {!isDbAdmin && (

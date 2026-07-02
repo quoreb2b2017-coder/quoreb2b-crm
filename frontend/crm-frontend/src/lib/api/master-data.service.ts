@@ -184,6 +184,15 @@ export const masterDataService = {
     mode: MasterDataSaveMode = 'replace',
     onProgress?: (progress: MasterDataImportProgress) => void,
   ) => {
+    const jobId = await masterDataService.uploadImportJob(file, mode, onProgress);
+    return masterDataService.waitForImportJob(jobId, onProgress);
+  },
+
+  uploadImportJob: async (
+    file: File,
+    mode: MasterDataSaveMode = 'replace',
+    onUploadProgress?: (progress: MasterDataImportProgress) => void,
+  ): Promise<string> => {
     const form = new FormData();
     form.append('file', file);
     form.append('mode', mode);
@@ -192,9 +201,9 @@ export const masterDataService = {
       timeout: MASTER_DATA_UPLOAD_TIMEOUT_MS,
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress: (event) => {
-        if (!onProgress || !event.total) return;
+        if (!onUploadProgress || !event.total) return;
         const uploadPct = Math.min(30, Math.round((event.loaded / event.total) * 30));
-        onProgress({
+        onUploadProgress({
           percent: uploadPct,
           phase: 'uploading',
           message: `Uploading file… ${uploadPct}%`,
@@ -203,14 +212,24 @@ export const masterDataService = {
     });
 
     const { jobId } = unwrap<{ jobId: string }>({ data });
+    return jobId;
+  },
 
+  getImportJobStatus: async (jobId: string): Promise<MasterDataImportJobStatus> => {
+    const { data } = await apiClient.get(`/master-data/import-jobs/${jobId}`, {
+      timeout: MASTER_IMPORT_POLL_TIMEOUT_MS,
+    });
+    return unwrap<MasterDataImportJobStatus>({ data });
+  },
+
+  waitForImportJob: async (
+    jobId: string,
+    onProgress?: (progress: MasterDataImportProgress) => void,
+  ) => {
     const deadline = Date.now() + MASTER_DATA_IMPORT_DEADLINE_MS;
     while (Date.now() < deadline) {
       await sleep(800);
-      const statusRes = await apiClient.get(`/master-data/import-jobs/${jobId}`, {
-        timeout: MASTER_IMPORT_POLL_TIMEOUT_MS,
-      });
-      const status = unwrap<MasterDataImportJobStatus>({ data: statusRes.data });
+      const status = await masterDataService.getImportJobStatus(jobId);
       onProgress?.({
         percent: status.percent,
         phase: status.phase,

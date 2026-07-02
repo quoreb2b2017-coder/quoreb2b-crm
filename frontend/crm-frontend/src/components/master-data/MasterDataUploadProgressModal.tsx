@@ -56,7 +56,7 @@ export function MasterDataUploadProgressModal({
         )}
 
         <p className="mt-4 text-center text-xs text-slate-400">
-          Do not close this tab until upload completes.
+          Import continues on the server — you can switch tabs or use other CRM pages.
         </p>
       </div>
     </div>

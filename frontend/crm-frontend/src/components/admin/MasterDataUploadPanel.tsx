@@ -16,8 +16,9 @@ import {
   masterDataService,
   recordToSpreadsheet,
   type MasterBatchCoverage,
-  type MasterDataImportProgress,
 } from '@/lib/api/master-data.service';
+import { enqueueMasterDataImport } from '@/lib/master-data/master-data-import-tracker';
+import { useMasterDataImportStore } from '@/store/master-data-import.store';
 import { batchesService } from '@/lib/api/batches.service';
 import { extractApiError } from '@/lib/api/errors';
 import { activityLogsService } from '@/lib/api/activity-logs.service';
@@ -190,8 +191,10 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   } | null>(null);
   const [clearModalOpen, setClearModalOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<MasterDataImportProgress | null>(null);
-  const [uploadFileName, setUploadFileName] = useState('');
+  const importProgress = useMasterDataImportStore((s) =>
+    s.uiPhase === 'active' ? s.progress : null,
+  );
+  const importFileName = useMasterDataImportStore((s) => s.fileName);
 
   const applyRecord = useCallback((record: Awaited<ReturnType<typeof masterDataService.save>>) => {
     const sheet = recordToSpreadsheet(record);
@@ -371,19 +374,14 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
 
   const processFile = useCallback(async (file: File) => {
     setParsing(true); setError('');
-    setUploadFileName(file.name);
     try {
       const mode = replaceOnUpload ? 'replace' : 'append';
       if (masterDataService.shouldUseServerImport(file)) {
-        setUploadProgress({ percent: 0, phase: 'uploading', message: 'Starting upload…' });
-        const record = await masterDataService.importFile(file, mode, setUploadProgress);
-        applyRecord(record);
-        await logUploadActivity(mode, record, file.name);
+        await enqueueMasterDataImport(file, mode);
         toast.success(
-          mode === 'append' ? 'Added to master database' : 'Saved to database',
-          `${record.rowCount.toLocaleString()} contacts in master data`,
+          'Import started',
+          'Large file import runs in the background — switch pages or tabs freely.',
         );
-        window.dispatchEvent(new CustomEvent('master-data-updated'));
         return;
       }
       const parsed = await parseSpreadsheetFile(file);
@@ -395,10 +393,8 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
       toast.error('Upload failed', extractApiError(e, msg));
     } finally {
       setParsing(false);
-      setUploadProgress(null);
-      setUploadFileName('');
     }
-  }, [applyRecord, logUploadActivity, persistToDb, replaceOnUpload]);
+  }, [persistToDb, replaceOnUpload]);
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1013,9 +1009,9 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
       )}
 
       <MasterDataUploadProgressModal
-        open={Boolean(uploadProgress)}
-        progress={uploadProgress}
-        fileName={uploadFileName}
+        open={Boolean(importProgress)}
+        progress={importProgress}
+        fileName={importFileName}
       />
 
       <MasterDataClearConfirmModal

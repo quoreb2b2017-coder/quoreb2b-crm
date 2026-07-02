@@ -46,6 +46,13 @@ bash "$APP_DIR/deploy/ec2/ensure-redis.sh"
 echo "==> Ensuring production env..."
 bash "$APP_DIR/deploy/ec2/ensure-production-env.sh"
 
+echo "==> Updating Nginx (large upload timeouts)..."
+sudo cp "$APP_DIR/deploy/ec2/nginx-quoreb2b-api.conf" /etc/nginx/sites-available/quoreb2b-api
+sudo ln -sf /etc/nginx/sites-available/quoreb2b-api /etc/nginx/sites-enabled/quoreb2b-api
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl reload nginx
+
 echo "==> Building Docker image..."
 cd backend
 docker build -t "$IMAGE_NAME" .
@@ -60,6 +67,7 @@ docker run -d \
   --network host \
   --env-file "$ENV_FILE" \
   -e "BUILD_SHA=$(git -C "$APP_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)" \
+  -e "NODE_OPTIONS=--max-old-space-size=1536" \
   "$IMAGE_NAME"
 
 echo "==> Waiting for API..."

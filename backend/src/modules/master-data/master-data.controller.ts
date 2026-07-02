@@ -34,7 +34,7 @@ import { SystemRole } from '../../common/constants/roles.constant';
 import { actorFromJwt } from '../activity-logs/activity-user.util';
 import { ImportMasterDataFileDto } from './dto/import-master-data-file.dto';
 
-const MASTER_IMPORT_MAX_BYTES = 250 * 1024 * 1024;
+const MASTER_IMPORT_MAX_BYTES = 500 * 1024 * 1024;
 
 @Controller({ path: 'master-data', version: '1' })
 @UseGuards(JwtAuthGuard, RolesGuard)

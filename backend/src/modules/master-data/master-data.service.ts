@@ -50,7 +50,7 @@ import { MasterDataRowStore, MASTER_DATA_LARGE_UI_ROW_LIMIT } from './master-dat
 import { parseSpreadsheetBufferAsync } from './master-data-import.util';
 import { MasterDataImportJobService } from './master-data-import-job.service';
 
-const DEFAULT_MAX_TOTAL_ROWS = 1_000_000;
+const DEFAULT_MAX_TOTAL_ROWS = 1_500_000;
 const DUPLICATE_PREVIEW_LIMIT = 100;
 
 /** CRM collections wiped on admin clear — user login accounts are kept. */

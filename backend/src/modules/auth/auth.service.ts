@@ -12,7 +12,7 @@ import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { Request } from 'express';
 import { extractClientIp } from '../../common/utils/client-ip.util';
-import { assertLoginIpAllowed } from '../../config/login-ip-restriction.util';
+import { assertLoginIpAllowedForCredential } from '../../config/login-ip-restriction.util';
 import {
   assertSuperAdminLoginEmail,
   isSuperAdminRole,
@@ -85,9 +85,9 @@ export class AuthService {
   }
 
   async login(dto: LoginDto, req?: Request) {
-    if (req) assertLoginIpAllowed(req);
-
     const user = await this.usersService.findByEmail(dto.email);
+    if (req) assertLoginIpAllowedForCredential(req, dto.email, user?.roles);
+
     if (!user) throw new UnauthorizedException('Invalid credentials');
     if (!user.isActive) {
       throw new UnauthorizedException('Your account has been blocked. Contact your administrator.');
@@ -128,12 +128,12 @@ export class AuthService {
   }
 
   async loginByEmployeeId(dto: EmployeeIdLoginDto, req?: Request) {
-    if (req) assertLoginIpAllowed(req);
-
     const employeeId = dto.employeeId.trim();
     const password = dto.password.trim();
 
     const user = await this.usersService.findByEmployeeId(employeeId);
+    if (req) assertLoginIpAllowedForCredential(req, user?.email, user?.roles);
+
     if (!user) {
       throw new UnauthorizedException('Invalid employee ID or password');
     }
@@ -180,12 +180,12 @@ export class AuthService {
   }
 
   async verifyOtpLogin(email: string, otp: string, req?: Request) {
-    if (req) assertLoginIpAllowed(req);
+    const user = await this.usersService.findByEmail(email);
+    if (req) assertLoginIpAllowedForCredential(req, email, user?.roles);
 
     const valid = this.otpService.verifyOtp(email, otp);
     if (!valid) throw new UnauthorizedException('Invalid or expired OTP');
 
-    const user = await this.usersService.findByEmail(email);
     if (!user || !user.isActive) throw new UnauthorizedException('User not found');
 
     const roles = user.roles ?? [];

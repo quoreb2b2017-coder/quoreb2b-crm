@@ -1,10 +1,13 @@
 import apiClient from './client';
 import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
 
-/** Master file payloads can be large — production needs a longer timeout than default 30s. */
-const MASTER_DATA_TIMEOUT_MS = 600_000;
+/** Upload timeout for large XLSX files (up to ~500MB). */
+const MASTER_DATA_UPLOAD_TIMEOUT_MS = 7_200_000;
+/** Total import deadline including parse + MongoDB save for 10L+ rows. */
+const MASTER_DATA_IMPORT_DEADLINE_MS = 10_800_000;
+const MASTER_DATA_TIMEOUT_MS = MASTER_DATA_IMPORT_DEADLINE_MS;
 /** Per-poll timeout — server may be slow while parsing large files. */
-const MASTER_IMPORT_POLL_TIMEOUT_MS = 120_000;
+const MASTER_IMPORT_POLL_TIMEOUT_MS = 300_000;
 const MASTER_IMPORT_THRESHOLD_BYTES = 2 * 1024 * 1024;
 
 export type MasterDataSaveMode = 'append' | 'replace';
@@ -186,7 +189,7 @@ export const masterDataService = {
     form.append('mode', mode);
 
     const { data } = await apiClient.post('/master-data/import-jobs', form, {
-      timeout: MASTER_DATA_TIMEOUT_MS,
+      timeout: MASTER_DATA_UPLOAD_TIMEOUT_MS,
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress: (event) => {
         if (!onProgress || !event.total) return;
@@ -201,7 +204,7 @@ export const masterDataService = {
 
     const { jobId } = unwrap<{ jobId: string }>({ data });
 
-    const deadline = Date.now() + MASTER_DATA_TIMEOUT_MS;
+    const deadline = Date.now() + MASTER_DATA_IMPORT_DEADLINE_MS;
     while (Date.now() < deadline) {
       await sleep(800);
       const statusRes = await apiClient.get(`/master-data/import-jobs/${jobId}`, {

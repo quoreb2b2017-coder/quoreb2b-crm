@@ -14,8 +14,8 @@ export const MASTER_DATA_CHUNK_SIZE = 1000;
 export const MASTER_DATA_INLINE_ROW_LIMIT = 5000;
 export const MASTER_DATA_LARGE_UI_ROW_LIMIT = 5000;
 
-const INSERT_BATCH_SIZE = 100;
-const YIELD_EVERY_ROWS = 10_000;
+const INSERT_BATCH_SIZE = 200;
+const YIELD_EVERY_ROWS = 25_000;
 
 function yieldToEventLoop(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));

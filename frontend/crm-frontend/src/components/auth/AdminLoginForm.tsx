@@ -80,7 +80,7 @@ export function AdminLoginForm() {
             label="Email address"
             type="email"
             icon={Mail}
-            placeholder="rohit@quoreb2b.com"
+            placeholder="quoreb2b2017@gmail.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
@@ -112,7 +112,7 @@ export function AdminLoginForm() {
             label="Email address"
             type="email"
             icon={Mail}
-            placeholder="rohit@quoreb2b.com"
+            placeholder="quoreb2b2017@gmail.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required

@@ -24,7 +24,7 @@ export function MasterDataImportBanner() {
       : null;
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 z-[190] mx-auto flex max-w-lg items-start gap-3 rounded-xl border border-[#2e7ad1]/30 bg-white p-4 shadow-lg md:left-auto md:right-6">
+    <div className="fixed bottom-4 left-4 right-4 z-[9998] mx-auto flex max-w-lg items-start gap-3 rounded-xl border border-[#2e7ad1]/30 bg-white p-4 shadow-lg md:left-auto md:right-6">
       <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e8f1fb]">
         <Loader2 className="h-4 w-4 animate-spin text-[#2e7ad1]" />
       </div>

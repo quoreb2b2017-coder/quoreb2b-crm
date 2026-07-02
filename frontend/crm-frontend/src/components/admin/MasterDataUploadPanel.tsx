@@ -18,7 +18,6 @@ import {
   type MasterBatchCoverage,
 } from '@/lib/api/master-data.service';
 import { enqueueMasterDataImport } from '@/lib/master-data/master-data-import-tracker';
-import { useMasterDataImportStore } from '@/store/master-data-import.store';
 import { batchesService } from '@/lib/api/batches.service';
 import { extractApiError } from '@/lib/api/errors';
 import { activityLogsService } from '@/lib/api/activity-logs.service';
@@ -27,7 +26,6 @@ import { useAuthStore } from '@/store/auth.store';
 import { useCanExportSpreadsheet } from '@/hooks/useSpreadsheetCopyGuard';
 import { useDebouncedAutoSave, type AutoSaveStatus } from '@/hooks/useDebouncedAutoSave';
 import { MasterDataClearConfirmModal } from '@/components/master-data/MasterDataClearConfirmModal';
-import { MasterDataUploadProgressModal } from '@/components/master-data/MasterDataUploadProgressModal';
 import { DbAdminCampaignWizard } from '@/components/db-admin/DbAdminCampaignWizard';
 
 const ACCEPT = '.csv,.xlsx,.xls';
@@ -191,10 +189,6 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   } | null>(null);
   const [clearModalOpen, setClearModalOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
-  const importProgress = useMasterDataImportStore((s) =>
-    s.uiPhase === 'active' ? s.progress : null,
-  );
-  const importFileName = useMasterDataImportStore((s) => s.fileName);
 
   const applyRecord = useCallback((record: Awaited<ReturnType<typeof masterDataService.save>>) => {
     const sheet = recordToSpreadsheet(record);
@@ -1007,12 +1001,6 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
           </div>
         </>
       )}
-
-      <MasterDataUploadProgressModal
-        open={Boolean(importProgress)}
-        progress={importProgress}
-        fileName={importFileName}
-      />
 
       <MasterDataClearConfirmModal
         open={clearModalOpen}

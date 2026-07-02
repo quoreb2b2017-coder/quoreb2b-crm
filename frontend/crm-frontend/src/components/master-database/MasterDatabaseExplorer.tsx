@@ -35,13 +35,11 @@ import {
   type MasterBatchCoverage,
 } from '@/lib/api/master-data.service';
 import { enqueueMasterDataImport } from '@/lib/master-data/master-data-import-tracker';
-import { useMasterDataImportStore } from '@/store/master-data-import.store';
 import { batchesService } from '@/lib/api/batches.service';
 import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
 import { useCanExportSpreadsheet } from '@/hooks/useSpreadsheetCopyGuard';
 import { MasterDataClearConfirmModal } from '@/components/master-data/MasterDataClearConfirmModal';
-import { MasterDataUploadProgressModal } from '@/components/master-data/MasterDataUploadProgressModal';
 import { DbAdminCampaignWizard } from '@/components/db-admin/DbAdminCampaignWizard';
 import { MasterDatabaseFilterPanel, MasterDatabaseFilterTags } from './MasterDatabaseFilterPanel';
 import { MasterDatabaseFilterSidebar } from './MasterDatabaseFilterSidebar';
@@ -101,10 +99,6 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
   const [filterSidebarOpen, setFilterSidebarOpen] = useState(true);
 
   const [parsing, setParsing] = useState(false);
-  const importProgress = useMasterDataImportStore((s) =>
-    s.uiPhase === 'active' ? s.progress : null,
-  );
-  const importFileName = useMasterDataImportStore((s) => s.fileName);
   const [clearModalOpen, setClearModalOpen] = useState(false);
   const [batchModal, setBatchModal] = useState<{
     rows: string[][];
@@ -1031,12 +1025,6 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
           }}
         />
       )}
-
-      <MasterDataUploadProgressModal
-        open={Boolean(importProgress)}
-        progress={importProgress}
-        fileName={importFileName}
-      />
 
       {!isDbAdmin && (
         <MasterDataClearConfirmModal

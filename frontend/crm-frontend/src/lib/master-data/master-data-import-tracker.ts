@@ -1,4 +1,4 @@
-import { masterDataService, type MasterDataSaveMode } from '@/lib/api/master-data.service';
+import { masterDataService, type MasterDataImportProgress, type MasterDataSaveMode } from '@/lib/api/master-data.service';
 import { useMasterDataImportStore } from '@/store/master-data-import.store';
 import { toast } from '@/stores/toast.store';
 
@@ -9,6 +9,7 @@ interface PersistedImportJob {
   fileName: string;
   mode: MasterDataSaveMode;
   startedAt: string;
+  progress?: MasterDataImportProgress;
 }
 
 let pollingJobId: string | null = null;
@@ -34,8 +35,36 @@ function clearPersistedJob() {
   localStorage.removeItem(STORAGE_KEY);
 }
 
+function patchPersistedProgress(progress: MasterDataImportProgress) {
+  const saved = readPersistedJob();
+  if (!saved) return;
+  persistJob({ ...saved, progress });
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function applyProgress(progress: MasterDataImportProgress) {
+  useMasterDataImportStore.getState().setProgress(progress);
+  patchPersistedProgress(progress);
+}
+
+/** Restore banner/chip UI immediately after navigation or refresh. */
+export function hydrateMasterImportFromStorage(): void {
+  const saved = readPersistedJob();
+  if (!saved?.jobId) return;
+
+  const store = useMasterDataImportStore.getState();
+  if (store.uiPhase === 'active' && store.jobId === saved.jobId && store.progress) {
+    return;
+  }
+
+  store.begin(saved.fileName, saved.mode);
+  store.setJobId(saved.jobId);
+  if (saved.progress) {
+    store.setProgress(saved.progress);
+  }
 }
 
 async function pollImportUntilDone(jobId: string, fileName: string, mode: MasterDataSaveMode) {
@@ -54,7 +83,7 @@ async function pollImportUntilDone(jobId: string, fileName: string, mode: Master
     while (Date.now() < deadline) {
       await sleep(800);
       const status = await masterDataService.getImportJobStatus(jobId);
-      useMasterDataImportStore.getState().setProgress({
+      applyProgress({
         percent: status.percent,
         phase: status.phase,
         message: status.message,
@@ -91,10 +120,6 @@ async function pollImportUntilDone(jobId: string, fileName: string, mode: Master
   }
 }
 
-/**
- * Upload file to server, then continue import in the background (safe across tab/page changes).
- * Resolves once the file is on the server and polling has started.
- */
 export async function enqueueMasterDataImport(
   file: File,
   mode: MasterDataSaveMode = 'replace',
@@ -107,7 +132,7 @@ export async function enqueueMasterDataImport(
   store.begin(file.name, mode);
 
   const jobId = await masterDataService.uploadImportJob(file, mode, (progress) => {
-    useMasterDataImportStore.getState().setProgress(progress);
+    applyProgress(progress);
   });
 
   persistJob({
@@ -115,21 +140,24 @@ export async function enqueueMasterDataImport(
     fileName: file.name,
     mode,
     startedAt: new Date().toISOString(),
+    progress: useMasterDataImportStore.getState().progress ?? undefined,
   });
 
   void pollImportUntilDone(jobId, file.name, mode);
 }
 
-/** Resume polling after refresh, tab change, or re-login. */
 export async function resumeMasterDataImportIfNeeded(): Promise<void> {
   const saved = readPersistedJob();
   if (!saved?.jobId) return;
   if (pollingJobId === saved.jobId) return;
 
+  hydrateMasterImportFromStorage();
+
   try {
     const status = await masterDataService.getImportJobStatus(saved.jobId);
     if (status.phase === 'done') {
       clearPersistedJob();
+      useMasterDataImportStore.getState().reset();
       if (status.result) {
         window.dispatchEvent(new CustomEvent('master-data-updated'));
       }
@@ -137,12 +165,11 @@ export async function resumeMasterDataImportIfNeeded(): Promise<void> {
     }
     if (status.phase === 'failed') {
       clearPersistedJob();
+      useMasterDataImportStore.getState().reset();
       return;
     }
 
-    useMasterDataImportStore.getState().begin(saved.fileName, saved.mode);
-    useMasterDataImportStore.getState().setJobId(saved.jobId);
-    useMasterDataImportStore.getState().setProgress({
+    applyProgress({
       percent: status.percent,
       phase: status.phase,
       message: status.message,
@@ -152,6 +179,6 @@ export async function resumeMasterDataImportIfNeeded(): Promise<void> {
 
     void pollImportUntilDone(saved.jobId, saved.fileName, saved.mode);
   } catch {
-    // Auth may be missing right after logout — keep job in storage for next login.
+    // Keep persisted job — retry on next focus / route change when auth is ready.
   }
 }

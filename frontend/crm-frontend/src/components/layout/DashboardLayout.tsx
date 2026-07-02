@@ -9,6 +9,7 @@ import { useAdminProductStore } from '@/store/admin-product.store';
 import { useIdleLogout } from '@/hooks/useIdleLogout';
 import { useGlobalSpreadsheetCopyGuard } from '@/hooks/useSpreadsheetCopyGuard';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
+import { MasterDataImportHeaderChip } from '@/components/master-data/MasterDataImportHeaderChip';
 import { MeetingRequestBell } from '@/components/dashboard/MeetingRequestBell';
 import { QuickNotePad } from '@/components/notes/QuickNotePad';
 import { useNavigation } from '@/components/providers/LoadingProvider';
@@ -922,7 +923,7 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
 
           {/* Right side */}
           <div className="flex items-center gap-2">
-            {/* Notification bell */}
+            <MasterDataImportHeaderChip />
             <NotificationBell />
             {(variant === 'admin') && <MeetingRequestBell />}
 

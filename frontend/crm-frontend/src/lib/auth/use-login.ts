@@ -27,6 +27,10 @@ function formatLoginError(e: unknown): string {
     err.message?.includes('Network Error') ||
     err.message?.includes('ECONNREFUSED')
   ) {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
+    if (typeof window !== 'undefined' && !apiUrl.includes('localhost')) {
+      return `Cannot reach the API (${apiUrl}). The server may be restarting — wait a minute and try again.`;
+    }
     return 'API is not running. Open a terminal: cd backend → npm run start:dev (wait for "API running on port 4000")';
   }
   if (err.code === 'ECONNABORTED' || /timeout.*exceeded/i.test(err.message ?? '')) {

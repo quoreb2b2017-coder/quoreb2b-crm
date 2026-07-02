@@ -55,8 +55,8 @@ export class AuthController {
   @Public()
   @Post('otp/verify')
   @HttpCode(HttpStatus.OK)
-  verifyOtp(@Body() dto: VerifyOtpDto) {
-    return this.authService.verifyOtpLogin(dto.email, dto.otp);
+  verifyOtp(@Body() dto: VerifyOtpDto, @Req() req: Request) {
+    return this.authService.verifyOtpLogin(dto.email, dto.otp, req);
   }
 
   /** Dev only: reset default user passwords in MongoDB */

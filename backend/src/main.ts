@@ -12,12 +12,17 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { initSentry } from './config/sentry.config';
 import { isRedisEnabled } from './config/env';
+import {
+  isLoginIpRestrictionActive,
+  parseAllowedLoginIps,
+} from './config/login-ip-restriction.util';
 import { ensureRedisOrDisable, readRedisEnv, MIN_REDIS_VERSION } from './redis/redis.factory';
 
 async function bootstrap() {
   await ensureRedisOrDisable();
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule.register());
+  app.set('trust proxy', 1);
   app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
   const config = app.get(ConfigService);
 
@@ -55,6 +60,11 @@ async function bootstrap() {
   const port = config.get<number>('PORT', 4000);
   await app.listen(port);
   console.log(`API running on port ${port}`);
+  if (isLoginIpRestrictionActive()) {
+    console.log(
+      `Login IP restriction enabled (production): ${parseAllowedLoginIps().join(', ')}`,
+    );
+  }
   if (isRedisEnabled()) {
     const { host, port: redisPort } = readRedisEnv();
     console.log(`Redis OK (${host}:${redisPort}) — BullMQ queues enabled`);

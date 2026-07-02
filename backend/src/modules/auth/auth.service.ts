@@ -11,6 +11,8 @@ import { Model } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { Request } from 'express';
+import { extractClientIp } from '../../common/utils/client-ip.util';
+import { assertLoginIpAllowed } from '../../config/login-ip-restriction.util';
 import { UsersService } from '../users/users.service';
 import { LoginDto, RegisterDto } from './dto/login.dto';
 import { EmployeeIdLoginDto } from './dto/employee-login.dto';
@@ -22,10 +24,7 @@ import { actorFromUserDoc } from '../activity-logs/activity-user.util';
 import { AttendanceService } from '../attendance/attendance.service';
 
 function extractMeta(req: Request) {
-  const ip =
-    (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
-    req.socket?.remoteAddress ||
-    'unknown';
+  const ip = extractClientIp(req);
   const userAgent = (req.headers['user-agent'] as string) || 'unknown';
   return { ip, userAgent };
 }
@@ -81,6 +80,8 @@ export class AuthService {
   }
 
   async login(dto: LoginDto, req?: Request) {
+    if (req) assertLoginIpAllowed(req);
+
     const user = await this.usersService.findByEmail(dto.email);
     if (!user) throw new UnauthorizedException('Invalid credentials');
     if (!user.isActive) {
@@ -118,6 +119,8 @@ export class AuthService {
   }
 
   async loginByEmployeeId(dto: EmployeeIdLoginDto, req?: Request) {
+    if (req) assertLoginIpAllowed(req);
+
     const employeeId = dto.employeeId.trim();
     const password = dto.password.trim();
 
@@ -167,7 +170,9 @@ export class AuthService {
     return this.otpService.sendOtp(email);
   }
 
-  async verifyOtpLogin(email: string, otp: string) {
+  async verifyOtpLogin(email: string, otp: string, req?: Request) {
+    if (req) assertLoginIpAllowed(req);
+
     const valid = this.otpService.verifyOtp(email, otp);
     if (!valid) throw new UnauthorizedException('Invalid or expired OTP');
 

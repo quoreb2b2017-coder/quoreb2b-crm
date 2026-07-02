@@ -36,6 +36,8 @@ export default () => ({
   SENTRY_ENVIRONMENT: process.env.SENTRY_ENVIRONMENT || 'development',
   SENTRY_TRACES_SAMPLE_RATE: parseFloat(process.env.SENTRY_TRACES_SAMPLE_RATE || '0.1'),
   LOG_LEVEL: process.env.LOG_LEVEL || 'debug',
+  /** Production login IP allowlist (comma-separated). Empty = no IP restriction. */
+  LOGIN_ALLOWED_IPS: process.env.LOGIN_ALLOWED_IPS || '',
   SOCKET_CORS_ORIGINS: process.env.SOCKET_CORS_ORIGINS,
   BULK_EMAIL_SMTP_FROM: process.env.BULK_EMAIL_SMTP_FROM,
   BULK_EMAIL_DOMAIN_CACHE_TTL_MS: parseInt(

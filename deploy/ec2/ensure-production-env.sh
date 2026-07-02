@@ -29,6 +29,22 @@ set_env_var() {
   fi
 }
 
+ensure_cors_origin() {
+  local key="$1"
+  local origin="$2"
+  local file="$3"
+  local current=""
+  current="$(grep "^${key}=" "$file" 2>/dev/null | cut -d= -f2- || true)"
+  if [ -z "$current" ]; then
+    set_env_var "$key" "$origin" "$file"
+    return 0
+  fi
+  case ",${current}," in
+    *,"${origin}",*) ;;
+    *) set_env_var "$key" "${current},${origin}" "$file" ;;
+  esac
+}
+
 restore_from_container() {
   if ! docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
     return 1
@@ -68,4 +84,15 @@ set_env_var BULK_EMAIL_SKIP_SMTP_PROBE "${BULK_EMAIL_SKIP_SMTP_PROBE:-true}" "$E
 set_env_var BULK_EMAIL_MX_ONLY_FALLBACK "${BULK_EMAIL_MX_ONLY_FALLBACK:-true}" "$ENV_FILE"
 set_env_var BULK_EMAIL_SKIP_CATCH_ALL_PROBE "${BULK_EMAIL_SKIP_CATCH_ALL_PROBE:-true}" "$ENV_FILE"
 
+REQUIRED_CORS_ORIGINS=(
+  "https://crm.quoreb2b.com"
+  "https://13-232-248-18.sslip.io"
+  "http://localhost:3000"
+)
+for origin in "${REQUIRED_CORS_ORIGINS[@]}"; do
+  ensure_cors_origin CORS_ORIGINS "$origin" "$ENV_FILE"
+  ensure_cors_origin SOCKET_CORS_ORIGINS "$origin" "$ENV_FILE"
+done
+
 echo "==> Env ready: LOGIN_ALLOWED_IPS=$(grep '^LOGIN_ALLOWED_IPS=' "$ENV_FILE" | cut -d= -f2-)"
+echo "==> CORS_ORIGINS=$(grep '^CORS_ORIGINS=' "$ENV_FILE" | cut -d= -f2-)"

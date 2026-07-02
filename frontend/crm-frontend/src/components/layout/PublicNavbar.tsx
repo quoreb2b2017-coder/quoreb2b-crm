@@ -7,7 +7,7 @@ export function PublicNavbar() {
       <div className="public-hub__nav-accent" aria-hidden />
       <div className="public-hub__nav-shell">
         <div className="public-hub__nav-inner">
-          <BrandLogo variant="navbar" showSubtitle={false} />
+          <BrandLogo variant="navbar" showSubtitle={false} className="public-hub__nav-brand" />
 
           <a href="#sign-in" className="public-hub__nav-cta">
             <LogIn className="h-4 w-4" strokeWidth={2.25} />

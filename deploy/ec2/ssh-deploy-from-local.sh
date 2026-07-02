@@ -33,7 +33,7 @@ ssh -i "$KEY" \
   -o ConnectTimeout=20 \
   -o StrictHostKeyChecking=accept-new \
   "$USER@$HOST" \
-  'cd ~/quoreb2b-crm && git pull origin main && bash deploy/ec2/deploy-backend.sh'
+  'cd ~/quoreb2b-crm && git fetch origin main && git reset --hard origin/main && bash deploy/ec2/ensure-production-env.sh && bash deploy/ec2/deploy-backend.sh'
 
 echo ""
 echo "Deploy finished on EC2."

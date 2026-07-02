@@ -36,8 +36,9 @@ if [ ! -f "$ENV_FILE" ]; then
   exit 1
 fi
 
-echo "==> Pulling latest code..."
+echo "==> Pulling latest code (discard any local edits on server)..."
 git fetch origin main
+git clean -fd
 git reset --hard origin/main
 
 echo "==> Ensuring Redis is running..."

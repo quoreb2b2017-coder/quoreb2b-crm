@@ -29,6 +29,9 @@ function formatLoginError(e: unknown): string {
   ) {
     return 'API is not running. Open a terminal: cd backend → npm run start:dev (wait for "API running on port 4000")';
   }
+  if (err.code === 'ECONNABORTED' || /timeout.*exceeded/i.test(err.message ?? '')) {
+    return 'Server is taking too long to respond. If a large file upload is running, wait a minute and try again.';
+  }
   return extractApiError(e, 'Login failed');
 }
 

@@ -3,6 +3,8 @@ import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
 
 /** Master file payloads can be large — production needs a longer timeout than default 30s. */
 const MASTER_DATA_TIMEOUT_MS = 600_000;
+/** Per-poll timeout — server may be slow while parsing large files. */
+const MASTER_IMPORT_POLL_TIMEOUT_MS = 120_000;
 const MASTER_IMPORT_THRESHOLD_BYTES = 2 * 1024 * 1024;
 
 export type MasterDataSaveMode = 'append' | 'replace';
@@ -199,9 +201,12 @@ export const masterDataService = {
 
     const { jobId } = unwrap<{ jobId: string }>({ data });
 
-    while (true) {
+    const deadline = Date.now() + MASTER_DATA_TIMEOUT_MS;
+    while (Date.now() < deadline) {
       await sleep(800);
-      const statusRes = await apiClient.get(`/master-data/import-jobs/${jobId}`);
+      const statusRes = await apiClient.get(`/master-data/import-jobs/${jobId}`, {
+        timeout: MASTER_IMPORT_POLL_TIMEOUT_MS,
+      });
       const status = unwrap<MasterDataImportJobStatus>({ data: statusRes.data });
       onProgress?.({
         percent: status.percent,
@@ -215,6 +220,7 @@ export const masterDataService = {
         throw new Error(status.error || status.message || 'Import failed');
       }
     }
+    throw new Error('Import timed out — try again or use a smaller file.');
   },
 
   shouldUseServerImport(file: File): boolean {
@@ -268,12 +274,16 @@ export const masterDataService = {
   createUploadRequest: async (
     payload: SpreadsheetData,
   ): Promise<MasterDataUploadRequestSubmitResult> => {
-    const { data } = await apiClient.post('/master-data/upload-requests', {
-      fileName: payload.fileName,
-      sheetName: payload.sheetName,
-      headers: payload.headers,
-      rows: payload.rows,
-    });
+    const { data } = await apiClient.post(
+      '/master-data/upload-requests',
+      {
+        fileName: payload.fileName,
+        sheetName: payload.sheetName,
+        headers: payload.headers,
+        rows: payload.rows,
+      },
+      { timeout: MASTER_DATA_TIMEOUT_MS },
+    );
     const result = unwrap<MasterDataUploadRequestSubmitResult>({ data });
     if (typeof window !== 'undefined' && (result.request || result.duplicateFileId)) {
       window.dispatchEvent(new CustomEvent('master-data-updated'));
@@ -284,12 +294,16 @@ export const masterDataService = {
   createEmployeeUploadRequest: async (
     payload: SpreadsheetData,
   ): Promise<MasterDataUploadRequestSubmitResult> => {
-    const { data } = await apiClient.post('/master-data/upload-requests/employee', {
-      fileName: payload.fileName,
-      sheetName: payload.sheetName,
-      headers: payload.headers,
-      rows: payload.rows,
-    });
+    const { data } = await apiClient.post(
+      '/master-data/upload-requests/employee',
+      {
+        fileName: payload.fileName,
+        sheetName: payload.sheetName,
+        headers: payload.headers,
+        rows: payload.rows,
+      },
+      { timeout: MASTER_DATA_TIMEOUT_MS },
+    );
     const result = unwrap<MasterDataUploadRequestSubmitResult>({ data });
     if (typeof window !== 'undefined' && (result.request || result.duplicateFileId)) {
       window.dispatchEvent(new CustomEvent('master-data-updated'));

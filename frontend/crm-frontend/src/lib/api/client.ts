@@ -3,9 +3,12 @@ import { useAuthStore } from '@/store/auth.store';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
 
+/** Default API timeout — large imports use per-request overrides. */
+export const DEFAULT_API_TIMEOUT_MS = 120_000;
+
 const apiClient = axios.create({
   baseURL: API_BASE,
-  timeout: 30000,
+  timeout: DEFAULT_API_TIMEOUT_MS,
   headers: { 'Content-Type': 'application/json' },
   withCredentials: true,
 });
@@ -31,7 +34,9 @@ async function refreshAccessToken(): Promise<{ accessToken: string; refreshToken
 
   refreshInFlight = (async () => {
     try {
-      const { data } = await axios.post(`${API_BASE}/auth/refresh`, { refreshToken });
+      const { data } = await axios.post(`${API_BASE}/auth/refresh`, { refreshToken }, {
+        timeout: DEFAULT_API_TIMEOUT_MS,
+      });
       const tokens = (data.data ?? data) as { accessToken: string; refreshToken: string };
       localStorage.setItem('accessToken', tokens.accessToken);
       localStorage.setItem('refreshToken', tokens.refreshToken);

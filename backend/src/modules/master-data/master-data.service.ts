@@ -41,7 +41,7 @@ import { AppCacheService } from '../../redis/app-cache.service';
 import { ConfigService } from '@nestjs/config';
 import { cacheTtlSeconds } from '../../redis/cache.util';
 import { MasterDataRowStore, MASTER_DATA_LARGE_UI_ROW_LIMIT } from './master-data-row.store';
-import { parseSpreadsheetBuffer } from './master-data-import.util';
+import { parseSpreadsheetBufferAsync } from './master-data-import.util';
 import { MasterDataImportJobService } from './master-data-import-job.service';
 
 const DEFAULT_MAX_TOTAL_ROWS = 1_000_000;
@@ -334,7 +334,7 @@ export class MasterDataService {
     mode: 'append' | 'replace',
     actor: ActivityActor,
   ) {
-    const parsed = parseSpreadsheetBuffer(buffer, fileName);
+    const parsed = await parseSpreadsheetBufferAsync(buffer, fileName);
     return this.save(
       {
         fileName: parsed.fileName,
@@ -382,7 +382,7 @@ export class MasterDataService {
         message: 'Reading spreadsheet…',
       });
 
-      const parsed = parseSpreadsheetBuffer(buffer, fileName);
+      const parsed = await parseSpreadsheetBufferAsync(buffer, fileName);
       const totalRows = parsed.rows.length;
 
       await this.importJobs.updateJob(jobId, {

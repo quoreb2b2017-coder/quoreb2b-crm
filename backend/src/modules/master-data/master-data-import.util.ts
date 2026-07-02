@@ -1,4 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
+import { join } from 'path';
+import { Worker } from 'worker_threads';
 import * as XLSX from 'xlsx';
 
 export interface ParsedSpreadsheet {
@@ -59,4 +61,37 @@ export function parseSpreadsheetBuffer(
   }
 
   return { fileName, sheetName, headers, rows };
+}
+
+/** Parse in a worker thread so large XLSX files do not block login and other API calls. */
+export function parseSpreadsheetBufferAsync(
+  buffer: Buffer,
+  fileName: string,
+): Promise<ParsedSpreadsheet> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const worker = new Worker(join(__dirname, 'master-data-parse.worker.js'), {
+      workerData: { buffer, fileName },
+    });
+
+    worker.once('message', (msg: { ok: boolean; result?: ParsedSpreadsheet; error?: string }) => {
+      settled = true;
+      if (msg.ok && msg.result) {
+        resolve(msg.result);
+        return;
+      }
+      reject(new BadRequestException(msg.error ?? 'Failed to parse spreadsheet'));
+    });
+
+    worker.once('error', (err: Error) => {
+      settled = true;
+      reject(err);
+    });
+
+    worker.once('exit', (code: number) => {
+      if (!settled && code !== 0) {
+        reject(new Error(`Spreadsheet parse worker exited with code ${code}`));
+      }
+    });
+  });
 }

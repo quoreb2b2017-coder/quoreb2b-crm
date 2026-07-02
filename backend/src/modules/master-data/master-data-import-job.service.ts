@@ -25,7 +25,9 @@ export interface MasterDataImportJobStatus {
 }
 
 const JOB_TTL_SECONDS = 3600;
+const PERSIST_THROTTLE_MS = 500;
 const jobs = new Map<string, MasterDataImportJobStatus>();
+const lastPersistAt = new Map<string, number>();
 
 @Injectable()
 export class MasterDataImportJobService {
@@ -76,7 +78,20 @@ export class MasterDataImportJobService {
       updatedAt: new Date().toISOString(),
     };
     jobs.set(jobId, next);
+
+    const terminal = next.phase === 'done' || next.phase === 'failed';
+    const now = Date.now();
+    const last = lastPersistAt.get(jobId) ?? 0;
+    if (!terminal && now - last < PERSIST_THROTTLE_MS) {
+      return;
+    }
+    lastPersistAt.set(jobId, now);
     await this.persist(jobId, next);
+
+    if (terminal) {
+      jobs.delete(jobId);
+      lastPersistAt.delete(jobId);
+    }
   }
 
   private async persist(jobId: string, status: MasterDataImportJobStatus): Promise<void> {

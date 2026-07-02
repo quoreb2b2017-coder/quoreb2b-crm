@@ -3,10 +3,23 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { MASTER_DATA_KEY, MasterDataRecord } from './schemas/master-data.schema';
 import { MasterDataChunk } from './schemas/master-data-chunk.schema';
+import {
+  alignRowWithIndex,
+  buildHeaderIndexMap,
+  rowKey,
+  type SheetSnapshot,
+} from './master-data-merge.util';
 
 export const MASTER_DATA_CHUNK_SIZE = 1000;
 export const MASTER_DATA_INLINE_ROW_LIMIT = 5000;
 export const MASTER_DATA_LARGE_UI_ROW_LIMIT = 5000;
+
+const INSERT_BATCH_SIZE = 100;
+const YIELD_EVERY_ROWS = 10_000;
+
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
 
 @Injectable()
 export class MasterDataRowStore {
@@ -47,23 +60,276 @@ export class MasterDataRowStore {
     if (!rows.length) return;
 
     const totalRows = rows.length;
-    const docs: Array<{ masterKey: string; chunkIndex: number; rows: string[][] }> = [];
+    let savedRows = 0;
+    let chunkIndex = 0;
+    let insertBatch: Array<{ masterKey: string; chunkIndex: number; rows: string[][] }> = [];
+
+    const flushBatch = async () => {
+      if (!insertBatch.length) return;
+      await this.chunkModel.insertMany(insertBatch, { ordered: false });
+      savedRows += insertBatch.reduce((sum, doc) => sum + doc.rows.length, 0);
+      onProgress?.(savedRows, totalRows);
+      insertBatch = [];
+      await yieldToEventLoop();
+    };
+
     for (let i = 0; i < rows.length; i += chunkSize) {
-      docs.push({
+      insertBatch.push({
         masterKey,
-        chunkIndex: Math.floor(i / chunkSize),
+        chunkIndex,
         rows: rows.slice(i, i + chunkSize),
       });
+      chunkIndex += 1;
+
+      if (insertBatch.length >= INSERT_BATCH_SIZE) {
+        await flushBatch();
+      }
     }
 
-    const batchSize = 40;
-    let savedRows = 0;
-    for (let i = 0; i < docs.length; i += batchSize) {
-      const batch = docs.slice(i, i + batchSize);
-      await this.chunkModel.insertMany(batch);
-      savedRows += batch.reduce((sum, d) => sum + d.rows.length, 0);
-      onProgress?.(savedRows, totalRows);
+    await flushBatch();
+  }
+
+  /**
+   * Build duplicate keys from chunked storage without materializing all rows in memory.
+   */
+  async loadExistingRowKeys(
+    doc: Pick<MasterDataRecord, 'key' | 'headers' | 'rows' | 'storage'>,
+    targetHeaders: string[],
+    options?: {
+      sourceHeaders?: string[];
+      formatCell?: (value: string) => string;
+    },
+  ): Promise<Set<string>> {
+    const sourceHeaders = options?.sourceHeaders ?? doc.headers;
+    const sourceIdx = buildHeaderIndexMap(sourceHeaders);
+    const formatCell = options?.formatCell ?? ((value: string) => value);
+    const seen = new Set<string>();
+    let processed = 0;
+
+    const trackRow = (row: string[]) => {
+      const aligned = alignRowWithIndex(row, sourceIdx, targetHeaders, formatCell);
+      seen.add(rowKey(aligned));
+      processed += 1;
+    };
+
+    if (!this.isChunked(doc)) {
+      for (const row of (doc.rows as string[][]) ?? []) {
+        trackRow(row);
+      }
+      return seen;
     }
+
+    const cursor = this.chunkModel
+      .find({ masterKey: doc.key })
+      .sort({ chunkIndex: 1 })
+      .select('rows')
+      .lean()
+      .cursor();
+
+    for await (const chunk of cursor) {
+      for (const row of (chunk.rows as string[][]) ?? []) {
+        trackRow(row);
+        if (processed % YIELD_EVERY_ROWS === 0) {
+          await yieldToEventLoop();
+        }
+      }
+    }
+
+    return seen;
+  }
+
+  /**
+   * Append rows to chunked storage without reloading or rewriting existing chunks.
+   */
+  async appendRows(
+    newRows: string[][],
+    masterKey: string = MASTER_DATA_KEY,
+    chunkSize = MASTER_DATA_CHUNK_SIZE,
+    onProgress?: (savedRows: number, totalRows: number) => void,
+  ): Promise<number> {
+    if (!newRows.length) return 0;
+
+    const lastChunk = await this.chunkModel
+      .findOne({ masterKey })
+      .sort({ chunkIndex: -1 })
+      .select('chunkIndex rows')
+      .lean()
+      .exec();
+
+    let carry: string[][] = [];
+    let lastChunkIndex = lastChunk?.chunkIndex ?? -1;
+    let updatingLastChunk =
+      !!lastChunk && ((lastChunk.rows as string[][])?.length ?? 0) < chunkSize;
+
+    if (updatingLastChunk && lastChunk) {
+      carry = [...((lastChunk.rows as string[][]) ?? [])];
+    }
+
+    let appended = 0;
+    let insertBatch: Array<{ masterKey: string; chunkIndex: number; rows: string[][] }> = [];
+
+    const flushInserts = async () => {
+      if (!insertBatch.length) return;
+      await this.chunkModel.insertMany(insertBatch, { ordered: false });
+      onProgress?.(appended, newRows.length);
+      insertBatch = [];
+      await yieldToEventLoop();
+    };
+
+    for (const row of newRows) {
+      carry.push(row);
+      appended += 1;
+
+      if (carry.length < chunkSize) continue;
+
+      if (updatingLastChunk) {
+        await this.chunkModel.updateOne(
+          { masterKey, chunkIndex: lastChunkIndex },
+          { $set: { rows: carry } },
+        );
+        updatingLastChunk = false;
+      } else {
+        lastChunkIndex += 1;
+        insertBatch.push({ masterKey, chunkIndex: lastChunkIndex, rows: carry });
+        if (insertBatch.length >= INSERT_BATCH_SIZE) {
+          await flushInserts();
+        }
+      }
+      carry = [];
+
+      if (appended % YIELD_EVERY_ROWS === 0) {
+        onProgress?.(appended, newRows.length);
+        await yieldToEventLoop();
+      }
+    }
+
+    if (carry.length) {
+      if (updatingLastChunk) {
+        await this.chunkModel.updateOne(
+          { masterKey, chunkIndex: lastChunkIndex },
+          { $set: { rows: carry } },
+        );
+      } else {
+        lastChunkIndex += 1;
+        insertBatch.push({ masterKey, chunkIndex: lastChunkIndex, rows: carry });
+      }
+    }
+
+    await flushInserts();
+    onProgress?.(appended, newRows.length);
+    return appended;
+  }
+
+  /**
+   * Stream-merge existing chunked rows with incoming rows when headers change,
+   * writing in batches instead of holding the full dataset in memory.
+   */
+  async rewriteMergedAppend(
+    doc: Pick<MasterDataRecord, 'key' | 'headers' | 'storage'>,
+    existingHeaders: string[],
+    incoming: SheetSnapshot,
+    mergedHeaders: string[],
+    masterKey: string = MASTER_DATA_KEY,
+    chunkSize = MASTER_DATA_CHUNK_SIZE,
+    onProgress?: (savedRows: number, totalRows: number) => void,
+  ): Promise<{ rowCount: number; addedRows: number; skippedDuplicates: number }> {
+    const existingIdx = buildHeaderIndexMap(existingHeaders);
+    const incomingIdx = buildHeaderIndexMap(incoming.headers);
+    const seen = new Set<string>();
+    const estimatedTotal = incoming.rows.length + 1;
+    let savedRows = 0;
+    let addedRows = 0;
+    let skippedDuplicates = 0;
+    let chunkIndex = 0;
+    let carry: string[][] = [];
+    let insertBatch: Array<{ masterKey: string; chunkIndex: number; rows: string[][] }> = [];
+
+    const flushCarry = async () => {
+      while (carry.length >= chunkSize) {
+        const chunkRows = carry.splice(0, chunkSize);
+        insertBatch.push({ masterKey, chunkIndex, rows: chunkRows });
+        chunkIndex += 1;
+        savedRows += chunkRows.length;
+        if (insertBatch.length >= INSERT_BATCH_SIZE) {
+          await this.chunkModel.insertMany(insertBatch, { ordered: false });
+          insertBatch = [];
+          onProgress?.(savedRows, estimatedTotal);
+          await yieldToEventLoop();
+        }
+      }
+    };
+
+    const finish = async () => {
+      if (carry.length) {
+        insertBatch.push({ masterKey, chunkIndex, rows: carry });
+        savedRows += carry.length;
+        carry = [];
+      }
+      if (insertBatch.length) {
+        await this.chunkModel.insertMany(insertBatch, { ordered: false });
+        insertBatch = [];
+      }
+      onProgress?.(savedRows, estimatedTotal);
+    };
+
+    if (this.isChunked(doc)) {
+      while (true) {
+        const chunk = await this.chunkModel
+          .findOne({ masterKey: doc.key })
+          .sort({ chunkIndex: 1 })
+          .select('rows chunkIndex')
+          .lean()
+          .exec();
+        if (!chunk) break;
+
+        for (const row of (chunk.rows as string[][]) ?? []) {
+          const aligned = alignRowWithIndex(row, existingIdx, mergedHeaders);
+          seen.add(rowKey(aligned));
+          carry.push(aligned);
+          if (carry.length >= chunkSize * 2) {
+            await flushCarry();
+          }
+        }
+
+        await this.chunkModel
+          .deleteOne({ masterKey: doc.key, chunkIndex: chunk.chunkIndex })
+          .exec();
+        await yieldToEventLoop();
+      }
+    } else {
+      throw new Error('rewriteMergedAppend requires chunked storage');
+    }
+
+    for (const row of incoming.rows) {
+      const aligned = alignRowWithIndex(row, incomingIdx, mergedHeaders);
+      if (!row.some((cell) => cell.length > 0)) {
+        skippedDuplicates += 1;
+        continue;
+      }
+      const key = rowKey(aligned);
+      if (seen.has(key)) {
+        skippedDuplicates += 1;
+        continue;
+      }
+      seen.add(key);
+      carry.push(aligned);
+      addedRows += 1;
+      if (carry.length >= chunkSize * 2) {
+        await flushCarry();
+      }
+      if (addedRows % YIELD_EVERY_ROWS === 0) {
+        await yieldToEventLoop();
+      }
+    }
+
+    await flushCarry();
+    await finish();
+
+    return {
+      rowCount: savedRows,
+      addedRows,
+      skippedDuplicates,
+    };
   }
 
   async loadAllRows(doc: Pick<MasterDataRecord, 'key' | 'rows' | 'storage' | 'rowCount'>): Promise<string[][]> {

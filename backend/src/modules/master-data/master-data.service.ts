@@ -27,7 +27,13 @@ import {
   UpdateEmployeeWorkDataDto,
 } from './dto/master-data-upload-request.dto';
 import { SystemRole } from '../../common/constants/roles.constant';
-import { mergeAppendSheets } from './master-data-merge.util';
+import {
+  alignRowWithIndex,
+  buildHeaderIndexMap,
+  headersEqual,
+  mergeAppendSheets,
+  mergeHeaders,
+} from './master-data-merge.util';
 import {
   MASTER_DATA_KEY,
   MasterDataRecord,
@@ -74,6 +80,8 @@ const CRM_OPERATIONAL_COLLECTIONS = [
 @Injectable()
 export class MasterDataService {
   private readonly logger = new Logger(MasterDataService.name);
+  /** Serialize large imports so only one heavy job runs at a time. */
+  private importChain: Promise<void> = Promise.resolve();
 
   constructor(
     @InjectModel(MasterDataRecord.name)
@@ -102,6 +110,100 @@ export class MasterDataService {
   ): Promise<string[][]> {
     if (!doc) return [];
     return this.rowStore.loadAllRows(doc);
+  }
+
+  private async appendChunkedMasterData(
+    existing: MasterDataRecord,
+    incoming: { headers: string[]; rows: string[][] },
+    dto: SaveMasterDataDto,
+    onProgress?: (saved: number, total: number, message: string) => void,
+  ): Promise<{
+    headers: string[];
+    rowCount: number;
+    addedRows: number;
+    skippedDuplicates: number;
+  }> {
+    const mergedHeaders = mergeHeaders(existing.headers, incoming.headers);
+    const headersUnchanged = headersEqual(mergedHeaders, existing.headers);
+    const beforeCount = this.rowStore.getRowCount(existing);
+
+    if (headersUnchanged) {
+      onProgress?.(0, incoming.rows.length, 'Checking duplicates…');
+      this.logger.log(
+        `Incremental chunked append for ${incoming.rows.length.toLocaleString()} rows`,
+      );
+
+      const seen = await this.rowStore.loadExistingRowKeys(existing, mergedHeaders);
+      const incomingIdx = buildHeaderIndexMap(incoming.headers);
+      const incomingAligned = headersEqual(incoming.headers, mergedHeaders);
+      const newRows: string[][] = [];
+      let processed = 0;
+
+      for (const row of incoming.rows) {
+        processed += 1;
+        const aligned = incomingAligned
+          ? row
+          : alignRowWithIndex(row, incomingIdx, mergedHeaders);
+        if (!aligned.some((cell) => cell.length > 0)) continue;
+        const key = this.rowKey(aligned);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        newRows.push(aligned);
+
+        if (processed % 10_000 === 0) {
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          onProgress?.(
+            processed,
+            incoming.rows.length,
+            `Deduping ${processed.toLocaleString()} / ${incoming.rows.length.toLocaleString()} rows…`,
+          );
+        }
+      }
+
+      const addedRows = newRows.length;
+      const skippedDuplicates = incoming.rows.length - addedRows;
+
+      if (newRows.length) {
+        await this.rowStore.appendRows(newRows, MASTER_DATA_KEY, undefined, (saved, total) => {
+          onProgress?.(
+            saved,
+            total,
+            `Saving ${saved.toLocaleString()} / ${total.toLocaleString()} new rows…`,
+          );
+        });
+      }
+
+      return {
+        headers: mergedHeaders,
+        rowCount: beforeCount + addedRows,
+        addedRows,
+        skippedDuplicates,
+      };
+    }
+
+    onProgress?.(0, incoming.rows.length, 'Merging with existing master data (streaming)…');
+    this.logger.log(
+      `Streaming chunked merge — headers ${existing.headers.length} → ${mergedHeaders.length}`,
+    );
+
+    const result = await this.rowStore.rewriteMergedAppend(
+      existing,
+      existing.headers,
+      incoming,
+      mergedHeaders,
+      MASTER_DATA_KEY,
+      undefined,
+      (saved, total) => {
+        onProgress?.(saved, total, `Saving ${saved.toLocaleString()} rows…`);
+      },
+    );
+
+    return {
+      headers: mergedHeaders,
+      rowCount: result.rowCount,
+      addedRows: result.addedRows,
+      skippedDuplicates: result.skippedDuplicates,
+    };
   }
 
   private async persistMasterSheet(
@@ -178,13 +280,11 @@ export class MasterDataService {
       throw new BadRequestException('At least one column header is required');
     }
 
-    const existingKeys = new Set(
-      masterDoc
-        ? (await this.loadExistingRows(masterDoc)).map((row) =>
-            this.rowKey(this.normalizeRowToHeaders(row, masterDoc.headers, headers)),
-          )
-        : [],
-    );
+    const existingKeys = masterDoc
+      ? await this.rowStore.loadExistingRowKeys(masterDoc, headers, {
+          formatCell: (value) => value || '-',
+        })
+      : new Set<string>();
     const incomingSeen = new Set<string>();
     const rows: string[][] = [];
     const duplicateRows: string[][] = [];
@@ -261,6 +361,68 @@ export class MasterDataService {
       rows = incoming.rows;
       addedRows = rows.length;
       skippedDuplicates = 0;
+    } else if (this.rowStore.isChunked(existing)) {
+      const merged = await this.appendChunkedMasterData(
+        existing,
+        incoming,
+        dto,
+        (saved, total, message) => onProgress?.(saved, total, message),
+      );
+      headers = merged.headers;
+      rows = [];
+      addedRows = merged.addedRows;
+      skippedDuplicates = merged.skippedDuplicates;
+      const fileName =
+        existing.fileName.includes('+')
+          ? existing.fileName.replace(/\(\d+ rows\)$/, `(${merged.rowCount} rows)`)
+          : `${existing.fileName} + ${dto.fileName} (${merged.rowCount} rows)`;
+
+      const doc = await this.masterDataModel
+        .findOneAndUpdate(
+          { key: MASTER_DATA_KEY },
+          {
+            fileName,
+            sheetName: dto.sheetName || existing.sheetName || 'Master Data',
+            headers,
+            rows: [],
+            rowCount: merged.rowCount,
+            storage: 'chunked',
+            uploadedBy: actor.id,
+            uploadedByEmail: actor.email,
+          },
+          { new: true, setDefaultsOnInsert: true },
+        )
+        .exec() as MasterDataRecord;
+
+      try {
+        await this.activityLogs.logWithActor(actor, {
+          action: 'MASTER_DATA_UPLOAD',
+          resource: 'master-data',
+          path: '/admin/master-data-upload',
+          metadata: {
+            fileName: dto.fileName,
+            sheetName: dto.sheetName,
+            addedRows,
+            skippedDuplicates,
+            totalRows: merged.rowCount,
+            columnCount: headers.length,
+            mode,
+            detailAction: 'MASTER_DATA_APPEND',
+          },
+        });
+      } catch (err) {
+        this.logger.error(
+          `Failed to write activity log for master data upload: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+
+      void this.bustMasterCaches();
+      return {
+        ...(await this.toResponse(doc)),
+        addedRows,
+        skippedDuplicates,
+        mode,
+      };
     } else {
       onProgress?.(0, incoming.rows.length, 'Merging with existing master data…');
       const existingRows = await this.loadExistingRows(existing);
@@ -354,8 +516,13 @@ export class MasterDataService {
     actor: ActivityActor,
   ) {
     const jobId = this.importJobs.createJob(fileName);
+    const run = this.runImportJob(jobId, buffer, fileName, mode, actor);
+    this.importChain = this.importChain
+      .catch(() => undefined)
+      .then(() => run)
+      .catch(() => undefined);
     setImmediate(() => {
-      void this.runImportJob(jobId, buffer, fileName, mode, actor);
+      void this.importChain;
     });
     return { jobId };
   }
@@ -382,8 +549,10 @@ export class MasterDataService {
         message: 'Reading spreadsheet…',
       });
 
+      this.logger.log(`Import job ${jobId}: parsing ${fileName}`);
       const parsed = await parseSpreadsheetBufferAsync(buffer, fileName);
       const totalRows = parsed.rows.length;
+      this.logger.log(`Import job ${jobId}: parsed ${totalRows.toLocaleString()} rows`);
 
       await this.importJobs.updateJob(jobId, {
         phase: 'merging',
@@ -412,6 +581,10 @@ export class MasterDataService {
             totalRows: total,
           });
         },
+      );
+
+      this.logger.log(
+        `Import job ${jobId}: complete — ${result.rowCount.toLocaleString()} total rows`,
       );
 
       await this.importJobs.updateJob(jobId, {

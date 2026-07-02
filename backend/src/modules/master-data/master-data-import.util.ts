@@ -26,11 +26,17 @@ function normalizeMatrix(raw: unknown[][]): { headers: string[]; rows: string[][
     ? headerRow.map((h, i) => h || `Column ${i + 1}`)
     : first.map((_, i) => `Column ${i + 1}`);
 
-  const dataRows = (hasHeader ? raw.slice(1) : raw).map((row) =>
-    headers.map((_, i) => cellToString(row[i])),
-  );
-  const nonEmpty = dataRows.filter((row) => row.some((c) => c.length > 0));
-  return { headers, rows: nonEmpty };
+  const rows: string[][] = [];
+  const dataStart = hasHeader ? 1 : 0;
+  for (let r = dataStart; r < raw.length; r += 1) {
+    const row = raw[r] ?? [];
+    const normalized = headers.map((_, i) => cellToString(row[i]));
+    if (normalized.some((c) => c.length > 0)) {
+      rows.push(normalized);
+    }
+  }
+
+  return { headers, rows };
 }
 
 export function parseSpreadsheetBuffer(
@@ -68,10 +74,16 @@ export function parseSpreadsheetBufferAsync(
   buffer: Buffer,
   fileName: string,
 ): Promise<ParsedSpreadsheet> {
+  const arrayBuffer = buffer.buffer.slice(
+    buffer.byteOffset,
+    buffer.byteOffset + buffer.byteLength,
+  ) as ArrayBuffer;
+
   return new Promise((resolve, reject) => {
     let settled = false;
     const worker = new Worker(join(__dirname, 'master-data-parse.worker.js'), {
-      workerData: { buffer, fileName },
+      workerData: { fileName, buffer: arrayBuffer },
+      transferList: [arrayBuffer],
     });
 
     worker.once('message', (msg: { ok: boolean; result?: ParsedSpreadsheet; error?: string }) => {

@@ -3,6 +3,16 @@
 # Preserves existing secrets (MongoDB, JWT, Redis). Run on EC2 before deploy.
 set -euo pipefail
 
+if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* || -n "${MSYSTEM:-}" ]]; then
+  echo ""
+  echo "ERROR: Run this on the EC2 SERVER (AWS Instance Connect), not Windows/Git Bash."
+  echo ""
+  echo "AWS Console → EC2 → Connect → EC2 Instance Connect, then run:"
+  echo "  cd ~/quoreb2b-crm && git pull origin main && bash deploy/ec2/ensure-production-env.sh && bash deploy/ec2/deploy-backend.sh"
+  echo ""
+  exit 1
+fi
+
 APP_DIR="${APP_DIR:-$HOME/quoreb2b-crm}"
 ENV_FILE="${ENV_FILE:-$APP_DIR/backend/.env.production}"
 EXAMPLE_FILE="$APP_DIR/backend/.env.production.example"

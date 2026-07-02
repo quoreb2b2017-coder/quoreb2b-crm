@@ -42,6 +42,7 @@ import { ConfigService } from '@nestjs/config';
 import { cacheTtlSeconds } from '../../redis/cache.util';
 import { MasterDataRowStore, MASTER_DATA_LARGE_UI_ROW_LIMIT } from './master-data-row.store';
 import { parseSpreadsheetBuffer } from './master-data-import.util';
+import { MasterDataImportJobService } from './master-data-import-job.service';
 
 const DEFAULT_MAX_TOTAL_ROWS = 1_000_000;
 const DUPLICATE_PREVIEW_LIMIT = 100;
@@ -86,6 +87,7 @@ export class MasterDataService {
     private cache: AppCacheService,
     private config: ConfigService,
     private rowStore: MasterDataRowStore,
+    private importJobs: MasterDataImportJobService,
   ) {}
 
   private maxTotalRows(): number {
@@ -110,6 +112,7 @@ export class MasterDataService {
       sheetName: string;
       actor: ActivityActor;
     },
+    onSaveProgress?: (savedRows: number, totalRows: number) => void,
   ): Promise<MasterDataRecord> {
     const { headers, rows, fileName, sheetName, actor } = params;
     const rowCount = rows.length;
@@ -122,9 +125,11 @@ export class MasterDataService {
 
     const useChunked = this.rowStore.shouldUseChunkedStorage(rowCount);
     if (useChunked) {
-      await this.rowStore.saveRows(rows);
+      await this.rowStore.saveRows(rows, MASTER_DATA_KEY, undefined, onSaveProgress);
+      onSaveProgress?.(rowCount, rowCount);
     } else {
       await this.rowStore.deleteChunks();
+      onSaveProgress?.(rowCount, rowCount);
     }
 
     return this.masterDataModel
@@ -221,7 +226,11 @@ export class MasterDataService {
     });
   }
 
-  async save(dto: SaveMasterDataDto, actor: ActivityActor) {
+  async save(
+    dto: SaveMasterDataDto,
+    actor: ActivityActor,
+    onProgress?: (savedRows: number, totalRows: number, message: string) => void,
+  ) {
     if (!dto.headers.length) {
       throw new BadRequestException('At least one column header is required');
     }
@@ -253,6 +262,7 @@ export class MasterDataService {
       addedRows = rows.length;
       skippedDuplicates = 0;
     } else {
+      onProgress?.(0, incoming.rows.length, 'Merging with existing master data…');
       const existingRows = await this.loadExistingRows(existing);
       const beforeCount = existingRows.length;
       const merged = mergeAppendSheets(
@@ -272,13 +282,18 @@ export class MasterDataService {
           ? existing.fileName.replace(/\(\d+ rows\)$/, `(${rows.length} rows)`)
           : `${existing.fileName} + ${dto.fileName} (${rows.length} rows)`;
 
-    const doc = await this.persistMasterSheet({
-      headers,
-      rows,
-      fileName,
-      sheetName: dto.sheetName || existing?.sheetName || 'Master Data',
-      actor,
-    });
+    const doc = await this.persistMasterSheet(
+      {
+        headers,
+        rows,
+        fileName,
+        sheetName: dto.sheetName || existing?.sheetName || 'Master Data',
+        actor,
+      },
+      (saved, total) => {
+        onProgress?.(saved, total, `Saving ${saved.toLocaleString()} / ${total.toLocaleString()} rows…`);
+      },
+    );
 
     const detailAction =
       mode === 'replace' ? 'MASTER_DATA_REPLACE' : 'MASTER_DATA_APPEND';
@@ -330,6 +345,93 @@ export class MasterDataService {
       },
       actor,
     );
+  }
+
+  queueImportFromFile(
+    buffer: Buffer,
+    fileName: string,
+    mode: 'append' | 'replace',
+    actor: ActivityActor,
+  ) {
+    const jobId = this.importJobs.createJob(fileName);
+    setImmediate(() => {
+      void this.runImportJob(jobId, buffer, fileName, mode, actor);
+    });
+    return { jobId };
+  }
+
+  async getImportJobStatus(jobId: string) {
+    const job = await this.importJobs.getJob(jobId);
+    if (!job) {
+      throw new NotFoundException('Import job not found');
+    }
+    return job;
+  }
+
+  private async runImportJob(
+    jobId: string,
+    buffer: Buffer,
+    fileName: string,
+    mode: 'append' | 'replace',
+    actor: ActivityActor,
+  ) {
+    try {
+      await this.importJobs.updateJob(jobId, {
+        phase: 'parsing',
+        percent: 35,
+        message: 'Reading spreadsheet…',
+      });
+
+      const parsed = parseSpreadsheetBuffer(buffer, fileName);
+      const totalRows = parsed.rows.length;
+
+      await this.importJobs.updateJob(jobId, {
+        phase: 'merging',
+        percent: 42,
+        message: `Found ${totalRows.toLocaleString()} rows — preparing save…`,
+        totalRows,
+        rowsProcessed: 0,
+      });
+
+      const result = await this.save(
+        {
+          fileName: parsed.fileName,
+          sheetName: parsed.sheetName,
+          headers: parsed.headers,
+          rows: parsed.rows,
+          mode,
+        },
+        actor,
+        (saved, total, message) => {
+          const pct = total > 0 ? 45 + Math.round((saved / total) * 52) : 95;
+          void this.importJobs.updateJob(jobId, {
+            phase: 'saving',
+            percent: Math.min(pct, 99),
+            message,
+            rowsProcessed: saved,
+            totalRows: total,
+          });
+        },
+      );
+
+      await this.importJobs.updateJob(jobId, {
+        phase: 'done',
+        percent: 100,
+        message: `Import complete — ${result.rowCount.toLocaleString()} rows in master database`,
+        rowsProcessed: result.rowCount,
+        totalRows: result.rowCount,
+        result: result as unknown as Record<string, unknown>,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Import failed';
+      this.logger.error(`Master import job ${jobId} failed: ${message}`);
+      await this.importJobs.updateJob(jobId, {
+        phase: 'failed',
+        percent: 100,
+        message: 'Import failed',
+        error: message,
+      });
+    }
   }
 
   async getCurrent() {

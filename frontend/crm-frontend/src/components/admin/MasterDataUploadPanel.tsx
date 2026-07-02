@@ -16,6 +16,7 @@ import {
   masterDataService,
   recordToSpreadsheet,
   type MasterBatchCoverage,
+  type MasterDataImportProgress,
 } from '@/lib/api/master-data.service';
 import { batchesService } from '@/lib/api/batches.service';
 import { extractApiError } from '@/lib/api/errors';
@@ -25,6 +26,7 @@ import { useAuthStore } from '@/store/auth.store';
 import { useCanExportSpreadsheet } from '@/hooks/useSpreadsheetCopyGuard';
 import { useDebouncedAutoSave, type AutoSaveStatus } from '@/hooks/useDebouncedAutoSave';
 import { MasterDataClearConfirmModal } from '@/components/master-data/MasterDataClearConfirmModal';
+import { MasterDataUploadProgressModal } from '@/components/master-data/MasterDataUploadProgressModal';
 import { DbAdminCampaignWizard } from '@/components/db-admin/DbAdminCampaignWizard';
 
 const ACCEPT = '.csv,.xlsx,.xls';
@@ -188,6 +190,8 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   } | null>(null);
   const [clearModalOpen, setClearModalOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<MasterDataImportProgress | null>(null);
+  const [uploadFileName, setUploadFileName] = useState('');
 
   const applyRecord = useCallback((record: Awaited<ReturnType<typeof masterDataService.save>>) => {
     const sheet = recordToSpreadsheet(record);
@@ -367,11 +371,12 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
 
   const processFile = useCallback(async (file: File) => {
     setParsing(true); setError('');
+    setUploadFileName(file.name);
     try {
       const mode = replaceOnUpload ? 'replace' : 'append';
       if (masterDataService.shouldUseServerImport(file)) {
-        toast.info('Uploading large file…', 'Processing on server — this may take several minutes');
-        const record = await masterDataService.importFile(file, mode);
+        setUploadProgress({ percent: 0, phase: 'uploading', message: 'Starting upload…' });
+        const record = await masterDataService.importFile(file, mode, setUploadProgress);
         applyRecord(record);
         await logUploadActivity(mode, record, file.name);
         toast.success(
@@ -388,7 +393,11 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
       setError(msg);
       if (!(e as { response?: unknown })?.response) setData(null);
       toast.error('Upload failed', extractApiError(e, msg));
-    } finally { setParsing(false); }
+    } finally {
+      setParsing(false);
+      setUploadProgress(null);
+      setUploadFileName('');
+    }
   }, [applyRecord, logUploadActivity, persistToDb, replaceOnUpload]);
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1002,6 +1011,12 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
           </div>
         </>
       )}
+
+      <MasterDataUploadProgressModal
+        open={Boolean(uploadProgress)}
+        progress={uploadProgress}
+        fileName={uploadFileName}
+      />
 
       <MasterDataClearConfirmModal
         open={clearModalOpen}

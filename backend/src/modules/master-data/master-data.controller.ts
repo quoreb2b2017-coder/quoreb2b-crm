@@ -74,6 +74,36 @@ export class MasterDataController {
     );
   }
 
+  @Post('import-jobs')
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: MASTER_IMPORT_MAX_BYTES },
+    }),
+  )
+  startImportJob(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() dto: ImportMasterDataFileDto,
+    @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
+  ) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('Spreadsheet file is required');
+    }
+    return this.masterDataService.queueImportFromFile(
+      file.buffer,
+      file.originalname || 'upload.xlsx',
+      dto.mode ?? 'replace',
+      actorFromJwt(user),
+    );
+  }
+
+  @Get('import-jobs/:jobId')
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
+  getImportJob(@Param('jobId') jobId: string) {
+    return this.masterDataService.getImportJobStatus(jobId);
+  }
+
   @Get('current')
   @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
   getCurrent(@CurrentUser() user: Parameters<typeof actorFromJwt>[0]) {

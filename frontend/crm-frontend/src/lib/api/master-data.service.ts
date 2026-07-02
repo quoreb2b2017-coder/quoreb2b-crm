@@ -7,6 +7,30 @@ const MASTER_IMPORT_THRESHOLD_BYTES = 2 * 1024 * 1024;
 
 export type MasterDataSaveMode = 'append' | 'replace';
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export interface MasterDataImportProgress {
+  percent: number;
+  phase: string;
+  message: string;
+  rowsProcessed?: number;
+  totalRows?: number;
+}
+
+export interface MasterDataImportJobStatus {
+  jobId: string;
+  phase: string;
+  percent: number;
+  message: string;
+  rowsProcessed?: number;
+  totalRows?: number;
+  fileName?: string;
+  error?: string;
+  result?: MasterDataRecord;
+}
+
 export interface MasterBatchCoverage {
   summary: {
     totalRows: number;
@@ -150,15 +174,47 @@ export const masterDataService = {
     return unwrap<MasterDataRecord>({ data });
   },
 
-  importFile: async (file: File, mode: MasterDataSaveMode = 'replace') => {
+  importFile: async (
+    file: File,
+    mode: MasterDataSaveMode = 'replace',
+    onProgress?: (progress: MasterDataImportProgress) => void,
+  ) => {
     const form = new FormData();
     form.append('file', file);
     form.append('mode', mode);
-    const { data } = await apiClient.post('/master-data/import-file', form, {
+
+    const { data } = await apiClient.post('/master-data/import-jobs', form, {
       timeout: MASTER_DATA_TIMEOUT_MS,
       headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (event) => {
+        if (!onProgress || !event.total) return;
+        const uploadPct = Math.min(30, Math.round((event.loaded / event.total) * 30));
+        onProgress({
+          percent: uploadPct,
+          phase: 'uploading',
+          message: `Uploading file… ${uploadPct}%`,
+        });
+      },
     });
-    return unwrap<MasterDataRecord>({ data });
+
+    const { jobId } = unwrap<{ jobId: string }>({ data });
+
+    while (true) {
+      await sleep(800);
+      const statusRes = await apiClient.get(`/master-data/import-jobs/${jobId}`);
+      const status = unwrap<MasterDataImportJobStatus>({ data: statusRes.data });
+      onProgress?.({
+        percent: status.percent,
+        phase: status.phase,
+        message: status.message,
+        rowsProcessed: status.rowsProcessed,
+        totalRows: status.totalRows,
+      });
+      if (status.phase === 'done' && status.result) return status.result;
+      if (status.phase === 'failed') {
+        throw new Error(status.error || status.message || 'Import failed');
+      }
+    }
   },
 
   shouldUseServerImport(file: File): boolean {

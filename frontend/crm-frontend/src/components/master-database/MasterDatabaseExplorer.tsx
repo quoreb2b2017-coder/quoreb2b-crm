@@ -33,12 +33,14 @@ import {
   masterDataService,
   recordToSpreadsheet,
   type MasterBatchCoverage,
+  type MasterDataImportProgress,
 } from '@/lib/api/master-data.service';
 import { batchesService } from '@/lib/api/batches.service';
 import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
 import { useCanExportSpreadsheet } from '@/hooks/useSpreadsheetCopyGuard';
 import { MasterDataClearConfirmModal } from '@/components/master-data/MasterDataClearConfirmModal';
+import { MasterDataUploadProgressModal } from '@/components/master-data/MasterDataUploadProgressModal';
 import { DbAdminCampaignWizard } from '@/components/db-admin/DbAdminCampaignWizard';
 import { MasterDatabaseFilterPanel, MasterDatabaseFilterTags } from './MasterDatabaseFilterPanel';
 import { MasterDatabaseFilterSidebar } from './MasterDatabaseFilterSidebar';
@@ -98,6 +100,8 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
   const [filterSidebarOpen, setFilterSidebarOpen] = useState(true);
 
   const [parsing, setParsing] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<MasterDataImportProgress | null>(null);
+  const [uploadFileName, setUploadFileName] = useState('');
   const [clearModalOpen, setClearModalOpen] = useState(false);
   const [batchModal, setBatchModal] = useState<{
     rows: string[][];
@@ -592,11 +596,12 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
     e.target.value = '';
     if (!file) return;
     setParsing(true);
+    setUploadFileName(file.name);
     try {
       let record;
       if (masterDataService.shouldUseServerImport(file)) {
-        toast.info('Uploading…', 'Large file is processed on the server');
-        record = await masterDataService.importFile(file, 'append');
+        setUploadProgress({ percent: 0, phase: 'uploading', message: 'Starting upload…' });
+        record = await masterDataService.importFile(file, 'append', setUploadProgress);
       } else {
         const parsed = await parseSpreadsheetFile(file);
         record = await masterDataService.save(parsed, 'append');
@@ -616,6 +621,8 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
       toast.error('Upload failed', extractApiError(err));
     } finally {
       setParsing(false);
+      setUploadProgress(null);
+      setUploadFileName('');
     }
   };
 
@@ -1022,6 +1029,12 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
           }}
         />
       )}
+
+      <MasterDataUploadProgressModal
+        open={Boolean(uploadProgress)}
+        progress={uploadProgress}
+        fileName={uploadFileName}
+      />
 
       {!isDbAdmin && (
         <MasterDataClearConfirmModal

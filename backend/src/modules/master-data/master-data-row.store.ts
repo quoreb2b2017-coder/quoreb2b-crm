@@ -41,10 +41,12 @@ export class MasterDataRowStore {
     rows: string[][],
     masterKey: string = MASTER_DATA_KEY,
     chunkSize = MASTER_DATA_CHUNK_SIZE,
+    onProgress?: (savedRows: number, totalRows: number) => void,
   ): Promise<void> {
     await this.deleteChunks(masterKey);
     if (!rows.length) return;
 
+    const totalRows = rows.length;
     const docs: Array<{ masterKey: string; chunkIndex: number; rows: string[][] }> = [];
     for (let i = 0; i < rows.length; i += chunkSize) {
       docs.push({
@@ -55,8 +57,12 @@ export class MasterDataRowStore {
     }
 
     const batchSize = 40;
+    let savedRows = 0;
     for (let i = 0; i < docs.length; i += batchSize) {
-      await this.chunkModel.insertMany(docs.slice(i, i + batchSize));
+      const batch = docs.slice(i, i + batchSize);
+      await this.chunkModel.insertMany(batch);
+      savedRows += batch.reduce((sum, d) => sum + d.rows.length, 0);
+      onProgress?.(savedRows, totalRows);
     }
   }
 

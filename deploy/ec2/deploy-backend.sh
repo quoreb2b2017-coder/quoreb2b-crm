@@ -43,6 +43,9 @@ git reset --hard origin/main
 echo "==> Ensuring Redis is running..."
 bash "$APP_DIR/deploy/ec2/ensure-redis.sh"
 
+echo "==> Ensuring production env..."
+bash "$APP_DIR/deploy/ec2/ensure-production-env.sh"
+
 echo "==> Building Docker image..."
 cd backend
 docker build -t "$IMAGE_NAME" .

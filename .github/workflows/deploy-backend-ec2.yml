@@ -109,4 +109,5 @@ jobs:
             'set -euo pipefail
              cd ~/quoreb2b-crm
              git pull origin main
+             bash deploy/ec2/ensure-production-env.sh
              bash deploy/ec2/deploy-backend.sh'

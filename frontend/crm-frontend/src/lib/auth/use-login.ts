@@ -34,6 +34,10 @@ function formatLoginError(e: unknown): string {
     return 'API is not running. Open a terminal: cd backend → npm run start:dev (wait for "API running on port 4000")';
   }
   if (err.code === 'ECONNABORTED' || /timeout.*exceeded/i.test(err.message ?? '')) {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
+    if (apiUrl && !apiUrl.includes('localhost')) {
+      return 'Server is not responding — a large file import may have overloaded it. Wait 2–3 minutes or reboot EC2 from AWS Console, then try login again.';
+    }
     return 'Server is taking too long to respond. If a large file upload is running, wait a minute and try again.';
   }
   return extractApiError(e, 'Login failed');

@@ -17,6 +17,13 @@ import {
   parseAllowedLoginIps,
 } from './config/login-ip-restriction.util';
 import { ensureRedisOrDisable, readRedisEnv, MIN_REDIS_VERSION } from './redis/redis.factory';
+import cluster from 'node:cluster';
+import { availableParallelism } from 'node:os';
+
+const PRODUCTION_WORKERS = Math.min(
+  2,
+  Math.max(1, Number(process.env.API_CLUSTER_WORKERS) || availableParallelism() - 1 || 1),
+);
 
 async function bootstrap() {
   await ensureRedisOrDisable();
@@ -76,4 +83,15 @@ async function bootstrap() {
   }
 }
 
-bootstrap();
+if (process.env.NODE_ENV === 'production' && PRODUCTION_WORKERS > 1 && cluster.isPrimary) {
+  console.log(`Starting ${PRODUCTION_WORKERS} API workers (imports on one worker won't block login on the other)…`);
+  for (let i = 0; i < PRODUCTION_WORKERS; i += 1) {
+    cluster.fork();
+  }
+  cluster.on('exit', (worker, code) => {
+    console.warn(`API worker ${worker.process.pid} exited (code ${code}), restarting…`);
+    cluster.fork();
+  });
+} else {
+  void bootstrap();
+}

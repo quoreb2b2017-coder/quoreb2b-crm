@@ -44,6 +44,9 @@ git reset --hard origin/main
 echo "==> Ensuring Redis is running..."
 bash "$APP_DIR/deploy/ec2/ensure-redis.sh"
 
+echo "==> Ensuring swap (OOM protection during large uploads)..."
+bash "$APP_DIR/deploy/ec2/ensure-swap.sh" || echo "WARNING: swap setup skipped"
+
 echo "==> Ensuring production env..."
 bash "$APP_DIR/deploy/ec2/ensure-production-env.sh"
 
@@ -68,7 +71,8 @@ docker run -d \
   --network host \
   --env-file "$ENV_FILE" \
   -e "BUILD_SHA=$(git -C "$APP_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)" \
-  -e "NODE_OPTIONS=--max-old-space-size=1536" \
+  -e "NODE_OPTIONS=--max-old-space-size=896" \
+  -e "API_CLUSTER_WORKERS=2" \
   "$IMAGE_NAME"
 
 echo "==> Waiting for API..."

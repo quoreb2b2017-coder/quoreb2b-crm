@@ -17,7 +17,7 @@ import {
   parseAllowedLoginIps,
 } from './config/login-ip-restriction.util';
 import { ensureRedisOrDisable, readRedisEnv, MIN_REDIS_VERSION } from './redis/redis.factory';
-import cluster from 'node:cluster';
+import * as cluster from 'node:cluster';
 import { availableParallelism } from 'node:os';
 
 const PRODUCTION_WORKERS = Math.min(

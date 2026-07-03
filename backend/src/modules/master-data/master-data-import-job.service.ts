@@ -39,7 +39,7 @@ export class MasterDataImportJobService {
       jobId,
       phase: 'queued',
       percent: 0,
-      message: 'Upload received — starting import…',
+      message: 'File saved — queued for background import…',
       fileName,
       updatedAt: new Date().toISOString(),
     };

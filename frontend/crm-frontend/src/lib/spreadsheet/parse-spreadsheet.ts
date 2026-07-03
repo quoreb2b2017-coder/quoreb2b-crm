@@ -14,6 +14,17 @@ function cellToString(value: unknown): string {
   return String(value).trim();
 }
 
+function trimTrailingEmptyHeaders(headerRow: string[]): string[] {
+  let last = headerRow.length - 1;
+  while (last >= 0 && !headerRow[last]?.trim()) {
+    last -= 1;
+  }
+  return headerRow.slice(0, last + 1).map((h, i) => {
+    const trimmed = cellToString(h);
+    return trimmed || `Column ${i + 1}`;
+  });
+}
+
 function normalizeMatrix(raw: unknown[][]): { headers: string[]; rows: string[][] } {
   if (!raw.length) {
     return { headers: [], rows: [] };
@@ -23,7 +34,7 @@ function normalizeMatrix(raw: unknown[][]): { headers: string[]; rows: string[][
   const headerRow = first.map(cellToString);
   const hasHeader = headerRow.some((h) => h.length > 0);
   const headers = hasHeader
-    ? headerRow.map((h, i) => h || `Column ${i + 1}`)
+    ? trimTrailingEmptyHeaders(headerRow)
     : first.map((_, i) => `Column ${i + 1}`);
 
   const dataRows = (hasHeader ? raw.slice(1) : raw).map((row) => {

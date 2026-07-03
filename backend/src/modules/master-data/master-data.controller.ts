@@ -1,20 +1,21 @@
-import { BadRequestException } from '@nestjs/common';
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
   HttpCode,
   HttpStatus,
+  Logger,
   Param,
   Post,
   Query,
+  Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { memoryStorage } from 'multer';
 import { MasterDataService } from './master-data.service';
 import { SaveMasterDataDto } from './dto/save-master-data.dto';
 import { SearchMasterDataDto } from './dto/search-master-data.dto';
@@ -33,12 +34,20 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { SystemRole } from '../../common/constants/roles.constant';
 import { actorFromJwt } from '../activity-logs/activity-user.util';
 import { ImportMasterDataFileDto } from './dto/import-master-data-file.dto';
-
-const MASTER_IMPORT_MAX_BYTES = 500 * 1024 * 1024;
+import {
+  masterDataImportMulterOptions,
+  type MasterDataUploadRequest,
+} from './master-data-upload.storage';
+import {
+  formatMemoryUsage,
+  logMasterDataUploadSaved,
+} from './master-data-upload.metrics';
 
 @Controller({ path: 'master-data', version: '1' })
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class MasterDataController {
+  private readonly logger = new Logger(MasterDataController.name);
+
   constructor(private masterDataService: MasterDataService) {}
 
   @Post()
@@ -52,22 +61,27 @@ export class MasterDataController {
 
   @Post('import-file')
   @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: memoryStorage(),
-      limits: { fileSize: MASTER_IMPORT_MAX_BYTES },
-    }),
-  )
+  @UseInterceptors(FileInterceptor('file', masterDataImportMulterOptions()))
   importFile(
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: ImportMasterDataFileDto,
     @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
+    @Req() req: MasterDataUploadRequest,
   ) {
-    if (!file?.buffer?.length) {
+    if (!file?.path) {
       throw new BadRequestException('Spreadsheet file is required');
     }
+    const handlerStart = Date.now();
+    const diskSaveMs = handlerStart - (req.masterDataUploadStartedAt ?? handlerStart);
+    logMasterDataUploadSaved(this.logger, {
+      fileName: file.originalname || 'upload.xlsx',
+      fileSizeBytes: file.size,
+      diskSaveMs,
+      handlerMs: 0,
+      memory: formatMemoryUsage(),
+    });
     return this.masterDataService.importFromFile(
-      file.buffer,
+      file.path,
       file.originalname || 'upload.xlsx',
       dto.mode ?? 'replace',
       actorFromJwt(user),
@@ -76,25 +90,36 @@ export class MasterDataController {
 
   @Post('import-jobs')
   @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: memoryStorage(),
-      limits: { fileSize: MASTER_IMPORT_MAX_BYTES },
-    }),
-  )
+  @UseInterceptors(FileInterceptor('file', masterDataImportMulterOptions()))
   startImportJob(
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: ImportMasterDataFileDto,
     @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
+    @Req() req: MasterDataUploadRequest,
   ) {
-    if (!file?.buffer?.length) {
+    if (!file?.path) {
       throw new BadRequestException('Spreadsheet file is required');
     }
+
+    const handlerStart = Date.now();
+    const diskSaveMs = handlerStart - (req.masterDataUploadStartedAt ?? handlerStart);
+    const fileName = file.originalname || 'upload.xlsx';
+
+    logMasterDataUploadSaved(this.logger, {
+      fileName,
+      fileSizeBytes: file.size,
+      diskSaveMs,
+      handlerMs: Date.now() - handlerStart,
+      memory: formatMemoryUsage(),
+    });
+
+    // Return immediately — Excel parse + MongoDB save run in the background.
     return this.masterDataService.queueImportFromFile(
-      file.buffer,
-      file.originalname || 'upload.xlsx',
+      file.path,
+      fileName,
       dto.mode ?? 'replace',
       actorFromJwt(user),
+      { diskSaveMs, fileSizeBytes: file.size },
     );
   }
 

@@ -70,28 +70,11 @@ const MASTER_DATA_VIEW_TABS: Array<{
   },
 ];
 
-function mergeHeaders(existing: string[], incoming: string[]) {
-  const seen = new Set(existing);
-  const merged = [...existing];
-  for (const header of incoming) {
-    if (!seen.has(header)) {
-      merged.push(header);
-      seen.add(header);
-    }
-  }
-  return merged;
-}
-
-function alignRowToHeaders(
-  row: string[],
-  sourceHeaders: string[],
-  targetHeaders: string[],
-) {
-  return targetHeaders.map((header) => {
-    const idx = sourceHeaders.indexOf(header);
-    return idx >= 0 ? String(row[idx] ?? '').trim() : '';
-  });
-}
+import {
+  alignRowToMasterHeaders,
+  mergeMasterDataHeaders,
+  prepareMasterDataSheet,
+} from '@/lib/spreadsheet/master-data-format';
 
 function rowKey(row: string[]) {
   return row.join('\u001f');
@@ -101,16 +84,16 @@ function collectDuplicateRows(
   existing: SpreadsheetData | null,
   incoming: SpreadsheetData,
 ) {
-  const headers = mergeHeaders(existing?.headers ?? [], incoming.headers);
+  const headers = mergeMasterDataHeaders(existing?.headers ?? [], incoming.headers);
   const seen = new Set(
     (existing?.rows ?? []).map((row) =>
-      rowKey(alignRowToHeaders(row, existing?.headers ?? [], headers)),
+      rowKey(alignRowToMasterHeaders(row, existing?.headers ?? [], headers)),
     ),
   );
   const duplicateRows: string[][] = [];
 
   for (const row of incoming.rows) {
-    const aligned = alignRowToHeaders(row, incoming.headers, headers);
+    const aligned = alignRowToMasterHeaders(row, incoming.headers, headers);
     if (!aligned.some((cell) => cell.length > 0)) continue;
     const key = rowKey(aligned);
     if (seen.has(key)) {
@@ -379,7 +362,18 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
         return;
       }
       const parsed = await parseSpreadsheetFile(file);
-      await persistToDb(parsed, mode);
+      const normalized = prepareMasterDataSheet(parsed.headers, parsed.rows, {
+        existingHeaders: dataRef.current?.headers,
+        replace: mode === 'replace',
+      });
+      await persistToDb(
+        {
+          ...parsed,
+          headers: normalized.headers,
+          rows: normalized.rows,
+        },
+        mode,
+      );
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to read file';
       setError(msg);

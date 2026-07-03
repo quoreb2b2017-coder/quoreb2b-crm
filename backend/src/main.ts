@@ -65,7 +65,11 @@ async function bootstrap() {
   app.useGlobalInterceptors(new LoggingInterceptor(), new TransformInterceptor());
 
   const port = config.get<number>('PORT', 4000);
-  await app.listen(port);
+  const server = await app.listen(port);
+  // Long-running uploads (150MB+): disable request timeout; tune keep-alive for nginx upstream.
+  server.requestTimeout = 0;
+  server.keepAliveTimeout = 75_000;
+  server.headersTimeout = 76_000;
   console.log(`API running on port ${port}`);
   if (isLoginIpRestrictionActive()) {
     console.log(

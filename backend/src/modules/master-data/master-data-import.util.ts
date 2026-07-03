@@ -16,6 +16,17 @@ function cellToString(value: unknown): string {
   return String(value).trim();
 }
 
+function trimTrailingEmptyHeaders(headerRow: string[]): string[] {
+  let last = headerRow.length - 1;
+  while (last >= 0 && !headerRow[last]?.trim()) {
+    last -= 1;
+  }
+  return headerRow.slice(0, last + 1).map((h, i) => {
+    const trimmed = cellToString(h);
+    return trimmed || `Column ${i + 1}`;
+  });
+}
+
 function normalizeMatrix(raw: unknown[][]): { headers: string[]; rows: string[][] } {
   if (!raw.length) return { headers: [], rows: [] };
 
@@ -23,7 +34,7 @@ function normalizeMatrix(raw: unknown[][]): { headers: string[]; rows: string[][
   const headerRow = first.map(cellToString);
   const hasHeader = headerRow.some((h) => h.length > 0);
   const headers = hasHeader
-    ? headerRow.map((h, i) => h || `Column ${i + 1}`)
+    ? trimTrailingEmptyHeaders(headerRow)
     : first.map((_, i) => `Column ${i + 1}`);
 
   const rows: string[][] = [];
@@ -79,11 +90,28 @@ export function parseSpreadsheetBufferAsync(
     buffer.byteOffset + buffer.byteLength,
   ) as ArrayBuffer;
 
+  return runParseWorker({ fileName, buffer: arrayBuffer });
+}
+
+/** Read from disk inside the worker — main thread never loads the full file into RAM. */
+export function parseSpreadsheetFileAsync(
+  filePath: string,
+  fileName: string,
+): Promise<ParsedSpreadsheet> {
+  return runParseWorker({ fileName, filePath });
+}
+
+function runParseWorker(
+  workerData: { fileName: string; filePath?: string; buffer?: ArrayBuffer },
+): Promise<ParsedSpreadsheet> {
+  const transferList =
+    workerData.buffer !== undefined ? [workerData.buffer] : undefined;
+
   return new Promise((resolve, reject) => {
     let settled = false;
     const worker = new Worker(join(__dirname, 'master-data-parse.worker.js'), {
-      workerData: { fileName, buffer: arrayBuffer },
-      transferList: [arrayBuffer],
+      workerData,
+      transferList,
     });
 
     worker.once('message', (msg: { ok: boolean; result?: ParsedSpreadsheet; error?: string }) => {

@@ -35,6 +35,11 @@ import {
   mergeHeaders,
 } from './master-data-merge.util';
 import {
+  formatMasterDataCell,
+  prepareMasterDataIncoming,
+  rowHasSourceData,
+} from './master-data-format.util';
+import {
   MASTER_DATA_KEY,
   MasterDataRecord,
 } from './schemas/master-data.schema';
@@ -47,8 +52,12 @@ import { AppCacheService } from '../../redis/app-cache.service';
 import { ConfigService } from '@nestjs/config';
 import { cacheTtlSeconds } from '../../redis/cache.util';
 import { MasterDataRowStore, MASTER_DATA_LARGE_UI_ROW_LIMIT } from './master-data-row.store';
-import { parseSpreadsheetBufferAsync } from './master-data-import.util';
+import { parseSpreadsheetFileAsync } from './master-data-import.util';
 import { MasterDataImportJobService } from './master-data-import-job.service';
+import { unlink } from 'fs/promises';
+import {
+  formatMemoryUsage,
+} from './master-data-upload.metrics';
 
 const DEFAULT_MAX_TOTAL_ROWS = 1_500_000;
 const DUPLICATE_PREVIEW_LIMIT = 100;
@@ -133,7 +142,9 @@ export class MasterDataService {
         `Incremental chunked append for ${incoming.rows.length.toLocaleString()} rows`,
       );
 
-      const seen = await this.rowStore.loadExistingRowKeys(existing, mergedHeaders);
+      const seen = await this.rowStore.loadExistingRowKeys(existing, mergedHeaders, {
+        formatCell: formatMasterDataCell,
+      });
       const incomingIdx = buildHeaderIndexMap(incoming.headers);
       const incomingAligned = headersEqual(incoming.headers, mergedHeaders);
       const newRows: string[][] = [];
@@ -142,9 +153,9 @@ export class MasterDataService {
       for (const row of incoming.rows) {
         processed += 1;
         const aligned = incomingAligned
-          ? row
-          : alignRowWithIndex(row, incomingIdx, mergedHeaders);
-        if (!aligned.some((cell) => cell.length > 0)) continue;
+          ? row.map(formatMasterDataCell)
+          : alignRowWithIndex(row, incomingIdx, mergedHeaders, formatMasterDataCell);
+        if (!rowHasSourceData(row, incoming.headers)) continue;
         const key = this.rowKey(aligned);
         if (seen.has(key)) continue;
         seen.add(key);
@@ -262,11 +273,8 @@ export class MasterDataService {
     sourceHeaders: string[],
     targetHeaders: string[],
   ) {
-    return targetHeaders.map((header) => {
-      const idx = sourceHeaders.indexOf(header);
-      const value = idx >= 0 ? String(row[idx] ?? '').trim() : '';
-      return value || '-';
-    });
+    const sourceIdx = buildHeaderIndexMap(sourceHeaders);
+    return alignRowWithIndex(row, sourceIdx, targetHeaders, formatMasterDataCell);
   }
 
   private async prepareUploadRows(dto: CreateMasterDataUploadRequestDto, alignToMaster: boolean) {
@@ -335,21 +343,24 @@ export class MasterDataService {
       throw new BadRequestException('At least one column header is required');
     }
 
+    const mode = dto.mode ?? 'append';
+    const existing = await this.masterDataModel
+      .findOne({ key: MASTER_DATA_KEY })
+      .exec();
+
+    const prepared = prepareMasterDataIncoming(dto.headers, dto.rows, {
+      existingHeaders: existing?.headers,
+      replace: mode === 'replace' || !existing,
+    });
+
     const incoming = {
-      headers: dto.headers.map((h) => h.trim()),
-      rows: dto.rows.map((row) =>
-        dto.headers.map((_, i) => String(row[i] ?? '').trim()),
-      ),
+      headers: prepared.headers,
+      rows: prepared.rows,
     };
 
     if (!incoming.rows.length) {
       throw new BadRequestException('No data rows to add');
     }
-
-    const mode = dto.mode ?? 'append';
-    const existing = await this.masterDataModel
-      .findOne({ key: MASTER_DATA_KEY })
-      .exec();
 
     let headers: string[];
     let rows: string[][];
@@ -430,6 +441,7 @@ export class MasterDataService {
       const merged = mergeAppendSheets(
         { headers: existing.headers, rows: existingRows },
         incoming,
+        formatMasterDataCell,
       );
       headers = merged.headers;
       rows = merged.rows;
@@ -491,32 +503,48 @@ export class MasterDataService {
   }
 
   async importFromFile(
-    buffer: Buffer,
+    filePath: string,
     fileName: string,
     mode: 'append' | 'replace',
     actor: ActivityActor,
   ) {
-    const parsed = await parseSpreadsheetBufferAsync(buffer, fileName);
-    return this.save(
-      {
-        fileName: parsed.fileName,
-        sheetName: parsed.sheetName,
-        headers: parsed.headers,
-        rows: parsed.rows,
-        mode,
-      },
-      actor,
-    );
+    const parseStart = Date.now();
+    try {
+      const parsed = await parseSpreadsheetFileAsync(filePath, fileName);
+      this.logger.log(
+        `[master-data import-file] parseMs=${Date.now() - parseStart} rows=${parsed.rows.length.toLocaleString()} ${formatMemoryUsage()}`,
+      );
+      return this.save(
+        {
+          fileName: parsed.fileName,
+          sheetName: parsed.sheetName,
+          headers: parsed.headers,
+          rows: parsed.rows,
+          mode,
+        },
+        actor,
+      );
+    } finally {
+      await unlink(filePath).catch(() => undefined);
+    }
   }
 
   queueImportFromFile(
-    buffer: Buffer,
+    filePath: string,
     fileName: string,
     mode: 'append' | 'replace',
     actor: ActivityActor,
+    uploadMeta?: { diskSaveMs: number; fileSizeBytes: number },
   ) {
     const jobId = this.importJobs.createJob(fileName);
-    const run = this.runImportJob(jobId, buffer, fileName, mode, actor);
+    if (uploadMeta) {
+      const sizeMb = (uploadMeta.fileSizeBytes / 1024 / 1024).toFixed(2);
+      this.logger.log(
+        `[master-data import-job] queued jobId=${jobId} file="${fileName}" size=${sizeMb}MB ` +
+          `diskSaveMs=${uploadMeta.diskSaveMs} ${formatMemoryUsage()}`,
+      );
+    }
+    const run = this.runImportJob(jobId, filePath, fileName, mode, actor);
     this.importChain = this.importChain
       .catch(() => undefined)
       .then(() => run)
@@ -537,11 +565,14 @@ export class MasterDataService {
 
   private async runImportJob(
     jobId: string,
-    buffer: Buffer,
+    filePath: string,
     fileName: string,
     mode: 'append' | 'replace',
     actor: ActivityActor,
   ) {
+    const jobStart = Date.now();
+    let parseMs = 0;
+    let saveMs = 0;
     try {
       await this.importJobs.updateJob(jobId, {
         phase: 'parsing',
@@ -549,10 +580,14 @@ export class MasterDataService {
         message: 'Reading spreadsheet…',
       });
 
-      this.logger.log(`Import job ${jobId}: parsing ${fileName}`);
-      const parsed = await parseSpreadsheetBufferAsync(buffer, fileName);
+      const parseStart = Date.now();
+      this.logger.log(`Import job ${jobId}: parsing ${fileName} from disk`);
+      const parsed = await parseSpreadsheetFileAsync(filePath, fileName);
+      parseMs = Date.now() - parseStart;
       const totalRows = parsed.rows.length;
-      this.logger.log(`Import job ${jobId}: parsed ${totalRows.toLocaleString()} rows`);
+      this.logger.log(
+        `Import job ${jobId}: parsed ${totalRows.toLocaleString()} rows in ${parseMs}ms ${formatMemoryUsage()}`,
+      );
 
       await this.importJobs.updateJob(jobId, {
         phase: 'merging',
@@ -562,6 +597,7 @@ export class MasterDataService {
         rowsProcessed: 0,
       });
 
+      const saveStart = Date.now();
       const result = await this.save(
         {
           fileName: parsed.fileName,
@@ -582,9 +618,11 @@ export class MasterDataService {
           });
         },
       );
+      saveMs = Date.now() - saveStart;
 
       this.logger.log(
-        `Import job ${jobId}: complete — ${result.rowCount.toLocaleString()} total rows`,
+        `Import job ${jobId}: complete — ${result.rowCount.toLocaleString()} total rows ` +
+          `(parseMs=${parseMs} saveMs=${saveMs} totalMs=${Date.now() - jobStart} ${formatMemoryUsage()})`,
       );
 
       await this.importJobs.updateJob(jobId, {
@@ -597,13 +635,18 @@ export class MasterDataService {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Import failed';
-      this.logger.error(`Master import job ${jobId} failed: ${message}`);
+      this.logger.error(
+        `Master import job ${jobId} failed after ${Date.now() - jobStart}ms ` +
+          `(parseMs=${parseMs} saveMs=${saveMs}): ${message} ${formatMemoryUsage()}`,
+      );
       await this.importJobs.updateJob(jobId, {
         phase: 'failed',
         percent: 100,
         message: 'Import failed',
         error: message,
       });
+    } finally {
+      await unlink(filePath).catch(() => undefined);
     }
   }
 

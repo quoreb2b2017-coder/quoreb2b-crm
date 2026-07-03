@@ -61,6 +61,10 @@ echo "==> Building Docker image..."
 cd backend
 docker build -t "$IMAGE_NAME" .
 
+echo "==> Ensuring upload directory on host..."
+sudo mkdir -p /var/lib/quoreb2b/uploads/master-data-imports
+sudo chown -R 1000:1000 /var/lib/quoreb2b/uploads 2>/dev/null || true
+
 echo "==> Restarting container..."
 docker stop "$CONTAINER_NAME" 2>/dev/null || true
 docker rm "$CONTAINER_NAME" 2>/dev/null || true
@@ -70,6 +74,7 @@ docker run -d \
   --restart unless-stopped \
   --network host \
   --env-file "$ENV_FILE" \
+  -v /var/lib/quoreb2b/uploads:/app/uploads \
   -e "BUILD_SHA=$(git -C "$APP_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)" \
   -e "NODE_OPTIONS=--max-old-space-size=896" \
   -e "API_CLUSTER_WORKERS=2" \

@@ -199,6 +199,8 @@ export const masterDataService = {
 
     const { data } = await apiClient.post('/master-data/import-jobs', form, {
       timeout: MASTER_DATA_UPLOAD_TIMEOUT_MS,
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress: (event) => {
         if (!onUploadProgress || !event.total) return;

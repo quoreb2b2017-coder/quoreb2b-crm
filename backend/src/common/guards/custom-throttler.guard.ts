@@ -20,6 +20,11 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
       return `skip-throttle-${Date.now()}-${Math.random()}`;
     }
 
+    // Large master-data uploads can take many minutes — do not throttle.
+    if (url.includes('/master-data/import')) {
+      return `skip-throttle-${Date.now()}-${Math.random()}`;
+    }
+
     // Use default tracker for other endpoints
     return super.getTracker(req);
   }

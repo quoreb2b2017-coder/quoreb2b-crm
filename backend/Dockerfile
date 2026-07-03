@@ -11,5 +11,6 @@ ENV NODE_ENV=production
 COPY package.json ./
 RUN npm install --omit=dev
 COPY --from=builder /app/dist ./dist
+RUN mkdir -p uploads/master-data-imports
 EXPOSE 4000
 CMD ["node", "dist/main.js"]

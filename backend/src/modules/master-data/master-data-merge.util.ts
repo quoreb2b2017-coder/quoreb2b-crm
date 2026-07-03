@@ -12,22 +12,27 @@ export function headersEqual(a: string[], b: string[]): boolean {
 }
 
 export function mergeHeaders(existing: string[], incoming: string[]): string[] {
-  const seen = new Set(existing);
-  const merged = [...existing];
+  const seen = new Set(existing.map((h) => h.trim()).filter(Boolean));
+  const merged = normalizeHeaderList(existing);
   for (const h of incoming) {
-    if (!seen.has(h)) {
-      merged.push(h);
-      seen.add(h);
-    }
+    const trimmed = h.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    merged.push(trimmed);
+    seen.add(trimmed);
   }
   return merged;
+}
+
+function normalizeHeaderList(headers: string[]): string[] {
+  return headers.map((h) => h.trim()).filter((h) => h.length > 0);
 }
 
 /** O(1) header lookups instead of repeated indexOf per cell. */
 export function buildHeaderIndexMap(headers: string[]): Map<string, number> {
   const map = new Map<string, number>();
   headers.forEach((header, index) => {
-    if (!map.has(header)) map.set(header, index);
+    const key = header.trim();
+    if (key && !map.has(key)) map.set(key, index);
   });
   return map;
 }
@@ -58,6 +63,7 @@ export function alignRowWithIndex(
 export function mergeAppendSheets(
   existing: SheetSnapshot,
   incoming: SheetSnapshot,
+  formatCell: (value: string) => string = (value) => value,
 ): SheetSnapshot {
   const headers = mergeHeaders(existing.headers, incoming.headers);
   const headersUnchanged = headersEqual(headers, existing.headers);
@@ -72,16 +78,17 @@ export function mergeAppendSheets(
 
   for (const row of existing.rows) {
     const aligned = headersUnchanged
-      ? row
-      : alignRowWithIndex(row, existingIdx, headers);
+      ? row.map(formatCell)
+      : alignRowWithIndex(row, existingIdx, headers, formatCell);
     seen.add(rowKey(aligned));
     rows.push(aligned);
   }
 
   for (const row of incoming.rows) {
-    const aligned = headersUnchanged && headersEqual(incoming.headers, headers)
-      ? row
-      : alignRowWithIndex(row, incomingIdx, headers);
+    const aligned =
+      headersUnchanged && headersEqual(incoming.headers, headers)
+        ? row.map(formatCell)
+        : alignRowWithIndex(row, incomingIdx, headers, formatCell);
     const key = rowKey(aligned);
     if (row.some((cell) => cell.length > 0) && !seen.has(key)) {
       rows.push(aligned);

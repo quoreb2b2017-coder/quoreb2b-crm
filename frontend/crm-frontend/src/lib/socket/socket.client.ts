@@ -1,10 +1,9 @@
 import { io, Socket } from 'socket.io-client';
+import { getSocketUrl } from '@/lib/constants/api-url';
 
 let socket: Socket | null = null;
 
-const SOCKET_URL =
-  process.env.NEXT_PUBLIC_SOCKET_URL ||
-  (typeof window !== 'undefined' ? `${window.location.protocol}//${window.location.hostname}:4000` : 'http://localhost:4000');
+const SOCKET_URL = getSocketUrl();
 
 export function getSocket(): Socket {
   if (!socket) {

@@ -1,7 +1,8 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '@/store/auth.store';
+import { getApiBaseUrl } from '@/lib/constants/api-url';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
+const API_BASE = getApiBaseUrl();
 
 /** Default API timeout — large imports use per-request overrides. */
 export const DEFAULT_API_TIMEOUT_MS = 120_000;

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useAuthStore } from '@/store/auth.store';
 import apiClient from '@/lib/api/client';
+import { getApiBaseUrl } from '@/lib/constants/api-url';
 import { activityLogsService } from '@/lib/api/activity-logs.service';
 import { IDLE_TIMEOUT_MINUTES, IDLE_WARN_BEFORE_MINUTES } from '@/lib/constants/session';
 import {
@@ -45,7 +46,7 @@ function buildLoginRedirect(reason: 'idle' | 'manual', trigger?: 'sleep' | 'idle
 }
 
 function sendLogoutBeacon(refreshToken: string, reason: string) {
-  const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
+  const base = getApiBaseUrl();
   const url = `${base}/auth/logout`;
   const body = JSON.stringify({ refreshToken, reason });
 

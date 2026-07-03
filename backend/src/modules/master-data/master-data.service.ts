@@ -54,7 +54,7 @@ import { AppCacheService } from '../../redis/app-cache.service';
 import { ConfigService } from '@nestjs/config';
 import { cacheTtlSeconds } from '../../redis/cache.util';
 import { MasterDataRowStore, MASTER_DATA_LARGE_UI_ROW_LIMIT } from './master-data-row.store';
-import { parseSpreadsheetFileAsync } from './master-data-import.util';
+import { parseSpreadsheetFileAsync, streamSpreadsheetFileAsync } from './master-data-import.util';
 import { MasterDataImportJobService } from './master-data-import-job.service';
 import { MasterDataImportLockService } from './master-data-import-lock.service';
 import { unlink } from 'fs/promises';
@@ -66,7 +66,7 @@ const DEFAULT_MAX_TOTAL_ROWS = 1_500_000;
 const DUPLICATE_PREVIEW_LIMIT = 100;
 /** Stream large imports in batches — rows hit MongoDB as each batch completes. */
 const LARGE_IMPORT_STREAM_THRESHOLD = 10_000;
-const INCOMING_FLUSH_BATCH = 5_000;
+const INCOMING_FLUSH_BATCH = 10_000;
 /** Skip loading millions of existing keys into RAM (OOM on t3.small). */
 const SKIP_EXISTING_DEDUP_ABOVE = 100_000;
 /** Update master_data meta every N flush batches (reduces Mongo writes during import). */
@@ -576,6 +576,245 @@ export class MasterDataService {
     };
   }
 
+  private async importFromDiskStreaming(
+    filePath: string,
+    fileName: string,
+    mode: 'append' | 'replace',
+    actor: ActivityActor,
+    jobId: string,
+  ) {
+    const existing = await this.masterDataModel
+      .findOne({ key: MASTER_DATA_KEY })
+      .exec();
+
+    let targetHeaders: string[] = [];
+    let sourceHeaders: string[] = [];
+    let sourceIdx = new Map<string, number>();
+    let baseRowCount = 0;
+    let sheetName = existing?.sheetName || 'Master Data';
+    let seen: Set<string> = new Set();
+    let incomingSeen = new Set<string>();
+    let addedRows = 0;
+    let skippedDuplicates = 0;
+    let pendingBatch: string[][] = [];
+    let processed = 0;
+    let flushCount = 0;
+    let totalIncoming = 0;
+    let streamReady = false;
+
+    const onProgress = (saved: number, total: number, message: string) => {
+      const pct = total > 0 ? 45 + Math.round((saved / total) * 52) : 95;
+      void this.importJobs.updateJob(jobId, {
+        phase: 'saving',
+        percent: Math.min(pct, 99),
+        message,
+        rowsProcessed: saved,
+        totalRows: total,
+      });
+    };
+
+    const flushBatch = async (forceMeta = false) => {
+      if (!pendingBatch.length) return;
+      await this.rowStore.appendRows(pendingBatch, MASTER_DATA_KEY, undefined);
+      addedRows += pendingBatch.length;
+      pendingBatch = [];
+      flushCount += 1;
+      const totalRows = baseRowCount + addedRows;
+      const shouldUpdateMeta =
+        forceMeta || flushCount % META_UPDATE_EVERY_FLUSHES === 0;
+      if (shouldUpdateMeta) {
+        const progressFileName =
+          mode === 'replace' || !existing
+            ? `${fileName} (${totalRows.toLocaleString()} rows)`
+            : existing!.fileName.includes('+')
+              ? existing!.fileName.replace(/\(\d+ rows\)$/, `(${totalRows.toLocaleString()} rows)`)
+              : `${existing!.fileName} + ${fileName} (${totalRows.toLocaleString()} rows)`;
+        await this.patchChunkedMasterMeta({
+          headers: targetHeaders,
+          rowCount: totalRows,
+          fileName: progressFileName,
+          sheetName,
+          actor,
+        });
+      }
+      onProgress(
+        processed,
+        totalIncoming || processed,
+        `Saved ${totalRows.toLocaleString()} rows in database (${addedRows.toLocaleString()} new)…`,
+      );
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    };
+
+    const ingestBatch = async (rows: string[][]) => {
+      for (const rawRow of rows) {
+        processed += 1;
+        if (!rowHasSourceData(rawRow, sourceHeaders)) {
+          skippedDuplicates += 1;
+          continue;
+        }
+        const aligned = alignRowWithIndex(
+          rawRow,
+          sourceIdx,
+          targetHeaders,
+          formatMasterDataCell,
+        );
+        const key = this.rowKey(aligned);
+        if (seen.has(key) || incomingSeen.has(key)) {
+          skippedDuplicates += 1;
+          continue;
+        }
+        seen.add(key);
+        incomingSeen.add(key);
+        pendingBatch.push(aligned);
+        if (pendingBatch.length >= INCOMING_FLUSH_BATCH) {
+          await flushBatch();
+        }
+      }
+    };
+
+    const parseStart = Date.now();
+    const streamResult = await streamSpreadsheetFileAsync(filePath, fileName, {
+      onMeta: async ({ sheetName: sn, headers }) => {
+        streamReady = true;
+        sheetName = sn || sheetName;
+        sourceHeaders = headers.map((h) => h.trim());
+        sourceIdx = buildHeaderIndexMap(sourceHeaders);
+        targetHeaders = resolveMasterDataHeaders(
+          mode === 'replace' || !existing ? null : existing.headers,
+          sourceHeaders,
+        );
+
+        if (mode === 'replace' || !existing) {
+          await this.rowStore.deleteChunks();
+          baseRowCount = 0;
+          await this.patchChunkedMasterMeta({
+            headers: targetHeaders,
+            rowCount: 0,
+            fileName,
+            sheetName,
+            actor,
+          });
+        } else if (!this.rowStore.isChunked(existing)) {
+          const existingRows = await this.loadExistingRows(existing);
+          baseRowCount = existingRows.length;
+          await this.rowStore.deleteChunks();
+          if (existingRows.length) {
+            await this.rowStore.appendRows(existingRows);
+          }
+          await this.patchChunkedMasterMeta({
+            headers: existing.headers,
+            rowCount: baseRowCount,
+            fileName: existing.fileName,
+            sheetName: existing.sheetName || sheetName,
+            actor,
+          });
+        } else {
+          baseRowCount = this.rowStore.getRowCount(existing);
+        }
+
+        seen = new Set<string>();
+        if (mode === 'append' && existing) {
+          this.logger.warn(
+            'Streaming import: skipping cross-file duplicate scan (fast path for large files)',
+          );
+        }
+      },
+      onParseProgress: async (parsed) => {
+        totalIncoming = Math.max(totalIncoming, parsed);
+        const pct = 35 + Math.min(8, Math.round((parsed / Math.max(parsed, 1)) * 8));
+        await this.importJobs.updateJob(jobId, {
+          phase: 'parsing',
+          percent: pct,
+          message: `Reading spreadsheet… ${parsed.toLocaleString()} rows`,
+          rowsProcessed: parsed,
+          totalRows: parsed,
+        });
+      },
+      onBatch: async (rows, parsed) => {
+        if (!streamReady) {
+          throw new BadRequestException('Spreadsheet parse failed: missing headers');
+        }
+        totalIncoming = Math.max(totalIncoming, parsed);
+        await ingestBatch(rows);
+      },
+    });
+
+    totalIncoming = streamResult.totalRows;
+    const parseMs = Date.now() - parseStart;
+    this.logger.log(
+      `Import job ${jobId}: stream-parsed ${totalIncoming.toLocaleString()} rows in ${parseMs}ms ${formatMemoryUsage()}`,
+    );
+
+    if (totalIncoming > this.maxTotalRows()) {
+      throw new BadRequestException(
+        `Master data limit is ${this.maxTotalRows()} rows. File has ${totalIncoming}.`,
+      );
+    }
+
+    await this.importJobs.updateJob(jobId, {
+      phase: 'merging',
+      percent: 42,
+      message: `Found ${totalIncoming.toLocaleString()} rows — saving to database…`,
+      totalRows: totalIncoming,
+      rowsProcessed: processed,
+    });
+
+    const saveStart = Date.now();
+    await flushBatch(true);
+
+    const finalRowCount = baseRowCount + addedRows;
+    const doc = await this.patchChunkedMasterMeta({
+      headers: targetHeaders,
+      rowCount: finalRowCount,
+      fileName:
+        mode === 'replace' || !existing
+          ? fileName
+          : existing!.fileName.includes('+')
+            ? existing!.fileName.replace(/\(\d+ rows\)$/, `(${finalRowCount.toLocaleString()} rows)`)
+            : `${existing!.fileName} + ${fileName} (${finalRowCount.toLocaleString()} rows)`,
+      sheetName,
+      actor,
+    });
+
+    try {
+      await this.activityLogs.logWithActor(actor, {
+        action: 'MASTER_DATA_UPLOAD',
+        resource: 'master-data',
+        path: '/admin/master-data-upload',
+        metadata: {
+          fileName,
+          sheetName,
+          addedRows,
+          skippedDuplicates,
+          totalRows: finalRowCount,
+          columnCount: targetHeaders.length,
+          mode,
+          detailAction: mode === 'replace' ? 'MASTER_DATA_REPLACE' : 'MASTER_DATA_APPEND',
+          streaming: true,
+          streamParse: true,
+        },
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to write activity log for stream import: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+
+    void this.bustMasterCaches();
+    const saveMs = Date.now() - saveStart;
+    return {
+      result: {
+        ...(await this.toResponse(doc)),
+        addedRows,
+        skippedDuplicates,
+        mode,
+      },
+      parseMs,
+      saveMs,
+      rowCount: finalRowCount,
+    };
+  }
+
   async save(
     dto: SaveMasterDataDto,
     actor: ActivityActor,
@@ -857,48 +1096,20 @@ export class MasterDataService {
         message: 'Reading spreadsheet…',
       });
 
-      const parseStart = Date.now();
-      this.logger.log(`Import job ${jobId}: parsing ${fileName} from disk`);
-      const parsed = await parseSpreadsheetFileAsync(filePath, fileName);
-      parseMs = Date.now() - parseStart;
-      const totalRows = parsed.rows.length;
-      this.logger.log(
-        `Import job ${jobId}: parsed ${totalRows.toLocaleString()} rows in ${parseMs}ms ${formatMemoryUsage()}`,
-      );
-
-      await this.importJobs.updateJob(jobId, {
-        phase: 'merging',
-        percent: 42,
-        message: `Found ${totalRows.toLocaleString()} rows — preparing save…`,
-        totalRows,
-        rowsProcessed: 0,
-      });
-
-      const saveStart = Date.now();
-      const result = await this.save(
-        {
-          fileName: parsed.fileName,
-          sheetName: parsed.sheetName,
-          headers: parsed.headers,
-          rows: parsed.rows,
-          mode,
-        },
+      this.logger.log(`Import job ${jobId}: streaming import ${fileName} from disk`);
+      const streamed = await this.importFromDiskStreaming(
+        filePath,
+        fileName,
+        mode,
         actor,
-        (saved, total, message) => {
-          const pct = total > 0 ? 45 + Math.round((saved / total) * 52) : 95;
-          void this.importJobs.updateJob(jobId, {
-            phase: 'saving',
-            percent: Math.min(pct, 99),
-            message,
-            rowsProcessed: saved,
-            totalRows: total,
-          });
-        },
+        jobId,
       );
-      saveMs = Date.now() - saveStart;
+      parseMs = streamed.parseMs;
+      saveMs = streamed.saveMs;
+      const result = streamed.result;
 
       this.logger.log(
-        `Import job ${jobId}: complete — ${result.rowCount.toLocaleString()} total rows ` +
+        `Import job ${jobId}: complete — ${streamed.rowCount.toLocaleString()} total rows ` +
           `(parseMs=${parseMs} saveMs=${saveMs} totalMs=${Date.now() - jobStart} ${formatMemoryUsage()})`,
       );
 

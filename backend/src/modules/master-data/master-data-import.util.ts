@@ -59,7 +59,14 @@ export function parseSpreadsheetBuffer(
     throw new BadRequestException('Only .csv, .xlsx, and .xls files are supported');
   }
 
-  const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true, raw: false });
+  const workbook = XLSX.read(buffer, {
+    type: 'buffer',
+    dense: true,
+    cellDates: false,
+    cellNF: false,
+    cellStyles: false,
+    sheetStubs: true,
+  });
   const sheetName = workbook.SheetNames[0];
   if (!sheetName) {
     throw new BadRequestException('No sheets found in the file');
@@ -78,6 +85,75 @@ export function parseSpreadsheetBuffer(
   }
 
   return { fileName, sheetName, headers, rows };
+}
+
+/** Stream-parse from disk — rows arrive in batches (no 10L-row array in RAM). */
+export function streamSpreadsheetFileAsync(
+  filePath: string,
+  fileName: string,
+  handlers: {
+    onMeta: (meta: { sheetName: string; headers: string[] }) => void | Promise<void>;
+    onBatch: (rows: string[][], processed: number) => void | Promise<void>;
+    onParseProgress?: (processed: number) => void | Promise<void>;
+  },
+): Promise<{ totalRows: number; sheetName: string; headers: string[] }> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let meta: { sheetName: string; headers: string[] } | null = null;
+
+    const worker = new Worker(join(__dirname, 'master-data-stream-parse.worker.js'), {
+      workerData: { filePath, fileName },
+    });
+
+    worker.on('message', (msg: {
+      type: string;
+      rows?: string[][];
+      processed?: number;
+      totalRows?: number;
+      sheetName?: string;
+      headers?: string[];
+      message?: string;
+    }) => {
+      void (async () => {
+        try {
+          if (msg.type === 'meta' && msg.headers && msg.sheetName) {
+            meta = { sheetName: msg.sheetName, headers: msg.headers };
+            await handlers.onMeta(meta);
+          } else if (msg.type === 'batch' && msg.rows) {
+            await handlers.onBatch(msg.rows, msg.processed ?? 0);
+          } else if (msg.type === 'progress' && msg.processed != null) {
+            await handlers.onParseProgress?.(msg.processed);
+          } else if (msg.type === 'done') {
+            settled = true;
+            worker.terminate().catch(() => undefined);
+            resolve({
+              totalRows: msg.totalRows ?? 0,
+              sheetName: msg.sheetName ?? meta?.sheetName ?? fileName,
+              headers: msg.headers ?? meta?.headers ?? [],
+            });
+          } else if (msg.type === 'error') {
+            settled = true;
+            worker.terminate().catch(() => undefined);
+            reject(new BadRequestException(msg.message ?? 'Failed to parse spreadsheet'));
+          }
+        } catch (err) {
+          settled = true;
+          worker.terminate().catch(() => undefined);
+          reject(err);
+        }
+      })();
+    });
+
+    worker.once('error', (err: Error) => {
+      if (!settled) reject(err);
+    });
+
+    worker.once('exit', (code: number) => {
+      if (!settled && code !== 0) {
+        reject(new Error(`Stream parse worker exited with code ${code}`));
+      }
+    });
+  });
 }
 
 /** Parse in a worker thread so large XLSX files do not block login and other API calls. */

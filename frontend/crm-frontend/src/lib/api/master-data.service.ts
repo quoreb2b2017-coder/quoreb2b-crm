@@ -1,5 +1,8 @@
+import axios from 'axios';
 import apiClient from './client';
 import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
+import { getApiBaseUrl, getDirectUploadApiBaseUrl } from '@/lib/constants/api-url';
+import { useAuthStore } from '@/store/auth.store';
 
 /** Upload timeout for large XLSX files (up to ~500MB). */
 const MASTER_DATA_UPLOAD_TIMEOUT_MS = 7_200_000;
@@ -10,12 +13,31 @@ const MASTER_DATA_READ_TIMEOUT_MS = 60_000;
 const MASTER_DATA_WRITE_TIMEOUT_MS = MASTER_DATA_IMPORT_DEADLINE_MS;
 /** Per-poll timeout — server may be slow while parsing large files. */
 const MASTER_IMPORT_POLL_TIMEOUT_MS = 300_000;
-const MASTER_IMPORT_THRESHOLD_BYTES = 2 * 1024 * 1024;
+const MASTER_IMPORT_THRESHOLD_BYTES = 512 * 1024;
 
 export type MasterDataSaveMode = 'append' | 'replace';
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isProductionCrmHost(): boolean {
+  if (typeof window === 'undefined') return false;
+  const host = window.location.hostname;
+  return host === 'crm.quoreb2b.com' || host.endsWith('.vercel.app');
+}
+
+/** Large imports bypass Vercel proxy — straight to EC2 nginx. */
+function getImportApiBaseUrl(): string {
+  if (isProductionCrmHost()) {
+    return getDirectUploadApiBaseUrl();
+  }
+  return getApiBaseUrl();
+}
+
+function getAccessToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return useAuthStore.getState().accessToken ?? localStorage.getItem('accessToken');
 }
 
 export interface MasterDataImportProgress {
@@ -199,11 +221,18 @@ export const masterDataService = {
     form.append('file', file);
     form.append('mode', mode);
 
-    const { data } = await apiClient.post('/master-data/import-jobs', form, {
+    const token = getAccessToken();
+    const importBase = getImportApiBaseUrl();
+
+    const { data } = await axios.post(`${importBase}/master-data/import-jobs`, form, {
       timeout: MASTER_DATA_UPLOAD_TIMEOUT_MS,
       maxBodyLength: Infinity,
       maxContentLength: Infinity,
-      headers: { 'Content-Type': 'multipart/form-data' },
+      withCredentials: true,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        'Content-Type': 'multipart/form-data',
+      },
       onUploadProgress: (event) => {
         if (!onUploadProgress || !event.total) return;
         const uploadPct = Math.min(30, Math.round((event.loaded / event.total) * 30));
@@ -220,8 +249,12 @@ export const masterDataService = {
   },
 
   getImportJobStatus: async (jobId: string): Promise<MasterDataImportJobStatus> => {
-    const { data } = await apiClient.get(`/master-data/import-jobs/${jobId}`, {
+    const token = getAccessToken();
+    const importBase = getImportApiBaseUrl();
+    const { data } = await axios.get(`${importBase}/master-data/import-jobs/${jobId}`, {
       timeout: MASTER_IMPORT_POLL_TIMEOUT_MS,
+      withCredentials: true,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     return unwrap<MasterDataImportJobStatus>({ data });
   },

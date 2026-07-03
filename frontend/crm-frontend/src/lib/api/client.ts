@@ -3,7 +3,7 @@ import { useAuthStore } from '@/store/auth.store';
 import { getApiBaseUrl } from '@/lib/constants/api-url';
 
 /** Default API timeout — large imports use per-request overrides. */
-export const DEFAULT_API_TIMEOUT_MS = 120_000;
+export const DEFAULT_API_TIMEOUT_MS = 30_000;
 
 const apiClient = axios.create({
   timeout: DEFAULT_API_TIMEOUT_MS,

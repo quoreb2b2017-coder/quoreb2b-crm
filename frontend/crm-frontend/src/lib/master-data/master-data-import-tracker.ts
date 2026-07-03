@@ -78,11 +78,19 @@ async function pollImportUntilDone(jobId: string, fileName: string, mode: Master
   }
 
   const deadline = Date.now() + 10_800_000;
+  let pollMs = 800;
+  let lastPercent = -1;
 
   try {
     while (Date.now() < deadline) {
-      await sleep(800);
+      await sleep(pollMs);
       const status = await masterDataService.getImportJobStatus(jobId);
+      if (status.percent === lastPercent && status.phase !== 'done' && status.phase !== 'failed') {
+        pollMs = Math.min(pollMs + 400, 5000);
+      } else {
+        pollMs = 800;
+        lastPercent = status.percent;
+      }
       applyProgress({
         percent: status.percent,
         phase: status.phase,

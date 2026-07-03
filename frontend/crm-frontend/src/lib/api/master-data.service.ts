@@ -5,7 +5,9 @@ import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
 const MASTER_DATA_UPLOAD_TIMEOUT_MS = 7_200_000;
 /** Total import deadline including parse + MongoDB save for 10L+ rows. */
 const MASTER_DATA_IMPORT_DEADLINE_MS = 10_800_000;
-const MASTER_DATA_TIMEOUT_MS = MASTER_DATA_IMPORT_DEADLINE_MS;
+/** Read/search endpoints — fail fast instead of holding 3h connections. */
+const MASTER_DATA_READ_TIMEOUT_MS = 60_000;
+const MASTER_DATA_WRITE_TIMEOUT_MS = MASTER_DATA_IMPORT_DEADLINE_MS;
 /** Per-poll timeout — server may be slow while parsing large files. */
 const MASTER_IMPORT_POLL_TIMEOUT_MS = 300_000;
 const MASTER_IMPORT_THRESHOLD_BYTES = 2 * 1024 * 1024;
@@ -174,7 +176,7 @@ export const masterDataService = {
         rows: payload.rows,
         mode,
       },
-      { timeout: MASTER_DATA_TIMEOUT_MS },
+      { timeout: MASTER_DATA_WRITE_TIMEOUT_MS },
     );
     return unwrap<MasterDataRecord>({ data });
   },
@@ -254,7 +256,9 @@ export const masterDataService = {
 
   getBatchCoverage: async (): Promise<MasterBatchCoverage> => {
     try {
-      const { data } = await apiClient.get('/master-data/batch-coverage');
+      const { data } = await apiClient.get('/master-data/batch-coverage', {
+        timeout: MASTER_DATA_READ_TIMEOUT_MS,
+      });
       return unwrap<MasterBatchCoverage>({ data });
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } })?.response?.status;
@@ -271,7 +275,7 @@ export const masterDataService = {
   getCurrent: async (): Promise<MasterDataRecord | null> => {
     try {
       const { data } = await apiClient.get('/master-data/current', {
-        timeout: MASTER_DATA_TIMEOUT_MS,
+        timeout: MASTER_DATA_READ_TIMEOUT_MS,
       });
       return unwrap<MasterDataRecord>({ data });
     } catch (err: unknown) {
@@ -283,14 +287,14 @@ export const masterDataService = {
 
   search: async (params: MasterDataSearchParams): Promise<MasterDataSearchResult> => {
     const { data } = await apiClient.post('/master-data/search', params, {
-      timeout: MASTER_DATA_TIMEOUT_MS,
+      timeout: MASTER_DATA_READ_TIMEOUT_MS,
     });
     return unwrap<MasterDataSearchResult>({ data });
   },
 
   getFilterSchema: async (): Promise<MasterDataFilterSchemaResponse> => {
     const { data } = await apiClient.get('/master-data/filter-schema', {
-      timeout: MASTER_DATA_TIMEOUT_MS,
+      timeout: MASTER_DATA_READ_TIMEOUT_MS,
     });
     return unwrap<MasterDataFilterSchemaResponse>({ data });
   },
@@ -306,7 +310,7 @@ export const masterDataService = {
         headers: payload.headers,
         rows: payload.rows,
       },
-      { timeout: MASTER_DATA_TIMEOUT_MS },
+      { timeout: MASTER_DATA_WRITE_TIMEOUT_MS },
     );
     const result = unwrap<MasterDataUploadRequestSubmitResult>({ data });
     if (typeof window !== 'undefined' && (result.request || result.duplicateFileId)) {
@@ -326,7 +330,7 @@ export const masterDataService = {
         headers: payload.headers,
         rows: payload.rows,
       },
-      { timeout: MASTER_DATA_TIMEOUT_MS },
+      { timeout: MASTER_DATA_WRITE_TIMEOUT_MS },
     );
     const result = unwrap<MasterDataUploadRequestSubmitResult>({ data });
     if (typeof window !== 'undefined' && (result.request || result.duplicateFileId)) {

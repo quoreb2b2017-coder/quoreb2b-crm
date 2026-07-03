@@ -87,3 +87,6 @@ export const MasterDataUploadRequestSchema =
   SchemaFactory.createForClass(MasterDataUploadRequest);
 MasterDataUploadRequestSchema.index({ status: 1, createdAt: -1 });
 MasterDataUploadRequestSchema.index({ submittedBy: 1, createdAt: -1 });
+MasterDataUploadRequestSchema.index({ sourceRole: 1, status: 1, createdAt: -1 });
+MasterDataUploadRequestSchema.index({ submittedBy: 1, status: 1, createdAt: -1 });
+MasterDataUploadRequestSchema.index({ status: 1, sourceRole: 1, createdAt: -1 });

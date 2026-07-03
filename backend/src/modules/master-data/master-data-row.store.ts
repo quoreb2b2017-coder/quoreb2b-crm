@@ -273,15 +273,14 @@ export class MasterDataRowStore {
     };
 
     if (this.isChunked(doc)) {
-      while (true) {
-        const chunk = await this.chunkModel
-          .findOne({ masterKey: doc.key })
-          .sort({ chunkIndex: 1 })
-          .select('rows chunkIndex')
-          .lean()
-          .exec();
-        if (!chunk) break;
+      const cursor = this.chunkModel
+        .find({ masterKey: doc.key })
+        .sort({ chunkIndex: 1 })
+        .select('rows chunkIndex')
+        .lean()
+        .cursor();
 
+      for await (const chunk of cursor) {
         for (const row of (chunk.rows as string[][]) ?? []) {
           const aligned = alignRowWithIndex(row, existingIdx, mergedHeaders);
           seen.add(rowKey(aligned));

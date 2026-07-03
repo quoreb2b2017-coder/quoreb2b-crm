@@ -28,14 +28,23 @@ export class IndexSyncService implements OnApplicationBootstrap {
       return;
     }
 
-    this.logger.log(`Syncing MongoDB indexes for ${modelNames.length} model(s)…`);
+    this.logger.log(`Syncing MongoDB indexes for ${modelNames.length} model(s) on M10…`);
+    const started = Date.now();
     let synced = 0;
+    const slow: string[] = [];
 
     for (const name of modelNames.sort()) {
+      const t0 = Date.now();
       try {
         await this.connection.models[name].syncIndexes();
         synced += 1;
-        this.logger.debug(`Indexes OK: ${name}`);
+        const ms = Date.now() - t0;
+        if (ms > 2_000) {
+          slow.push(`${name} (${ms}ms)`);
+          this.logger.warn(`Index sync slow: ${name} took ${ms}ms`);
+        } else {
+          this.logger.debug(`Indexes OK: ${name} (${ms}ms)`);
+        }
       } catch (err) {
         this.logger.error(
           `Index sync failed for ${name}: ${err instanceof Error ? err.message : err}`,
@@ -43,6 +52,10 @@ export class IndexSyncService implements OnApplicationBootstrap {
       }
     }
 
-    this.logger.log(`MongoDB index sync complete (${synced}/${modelNames.length} collections)`);
+    const totalMs = Date.now() - started;
+    this.logger.log(
+      `MongoDB index sync complete (${synced}/${modelNames.length} collections, ${totalMs}ms)` +
+        (slow.length ? ` — slow: ${slow.join(', ')}` : ''),
+    );
   }
 }

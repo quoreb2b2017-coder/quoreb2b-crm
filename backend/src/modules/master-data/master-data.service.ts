@@ -56,6 +56,7 @@ import { cacheTtlSeconds } from '../../redis/cache.util';
 import { MasterDataRowStore, MASTER_DATA_LARGE_UI_ROW_LIMIT } from './master-data-row.store';
 import { parseSpreadsheetFileAsync } from './master-data-import.util';
 import { MasterDataImportJobService } from './master-data-import-job.service';
+import { MasterDataImportLockService } from './master-data-import-lock.service';
 import { unlink } from 'fs/promises';
 import {
   formatMemoryUsage,
@@ -68,6 +69,11 @@ const LARGE_IMPORT_STREAM_THRESHOLD = 10_000;
 const INCOMING_FLUSH_BATCH = 5_000;
 /** Skip loading millions of existing keys into RAM (OOM on t3.small). */
 const SKIP_EXISTING_DEDUP_ABOVE = 100_000;
+/** Update master_data meta every N flush batches (reduces Mongo writes during import). */
+const META_UPDATE_EVERY_FLUSHES = 5;
+
+const UPLOAD_REQUEST_LIST_PROJECTION =
+  '-rows -workRows';
 
 /** CRM collections wiped on admin clear — user login accounts are kept. */
 const CRM_OPERATIONAL_COLLECTIONS = [
@@ -112,6 +118,7 @@ export class MasterDataService {
     private config: ConfigService,
     private rowStore: MasterDataRowStore,
     private importJobs: MasterDataImportJobService,
+    private importLock: MasterDataImportLockService,
   ) {}
 
   private maxTotalRows(): number {
@@ -452,26 +459,32 @@ export class MasterDataService {
     let skippedDuplicates = 0;
     let pendingBatch: string[][] = [];
     let processed = 0;
+    let flushCount = 0;
 
-    const flushBatch = async () => {
+    const flushBatch = async (forceMeta = false) => {
       if (!pendingBatch.length) return;
       await this.rowStore.appendRows(pendingBatch, MASTER_DATA_KEY, undefined);
       addedRows += pendingBatch.length;
       pendingBatch = [];
+      flushCount += 1;
       const totalRows = baseRowCount + addedRows;
-      const fileName =
-        mode === 'replace' || !existing
-          ? `${dto.fileName} (${totalRows.toLocaleString()} rows)`
-          : existing!.fileName.includes('+')
-            ? existing!.fileName.replace(/\(\d+ rows\)$/, `(${totalRows.toLocaleString()} rows)`)
-            : `${existing!.fileName} + ${dto.fileName} (${totalRows.toLocaleString()} rows)`;
-      await this.patchChunkedMasterMeta({
-        headers: targetHeaders,
-        rowCount: totalRows,
-        fileName,
-        sheetName,
-        actor,
-      });
+      const shouldUpdateMeta =
+        forceMeta || flushCount % META_UPDATE_EVERY_FLUSHES === 0;
+      if (shouldUpdateMeta) {
+        const fileName =
+          mode === 'replace' || !existing
+            ? `${dto.fileName} (${totalRows.toLocaleString()} rows)`
+            : existing!.fileName.includes('+')
+              ? existing!.fileName.replace(/\(\d+ rows\)$/, `(${totalRows.toLocaleString()} rows)`)
+              : `${existing!.fileName} + ${dto.fileName} (${totalRows.toLocaleString()} rows)`;
+        await this.patchChunkedMasterMeta({
+          headers: targetHeaders,
+          rowCount: totalRows,
+          fileName,
+          sheetName,
+          actor,
+        });
+      }
       onProgress?.(
         processed,
         totalIncoming,
@@ -515,7 +528,7 @@ export class MasterDataService {
       }
     }
 
-    await flushBatch();
+    await flushBatch(true);
 
     const finalRowCount = baseRowCount + addedRows;
     const doc = await this.patchChunkedMasterMeta({
@@ -783,7 +796,7 @@ export class MasterDataService {
           `diskSaveMs=${uploadMeta.diskSaveMs} ${formatMemoryUsage()}`,
       );
     }
-    const run = this.runImportJob(jobId, filePath, fileName, mode, actor);
+    const run = this.runImportJobWithLock(jobId, filePath, fileName, mode, actor);
     this.importChain = this.importChain
       .catch(() => undefined)
       .then(() => run)
@@ -800,6 +813,31 @@ export class MasterDataService {
       throw new NotFoundException('Import job not found');
     }
     return job;
+  }
+
+  private async runImportJobWithLock(
+    jobId: string,
+    filePath: string,
+    fileName: string,
+    mode: 'append' | 'replace',
+    actor: ActivityActor,
+  ) {
+    const acquired = await this.importLock.acquire(jobId);
+    if (!acquired) {
+      await this.importJobs.updateJob(jobId, {
+        phase: 'failed',
+        percent: 100,
+        message: 'Another import is already running — try again shortly',
+        error: 'Import queue busy',
+      });
+      await unlink(filePath).catch(() => undefined);
+      return;
+    }
+    try {
+      await this.runImportJob(jobId, filePath, fileName, mode, actor);
+    } finally {
+      await this.importLock.release(jobId);
+    }
   }
 
   private async runImportJob(
@@ -1185,8 +1223,15 @@ export class MasterDataService {
     if (query.sourceRole) {
       filter.sourceRole = query.sourceRole;
     }
-    const docs = await this.uploadRequestModel.find(filter).sort({ createdAt: -1 }).exec();
-    return docs.map((doc) => this.toUploadRequestResponse(doc));
+    const docs = await this.uploadRequestModel
+      .find(filter)
+      .select(UPLOAD_REQUEST_LIST_PROJECTION)
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+    return docs.map((doc) =>
+      this.toUploadRequestResponse(doc as unknown as MasterDataUploadRequest),
+    );
   }
 
   async listEmployeeUploadRequestsForDbAdmin(query: ListMasterDataUploadRequestsDto) {
@@ -1196,8 +1241,15 @@ export class MasterDataService {
     if (query.status) {
       filter.status = query.status;
     }
-    const docs = await this.uploadRequestModel.find(filter).sort({ createdAt: -1 }).exec();
-    return docs.map((doc) => this.toUploadRequestResponse(doc));
+    const docs = await this.uploadRequestModel
+      .find(filter)
+      .select(UPLOAD_REQUEST_LIST_PROJECTION)
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+    return docs.map((doc) =>
+      this.toUploadRequestResponse(doc as unknown as MasterDataUploadRequest),
+    );
   }
 
   async getUploadRequest(
@@ -1383,8 +1435,15 @@ export class MasterDataService {
       filter.status = query.status;
     }
     // All statuses (including approved / merged) stay visible until Super Admin deletes the request.
-    const docs = await this.uploadRequestModel.find(filter).sort({ createdAt: -1 }).exec();
-    return docs.map((doc) => this.toUploadRequestResponse(doc));
+    const docs = await this.uploadRequestModel
+      .find(filter)
+      .select(UPLOAD_REQUEST_LIST_PROJECTION)
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec();
+    return docs.map((doc) =>
+      this.toUploadRequestResponse(doc as unknown as MasterDataUploadRequest),
+    );
   }
 
   async reviewUploadRequest(
@@ -1712,15 +1771,23 @@ export class MasterDataService {
     }
 
     const headers = doc.headers as string[];
-    const rows = await this.loadExistingRows(doc);
     if (!headers.some((h) => h.toLowerCase() === header.toLowerCase())) {
       throw new BadRequestException('Unknown column');
     }
 
-    return {
-      header,
-      options: distinctColumnValues(headers, rows, header, q, limit),
-    };
+    const revision = this.rowStore.getRowCount(doc);
+    const cacheKey = `master:colopts:${revision}:${header.toLowerCase()}:${q ?? ''}:${limit}`;
+    return this.cache.wrap(
+      cacheKey,
+      cacheTtlSeconds(this.config, 'short'),
+      async () => {
+        const rows = await this.loadExistingRows(doc);
+        return {
+          header,
+          options: distinctColumnValues(headers, rows, header, q, limit),
+        };
+      },
+    );
   }
 
   async shareWithDbAdmins(dto: ShareMasterDataDto, actor: ActivityActor) {

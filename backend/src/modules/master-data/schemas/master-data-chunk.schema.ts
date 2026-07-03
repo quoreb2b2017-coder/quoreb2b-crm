@@ -3,7 +3,7 @@ import { Document } from 'mongoose';
 
 @Schema({ timestamps: true, collection: 'master_data_chunks' })
 export class MasterDataChunk extends Document {
-  @Prop({ required: true, index: true })
+  @Prop({ required: true })
   masterKey: string;
 
   @Prop({ required: true })
@@ -15,3 +15,5 @@ export class MasterDataChunk extends Document {
 
 export const MasterDataChunkSchema = SchemaFactory.createForClass(MasterDataChunk);
 MasterDataChunkSchema.index({ masterKey: 1, chunkIndex: 1 }, { unique: true });
+// Range scans during import merge/delete
+MasterDataChunkSchema.index({ masterKey: 1, chunkIndex: -1 });

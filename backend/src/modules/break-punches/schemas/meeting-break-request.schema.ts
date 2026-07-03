@@ -34,3 +34,4 @@ export class MeetingBreakRequest extends Document {
 
 export const MeetingBreakRequestSchema = SchemaFactory.createForClass(MeetingBreakRequest);
 MeetingBreakRequestSchema.index({ userId: 1, date: 1, status: 1 });
+MeetingBreakRequestSchema.index({ date: 1, status: 1, requestedAt: 1 });

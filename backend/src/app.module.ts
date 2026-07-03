@@ -64,7 +64,10 @@ export class AppModule {
           inject: [ConfigService],
           useFactory: (config: ConfigService) => ({
             uri: config.get<string>('MONGODB_URI'),
-            maxPoolSize: config.get<number>('MONGODB_MAX_POOL_SIZE', 10),
+            maxPoolSize: config.get<number>('MONGODB_MAX_POOL_SIZE', 25),
+            minPoolSize: config.get<number>('MONGODB_MIN_POOL_SIZE', 5),
+            serverSelectionTimeoutMS: 10_000,
+            socketTimeoutMS: 45_000,
           }),
         }),
         ...(redisEnabled

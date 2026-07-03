@@ -87,3 +87,15 @@ BatchSchema.index({ batchKind: 1, batchYear: -1, batchMonth: -1 });
 BatchSchema.index({ batchKind: 1, sourceBatchId: 1 });
 BatchSchema.index({ batchKind: 1, campaignChannel: 1 });
 BatchSchema.index({ createdBy: 1, batchYear: -1, batchMonth: -1 });
+// M10: list/sort paths used by loadAllBatches, QC, suppression campaigns
+BatchSchema.index({ batchKind: 1, updatedAt: -1 });
+BatchSchema.index({ batchKind: 1, rowCount: -1, updatedAt: -1 });
+BatchSchema.index({ createdBy: 1, batchKind: 1, batchYear: -1, batchMonth: -1, createdAt: -1 });
+BatchSchema.index({ sharedWith: 1, batchKind: 1, batchYear: -1, batchMonth: -1, createdAt: -1 });
+BatchSchema.index({ batchKind: 1, batchYear: -1, batchMonth: -1, createdAt: -1 });
+BatchSchema.index({ batchKind: 1, name: 1, campaignChannel: 1, batchYear: 1, batchMonth: 1 });
+BatchSchema.index({ sourceBatchId: 1, batchKind: 1 });
+BatchSchema.index(
+  { batchKind: 1, batchYear: -1, batchMonth: -1 },
+  { partialFilterExpression: { sourceBatchId: null } },
+);

@@ -692,9 +692,10 @@ export class BatchesService {
   ) {
     const path = `/batch-view?id=${batchId}`;
     const slice = changes.slice(0, MAX_LEAD_LOGS_PER_SAVE);
-    for (const ch of slice) {
-      try {
-        await this.activityLogs.logWithActor(actor, {
+    try {
+      await this.activityLogs.logManyWithActor(
+        actor,
+        slice.map((ch) => ({
           action: 'LEAD_UPDATE',
           resource: 'lead',
           resourceId: leadResourceId(batchId, ch.leadKey),
@@ -707,12 +708,12 @@ export class BatchesService {
             leadLabel: ch.leadLabel,
             changedColumns: ch.changedColumns,
           },
-        });
-      } catch (err) {
-        this.logger.warn(
-          `Lead update log failed: ${err instanceof Error ? err.message : err}`,
-        );
-      }
+        })),
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Lead update logs failed: ${err instanceof Error ? err.message : err}`,
+      );
     }
     if (changes.length > MAX_LEAD_LOGS_PER_SAVE) {
       try {

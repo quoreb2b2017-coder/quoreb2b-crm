@@ -22,6 +22,12 @@ export class RedisService {
     }
   }
 
+  /** SET key value NX EX ttl — returns true if lock acquired. */
+  async setNx(key: string, value: string, ttlSeconds: number): Promise<boolean> {
+    const result = await this.redis.set(key, value, 'EX', ttlSeconds, 'NX');
+    return result === 'OK';
+  }
+
   async del(key: string): Promise<void> {
     await this.redis.del(key);
   }

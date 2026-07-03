@@ -74,3 +74,4 @@ UserSchema.index({ companyId: 1 });
 UserSchema.index({ isActive: 1, roles: 1, firstName: 1, lastName: 1 });
 UserSchema.index({ isActive: 1, createdAt: -1 });
 UserSchema.index({ firstName: 1, lastName: 1 });
+UserSchema.index({ roles: 1, isActive: 1 });

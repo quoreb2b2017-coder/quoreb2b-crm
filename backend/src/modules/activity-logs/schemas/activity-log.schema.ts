@@ -64,3 +64,7 @@ ActivityLogSchema.index({ 'metadata.batchId': 1, occurredAt: -1 });
 ActivityLogSchema.index({ 'metadata.rootBatchId': 1, occurredAt: -1 });
 ActivityLogSchema.index({ action: 1, 'metadata.batchId': 1, occurredAt: -1 });
 ActivityLogSchema.index({ action: 1, 'metadata.rootBatchId': 1, occurredAt: -1 });
+// M10: attendance analytics + session lookups
+ActivityLogSchema.index({ userId: 1, sessionId: 1, occurredAt: -1 });
+ActivityLogSchema.index({ userId: 1, action: 1, createdAt: -1 });
+ActivityLogSchema.index({ action: 1, userId: 1, occurredAt: -1 });

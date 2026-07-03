@@ -110,6 +110,27 @@ export class ActivityLogsService {
     return created;
   }
 
+  /** Batch insert activity logs — one actor resolve, one Mongo round-trip. */
+  async logManyWithActor(actor: ActivityActor | null, entries: Partial<ActivityLog>[]) {
+    if (!entries.length) return;
+    const resolved = await this.resolveActor(actor);
+    const fields = actorFields(resolved);
+    const now = new Date();
+    const docs = entries.map((data) => {
+      const { ipAddress: _ip, ...rest } = data;
+      return {
+        ...rest,
+        ...fields,
+        occurredAt: now,
+        metadata: {
+          ...((data.metadata as Record<string, unknown>) ?? {}),
+          recordedAt: now.toISOString(),
+        },
+      };
+    });
+    await this.model.insertMany(docs, { ordered: false });
+  }
+
   private async resolveActor(actor: ActivityActor | null): Promise<ActivityActor | null> {
     if (!actor?.id || !Types.ObjectId.isValid(actor.id)) return actor;
     try {

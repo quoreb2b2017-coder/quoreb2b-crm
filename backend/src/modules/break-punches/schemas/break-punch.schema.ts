@@ -34,3 +34,8 @@ export class BreakPunch extends Document {
 export const BreakPunchSchema = SchemaFactory.createForClass(BreakPunch);
 BreakPunchSchema.index({ userId: 1, date: 1, type: 1 });
 BreakPunchSchema.index({ userId: 1, date: 1, endedAt: 1 });
+BreakPunchSchema.index({ userId: 1, date: 1, startedAt: 1 });
+BreakPunchSchema.index(
+  { userId: 1, endedAt: 1 },
+  { partialFilterExpression: { endedAt: null } },
+);

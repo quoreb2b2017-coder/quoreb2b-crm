@@ -16,6 +16,7 @@ import {
 } from './schemas/master-data-chunk.schema';
 import { MasterDataRowStore } from './master-data-row.store';
 import { MasterDataImportJobService } from './master-data-import-job.service';
+import { MasterDataImportLockService } from './master-data-import-lock.service';
 import { ActivityLogsModule } from '../activity-logs/activity-logs.module';
 import { BatchesModule } from '../batches/batches.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -32,7 +33,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     ]),
   ],
   controllers: [MasterDataController],
-  providers: [MasterDataService, MasterDataRowStore, MasterDataImportJobService],
+  providers: [MasterDataService, MasterDataRowStore, MasterDataImportJobService, MasterDataImportLockService],
   exports: [MasterDataService],
 })
 export class MasterDataModule {}

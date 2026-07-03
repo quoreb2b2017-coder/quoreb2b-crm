@@ -2,11 +2,15 @@
 # Deploy backend on EC2 via SSH — run this FROM YOUR PC (Windows/Mac/Linux).
 # Usage:
 #   bash deploy/ec2/ssh-deploy-from-local.sh path/to/crm-key.pem
-#   EC2_HOST=13.232.248.18 bash deploy/ec2/ssh-deploy-from-local.sh ~/crm-key.pem
+#   EC2_HOST=65.2.186.189 bash deploy/ec2/ssh-deploy-from-local.sh ~/crm-key.pem
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=instance.env.sh
+source "$SCRIPT_DIR/instance.env.sh"
+
 KEY="${1:-${CRM_KEY:-$HOME/.ssh/crm-key.pem}}"
-HOST="${EC2_HOST:-13.232.248.18}"
+HOST="${EC2_HOST:-$EC2_PUBLIC_IP}"
 USER="${EC2_USER:-ubuntu}"
 
 if [ -z "${1:-}" ] && [ ! -f "$KEY" ]; then

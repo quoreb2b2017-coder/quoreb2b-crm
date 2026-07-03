@@ -88,7 +88,8 @@ set_env_var MASTER_DATA_MAX_ROWS "${MASTER_DATA_MAX_ROWS:-1500000}" "$ENV_FILE"
 
 REQUIRED_CORS_ORIGINS=(
   "https://crm.quoreb2b.com"
-  "https://13-232-248-18.sslip.io"
+  "https://65-2-186-189.sslip.io"
+  "http://65.2.186.189"
   "http://localhost:3000"
 )
 for origin in "${REQUIRED_CORS_ORIGINS[@]}"; do

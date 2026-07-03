@@ -10,7 +10,7 @@ if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* || -n "${MSYSTEM:-}" ]]
   echo ""
   echo "From your PC, run ONE of these instead:"
   echo "  bash deploy/ec2/ssh-deploy-from-local.sh /path/to/crm-key.pem"
-  echo "  ssh -i crm-key.pem ubuntu@13.232.248.18 'bash ~/quoreb2b-crm/deploy/ec2/deploy-backend.sh'"
+  echo "  ssh -i crm-key.pem ubuntu@65.2.186.189 'bash ~/quoreb2b-crm/deploy/ec2/deploy-backend.sh'"
   echo ""
   exit 1
 fi
@@ -28,6 +28,9 @@ APP_DIR="${APP_DIR:-$HOME/quoreb2b-crm}"
 ENV_FILE="${ENV_FILE:-$APP_DIR/backend/.env.production}"
 IMAGE_NAME="${IMAGE_NAME:-quoreb2b-backend:latest}"
 CONTAINER_NAME="${CONTAINER_NAME:-quoreb2b-api}"
+
+# shellcheck source=instance.env.sh
+source "$APP_DIR/deploy/ec2/instance.env.sh" 2>/dev/null || true
 
 cd "$APP_DIR"
 
@@ -57,6 +60,9 @@ sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t
 sudo systemctl reload nginx
 
+echo "==> Ensuring HTTPS (Let's Encrypt for sslip.io)..."
+bash "$APP_DIR/deploy/ec2/ensure-ssl.sh" || echo "WARNING: SSL setup skipped — API works on http://${EC2_PUBLIC_IP:-65.2.186.189}"
+
 echo "==> Building Docker image..."
 cd backend
 docker build -t "$IMAGE_NAME" .
@@ -76,7 +82,7 @@ docker run -d \
   --env-file "$ENV_FILE" \
   -v /var/lib/quoreb2b/uploads:/app/uploads \
   -e "BUILD_SHA=$(git -C "$APP_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)" \
-  -e "NODE_OPTIONS=--max-old-space-size=896" \
+  -e "NODE_OPTIONS=--max-old-space-size=3072" \
   -e "API_CLUSTER_WORKERS=2" \
   "$IMAGE_NAME"
 

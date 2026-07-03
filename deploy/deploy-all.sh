@@ -9,6 +9,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=ec2/instance.env.sh
+source "$ROOT/deploy/ec2/instance.env.sh"
 KEY="${CRM_KEY:-$HOME/.ssh/crm-key.pem}"
 DEPLOY_BACKEND=true
 DEPLOY_FRONTEND=false
@@ -44,11 +46,14 @@ if $DEPLOY_BACKEND; then
   bash "$ROOT/deploy/ec2/ssh-deploy-from-local.sh" "$KEY"
   echo ""
   echo "==> Backend health check..."
-  if curl -sf --max-time 20 "https://13-232-248-18.sslip.io/api/v1/health" | grep -q '"status":"ok"'; then
-    SHA=$(curl -sf --max-time 20 "https://13-232-248-18.sslip.io/api/v1/health" | grep -o '"buildSha":"[^"]*"' | head -1)
+  if curl -sf --max-time 20 "${EC2_API_HTTPS_URL}/api/v1/health" | grep -q '"status":"ok"'; then
+    SHA=$(curl -sf --max-time 20 "${EC2_API_HTTPS_URL}/api/v1/health" | grep -o '"buildSha":"[^"]*"' | head -1)
     echo "    OK — API healthy ($SHA)"
+  elif curl -sf --max-time 20 "${EC2_API_HTTP_URL}/api/v1/health" | grep -q '"status":"ok"'; then
+    SHA=$(curl -sf --max-time 20 "${EC2_API_HTTP_URL}/api/v1/health" | grep -o '"buildSha":"[^"]*"' | head -1)
+    echo "    OK — API healthy on HTTP ($SHA) — run ensure-ssl.sh on EC2 for HTTPS"
   else
-    echo "    WARNING: health check failed — run: ssh ubuntu@13.232.248.18 'docker logs quoreb2b-api'"
+    echo "    WARNING: health check failed — run: ssh ubuntu@${EC2_PUBLIC_IP} 'docker logs quoreb2b-api'"
     exit 1
   fi
 fi
@@ -74,6 +79,6 @@ fi
 echo ""
 echo "=============================================="
 echo " Done"
-echo "  API:      https://13-232-248-18.sslip.io/api/v1/health"
+echo "  API:      ${EC2_API_HTTPS_URL}/api/v1/health"
 echo "  Frontend: https://crm.quoreb2b.com"
 echo "=============================================="

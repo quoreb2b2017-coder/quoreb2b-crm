@@ -71,6 +71,8 @@ const INCOMING_FLUSH_BATCH = 10_000;
 const SKIP_EXISTING_DEDUP_ABOVE = 100_000;
 /** Update master_data meta every N flush batches (reduces Mongo writes during import). */
 const META_UPDATE_EVERY_FLUSHES = 5;
+/** Progress UI + save segments (10L rows → 20 parts). */
+const IMPORT_PART_ROWS = 50_000;
 
 const UPLOAD_REQUEST_LIST_PROJECTION =
   '-rows -workRows';
@@ -602,14 +604,25 @@ export class MasterDataService {
     let totalIncoming = 0;
     let streamReady = false;
 
+    const partProgress = (rowCount: number, total: number) => ({
+      partIndex: Math.max(1, Math.ceil(rowCount / IMPORT_PART_ROWS)),
+      totalParts: total > 0 ? Math.ceil(total / IMPORT_PART_ROWS) : undefined,
+    });
+
     const onProgress = (saved: number, total: number, message: string) => {
       const pct = total > 0 ? 45 + Math.round((saved / total) * 52) : 95;
+      const parts = partProgress(saved, total);
       void this.importJobs.updateJob(jobId, {
         phase: 'saving',
         percent: Math.min(pct, 99),
-        message,
+        message:
+          parts.totalParts && parts.totalParts > 1
+            ? `Part ${parts.partIndex}/${parts.totalParts} — ${message}`
+            : message,
         rowsProcessed: saved,
         totalRows: total,
+        partIndex: parts.partIndex,
+        totalParts: parts.totalParts,
       });
     };
 
@@ -721,13 +734,19 @@ export class MasterDataService {
       },
       onParseProgress: async (parsed) => {
         totalIncoming = Math.max(totalIncoming, parsed);
-        const pct = 35 + Math.min(8, Math.round((parsed / Math.max(parsed, 1)) * 8));
+        const parts = partProgress(parsed, totalIncoming);
+        const estTotal = parts.totalParts ?? Math.ceil(parsed / IMPORT_PART_ROWS);
         await this.importJobs.updateJob(jobId, {
           phase: 'parsing',
-          percent: pct,
-          message: `Reading spreadsheet… ${parsed.toLocaleString()} rows`,
+          percent: 35 + Math.min(8, Math.round((parsed / Math.max(totalIncoming, 1)) * 8)),
+          message:
+            estTotal > 1
+              ? `Reading part ${parts.partIndex}/${estTotal}… ${parsed.toLocaleString()} rows`
+              : `Reading spreadsheet… ${parsed.toLocaleString()} rows`,
           rowsProcessed: parsed,
-          totalRows: parsed,
+          totalRows: totalIncoming || parsed,
+          partIndex: parts.partIndex,
+          totalParts: estTotal > 1 ? estTotal : undefined,
         });
       },
       onBatch: async (rows, parsed) => {
@@ -754,9 +773,16 @@ export class MasterDataService {
     await this.importJobs.updateJob(jobId, {
       phase: 'merging',
       percent: 42,
-      message: `Found ${totalIncoming.toLocaleString()} rows — saving to database…`,
+      message:
+        streamResult.totalRows > IMPORT_PART_ROWS
+          ? `Found ${totalIncoming.toLocaleString()} rows — saving in ${Math.ceil(totalIncoming / IMPORT_PART_ROWS)} parts (50k each)…`
+          : `Found ${totalIncoming.toLocaleString()} rows — saving to database…`,
       totalRows: totalIncoming,
       rowsProcessed: processed,
+      totalParts:
+        totalIncoming > IMPORT_PART_ROWS
+          ? Math.ceil(totalIncoming / IMPORT_PART_ROWS)
+          : undefined,
     });
 
     const saveStart = Date.now();

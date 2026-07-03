@@ -1,6 +1,13 @@
 import { masterDataService, type MasterDataImportProgress, type MasterDataSaveMode } from '@/lib/api/master-data.service';
 import { useMasterDataImportStore } from '@/store/master-data-import.store';
 import { toast } from '@/stores/toast.store';
+import {
+  estimatePartsFromFileSize,
+  formatPartMessage,
+  MASTER_DATA_UPLOAD_PART_ROWS,
+  shouldSplitCsvForUpload,
+  splitCsvFileIntoParts,
+} from '@/lib/master-data/split-upload-parts';
 
 const STORAGE_KEY = 'quoreb2b-master-import-job';
 
@@ -10,6 +17,8 @@ interface PersistedImportJob {
   mode: MasterDataSaveMode;
   startedAt: string;
   progress?: MasterDataImportProgress;
+  uploadPartIndex?: number;
+  uploadPartTotal?: number;
 }
 
 let pollingJobId: string | null = null;
@@ -62,6 +71,20 @@ function applyProgress(progress: MasterDataImportProgress) {
   patchPersistedProgress(progress);
 }
 
+function mapJobStatusToProgress(status: Awaited<ReturnType<typeof masterDataService.getImportJobStatus>>): MasterDataImportProgress {
+  return {
+    percent: status.percent,
+    phase: status.phase,
+    message: status.message,
+    rowsProcessed: status.rowsProcessed,
+    totalRows: status.totalRows,
+    partIndex: status.partIndex,
+    totalParts: status.totalParts,
+    uploadPartIndex: status.uploadPartIndex,
+    uploadPartTotal: status.uploadPartTotal,
+  };
+}
+
 /** Restore banner/chip UI immediately after navigation or refresh. */
 export function hydrateMasterImportFromStorage(): void {
   const saved = readPersistedJob();
@@ -79,7 +102,16 @@ export function hydrateMasterImportFromStorage(): void {
   }
 }
 
-async function pollImportUntilDone(jobId: string, fileName: string, mode: MasterDataSaveMode) {
+async function pollImportUntilDone(
+  jobId: string,
+  fileName: string,
+  mode: MasterDataSaveMode,
+  options?: {
+    silentComplete?: boolean;
+    uploadPartIndex?: number;
+    uploadPartTotal?: number;
+  },
+) {
   if (pollingJobId === jobId) return;
   pollingJobId = jobId;
 
@@ -104,22 +136,22 @@ async function pollImportUntilDone(jobId: string, fileName: string, mode: Master
         lastPercent = status.percent;
       }
       applyProgress({
-        percent: status.percent,
-        phase: status.phase,
-        message: status.message,
-        rowsProcessed: status.rowsProcessed,
-        totalRows: status.totalRows,
+        ...mapJobStatusToProgress(status),
+        uploadPartIndex: options?.uploadPartIndex ?? status.uploadPartIndex,
+        uploadPartTotal: options?.uploadPartTotal ?? status.uploadPartTotal,
       });
 
       if (status.phase === 'done' && status.result) {
-        clearPersistedJob();
-        useMasterDataImportStore.getState().markDone();
-        toast.success(
-          mode === 'append' ? 'Master data import complete' : 'Master data replaced',
-          `${status.result.rowCount.toLocaleString()} rows in database`,
-        );
-        window.dispatchEvent(new CustomEvent('master-data-updated'));
-        setTimeout(() => useMasterDataImportStore.getState().reset(), 8000);
+        if (!options?.silentComplete) {
+          clearPersistedJob();
+          useMasterDataImportStore.getState().markDone();
+          toast.success(
+            mode === 'append' ? 'Master data import complete' : 'Master data replaced',
+            `${status.result.rowCount.toLocaleString()} rows in database`,
+          );
+          window.dispatchEvent(new CustomEvent('master-data-updated'));
+          setTimeout(() => useMasterDataImportStore.getState().reset(), 8000);
+        }
         return status.result;
       }
 
@@ -134,7 +166,7 @@ async function pollImportUntilDone(jobId: string, fileName: string, mode: Master
     }
     throw new Error('Import timed out — check back later or retry with a smaller file.');
   } catch (err) {
-    if (useMasterDataImportStore.getState().uiPhase !== 'failed') {
+    if (!options?.silentComplete && useMasterDataImportStore.getState().uiPhase !== 'failed') {
       clearPersistedJob();
       useMasterDataImportStore.getState().markFailed();
       const msg = err instanceof Error ? err.message : 'Import failed';
@@ -145,6 +177,73 @@ async function pollImportUntilDone(jobId: string, fileName: string, mode: Master
   } finally {
     if (pollingJobId === jobId) pollingJobId = null;
   }
+}
+
+async function uploadSingleImportFile(
+  file: File,
+  mode: MasterDataSaveMode,
+  uploadPartIndex?: number,
+  uploadPartTotal?: number,
+) {
+  const jobId = await masterDataService.uploadImportJob(file, mode, (progress) => {
+    applyProgress({
+      ...progress,
+      uploadPartIndex,
+      uploadPartTotal,
+      message:
+        uploadPartTotal && uploadPartTotal > 1 && uploadPartIndex
+          ? formatPartMessage(
+              uploadPartIndex,
+              uploadPartTotal,
+              progress.message.replace(/^Uploading file… /, ''),
+            )
+          : progress.message,
+    });
+  });
+
+  persistJob({
+    jobId,
+    fileName: file.name,
+    mode,
+    startedAt: new Date().toISOString(),
+    progress: useMasterDataImportStore.getState().progress ?? undefined,
+    uploadPartIndex,
+    uploadPartTotal,
+  });
+
+  await pollImportUntilDone(jobId, file.name, mode, {
+    silentComplete: Boolean(uploadPartTotal && uploadPartTotal > 1 && uploadPartIndex !== uploadPartTotal),
+    uploadPartIndex,
+    uploadPartTotal,
+  });
+
+  return jobId;
+}
+
+async function uploadInParts(files: File[], baseFileName: string, mode: MasterDataSaveMode) {
+  const totalParts = files.length;
+  toast.success(
+    'Split into parts',
+    `${totalParts} uploads of ~${MASTER_DATA_UPLOAD_PART_ROWS.toLocaleString()} rows each for faster import`,
+  );
+
+  for (let i = 0; i < files.length; i += 1) {
+    const partMode: MasterDataSaveMode = i === 0 ? mode : 'append';
+    applyProgress({
+      percent: Math.round((i / totalParts) * 30),
+      phase: 'uploading',
+      message: formatPartMessage(i + 1, totalParts, 'Starting upload…'),
+      uploadPartIndex: i + 1,
+      uploadPartTotal: totalParts,
+    });
+    await uploadSingleImportFile(files[i], partMode, i + 1, totalParts);
+  }
+
+  clearPersistedJob();
+  useMasterDataImportStore.getState().markDone();
+  toast.success('Master data import complete', `All ${totalParts} parts saved to database`);
+  window.dispatchEvent(new CustomEvent('master-data-updated'));
+  setTimeout(() => useMasterDataImportStore.getState().reset(), 8000);
 }
 
 export async function enqueueMasterDataImport(
@@ -164,19 +263,47 @@ export async function enqueueMasterDataImport(
 
   store.begin(file.name, mode);
 
-  const jobId = await masterDataService.uploadImportJob(file, mode, (progress) => {
-    applyProgress(progress);
-  });
+  try {
+    if (shouldSplitCsvForUpload(file)) {
+      applyProgress({
+        percent: 2,
+        phase: 'uploading',
+        message: 'Splitting CSV into 50k-row parts…',
+      });
+      const parts = await splitCsvFileIntoParts(file);
+      if (parts.length > 1) {
+        await uploadInParts(parts, file.name, mode);
+        return;
+      }
+    }
 
-  persistJob({
-    jobId,
-    fileName: file.name,
-    mode,
-    startedAt: new Date().toISOString(),
-    progress: useMasterDataImportStore.getState().progress ?? undefined,
-  });
+    const estParts = estimatePartsFromFileSize(file);
+    if (estParts > 1) {
+      applyProgress({
+        percent: 5,
+        phase: 'uploading',
+        message: `Large file — will process in ~${estParts} parts of 50k rows on server…`,
+        totalParts: estParts,
+      });
+    }
 
-  void pollImportUntilDone(jobId, file.name, mode);
+    const jobId = await masterDataService.uploadImportJob(file, mode, (progress) => {
+      applyProgress(progress);
+    });
+
+    persistJob({
+      jobId,
+      fileName: file.name,
+      mode,
+      startedAt: new Date().toISOString(),
+      progress: useMasterDataImportStore.getState().progress ?? undefined,
+    });
+
+    void pollImportUntilDone(jobId, file.name, mode);
+  } catch (err) {
+    useMasterDataImportStore.getState().markFailed();
+    throw err;
+  }
 }
 
 export async function resumeMasterDataImportIfNeeded(): Promise<void> {
@@ -202,15 +329,12 @@ export async function resumeMasterDataImportIfNeeded(): Promise<void> {
       return;
     }
 
-    applyProgress({
-      percent: status.percent,
-      phase: status.phase,
-      message: status.message,
-      rowsProcessed: status.rowsProcessed,
-      totalRows: status.totalRows,
-    });
+    applyProgress(mapJobStatusToProgress(status));
 
-    void pollImportUntilDone(saved.jobId, saved.fileName, saved.mode);
+    void pollImportUntilDone(saved.jobId, saved.fileName, saved.mode, {
+      uploadPartIndex: saved.uploadPartIndex,
+      uploadPartTotal: saved.uploadPartTotal,
+    });
   } catch {
     // Keep persisted job — retry on next focus / route change when auth is ready.
   }

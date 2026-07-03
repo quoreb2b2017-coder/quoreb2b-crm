@@ -22,6 +22,12 @@ export interface MasterDataImportJobStatus {
   error?: string;
   result?: Record<string, unknown>;
   updatedAt: string;
+  /** Server processing part (50k rows each). */
+  partIndex?: number;
+  totalParts?: number;
+  /** Client multi-file upload part. */
+  uploadPartIndex?: number;
+  uploadPartTotal?: number;
 }
 
 const JOB_TTL_SECONDS = 3600;

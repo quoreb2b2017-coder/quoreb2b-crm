@@ -46,6 +46,10 @@ export interface MasterDataImportProgress {
   message: string;
   rowsProcessed?: number;
   totalRows?: number;
+  partIndex?: number;
+  totalParts?: number;
+  uploadPartIndex?: number;
+  uploadPartTotal?: number;
 }
 
 export interface MasterDataImportJobStatus {
@@ -58,6 +62,10 @@ export interface MasterDataImportJobStatus {
   fileName?: string;
   error?: string;
   result?: MasterDataRecord;
+  partIndex?: number;
+  totalParts?: number;
+  uploadPartIndex?: number;
+  uploadPartTotal?: number;
 }
 
 export interface MasterBatchCoverage {

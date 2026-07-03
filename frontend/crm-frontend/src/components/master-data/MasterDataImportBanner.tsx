@@ -22,6 +22,12 @@ export function MasterDataImportBanner() {
     progress.totalRows && progress.totalRows > 0
       ? `${(progress.rowsProcessed ?? 0).toLocaleString()} / ${progress.totalRows.toLocaleString()} rows`
       : null;
+  const partLabel =
+    progress.uploadPartTotal && progress.uploadPartTotal > 1
+      ? `Upload part ${progress.uploadPartIndex ?? '?'}/${progress.uploadPartTotal}`
+      : progress.totalParts && progress.totalParts > 1
+        ? `Processing part ${progress.partIndex ?? '?'}/${progress.totalParts} (50k rows)`
+        : null;
 
   return (
     <div className="fixed bottom-4 left-4 right-4 z-[9998] mx-auto flex max-w-lg items-start gap-3 rounded-xl border border-[#2e7ad1]/30 bg-white p-4 shadow-lg md:left-auto md:right-6">
@@ -43,6 +49,7 @@ export function MasterDataImportBanner() {
           />
         </div>
         <p className="mt-1 text-[11px] text-slate-400">
+          {partLabel ? `${partLabel} · ` : ''}
           {rowLabel ? `${rowLabel} · ` : ''}
           {percent}% — you can use other pages; import continues on the server
         </p>

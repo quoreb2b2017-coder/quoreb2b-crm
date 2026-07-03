@@ -18,6 +18,16 @@ const nextConfig = {
       },
     ];
   },
+  async rewrites() {
+    const apiOrigin =
+      process.env.API_PROXY_ORIGIN || 'https://65-2-186-189.sslip.io';
+    return [
+      {
+        source: '/api/:path*',
+        destination: `${apiOrigin}/api/:path*`,
+      },
+    ];
+  },
 };
 
 module.exports = nextConfig;

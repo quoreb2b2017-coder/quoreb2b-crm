@@ -18,7 +18,7 @@ import { markFreshLogin } from '@/lib/auth/sleep-logout';
 import { stashLoginPunch } from '@/lib/auth/login-punch';
 import { stashLoginWelcome } from '@/lib/auth/login-welcome';
 import { isLoginIpDeniedError } from '@/lib/auth/login-errors';
-import { getApiBaseUrl, isStaleProductionApiUrl } from '@/lib/constants/api-url';
+import { getApiBaseUrl } from '@/lib/constants/api-url';
 
 function formatLoginError(e: unknown): string {
   const err = e as { code?: string; message?: string };
@@ -30,10 +30,7 @@ function formatLoginError(e: unknown): string {
   ) {
     const apiUrl = getApiBaseUrl();
     if (typeof window !== 'undefined' && !apiUrl.includes('localhost')) {
-      if (isStaleProductionApiUrl(process.env.NEXT_PUBLIC_API_URL || '')) {
-        return `Cannot reach the API — Vercel still uses the old server URL. Set NEXT_PUBLIC_API_URL to ${apiUrl} and redeploy.`;
-      }
-      return `Cannot reach the API (${apiUrl}). The server may be restarting — wait a minute and try again.`;
+      return `Cannot reach the API (${window.location.origin}${apiUrl}). Try hard refresh (Ctrl+Shift+R) or wait for Vercel redeploy.`;
     }
     return 'API is not running. Open a terminal: cd backend → npm run start:dev (wait for "API running on port 4000")';
   }

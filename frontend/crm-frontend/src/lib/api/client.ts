@@ -2,16 +2,22 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { useAuthStore } from '@/store/auth.store';
 import { getApiBaseUrl } from '@/lib/constants/api-url';
 
-const API_BASE = getApiBaseUrl();
-
 /** Default API timeout — large imports use per-request overrides. */
 export const DEFAULT_API_TIMEOUT_MS = 120_000;
 
 const apiClient = axios.create({
-  baseURL: API_BASE,
   timeout: DEFAULT_API_TIMEOUT_MS,
   headers: { 'Content-Type': 'application/json' },
   withCredentials: true,
+});
+
+apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+  config.baseURL = getApiBaseUrl();
+  const token = getAccessToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
 });
 
 let refreshInFlight: Promise<{ accessToken: string; refreshToken: string } | null> | null =
@@ -35,7 +41,7 @@ async function refreshAccessToken(): Promise<{ accessToken: string; refreshToken
 
   refreshInFlight = (async () => {
     try {
-      const { data } = await axios.post(`${API_BASE}/auth/refresh`, { refreshToken }, {
+      const { data } = await axios.post(`${getApiBaseUrl()}/auth/refresh`, { refreshToken }, {
         timeout: DEFAULT_API_TIMEOUT_MS,
       });
       const tokens = (data.data ?? data) as { accessToken: string; refreshToken: string };
@@ -57,14 +63,6 @@ async function refreshAccessToken(): Promise<{ accessToken: string; refreshToken
 
   return refreshInFlight;
 }
-
-apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const token = getAccessToken();
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
 
 apiClient.interceptors.response.use(
   (response) => response,

@@ -36,7 +36,9 @@ import {
 } from './master-data-merge.util';
 import {
   formatMasterDataCell,
+  normalizeMasterDataSheet,
   prepareMasterDataIncoming,
+  resolveMasterDataHeaders,
   rowHasSourceData,
 } from './master-data-format.util';
 import {
@@ -61,6 +63,11 @@ import {
 
 const DEFAULT_MAX_TOTAL_ROWS = 1_500_000;
 const DUPLICATE_PREVIEW_LIMIT = 100;
+/** Stream large imports in batches — rows hit MongoDB as each batch completes. */
+const LARGE_IMPORT_STREAM_THRESHOLD = 10_000;
+const INCOMING_FLUSH_BATCH = 5_000;
+/** Skip loading millions of existing keys into RAM (OOM on t3.small). */
+const SKIP_EXISTING_DEDUP_ABOVE = 100_000;
 
 /** CRM collections wiped on admin clear — user login accounts are kept. */
 const CRM_OPERATIONAL_COLLECTIONS = [
@@ -334,6 +341,228 @@ export class MasterDataService {
     });
   }
 
+  private async patchChunkedMasterMeta(params: {
+    headers: string[];
+    rowCount: number;
+    fileName: string;
+    sheetName: string;
+    actor: ActivityActor;
+  }): Promise<MasterDataRecord> {
+    return this.masterDataModel
+      .findOneAndUpdate(
+        { key: MASTER_DATA_KEY },
+        {
+          key: MASTER_DATA_KEY,
+          headers: params.headers,
+          rows: [],
+          rowCount: params.rowCount,
+          storage: 'chunked',
+          fileName: params.fileName,
+          sheetName: params.sheetName,
+          uploadedBy: params.actor.id,
+          uploadedByEmail: params.actor.email,
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      )
+      .exec() as Promise<MasterDataRecord>;
+  }
+
+  /**
+   * Large imports: normalize + insert in batches so MongoDB gets rows progressively.
+   * If the job fails mid-way, batches already flushed remain in the database.
+   */
+  private async saveLargeImportStreaming(
+    dto: SaveMasterDataDto,
+    existing: MasterDataRecord | null,
+    mode: 'append' | 'replace',
+    actor: ActivityActor,
+    onProgress?: (savedRows: number, totalRows: number, message: string) => void,
+  ) {
+    const totalIncoming = dto.rows.length;
+    const targetHeaders = resolveMasterDataHeaders(
+      mode === 'replace' || !existing ? null : existing.headers,
+      dto.headers,
+    );
+    const sourceHeaders = dto.headers.map((h) => h.trim());
+    const sourceIdx = buildHeaderIndexMap(sourceHeaders);
+
+    if (totalIncoming > this.maxTotalRows()) {
+      throw new BadRequestException(
+        `Master data limit is ${this.maxTotalRows()} rows. File has ${totalIncoming}.`,
+      );
+    }
+
+    const sheetName = dto.sheetName || existing?.sheetName || 'Master Data';
+    let baseRowCount = 0;
+
+    if (mode === 'replace' || !existing) {
+      onProgress?.(0, totalIncoming, 'Replacing master data (batch insert)…');
+      await this.rowStore.deleteChunks();
+      baseRowCount = 0;
+      await this.patchChunkedMasterMeta({
+        headers: targetHeaders,
+        rowCount: 0,
+        fileName: dto.fileName,
+        sheetName,
+        actor,
+      });
+    } else if (!this.rowStore.isChunked(existing)) {
+      onProgress?.(0, totalIncoming, 'Migrating existing data to chunked storage…');
+      const existingRows = await this.loadExistingRows(existing);
+      baseRowCount = existingRows.length;
+      await this.rowStore.deleteChunks();
+      if (existingRows.length) {
+        await this.rowStore.appendRows(existingRows);
+      }
+      await this.patchChunkedMasterMeta({
+        headers: existing.headers,
+        rowCount: baseRowCount,
+        fileName: existing.fileName,
+        sheetName: existing.sheetName || sheetName,
+        actor,
+      });
+    } else {
+      baseRowCount = this.rowStore.getRowCount(existing);
+    }
+
+    const skipExistingDedup = totalIncoming > SKIP_EXISTING_DEDUP_ABOVE;
+    let seen: Set<string> | null = null;
+    if (mode === 'append' && existing && !skipExistingDedup) {
+      onProgress?.(0, totalIncoming, 'Indexing existing rows for duplicates…');
+      const doc =
+        existing.storage === 'chunked'
+          ? existing
+          : await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+      if (doc) {
+        seen = await this.rowStore.loadExistingRowKeys(doc, targetHeaders, {
+          formatCell: formatMasterDataCell,
+        });
+      }
+    } else if (skipExistingDedup) {
+      this.logger.warn(
+        `Large import (${totalIncoming.toLocaleString()} rows): skipping cross-file duplicate scan to save memory`,
+      );
+      seen = new Set<string>();
+    } else {
+      seen = new Set<string>();
+    }
+
+    const incomingSeen = new Set<string>();
+    let addedRows = 0;
+    let skippedDuplicates = 0;
+    let pendingBatch: string[][] = [];
+    let processed = 0;
+
+    const flushBatch = async () => {
+      if (!pendingBatch.length) return;
+      await this.rowStore.appendRows(pendingBatch, MASTER_DATA_KEY, undefined);
+      addedRows += pendingBatch.length;
+      pendingBatch = [];
+      const totalRows = baseRowCount + addedRows;
+      const fileName =
+        mode === 'replace' || !existing
+          ? `${dto.fileName} (${totalRows.toLocaleString()} rows)`
+          : existing!.fileName.includes('+')
+            ? existing!.fileName.replace(/\(\d+ rows\)$/, `(${totalRows.toLocaleString()} rows)`)
+            : `${existing!.fileName} + ${dto.fileName} (${totalRows.toLocaleString()} rows)`;
+      await this.patchChunkedMasterMeta({
+        headers: targetHeaders,
+        rowCount: totalRows,
+        fileName,
+        sheetName,
+        actor,
+      });
+      onProgress?.(
+        processed,
+        totalIncoming,
+        `Saved ${totalRows.toLocaleString()} rows in database (${addedRows.toLocaleString()} new)…`,
+      );
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    };
+
+    for (const rawRow of dto.rows) {
+      processed += 1;
+      if (!rowHasSourceData(rawRow, sourceHeaders)) {
+        skippedDuplicates += 1;
+        continue;
+      }
+      const aligned = alignRowWithIndex(
+        rawRow,
+        sourceIdx,
+        targetHeaders,
+        formatMasterDataCell,
+      );
+      const key = this.rowKey(aligned);
+      if (seen!.has(key) || incomingSeen.has(key)) {
+        skippedDuplicates += 1;
+        continue;
+      }
+      seen!.add(key);
+      incomingSeen.add(key);
+      pendingBatch.push(aligned);
+
+      if (pendingBatch.length >= INCOMING_FLUSH_BATCH) {
+        await flushBatch();
+      }
+
+      if (processed % 25_000 === 0) {
+        onProgress?.(
+          processed,
+          totalIncoming,
+          `Processing ${processed.toLocaleString()} / ${totalIncoming.toLocaleString()} rows…`,
+        );
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+    }
+
+    await flushBatch();
+
+    const finalRowCount = baseRowCount + addedRows;
+    const doc = await this.patchChunkedMasterMeta({
+      headers: targetHeaders,
+      rowCount: finalRowCount,
+      fileName:
+        mode === 'replace' || !existing
+          ? dto.fileName
+          : existing!.fileName.includes('+')
+            ? existing!.fileName.replace(/\(\d+ rows\)$/, `(${finalRowCount.toLocaleString()} rows)`)
+            : `${existing!.fileName} + ${dto.fileName} (${finalRowCount.toLocaleString()} rows)`,
+      sheetName,
+      actor,
+    });
+
+    try {
+      await this.activityLogs.logWithActor(actor, {
+        action: 'MASTER_DATA_UPLOAD',
+        resource: 'master-data',
+        path: '/admin/master-data-upload',
+        metadata: {
+          fileName: dto.fileName,
+          sheetName: dto.sheetName,
+          addedRows,
+          skippedDuplicates,
+          totalRows: finalRowCount,
+          columnCount: targetHeaders.length,
+          mode,
+          detailAction: mode === 'replace' ? 'MASTER_DATA_REPLACE' : 'MASTER_DATA_APPEND',
+          streaming: true,
+        },
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to write activity log for streaming master import: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+
+    void this.bustMasterCaches();
+    return {
+      ...(await this.toResponse(doc)),
+      addedRows,
+      skippedDuplicates,
+      mode,
+    };
+  }
+
   async save(
     dto: SaveMasterDataDto,
     actor: ActivityActor,
@@ -347,6 +576,16 @@ export class MasterDataService {
     const existing = await this.masterDataModel
       .findOne({ key: MASTER_DATA_KEY })
       .exec();
+
+    if (dto.rows.length > LARGE_IMPORT_STREAM_THRESHOLD) {
+      return this.saveLargeImportStreaming(
+        dto,
+        existing,
+        mode,
+        actor,
+        onProgress,
+      );
+    }
 
     const prepared = prepareMasterDataIncoming(dto.headers, dto.rows, {
       existingHeaders: existing?.headers,
@@ -635,15 +874,22 @@ export class MasterDataService {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Import failed';
+      const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+      const savedRows = doc ? this.rowStore.getRowCount(doc) : 0;
+      const userMessage =
+        savedRows > 0
+          ? `Import stopped — ${savedRows.toLocaleString()} rows were already saved. Upload again in append mode to continue.`
+          : message;
       this.logger.error(
         `Master import job ${jobId} failed after ${Date.now() - jobStart}ms ` +
-          `(parseMs=${parseMs} saveMs=${saveMs}): ${message} ${formatMemoryUsage()}`,
+          `(parseMs=${parseMs} saveMs=${saveMs} savedRows=${savedRows}): ${message} ${formatMemoryUsage()}`,
       );
       await this.importJobs.updateJob(jobId, {
         phase: 'failed',
         percent: 100,
-        message: 'Import failed',
-        error: message,
+        message: userMessage,
+        error: userMessage,
+        rowsProcessed: savedRows,
       });
     } finally {
       await unlink(filePath).catch(() => undefined);

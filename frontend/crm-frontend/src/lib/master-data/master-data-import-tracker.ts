@@ -104,16 +104,23 @@ async function pollImportUntilDone(jobId: string, fileName: string, mode: Master
       }
 
       if (status.phase === 'failed') {
-        throw new Error(status.error || status.message || 'Import failed');
+        clearPersistedJob();
+        useMasterDataImportStore.getState().markFailed();
+        const msg = status.error || status.message || 'Import failed';
+        toast.error('Master data import failed', msg);
+        setTimeout(() => useMasterDataImportStore.getState().reset(), 3000);
+        throw new Error(msg);
       }
     }
     throw new Error('Import timed out — check back later or retry with a smaller file.');
   } catch (err) {
-    clearPersistedJob();
-    useMasterDataImportStore.getState().markFailed();
-    const msg = err instanceof Error ? err.message : 'Import failed';
-    toast.error('Master data import failed', msg);
-    setTimeout(() => useMasterDataImportStore.getState().reset(), 12000);
+    if (useMasterDataImportStore.getState().uiPhase !== 'failed') {
+      clearPersistedJob();
+      useMasterDataImportStore.getState().markFailed();
+      const msg = err instanceof Error ? err.message : 'Import failed';
+      toast.error('Master data import failed', msg);
+      setTimeout(() => useMasterDataImportStore.getState().reset(), 3000);
+    }
     throw err;
   } finally {
     if (pollingJobId === jobId) pollingJobId = null;
@@ -125,7 +132,13 @@ export async function enqueueMasterDataImport(
   mode: MasterDataSaveMode = 'replace',
 ): Promise<void> {
   const store = useMasterDataImportStore.getState();
-  if (store.uiPhase === 'active' && store.progress?.phase !== 'done') {
+  const phase = store.progress?.phase;
+  if (
+    store.uiPhase === 'active' &&
+    phase !== 'done' &&
+    phase !== 'failed' &&
+    phase !== 'uploading'
+  ) {
     throw new Error('Another master data import is already running.');
   }
 

@@ -14,6 +14,18 @@ interface PersistedImportJob {
 
 let pollingJobId: string | null = null;
 
+/** True while a background master-data import may still be running on the server. */
+export function isMasterDataImportInProgress(): boolean {
+  const store = useMasterDataImportStore.getState();
+  if (store.uiPhase === 'active') {
+    const phase = store.progress?.phase;
+    if (!phase || (phase !== 'done' && phase !== 'failed')) {
+      return true;
+    }
+  }
+  return Boolean(readPersistedJob()?.jobId);
+}
+
 function persistJob(job: PersistedImportJob) {
   if (typeof window === 'undefined') return;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(job));

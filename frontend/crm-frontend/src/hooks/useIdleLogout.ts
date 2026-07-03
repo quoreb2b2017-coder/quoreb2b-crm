@@ -18,6 +18,7 @@ import {
   clearSessionTracking,
   SLEEP_GAP_MS,
 } from '@/lib/auth/sleep-logout';
+import { isMasterDataImportInProgress } from '@/lib/master-data/master-data-import-tracker';
 
 const IDLE_MS = IDLE_TIMEOUT_MINUTES * 60 * 1000;
 const WARN_MS = (IDLE_TIMEOUT_MINUTES - IDLE_WARN_BEFORE_MINUTES) * 60 * 1000;
@@ -145,6 +146,11 @@ export function useIdleLogout(
     const remainingWarn = WARN_MS - elapsed;
 
     if (remainingIdle <= 0) {
+      if (isMasterDataImportInProgress()) {
+        lastActivityAt.current = Date.now();
+        scheduleTimers();
+        return;
+      }
       void doLogout('idle', 'idle');
       return;
     }
@@ -164,6 +170,11 @@ export function useIdleLogout(
     }
 
     idleTimer.current = setTimeout(() => {
+      if (isMasterDataImportInProgress()) {
+        lastActivityAt.current = Date.now();
+        scheduleTimers();
+        return;
+      }
       void doLogout('idle', 'idle');
     }, remainingIdle);
   }, [enabled, clearTimers, doLogout, onWarn, trackIdleEvent]);

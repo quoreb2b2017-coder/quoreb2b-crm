@@ -318,7 +318,8 @@ export const masterDataService = {
       const { data } = await apiClient.get('/master-data/current', {
         timeout: MASTER_DATA_READ_TIMEOUT_MS,
       });
-      return unwrap<MasterDataRecord>({ data });
+      const payload = unwrap<MasterDataRecord | null>({ data });
+      return payload ?? null;
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } })?.response?.status;
       if (status === 404 || status === 403) return null;

@@ -61,7 +61,6 @@ export function parseSpreadsheetBuffer(
 
   const workbook = XLSX.read(buffer, {
     type: 'buffer',
-    dense: true,
     cellDates: false,
     cellNF: false,
     cellStyles: false,
@@ -73,6 +72,12 @@ export function parseSpreadsheetBuffer(
   }
 
   const sheet = workbook.Sheets[sheetName];
+  if (!sheet) {
+    throw new BadRequestException(`Could not read worksheet "${sheetName}"`);
+  }
+  if (!sheet['!ref']) {
+    throw new BadRequestException('Worksheet is empty — add a header row and data');
+  }
   const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
     header: 1,
     defval: '',

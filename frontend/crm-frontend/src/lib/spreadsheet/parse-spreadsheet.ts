@@ -66,6 +66,13 @@ export async function parseSpreadsheetFile(file: File): Promise<SpreadsheetData>
   }
 
   const sheet = workbook.Sheets[sheetName];
+  if (!sheet) {
+    throw new Error(`Could not read worksheet "${sheetName}"`);
+  }
+  if (!sheet['!ref']) {
+    throw new Error('Worksheet is empty — add a header row and data rows');
+  }
+
   const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
     header: 1,
     defval: '',

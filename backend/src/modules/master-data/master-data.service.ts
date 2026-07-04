@@ -1178,7 +1178,7 @@ export class MasterDataService {
       async () => {
         const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
         if (!doc) {
-          throw new NotFoundException('No master data uploaded yet');
+          return null;
         }
         return await this.toResponse(doc);
       },
@@ -1886,7 +1886,7 @@ export class MasterDataService {
         async () => {
           const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
           if (!doc) {
-            throw new NotFoundException('No master data uploaded yet');
+            return null;
           }
           return this.toMetadataResponse(doc);
         },

@@ -62,7 +62,6 @@ function streamXlsxRows(filePath: string, fileName: string) {
   const buffer = readFileSync(filePath);
   const workbook = XLSX.read(buffer, {
     type: 'buffer',
-    dense: true,
     cellDates: false,
     cellNF: false,
     cellStyles: false,
@@ -74,38 +73,19 @@ function streamXlsxRows(filePath: string, fileName: string) {
   }
 
   const sheet = workbook.Sheets[sheetName];
-  const denseRows = sheet as unknown as unknown[][];
+  if (!sheet) {
+    throw new Error(`Could not read worksheet "${sheetName}"`);
+  }
+
+  const ref = sheet['!ref'];
+  if (!ref) {
+    throw new Error('Worksheet is empty — add a header row and data rows');
+  }
+
   let processed = 0;
   let batch: string[][] = [];
 
-  if (Array.isArray(denseRows) && denseRows.length > 0) {
-    const first = (denseRows[0] ?? []).map(cellToString);
-    const hasHeader = first.some((h) => h.length > 0);
-    const headers = hasHeader
-      ? trimTrailingEmptyHeaders(first)
-      : first.map((_, i) => `Column ${i + 1}`);
-    parentPort?.postMessage({ type: 'meta', sheetName, headers });
-
-    const start = hasHeader ? 1 : 0;
-    for (let r = start; r < denseRows.length; r += 1) {
-      const raw = denseRows[r] ?? [];
-      const row = headers.map((_, i) => cellToString(raw[i]));
-      if (!row.some((c) => c.length > 0)) continue;
-      batch.push(row);
-      processed += 1;
-      if (batch.length >= PARSE_BATCH_SIZE) {
-        flushBatch(batch, processed);
-      }
-      if (processed % 50_000 === 0) {
-        parentPort?.postMessage({ type: 'progress', processed });
-      }
-    }
-    flushBatch(batch, processed);
-    parentPort?.postMessage({ type: 'done', totalRows: processed, sheetName, headers });
-    return;
-  }
-
-  const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+  const range = XLSX.utils.decode_range(ref);
   const headerRow: string[] = [];
   for (let C = range.s.c; C <= range.e.c; C += 1) {
     const cell = sheet[XLSX.utils.encode_cell({ r: range.s.r, c: C })];

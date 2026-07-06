@@ -26,6 +26,13 @@ fi
 
 AVAIL_KB=$(df --output=avail / | tail -1 | tr -d ' ')
 AVAIL_GB=$((AVAIL_KB / 1024 / 1024))
+
+# On small root volumes (t3 default 8GB), swap files steal space Docker needs for builds.
+if [ "$AVAIL_GB" -lt 4 ]; then
+  echo "==> Skipping swap — only ${AVAIL_GB}GB free (preserve disk for Docker builds)"
+  exit 0
+fi
+
 MAX_SWAP_GB=$((AVAIL_GB - MIN_FREE_AFTER_SWAP_GB))
 if [ "$MAX_SWAP_GB" -lt 1 ]; then
   echo "==> Skipping swap — only ${AVAIL_GB}GB free (need ${MIN_FREE_AFTER_SWAP_GB}GB+ for Docker builds)"

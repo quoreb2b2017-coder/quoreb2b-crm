@@ -63,12 +63,20 @@ sudo systemctl reload nginx
 echo "==> Ensuring HTTPS (Let's Encrypt for sslip.io)..."
 bash "$APP_DIR/deploy/ec2/ensure-ssl.sh" || echo "WARNING: SSL setup skipped — API works on http://${EC2_PUBLIC_IP:-65.2.186.189}"
 
-echo "==> Freeing disk before Docker build..."
+echo "==> Preparing disk for Docker build..."
 df -h / | tail -1
-docker builder prune -af 2>/dev/null || true
-docker image prune -f 2>/dev/null || true
-# Remove stopped containers and unused images (running quoreb2b-api keeps its image until replaced)
-docker system prune -f 2>/dev/null || true
+# Swap file uses root disk — remove before build on small volumes to reclaim ~1GB
+if swapon --show 2>/dev/null | grep -q '/swapfile'; then
+  echo "==> Disabling swap file to free disk for Docker build..."
+  sudo swapoff /swapfile 2>/dev/null || true
+  sudo rm -f /swapfile 2>/dev/null || true
+fi
+echo "==> Stopping API container before image rebuild..."
+docker stop "$CONTAINER_NAME" 2>/dev/null || true
+docker rm "$CONTAINER_NAME" 2>/dev/null || true
+echo "==> Aggressive Docker cleanup..."
+docker system prune -af 2>/dev/null || true
+docker volume prune -f 2>/dev/null || true
 df -h / | tail -1
 
 echo "==> Building Docker image..."

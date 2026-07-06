@@ -189,6 +189,28 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   const [clearModalOpen, setClearModalOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
 
+  const applyLargeDatasetRecord = useCallback(
+    (record: Awaited<ReturnType<typeof masterDataService.getCurrent>> & { rowCount: number }) => {
+      const fileName = cleanMasterFileName(record.fileName);
+      const previewRows = record.rows ?? [];
+      setIsLargeDatasetPreview(true);
+      setFilteredViewActive(false);
+      setTotalRows(safeCount(record.rowCount));
+      setPreviewSourceIndices(record.previewSourceIndices ?? []);
+      setData({
+        fileName,
+        sheetName: record.sheetName,
+        headers: record.headers ?? [],
+        rows: previewRows,
+      });
+      setFilteredRows(previewRows);
+      setSavedAt(record.updatedAt ?? record.createdAt ?? new Date().toISOString());
+      setDirty(false);
+      lastPreviewMeta.current = { rowCount: safeCount(record.rowCount), fileName };
+    },
+    [],
+  );
+
   const applyRecord = useCallback((record: Awaited<ReturnType<typeof masterDataService.save>>) => {
     const sheet = recordToSpreadsheet(record);
     setData(sheet);
@@ -319,45 +341,30 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
         toast.error('Cannot load master grid', msg);
         return;
       }
-      if (record.largeDataset || (record.rowCount > 5000 && (record.rows?.length ?? 0) === 0)) {
+      if (record.largeDataset || record.rowCount > 5000) {
+        if ((record.rows?.length ?? 0) > 0) {
+          applyLargeDatasetRecord(record);
+          void loadCoverage();
+          return;
+        }
+
         const rowCount = record.rowCount;
         const fileName = cleanMasterFileName(record.fileName);
-        const existingRows = dataRef.current?.rows ?? [];
-        const rowCountUnchanged =
-          existingRows.length > 0 &&
-          lastPreviewMeta.current.rowCount === safeCount(rowCount) &&
-          lastPreviewMeta.current.fileName === fileName;
-
+        const gen = ++previewLoadGen.current;
         setIsLargeDatasetPreview(true);
         setFilteredViewActive(false);
         setTotalRows(safeCount(rowCount));
         setSavedAt(record.updatedAt ?? record.createdAt ?? new Date().toISOString());
         setDirty(false);
-        void loadCoverage();
-
-        if (rowCountUnchanged) {
-          setData((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  fileName: cleanMasterFileName(record.fileName),
-                  sheetName: record.sheetName,
-                  headers: record.headers ?? prev.headers,
-                }
-              : null,
-          );
-          return;
-        }
-
-        const gen = ++previewLoadGen.current;
         setData((prev) => ({
-          fileName: cleanMasterFileName(record.fileName),
+          fileName,
           sheetName: record.sheetName,
           headers: record.headers ?? prev?.headers ?? [],
           rows: [],
         }));
         setPreviewSourceIndices([]);
         setFilteredRows([]);
+        void loadCoverage();
 
         try {
           const preview = await masterDataService.getPreview(100);
@@ -366,15 +373,11 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
           if (!previewRows.length) {
             throw new Error('Preview returned 0 rows — data may still be saving');
           }
-          setPreviewSourceIndices(preview.sourceRowIndices ?? []);
-          setData({
-            fileName: cleanMasterFileName(record.fileName),
-            sheetName: record.sheetName,
-            headers: preview.headers ?? record.headers ?? [],
+          applyLargeDatasetRecord({
+            ...record,
             rows: previewRows,
+            previewSourceIndices: preview.sourceRowIndices,
           });
-          setFilteredRows(previewRows);
-          lastPreviewMeta.current = { rowCount: safeCount(rowCount), fileName };
         } catch (err) {
           if (gen !== previewLoadGen.current) return;
           toast.error(
@@ -407,7 +410,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
     } finally {
       setLoadingDb(false);
     }
-  }, [applyRecord, loadCoverage]);
+  }, [applyRecord, applyLargeDatasetRecord, loadCoverage]);
 
   useEffect(() => { loadFromDb(); }, [loadFromDb]);
 
@@ -416,6 +419,19 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
     const refresh = () => {
       if (refreshTimer) clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => {
+        const hasPreview = (dataRef.current?.rows?.length ?? 0) > 0;
+        const meta = lastPreviewMeta.current;
+        if (hasPreview && meta.rowCount > 0) {
+          void loadCoverage();
+          void masterDataService.getCurrent().then((record) => {
+            if (!record) return;
+            setTotalRows(safeCount(record.rowCount));
+            if (meta.rowCount !== safeCount(record.rowCount)) {
+              void loadFromDb().catch(() => undefined);
+            }
+          }).catch(() => undefined);
+          return;
+        }
         void loadFromDb().catch(() => undefined);
       }, 1500);
     };

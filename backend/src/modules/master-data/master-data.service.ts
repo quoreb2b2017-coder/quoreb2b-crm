@@ -1173,7 +1173,7 @@ export class MasterDataService {
 
   async getCurrent() {
     return this.cache.wrap(
-      'master:current',
+      'master:current:v2',
       cacheTtlSeconds(this.config, 'long'),
       async () => {
         const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
@@ -2289,7 +2289,17 @@ export class MasterDataService {
     const rowCount = this.rowStore.getRowCount(doc);
     const largeDataset =
       this.rowStore.isChunked(doc) || rowCount > MASTER_DATA_LARGE_UI_ROW_LIMIT;
-    const rows = largeDataset ? [] : await this.loadExistingRows(doc);
+    const previewLimit = 100;
+    let rows: string[][] = [];
+    let previewSourceIndices: number[] | undefined;
+
+    if (largeDataset) {
+      const preview = await this.rowStore.loadPageRows(doc, 0, previewLimit);
+      rows = preview.rows;
+      previewSourceIndices = preview.sourceRowIndices;
+    } else {
+      rows = await this.loadExistingRows(doc);
+    }
 
     return {
       id: doc._id.toString(),
@@ -2300,6 +2310,7 @@ export class MasterDataService {
       rowCount,
       columnCount: doc.headers.length,
       largeDataset,
+      previewSourceIndices,
       uploadedByEmail: doc.uploadedByEmail,
       sharedWithDbAdmins: ((doc.sharedWithDbAdmins as Types.ObjectId[]) ?? []).map((u) =>
         u.toString(),

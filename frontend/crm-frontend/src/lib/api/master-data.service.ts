@@ -95,8 +95,10 @@ export interface MasterDataRecord {
   mode?: MasterDataSaveMode;
   /** DB Admin: rows hidden until filter search */
   filterRequired?: boolean;
-  /** Large dataset — rows omitted; browse via Master File search */
+  /** Large dataset — full rows omitted; first page may be in `rows` */
   largeDataset?: boolean;
+  /** Absolute row indices when `rows` is a large-dataset preview slice */
+  previewSourceIndices?: number[];
 }
 
 export interface MasterDataColumnFilter {

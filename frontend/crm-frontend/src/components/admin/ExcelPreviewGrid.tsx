@@ -518,7 +518,10 @@ export function ExcelPreviewGrid({
               </span>
               <span className="text-slate-500">
                 {' '}
-                / {sourceRows.length.toLocaleString('en-US')} contacts
+                / {(datasetRowCount ?? sourceRows.length).toLocaleString('en-US')} contacts
+                {datasetRowCount != null && datasetRowCount > sourceRows.length ? (
+                  <span className="text-slate-400"> (preview)</span>
+                ) : null}
               </span>
             </span>
             {campaignViewLabel && (

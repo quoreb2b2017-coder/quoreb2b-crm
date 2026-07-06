@@ -23,6 +23,9 @@ function yieldToEventLoop(): Promise<void> {
 
 @Injectable()
 export class MasterDataRowStore {
+  /** Serialize appendRows per masterKey — prevents duplicate chunkIndex under concurrency. */
+  private readonly appendChains = new Map<string, Promise<unknown>>();
+
   constructor(
     @InjectModel(MasterDataChunk.name)
     private chunkModel: Model<MasterDataChunk>,
@@ -147,6 +150,26 @@ export class MasterDataRowStore {
     chunkSize = MASTER_DATA_CHUNK_SIZE,
     onProgress?: (savedRows: number, totalRows: number) => void,
   ): Promise<number> {
+    const run = () =>
+      this.appendRowsUnlocked(newRows, masterKey, chunkSize, onProgress);
+    const previous = this.appendChains.get(masterKey) ?? Promise.resolve();
+    const current = previous.then(run, run);
+    this.appendChains.set(masterKey, current);
+    try {
+      return await current;
+    } finally {
+      if (this.appendChains.get(masterKey) === current) {
+        this.appendChains.delete(masterKey);
+      }
+    }
+  }
+
+  private async appendRowsUnlocked(
+    newRows: string[][],
+    masterKey: string = MASTER_DATA_KEY,
+    chunkSize = MASTER_DATA_CHUNK_SIZE,
+    onProgress?: (savedRows: number, totalRows: number) => void,
+  ): Promise<number> {
     if (!newRows.length) return 0;
 
     const lastChunk = await this.chunkModel
@@ -170,7 +193,7 @@ export class MasterDataRowStore {
 
     const flushInserts = async () => {
       if (!insertBatch.length) return;
-      await this.chunkModel.insertMany(insertBatch, { ordered: false });
+      await this.chunkModel.insertMany(insertBatch, { ordered: true });
       onProgress?.(appended, newRows.length);
       insertBatch = [];
       await yieldToEventLoop();

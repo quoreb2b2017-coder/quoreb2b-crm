@@ -80,6 +80,15 @@ function rowKey(row: string[]) {
   return row.join('\u001f');
 }
 
+function cleanMasterFileName(name: string): string {
+  return (
+    name
+      .replace(/-part-\d+-of-\d+/gi, '')
+      .replace(/\s*\([\d,]+ rows\)\s*$/i, '')
+      .trim() || name
+  );
+}
+
 function collectDuplicateRows(
   existing: SpreadsheetData | null,
   incoming: SpreadsheetData,
@@ -149,6 +158,8 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   const [dragOver, setDragOver] = useState(false);
   const [replaceOnUpload, setReplaceOnUpload] = useState(false);
   const [totalRows, setTotalRows] = useState(0);
+  const [previewSourceIndices, setPreviewSourceIndices] = useState<number[]>([]);
+  const [isLargeDatasetPreview, setIsLargeDatasetPreview] = useState(false);
   const [error, setError] = useState('');
   const [dirty, setDirty] = useState(false);
   // ── Batch create modal state ──
@@ -179,6 +190,8 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
     setFilteredRows(sheet.rows);
     setFilteredViewActive(false);
     setTotalRows(record.rowCount);
+    setIsLargeDatasetPreview(false);
+    setPreviewSourceIndices([]);
     setSavedAt(record.updatedAt ?? record.createdAt ?? new Date().toISOString());
     setDirty(false);
     return sheet;
@@ -300,20 +313,34 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
         return;
       }
       if (record.largeDataset || (record.rowCount > 5000 && (record.rows?.length ?? 0) === 0)) {
+        const rowCount = record.rowCount;
+        let previewRows: string[][] = [];
+        let sourceIndices: number[] = [];
+        try {
+          const preview = await masterDataService.search({ page: 1, limit: 100 });
+          previewRows = preview.rows;
+          sourceIndices = preview.sourceRowIndices;
+        } catch {
+          /* preview optional — totals still from record */
+        }
         setData({
-          fileName: record.fileName,
+          fileName: cleanMasterFileName(record.fileName),
           sheetName: record.sheetName,
           headers: record.headers,
-          rows: [],
+          rows: previewRows,
         });
-        setFilteredRows([]);
+        setPreviewSourceIndices(sourceIndices);
+        setIsLargeDatasetPreview(true);
+        setFilteredRows(previewRows);
         setFilteredViewActive(false);
-        setTotalRows(record.rowCount);
+        setTotalRows(rowCount);
         setSavedAt(record.updatedAt ?? record.createdAt ?? new Date().toISOString());
         setDirty(false);
         await loadCoverage();
         return;
       }
+      setIsLargeDatasetPreview(false);
+      setPreviewSourceIndices([]);
       if (record.rowCount > 0 && (record.rows?.length ?? 0) === 0) {
         const msg =
           'Master data row count is set but no rows arrived from the API. Check backend deploy, CORS, and API timeout.';
@@ -735,6 +762,13 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
         </div>
       ) : (
         <div className="flex-1 min-h-0 p-0 bg-slate-100">
+          {isLargeDatasetPreview && totalRows > 0 && (
+            <div className="border-b border-[#2e7ad1]/20 bg-[#e8f1fb] px-4 py-2 text-xs text-[#1d5a9e]">
+              <strong>{totalRows.toLocaleString('en-US')} contacts</strong> saved in master database.
+              Grid shows the first {data.rows.length.toLocaleString('en-US')} rows as preview — use column filters or{' '}
+              <span className="font-semibold">DB Admin → Master File</span> for full search across all data.
+            </div>
+          )}
           <ExcelPreviewGrid
             data={data}
             dataResetKey={savedAt ?? 'master-empty'}
@@ -746,6 +780,10 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
             campaignRowFilter={!isDbAdminView ? activeViewTab.filter : undefined}
             onCreateBatch={openBatchModal}
             fillHeight
+            datasetRowCount={totalRows > 0 ? totalRows : undefined}
+            externalSourceIndices={
+              previewSourceIndices.length > 0 ? previewSourceIndices : undefined
+            }
           />
         </div>
       )}

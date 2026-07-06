@@ -105,10 +105,19 @@ export function streamSpreadsheetFileAsync(
   return new Promise((resolve, reject) => {
     let settled = false;
     let meta: { sheetName: string; headers: string[] } | null = null;
+    /** Process worker messages one-at-a-time — parallel onBatch caused duplicate chunkIndex. */
+    let messageChain = Promise.resolve();
 
     const worker = new Worker(join(__dirname, 'master-data-stream-parse.worker.js'), {
       workerData: { filePath, fileName },
     });
+
+    const fail = (err: unknown) => {
+      if (settled) return;
+      settled = true;
+      worker.terminate().catch(() => undefined);
+      reject(err instanceof Error ? err : new Error(String(err)));
+    };
 
     worker.on('message', (msg: {
       type: string;
@@ -119,8 +128,9 @@ export function streamSpreadsheetFileAsync(
       headers?: string[];
       message?: string;
     }) => {
-      void (async () => {
-        try {
+      messageChain = messageChain
+        .then(async () => {
+          if (settled) return;
           if (msg.type === 'meta' && msg.headers && msg.sheetName) {
             meta = { sheetName: msg.sheetName, headers: msg.headers };
             await handlers.onMeta(meta);
@@ -137,16 +147,10 @@ export function streamSpreadsheetFileAsync(
               headers: msg.headers ?? meta?.headers ?? [],
             });
           } else if (msg.type === 'error') {
-            settled = true;
-            worker.terminate().catch(() => undefined);
-            reject(new BadRequestException(msg.message ?? 'Failed to parse spreadsheet'));
+            fail(new BadRequestException(msg.message ?? 'Failed to parse spreadsheet'));
           }
-        } catch (err) {
-          settled = true;
-          worker.terminate().catch(() => undefined);
-          reject(err);
-        }
-      })();
+        })
+        .catch(fail);
     });
 
     worker.once('error', (err: Error) => {

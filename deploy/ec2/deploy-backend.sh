@@ -63,6 +63,14 @@ sudo systemctl reload nginx
 echo "==> Ensuring HTTPS (Let's Encrypt for sslip.io)..."
 bash "$APP_DIR/deploy/ec2/ensure-ssl.sh" || echo "WARNING: SSL setup skipped — API works on http://${EC2_PUBLIC_IP:-65.2.186.189}"
 
+echo "==> Freeing disk before Docker build..."
+df -h / | tail -1
+docker builder prune -af 2>/dev/null || true
+docker image prune -f 2>/dev/null || true
+# Remove stopped containers and unused images (running quoreb2b-api keeps its image until replaced)
+docker system prune -f 2>/dev/null || true
+df -h / | tail -1
+
 echo "==> Building Docker image..."
 cd backend
 docker build -t "$IMAGE_NAME" .

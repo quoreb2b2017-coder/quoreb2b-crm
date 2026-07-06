@@ -5,7 +5,7 @@ set -euo pipefail
 SWAP_FILE="${SWAP_FILE:-/swapfile}"
 SWAP_SIZE_GB="${SWAP_SIZE_GB:-4}"
 # Leave at least this much free on root after creating swap (Docker builds need headroom).
-MIN_FREE_AFTER_SWAP_GB="${MIN_FREE_AFTER_SWAP_GB:-2}"
+MIN_FREE_AFTER_SWAP_GB="${MIN_FREE_AFTER_SWAP_GB:-1}"
 
 if swapon --show | grep -q "${SWAP_FILE}"; then
   echo "==> Swap already active: ${SWAP_FILE}"

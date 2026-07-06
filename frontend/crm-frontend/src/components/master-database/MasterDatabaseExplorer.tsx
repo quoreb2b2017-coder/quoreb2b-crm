@@ -115,6 +115,7 @@ export function MasterDatabaseExplorer({
   const [batchedByRow, setBatchedByRow] = useState<MasterBatchCoverage['batchedByRow']>({});
 
   const [filterColumns, setFilterColumns] = useState<MasterDataColumnFilterSchema[]>([]);
+  const [filterSchemaLoading, setFilterSchemaLoading] = useState(true);
   const [filterFieldQuery, setFilterFieldQuery] = useState('');
   const [filters, setFilters] = useState<DynamicMasterDbFilters>(emptyDynamicMasterDbFilters());
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -154,6 +155,7 @@ export function MasterDatabaseExplorer({
   }, []);
 
   const loadFilterSchema = useCallback(async () => {
+    setFilterSchemaLoading(true);
     try {
       const schema = await masterDataService.getFilterSchema();
       setFilterColumns(schema.columns);
@@ -170,6 +172,8 @@ export function MasterDatabaseExplorer({
         );
       }
       return false;
+    } finally {
+      setFilterSchemaLoading(false);
     }
   }, []);
 
@@ -776,7 +780,7 @@ export function MasterDatabaseExplorer({
     );
   }
 
-  const resultCount = hasSearched ? filteredTotal : undefined;
+  const resultCount = isFilteredView && hasSearched ? filteredTotal : undefined;
   const paginationTotal = useServerSearch ? filteredTotal : displayRows.length;
 
   const gridBlock = (
@@ -981,6 +985,7 @@ export function MasterDatabaseExplorer({
               onSearch={() => void runSearch()}
               onClear={clearFilters}
               searching={searching}
+              schemaLoading={filterSchemaLoading}
               resultCount={resultCount}
               tags={tags}
               onRemoveTag={removeTag}
@@ -1049,7 +1054,8 @@ export function MasterDatabaseExplorer({
             onSearch={() => void runSearch()}
             onClear={clearFilters}
             searching={searching}
-            resultCount={hasSearched ? filteredTotal : undefined}
+            schemaLoading={filterSchemaLoading}
+            resultCount={hasSearched && isFilteredView ? filteredTotal : undefined}
             tags={tags}
             onRemoveTag={removeTag}
             activeFilterCount={tags.length}

@@ -19,6 +19,7 @@ interface MasterDatabaseFilterSidebarProps {
   onSearch: () => void;
   onClear: () => void;
   searching: boolean;
+  schemaLoading?: boolean;
   resultCount?: number;
   tags: Array<{ key: string; label: string }>;
   onRemoveTag: (key: string) => void;
@@ -35,6 +36,7 @@ export function MasterDatabaseFilterSidebar({
   onSearch,
   onClear,
   searching,
+  schemaLoading,
   resultCount,
   tags,
   onRemoveTag,
@@ -86,6 +88,7 @@ export function MasterDatabaseFilterSidebar({
             onSearch={onSearch}
             onClear={onClear}
             searching={searching}
+            schemaLoading={schemaLoading}
             resultCount={resultCount}
           />
           <MasterDatabaseFilterTags tags={tags} onRemove={onRemoveTag} onSearch={onSearch} />

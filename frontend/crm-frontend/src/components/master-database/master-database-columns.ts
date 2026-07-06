@@ -192,17 +192,49 @@ export function buildCuratedQuickFilters(
   for (const pattern of CURATED_MULTI_SELECT_PATTERNS) {
     const col = findFilterColumn(columns, pattern);
     if (!col || used.has(col.header)) continue;
-    if (col.options.length < 2) continue;
-    fields.push({ type: 'select', column: col, multiple: true });
+    if (col.options.length >= 2) {
+      fields.push({ type: 'select', column: col, multiple: true });
+    } else {
+      fields.push({
+        type: 'text',
+        column: col,
+        placeholder: `Search ${col.header}…`,
+      });
+    }
     used.add(col.header);
   }
 
   for (const pattern of CURATED_SELECT_PATTERNS) {
     const col = findFilterColumn(columns, pattern);
     if (!col || used.has(col.header)) continue;
-    if (col.options.length < 2) continue;
-    fields.push({ type: 'select', column: col });
+    if (col.options.length >= 2) {
+      fields.push({ type: 'select', column: col });
+    } else {
+      fields.push({
+        type: 'text',
+        column: col,
+        placeholder: `Search ${col.header}…`,
+      });
+    }
     used.add(col.header);
+  }
+
+  const company = findFilterColumn(columns, /^company name$/i);
+  if (company && !used.has(company.header)) {
+    fields.push({ type: 'text', column: company, placeholder: 'Company name…' });
+    used.add(company.header);
+  }
+
+  const client = findFilterColumn(columns, /^client name$/i);
+  if (client && !used.has(client.header)) {
+    fields.push({ type: 'text', column: client, placeholder: 'Client name…' });
+    used.add(client.header);
+  }
+
+  const email = findFilterColumn(columns, /^email/i);
+  if (email && !used.has(email.header)) {
+    fields.push({ type: 'text', column: email, placeholder: 'Email contains…' });
+    used.add(email.header);
   }
 
   return fields;

@@ -28,6 +28,7 @@ import {
   filterAdvancedColumns,
   isExcludedDropdownColumn,
   isSizeCategoryHeader,
+  pickQuickFilterColumns,
 } from './master-database-columns';
 import { CategoryRangeSlider } from './CategoryRangeSlider';
 
@@ -39,6 +40,7 @@ interface MasterDatabaseQuickFiltersProps {
   onSearch: () => void;
   onClear: () => void;
   searching: boolean;
+  schemaLoading?: boolean;
   resultCount?: number;
   variant?: 'inline' | 'sidebar';
 }
@@ -51,6 +53,7 @@ export function MasterDatabaseQuickFilters({
   onSearch,
   onClear,
   searching,
+  schemaLoading = false,
   resultCount,
   variant = 'inline',
 }: MasterDatabaseQuickFiltersProps) {
@@ -58,6 +61,10 @@ export function MasterDatabaseQuickFilters({
   const [moreQuery, setMoreQuery] = useState('');
 
   const curatedFields = useMemo(() => buildCuratedQuickFilters(columns), [columns]);
+  const fallbackColumns = useMemo(
+    () => (curatedFields.length > 0 ? [] : pickQuickFilterColumns(columns, 8)),
+    [columns, curatedFields.length],
+  );
   const curatedHeaders = useMemo(
     () => new Set(curatedFields.map((f) => f.column.header)),
     [curatedFields],
@@ -180,7 +187,14 @@ export function MasterDatabaseQuickFilters({
         </div>
       )}
 
-      {variant === 'sidebar' && searching && (
+      {variant === 'sidebar' && schemaLoading && (
+        <div className="mdb-quick__sidebar-status">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Loading filter fields…
+        </div>
+      )}
+
+      {variant === 'sidebar' && searching && !schemaLoading && (
         <div className="mdb-quick__sidebar-status">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
           Searching…
@@ -206,7 +220,7 @@ export function MasterDatabaseQuickFilters({
         </button>
       </div>
 
-      {curatedFields.length > 0 && (
+      {curatedFields.length > 0 ? (
         <div className="mdb-quick__curated">
           {curatedFields.map((field) => {
             const { column } = field;
@@ -325,14 +339,65 @@ export function MasterDatabaseQuickFilters({
             Reset filters
           </button>
         </div>
-      )}
-
-      {typeof resultCount === 'number' && resultCount > 0 && (
-        <div className="mdb-quick__results">
-          <span className="mdb-quick__results-badge">{resultCount.toLocaleString('en-US')}</span>
-          <span>companies matched</span>
+      ) : fallbackColumns.length > 0 ? (
+        <div className="mdb-quick__curated">
+          {fallbackColumns.map((col) => {
+            if (col.kind === 'email' || col.kind === 'phone') {
+              const checked = filters.mustExist.has(col.header);
+              return (
+                <label key={col.header} className="mdb-quick__toggle">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e) => toggleMustExist(col.header, e.target.checked)}
+                  />
+                  {col.kind === 'email' ? <Mail className="h-3.5 w-3.5" /> : <Phone className="h-3.5 w-3.5" />}
+                  Has {col.header}
+                </label>
+              );
+            }
+            if (col.options.length >= 2) {
+              const selected = filters.columnValues[col.header] ?? new Set<string>();
+              const value = selected.size === 1 ? [...selected][0] : '';
+              return (
+                <div key={col.header} className="mdb-filter-block">
+                  <span className="mdb-filter-block__label">{col.header}</span>
+                  <XlToolbarSelect
+                    tone="light"
+                    className="mdb-filter-block__select"
+                    value={value}
+                    placeholder="All"
+                    onChange={(v) => setColumnValue(col.header, v)}
+                    options={selectOptions(col)}
+                  />
+                </div>
+              );
+            }
+            const value = filters.columnText[col.header] ?? '';
+            return (
+              <div key={col.header} className="mdb-filter-block">
+                <span className="mdb-filter-block__label">{col.header}</span>
+                <input
+                  type="text"
+                  className="mdb-filter-block__input"
+                  placeholder={`Search ${col.header}…`}
+                  value={value}
+                  onChange={(e) => setColumnText(col.header, e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && onSearch()}
+                  onBlur={() => value.trim() && onSearch()}
+                />
+              </div>
+            );
+          })}
+          <button type="button" className="mdb-btn mdb-btn--ghost mdb-quick__clear" onClick={onClear}>
+            Reset filters
+          </button>
         </div>
-      )}
+      ) : !schemaLoading && columns.length > 0 ? (
+        <p className="mdb-quick__empty-hint">
+          Scroll down or open <strong>More filters</strong> for all columns.
+        </p>
+      ) : null}
 
       {advancedColumns.length > 0 && (
         <div className="mdb-quick__more">
@@ -409,6 +474,13 @@ export function MasterDatabaseQuickFilters({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {typeof resultCount === 'number' && resultCount > 0 && (
+        <div className="mdb-quick__results">
+          <span className="mdb-quick__results-badge">{resultCount.toLocaleString('en-US')}</span>
+          <span>companies matched</span>
         </div>
       )}
     </div>

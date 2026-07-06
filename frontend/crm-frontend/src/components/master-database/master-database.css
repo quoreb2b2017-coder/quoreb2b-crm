@@ -1179,7 +1179,7 @@
 }
 
 .mdb-layout--sidebar-open .mdb-sidebar {
-  width: min(300px, 92vw);
+  width: min(320px, 92vw);
   border-right-color: #dce6f2;
   box-shadow: 4px 0 24px rgb(46 122 209 / 10%);
 }
@@ -1847,10 +1847,21 @@
   display: flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0 0 0.5rem;
-  font-size: 11px;
-  font-weight: 500;
-  color: #2568b8;
+  padding: 0.35rem 0.15rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #2e7ad1;
+}
+
+.mdb-quick__empty-hint {
+  margin: 0.35rem 0 0.5rem;
+  padding: 0.5rem 0.55rem;
+  border-radius: 8px;
+  border: 1px dashed #c9dcf2;
+  background: #f8fbff;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: #475569;
 }
 
 .mdb-advanced-filters {

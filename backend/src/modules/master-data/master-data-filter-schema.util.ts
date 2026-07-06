@@ -27,23 +27,26 @@ export function buildMasterDataFilterSchema(
     const values = rows
       .map((row) => String(row[colIdx] ?? '').trim())
       .filter((v) => v.length > 0);
-    const unique = [...new Set(values)].sort((a, b) =>
-      a.localeCompare(b, undefined, { sensitivity: 'base' }),
-    );
+    const freq = new Map<string, number>();
+    for (const v of values) {
+      freq.set(v, (freq.get(v) ?? 0) + 1);
+    }
+    const unique = [...freq.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }))
+      .map(([value]) => value);
 
     let kind = headerKind(header);
     let options: string[] = [];
 
     if (kind === 'status') {
       options = unique.slice(0, MAX_OPTIONS);
-    } else if (
-      kind === 'text' &&
-      unique.length > 0 &&
-      unique.length <= MAX_OPTIONS &&
-      unique.every((v) => v.length <= MAX_OPTION_LEN)
-    ) {
-      kind = 'select';
-      options = unique;
+    } else if (kind === 'text' && unique.length >= 2) {
+      const top = unique.slice(0, MAX_OPTIONS);
+      const allFit = top.every((v) => v.length <= MAX_OPTION_LEN);
+      if (allFit) {
+        kind = 'select';
+        options = top;
+      }
     }
 
     return {

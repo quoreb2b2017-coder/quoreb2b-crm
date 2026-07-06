@@ -342,20 +342,11 @@ export const masterDataService = {
     }
   },
 
-  /** Fast chunked preview — uses direct EC2 on production to avoid Vercel proxy limits. */
+  /** Fast chunked preview — first page only (100 rows via loadPageRows on server). */
   getPreview: async (limit = 100): Promise<MasterDataSearchResult> => {
-    const token = getAccessToken();
-    const base =
-      typeof window !== 'undefined' &&
-      (window.location.hostname === 'crm.quoreb2b.com' ||
-        window.location.hostname.endsWith('.vercel.app'))
-        ? getDirectUploadApiBaseUrl()
-        : getApiBaseUrl();
-    const { data } = await axios.get(`${base}/master-data/preview`, {
+    const { data } = await apiClient.get('/master-data/preview', {
       params: { page: 1, limit },
       timeout: MASTER_DATA_READ_TIMEOUT_MS,
-      withCredentials: true,
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     const body = unwrap<{
       headers: string[];

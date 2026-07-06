@@ -204,6 +204,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
 
   const dataRef = useRef<SpreadsheetData | null>(null);
   const previewLoadGen = useRef(0);
+  const lastPreviewMeta = useRef({ rowCount: 0, fileName: '' });
   useEffect(() => {
     dataRef.current = data;
   }, [data]);
@@ -320,40 +321,67 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
       }
       if (record.largeDataset || (record.rowCount > 5000 && (record.rows?.length ?? 0) === 0)) {
         const rowCount = record.rowCount;
-        const gen = ++previewLoadGen.current;
-        setData((prev) => ({
-          fileName: cleanMasterFileName(record.fileName),
-          sheetName: record.sheetName,
-          headers: record.headers ?? prev?.headers ?? [],
-          rows: prev?.rows?.length ? prev.rows : [],
-        }));
+        const fileName = cleanMasterFileName(record.fileName);
+        const existingRows = dataRef.current?.rows ?? [];
+        const rowCountUnchanged =
+          existingRows.length > 0 &&
+          lastPreviewMeta.current.rowCount === safeCount(rowCount) &&
+          lastPreviewMeta.current.fileName === fileName;
+
         setIsLargeDatasetPreview(true);
         setFilteredViewActive(false);
         setTotalRows(safeCount(rowCount));
         setSavedAt(record.updatedAt ?? record.createdAt ?? new Date().toISOString());
         setDirty(false);
         void loadCoverage();
-        void masterDataService
-          .getPreview(100)
-          .then((preview) => {
-            if (gen !== previewLoadGen.current) return;
-            const previewRows = preview.rows ?? [];
-            setPreviewSourceIndices(preview.sourceRowIndices ?? []);
-            setData({
-              fileName: cleanMasterFileName(record.fileName),
-              sheetName: record.sheetName,
-              headers: preview.headers ?? record.headers ?? [],
-              rows: previewRows,
-            });
-            setFilteredRows(previewRows);
-          })
-          .catch((err) => {
-            if (gen !== previewLoadGen.current) return;
-            toast.error(
-              'Preview load failed',
-              extractApiError(err, 'Could not load row preview — try refreshing the page'),
-            );
+
+        if (rowCountUnchanged) {
+          setData((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  fileName: cleanMasterFileName(record.fileName),
+                  sheetName: record.sheetName,
+                  headers: record.headers ?? prev.headers,
+                }
+              : null,
+          );
+          return;
+        }
+
+        const gen = ++previewLoadGen.current;
+        setData((prev) => ({
+          fileName: cleanMasterFileName(record.fileName),
+          sheetName: record.sheetName,
+          headers: record.headers ?? prev?.headers ?? [],
+          rows: [],
+        }));
+        setPreviewSourceIndices([]);
+        setFilteredRows([]);
+
+        try {
+          const preview = await masterDataService.getPreview(100);
+          if (gen !== previewLoadGen.current) return;
+          const previewRows = preview.rows ?? [];
+          if (!previewRows.length) {
+            throw new Error('Preview returned 0 rows — data may still be saving');
+          }
+          setPreviewSourceIndices(preview.sourceRowIndices ?? []);
+          setData({
+            fileName: cleanMasterFileName(record.fileName),
+            sheetName: record.sheetName,
+            headers: preview.headers ?? record.headers ?? [],
+            rows: previewRows,
           });
+          setFilteredRows(previewRows);
+          lastPreviewMeta.current = { rowCount: safeCount(rowCount), fileName };
+        } catch (err) {
+          if (gen !== previewLoadGen.current) return;
+          toast.error(
+            'Preview load failed',
+            extractApiError(err, 'Could not load row preview — try refreshing the page'),
+          );
+        }
         return;
       }
       setIsLargeDatasetPreview(false);

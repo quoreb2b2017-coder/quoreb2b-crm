@@ -1,13 +1,7 @@
 import { masterDataService, type MasterDataImportProgress, type MasterDataSaveMode } from '@/lib/api/master-data.service';
 import { useMasterDataImportStore } from '@/store/master-data-import.store';
 import { toast } from '@/stores/toast.store';
-import {
-  estimatePartsFromFileSize,
-  formatPartMessage,
-  MASTER_DATA_UPLOAD_PART_ROWS,
-  shouldSplitCsvForUpload,
-  splitCsvFileIntoParts,
-} from '@/lib/master-data/split-upload-parts';
+import { estimatePartsFromFileSize } from '@/lib/master-data/split-upload-parts';
 
 const STORAGE_KEY = 'quoreb2b-master-import-job';
 
@@ -145,9 +139,15 @@ async function pollImportUntilDone(
         if (!options?.silentComplete) {
           clearPersistedJob();
           useMasterDataImportStore.getState().markDone();
+          const rowCount =
+            typeof status.result.rowCount === 'number'
+              ? status.result.rowCount
+              : status.rowsProcessed;
           toast.success(
             mode === 'append' ? 'Master data import complete' : 'Master data replaced',
-            `${status.result.rowCount.toLocaleString()} rows in database`,
+            rowCount != null
+              ? `${rowCount.toLocaleString()} rows in database`
+              : 'Import finished successfully',
           );
           window.dispatchEvent(new CustomEvent('master-data-updated'));
           setTimeout(() => useMasterDataImportStore.getState().reset(), 8000);
@@ -179,73 +179,6 @@ async function pollImportUntilDone(
   }
 }
 
-async function uploadSingleImportFile(
-  file: File,
-  mode: MasterDataSaveMode,
-  uploadPartIndex?: number,
-  uploadPartTotal?: number,
-) {
-  const jobId = await masterDataService.uploadImportJob(file, mode, (progress) => {
-    applyProgress({
-      ...progress,
-      uploadPartIndex,
-      uploadPartTotal,
-      message:
-        uploadPartTotal && uploadPartTotal > 1 && uploadPartIndex
-          ? formatPartMessage(
-              uploadPartIndex,
-              uploadPartTotal,
-              progress.message.replace(/^Uploading file… /, ''),
-            )
-          : progress.message,
-    });
-  });
-
-  persistJob({
-    jobId,
-    fileName: file.name,
-    mode,
-    startedAt: new Date().toISOString(),
-    progress: useMasterDataImportStore.getState().progress ?? undefined,
-    uploadPartIndex,
-    uploadPartTotal,
-  });
-
-  await pollImportUntilDone(jobId, file.name, mode, {
-    silentComplete: Boolean(uploadPartTotal && uploadPartTotal > 1 && uploadPartIndex !== uploadPartTotal),
-    uploadPartIndex,
-    uploadPartTotal,
-  });
-
-  return jobId;
-}
-
-async function uploadInParts(files: File[], baseFileName: string, mode: MasterDataSaveMode) {
-  const totalParts = files.length;
-  toast.success(
-    'Split into parts',
-    `${totalParts} uploads of ~${MASTER_DATA_UPLOAD_PART_ROWS.toLocaleString()} rows each for faster import`,
-  );
-
-  for (let i = 0; i < files.length; i += 1) {
-    const partMode: MasterDataSaveMode = i === 0 ? mode : 'append';
-    applyProgress({
-      percent: Math.round((i / totalParts) * 30),
-      phase: 'uploading',
-      message: formatPartMessage(i + 1, totalParts, 'Starting upload…'),
-      uploadPartIndex: i + 1,
-      uploadPartTotal: totalParts,
-    });
-    await uploadSingleImportFile(files[i], partMode, i + 1, totalParts);
-  }
-
-  clearPersistedJob();
-  useMasterDataImportStore.getState().markDone();
-  toast.success('Master data import complete', `All ${totalParts} parts saved to database`);
-  window.dispatchEvent(new CustomEvent('master-data-updated'));
-  setTimeout(() => useMasterDataImportStore.getState().reset(), 8000);
-}
-
 export async function enqueueMasterDataImport(
   file: File,
   mode: MasterDataSaveMode = 'replace',
@@ -261,28 +194,16 @@ export async function enqueueMasterDataImport(
     throw new Error('Another master data import is already running.');
   }
 
+  masterDataService.validateUploadFile(file);
   store.begin(file.name, mode);
 
   try {
-    if (shouldSplitCsvForUpload(file)) {
-      applyProgress({
-        percent: 2,
-        phase: 'uploading',
-        message: 'Splitting CSV into 50k-row parts…',
-      });
-      const parts = await splitCsvFileIntoParts(file);
-      if (parts.length > 1) {
-        await uploadInParts(parts, file.name, mode);
-        return;
-      }
-    }
-
     const estParts = estimatePartsFromFileSize(file);
     if (estParts > 1) {
       applyProgress({
         percent: 5,
         phase: 'uploading',
-        message: `Large file — will process in ~${estParts} parts of 50k rows on server…`,
+        message: `Uploading full file — server will save in ~${estParts} batches of 50k rows…`,
         totalParts: estParts,
       });
     }

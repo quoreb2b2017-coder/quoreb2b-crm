@@ -326,7 +326,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
         setData({
           fileName: cleanMasterFileName(record.fileName),
           sheetName: record.sheetName,
-          headers: record.headers,
+          headers: record.headers ?? [],
           rows: previewRows,
         });
         setPreviewSourceIndices(sourceIndices);
@@ -367,7 +367,9 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   useEffect(() => { loadFromDb(); }, [loadFromDb]);
 
   useEffect(() => {
-    const refresh = () => void loadFromDb();
+    const refresh = () => {
+      void loadFromDb().catch(() => undefined);
+    };
     window.addEventListener('master-data-updated', refresh);
     window.addEventListener('batch-created', refresh);
     return () => {
@@ -379,6 +381,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   const processFile = useCallback(async (file: File) => {
     setParsing(true); setError('');
     try {
+      masterDataService.validateUploadFile(file);
       const mode = replaceOnUpload ? 'replace' : 'append';
       if (masterDataService.shouldUseServerImport(file)) {
         await enqueueMasterDataImport(file, mode);

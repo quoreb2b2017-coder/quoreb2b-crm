@@ -82,8 +82,9 @@ export async function splitCsvFileIntoParts(
   });
 }
 
-export function shouldSplitCsvForUpload(file: File): boolean {
-  return file.name.toLowerCase().endsWith('.csv') && file.size > 512 * 1024;
+/** Server streams large CSV in one job — client split caused 15× slower uploads and browser OOM. */
+export function shouldSplitCsvForUpload(_file: File): boolean {
+  return false;
 }
 
 export function estimateUploadParts(rowCount: number): number {

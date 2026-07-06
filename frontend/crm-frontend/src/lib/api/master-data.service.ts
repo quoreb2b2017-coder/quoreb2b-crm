@@ -14,6 +14,7 @@ const MASTER_DATA_WRITE_TIMEOUT_MS = MASTER_DATA_IMPORT_DEADLINE_MS;
 /** Per-poll timeout — server may be slow while parsing large files. */
 const MASTER_IMPORT_POLL_TIMEOUT_MS = 300_000;
 const MASTER_IMPORT_THRESHOLD_BYTES = 512 * 1024;
+const MASTER_DATA_ALLOWED_EXTENSIONS = new Set(['csv', 'xlsx', 'xls']);
 
 export type MasterDataSaveMode = 'append' | 'replace';
 
@@ -295,6 +296,20 @@ export const masterDataService = {
     return file.size >= MASTER_IMPORT_THRESHOLD_BYTES || ext === 'xlsx' || ext === 'xls';
   },
 
+  validateUploadFile(file: File): void {
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+    if (ext === 'xlsb') {
+      throw new Error(
+        'Excel Binary (.xlsb) is not supported. In Excel use File → Save As → .xlsx, or export as .csv.',
+      );
+    }
+    if (!MASTER_DATA_ALLOWED_EXTENSIONS.has(ext)) {
+      throw new Error(
+        `Unsupported file type ".${ext}". Please upload .csv, .xlsx, or .xls only.`,
+      );
+    }
+  },
+
   getBatchCoverage: async (): Promise<MasterBatchCoverage> => {
     try {
       const { data } = await apiClient.get('/master-data/batch-coverage', {
@@ -498,7 +513,7 @@ export function recordToSpreadsheet(record: MasterDataRecord): SpreadsheetData {
   return {
     fileName: record.fileName,
     sheetName: record.sheetName,
-    headers: record.headers,
-    rows: record.rows,
+    headers: record.headers ?? [],
+    rows: record.rows ?? [],
   };
 }

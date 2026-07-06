@@ -28,6 +28,12 @@ import { useDebouncedAutoSave, type AutoSaveStatus } from '@/hooks/useDebouncedA
 import { MasterDataClearConfirmModal } from '@/components/master-data/MasterDataClearConfirmModal';
 import { DbAdminCampaignWizard } from '@/components/db-admin/DbAdminCampaignWizard';
 
+import {
+  alignRowToMasterHeaders,
+  mergeMasterDataHeaders,
+  prepareMasterDataSheet,
+} from '@/lib/spreadsheet/master-data-format';
+
 const ACCEPT = '.csv,.xlsx,.xls';
 
 type MasterDataViewTab = 'total' | 'in_campaign' | 'remaining';
@@ -69,12 +75,6 @@ const MASTER_DATA_VIEW_TABS: Array<{
     tone: 'blue',
   },
 ];
-
-import {
-  alignRowToMasterHeaders,
-  mergeMasterDataHeaders,
-  prepareMasterDataSheet,
-} from '@/lib/spreadsheet/master-data-format';
 
 function rowKey(row: string[]) {
   return row.join('\u001f');
@@ -318,8 +318,8 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
         let sourceIndices: number[] = [];
         try {
           const preview = await masterDataService.search({ page: 1, limit: 100 });
-          previewRows = preview.rows;
-          sourceIndices = preview.sourceRowIndices;
+          previewRows = preview.rows ?? [];
+          sourceIndices = preview.sourceRowIndices ?? [];
         } catch {
           /* preview optional — totals still from record */
         }
@@ -768,7 +768,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
           {isLargeDatasetPreview && totalRows > 0 && (
             <div className="border-b border-[#2e7ad1]/20 bg-[#e8f1fb] px-4 py-2 text-xs text-[#1d5a9e]">
               <strong>{totalRows.toLocaleString('en-US')} contacts</strong> saved in master database.
-              Grid shows the first {data.rows.length.toLocaleString('en-US')} rows as preview — use column filters or{' '}
+              Grid shows the first {(data.rows?.length ?? 0).toLocaleString('en-US')} rows as preview — use column filters or{' '}
               <span className="font-semibold">DB Admin → Master File</span> for full search across all data.
             </div>
           )}
@@ -785,7 +785,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
             fillHeight
             datasetRowCount={totalRows > 0 ? totalRows : undefined}
             externalSourceIndices={
-              previewSourceIndices.length > 0 ? previewSourceIndices : undefined
+              (previewSourceIndices?.length ?? 0) > 0 ? previewSourceIndices : undefined
             }
           />
         </div>

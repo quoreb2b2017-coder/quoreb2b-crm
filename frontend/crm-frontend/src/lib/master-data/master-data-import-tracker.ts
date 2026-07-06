@@ -256,7 +256,12 @@ export async function resumeMasterDataImportIfNeeded(): Promise<void> {
       uploadPartIndex: saved.uploadPartIndex,
       uploadPartTotal: saved.uploadPartTotal,
     });
-  } catch {
-    // Keep persisted job — retry on next focus / route change when auth is ready.
+  } catch (err) {
+    const status = (err as { response?: { status?: number } })?.response?.status;
+    if (status === 404 || status === 401) {
+      clearPersistedJob();
+      useMasterDataImportStore.getState().reset();
+    }
+    // Keep persisted job for other errors — retry on next focus when auth is ready.
   }
 }

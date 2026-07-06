@@ -11,9 +11,11 @@ export function MasterDataImportHeaderChip() {
 
   if (uiPhase !== 'active' || !progress) return null;
 
-  const percent = Math.max(0, Math.min(100, progress.percent));
+  const percent = Number.isFinite(progress.percent)
+    ? Math.max(0, Math.min(100, progress.percent))
+    : 0;
   const rowLabel =
-    progress.totalRows && progress.totalRows > 0
+    progress.totalRows != null && progress.totalRows > 0
       ? `${(progress.rowsProcessed ?? 0).toLocaleString()}/${progress.totalRows.toLocaleString()}`
       : null;
 

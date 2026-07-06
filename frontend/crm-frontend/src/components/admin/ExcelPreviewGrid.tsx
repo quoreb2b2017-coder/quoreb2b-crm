@@ -125,13 +125,13 @@ export function ExcelPreviewGrid({
   const canExport = useCanExportSpreadsheet();
   const showRestrictionHint = useShowSpreadsheetRestrictionHint();
   const sheet = useEditableSpreadsheet(
-    { headers: data.headers, rows: data.rows },
+    { headers: data.headers ?? [], rows: data.rows ?? [] },
     editable ? onDataChange : undefined,
     dataResetKey,
   );
 
-  const headers = editable ? sheet.headers : data.headers;
-  const sourceRows = editable ? sheet.rows : data.rows;
+  const headers = editable ? (sheet.headers ?? []) : (data.headers ?? []);
+  const sourceRows = editable ? (sheet.rows ?? []) : (data.rows ?? []);
 
   const [filters, setFilters] = useState<Record<number, ColumnFilterState>>({});
   const [openFilterCol, setOpenFilterCol] = useState<number | null>(null);

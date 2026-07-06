@@ -250,14 +250,20 @@ export class CsvImportProcessorService {
     rows: string[][],
     batchNumber: number,
   ): Promise<void> {
-    const { nextChunkIndex, writtenRows } = await this.writer.bulkWriteRows(
+    const chunkSize = job.batchSize || this.config.get<number>('CSV_IMPORT_BATCH_SIZE', 1000);
+    const chunkSlots = Math.ceil(rows.length / chunkSize);
+    const startChunkIndex = await this.jobs.allocateChunkStart(job.jobId, chunkSlots);
+
+    const { writtenRows } = await this.writer.bulkWriteRows(
       job.masterKey,
       rows,
-      job.checkpoint.nextChunkIndex,
+      startChunkIndex,
+      chunkSize,
     );
 
-    const processed = Math.max(job.progress.processed, job.checkpoint.lastRowNumber);
-    const success = job.checkpoint.successRows + writtenRows;
+    const fresh = (await this.jobs.findByJobId(job.jobId))!;
+    const processed = Math.max(fresh.progress.processed, fresh.checkpoint.lastRowNumber);
+    const success = fresh.checkpoint.successRows + writtenRows;
     const failed = await this.jobs.countFailedRows(job.jobId);
 
     await this.jobs.updateProgress(
@@ -268,11 +274,11 @@ export class CsvImportProcessorService {
         failed,
         message: `Batch ${batchNumber}: saved ${success.toLocaleString()} rows`,
         percent:
-          job.progress.totalEstimate > 0
-            ? Math.min(99, Math.round((processed / job.progress.totalEstimate) * 100))
+          fresh.progress.totalEstimate > 0
+            ? Math.min(99, Math.round((processed / fresh.progress.totalEstimate) * 100))
             : 50,
       },
-      { nextChunkIndex, successRows: success },
+      { successRows: success },
     );
   }
 

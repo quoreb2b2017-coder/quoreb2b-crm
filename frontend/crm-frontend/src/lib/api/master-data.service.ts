@@ -342,6 +342,41 @@ export const masterDataService = {
     }
   },
 
+  /** Fast chunked preview — uses direct EC2 on production to avoid Vercel proxy limits. */
+  getPreview: async (limit = 100): Promise<MasterDataSearchResult> => {
+    const token = getAccessToken();
+    const base =
+      typeof window !== 'undefined' &&
+      (window.location.hostname === 'crm.quoreb2b.com' ||
+        window.location.hostname.endsWith('.vercel.app'))
+        ? getDirectUploadApiBaseUrl()
+        : getApiBaseUrl();
+    const { data } = await axios.get(`${base}/master-data/preview`, {
+      params: { page: 1, limit },
+      timeout: MASTER_DATA_READ_TIMEOUT_MS,
+      withCredentials: true,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    const body = unwrap<{
+      headers: string[];
+      rows: string[][];
+      sourceRowIndices: number[];
+      totalRows: number;
+      page: number;
+      limit: number;
+    }>({ data });
+    return {
+      headers: body.headers,
+      rows: body.rows,
+      sourceRowIndices: body.sourceRowIndices,
+      totalMatches: body.totalRows,
+      totalRows: body.totalRows,
+      page: body.page,
+      limit: body.limit,
+      batchedByRow: {},
+    };
+  },
+
   search: async (params: MasterDataSearchParams): Promise<MasterDataSearchResult> => {
     const { data } = await apiClient.post('/master-data/search', params, {
       timeout: MASTER_DATA_READ_TIMEOUT_MS,

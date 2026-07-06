@@ -1895,6 +1895,45 @@ export class MasterDataService {
     throw new ForbiddenException('Access denied');
   }
 
+  /** Fast first-page read for large chunked master data (no full-table scan). */
+  async getPreviewForUser(
+    _actorId: string,
+    roles: string[] = [],
+    page = 1,
+    limit = 100,
+  ) {
+    const isAdmin =
+      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
+    const isDbAdmin = roles.includes(SystemRole.DB_ADMIN);
+    if (!isAdmin && !isDbAdmin) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+    if (!doc) {
+      throw new NotFoundException('No master data uploaded yet');
+    }
+
+    const rowCount = this.rowStore.getRowCount(doc);
+    const safeLimit = Math.min(Math.max(limit, 1), 200);
+    const safePage = Math.max(page, 1);
+    const offset = (safePage - 1) * safeLimit;
+    const { rows, sourceRowIndices } = await this.rowStore.loadPageRows(
+      doc,
+      offset,
+      safeLimit,
+    );
+
+    return {
+      headers: doc.headers as string[],
+      rows,
+      sourceRowIndices,
+      totalRows: rowCount,
+      page: safePage,
+      limit: safeLimit,
+    };
+  }
+
   async searchForUser(dto: SearchMasterDataDto, _actorId: string, roles: string[] = []) {
     const isAdmin =
       roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);

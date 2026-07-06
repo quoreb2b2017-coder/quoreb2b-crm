@@ -138,6 +138,19 @@ export class CsvImportJobRepository {
       .exec();
   }
 
+  async allocateChunkStart(jobId: string, chunkSlots: number): Promise<number> {
+    if (chunkSlots <= 0) return 0;
+    const doc = await this.jobModel
+      .findOneAndUpdate(
+        { jobId },
+        { $inc: { 'checkpoint.nextChunkIndex': chunkSlots } },
+        { new: false, projection: { 'checkpoint.nextChunkIndex': 1 } },
+      )
+      .lean()
+      .exec();
+    return (doc as { checkpoint?: { nextChunkIndex?: number } })?.checkpoint?.nextChunkIndex ?? 0;
+  }
+
   async setTotalBatches(jobId: string, totalBatches: number): Promise<void> {
     await this.jobModel.updateOne({ jobId }, { $set: { totalBatches } }).exec();
   }
@@ -160,7 +173,7 @@ export class CsvImportJobRepository {
   findJobsAwaitingFinalize(): Promise<CsvImportJob[]> {
     return this.jobModel
       .find({
-        status: 'processing',
+        status: { $in: ['processing', 'failed'] },
         totalBatches: { $gt: 0 },
         $expr: { $gte: ['$completedBatches', '$totalBatches'] },
         cancelRequested: { $ne: true },

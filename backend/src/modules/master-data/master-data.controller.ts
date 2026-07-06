@@ -135,6 +135,21 @@ export class MasterDataController {
     return this.masterDataService.getCurrentForUser(user.id, user.roles ?? []);
   }
 
+  @Get('preview')
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
+  getPreview(
+    @Query('page') page = '1',
+    @Query('limit') limit = '100',
+    @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
+  ) {
+    return this.masterDataService.getPreviewForUser(
+      user.id,
+      user.roles ?? [],
+      parseInt(page, 10) || 1,
+      parseInt(limit, 10) || 100,
+    );
+  }
+
   @Get('batch-coverage')
   @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
   getBatchCoverage(@CurrentUser() user: Parameters<typeof actorFromJwt>[0]) {

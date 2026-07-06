@@ -203,6 +203,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   }, []);
 
   const dataRef = useRef<SpreadsheetData | null>(null);
+  const previewLoadGen = useRef(0);
   useEffect(() => {
     dataRef.current = data;
   }, [data]);
@@ -319,39 +320,39 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
       }
       if (record.largeDataset || (record.rowCount > 5000 && (record.rows?.length ?? 0) === 0)) {
         const rowCount = record.rowCount;
-        setData({
+        const gen = ++previewLoadGen.current;
+        setData((prev) => ({
           fileName: cleanMasterFileName(record.fileName),
           sheetName: record.sheetName,
-          headers: record.headers ?? [],
-          rows: [],
-        });
-        setPreviewSourceIndices([]);
+          headers: record.headers ?? prev?.headers ?? [],
+          rows: prev?.rows?.length ? prev.rows : [],
+        }));
         setIsLargeDatasetPreview(true);
-        setFilteredRows([]);
         setFilteredViewActive(false);
         setTotalRows(safeCount(rowCount));
         setSavedAt(record.updatedAt ?? record.createdAt ?? new Date().toISOString());
         setDirty(false);
         void loadCoverage();
         void masterDataService
-          .search({ page: 1, limit: 100 })
+          .getPreview(100)
           .then((preview) => {
+            if (gen !== previewLoadGen.current) return;
             const previewRows = preview.rows ?? [];
-            setData((prev) =>
-              prev
-                ? { ...prev, rows: previewRows }
-                : {
-                    fileName: cleanMasterFileName(record.fileName),
-                    sheetName: record.sheetName,
-                    headers: record.headers ?? [],
-                    rows: previewRows,
-                  },
-            );
             setPreviewSourceIndices(preview.sourceRowIndices ?? []);
+            setData({
+              fileName: cleanMasterFileName(record.fileName),
+              sheetName: record.sheetName,
+              headers: preview.headers ?? record.headers ?? [],
+              rows: previewRows,
+            });
             setFilteredRows(previewRows);
           })
-          .catch(() => {
-            /* preview optional — totals still shown from record */
+          .catch((err) => {
+            if (gen !== previewLoadGen.current) return;
+            toast.error(
+              'Preview load failed',
+              extractApiError(err, 'Could not load row preview — try refreshing the page'),
+            );
           });
         return;
       }

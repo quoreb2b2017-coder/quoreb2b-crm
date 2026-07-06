@@ -2213,3 +2213,24 @@
   }
 }
 
+.mdb-page--embedded {
+  height: 100%;
+  min-height: 0;
+  background: #f1f5f9;
+}
+
+.mdb-page--embedded .mdb-table-card--embedded {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.mdb-page--embedded .mdb-layout {
+  min-height: 0;
+  flex: 1;
+}
+
+.mdb-page--embedded .mdb-main {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}

@@ -27,6 +27,7 @@ import { useCanExportSpreadsheet } from '@/hooks/useSpreadsheetCopyGuard';
 import { useDebouncedAutoSave, type AutoSaveStatus } from '@/hooks/useDebouncedAutoSave';
 import { MasterDataClearConfirmModal } from '@/components/master-data/MasterDataClearConfirmModal';
 import { DbAdminCampaignWizard } from '@/components/db-admin/DbAdminCampaignWizard';
+import { MasterDataLargeDatasetSearch } from '@/components/master-data/MasterDataLargeDatasetSearch';
 
 import {
   alignRowToMasterHeaders,
@@ -829,13 +830,21 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
             </>
           )}
         </div>
+      ) : isLargeDatasetPreview && !isDbAdminView && totalRows > 5000 ? (
+        <MasterDataLargeDatasetSearch
+          headers={data.headers}
+          fileName={data.fileName}
+          totalRows={totalRows}
+          coverage={coverage}
+          campaignRowFilter={activeViewTab.filter}
+          onCreateBatch={openBatchModal}
+        />
       ) : (
         <div className="flex-1 min-h-0 p-0 bg-slate-100">
           {isLargeDatasetPreview && totalRows > 0 && (
             <div className="border-b border-[#2e7ad1]/20 bg-[#e8f1fb] px-4 py-2 text-xs text-[#1d5a9e]">
               <strong>{safeCount(totalRows).toLocaleString('en-US')} contacts</strong> saved in master database.
-              Grid shows the first {(data.rows?.length ?? 0).toLocaleString('en-US')} rows as preview — use column filters or{' '}
-              <span className="font-semibold">DB Admin → Master File</span> for full search across all data.
+              Grid shows the first {(data.rows?.length ?? 0).toLocaleString('en-US')} rows as preview.
             </div>
           )}
           <ExcelPreviewGrid

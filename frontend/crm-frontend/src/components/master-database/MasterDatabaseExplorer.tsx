@@ -86,6 +86,7 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
   const [sourceIndices, setSourceIndices] = useState<number[]>([]);
   const [displayRows, setDisplayRows] = useState<string[][]>([]);
   const [masterTotalRows, setMasterTotalRows] = useState(0);
+  const [isLargeMasterDataset, setIsLargeMasterDataset] = useState(false);
   const [filteredTotal, setFilteredTotal] = useState(0);
   const [hasSearched, setHasSearched] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -170,6 +171,11 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
       setHeaders(record.headers);
       setFileName(record.fileName);
       setMasterTotalRows(record.rowCount);
+      const large =
+        Boolean(record.largeDataset) ||
+        record.rowCount > 5000 ||
+        (record.rowCount > 0 && (record.rows?.length ?? 0) < record.rowCount);
+      setIsLargeMasterDataset(large);
       if (record.filterRequired) {
         setAllRows([]);
         setDisplayRows([]);
@@ -185,10 +191,17 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
       } else {
         setAllRows(record.rows);
         if (!isDbAdmin) {
-          setDisplayRows(record.rows);
-          setSourceIndices(record.rows.map((_, i) => i));
-          setFilteredTotal(record.rowCount);
-          setHasSearched(true);
+          if (large) {
+            setDisplayRows([]);
+            setSourceIndices([]);
+            setFilteredTotal(0);
+            setHasSearched(false);
+          } else {
+            setDisplayRows(record.rows);
+            setSourceIndices(record.rows.map((_, i) => i));
+            setFilteredTotal(record.rowCount);
+            setHasSearched(true);
+          }
         }
       }
       await loadCoverage();
@@ -218,6 +231,8 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
     };
   }, [isDbAdmin, loadCoverage]);
 
+  const useServerSearch = isDbAdmin || isLargeMasterDataset;
+
   const executeSearch = useCallback(
     async (targetPage: number, targetPageSize: number, opts?: { resetSelection?: boolean }) => {
       const activeFilters = filtersRef.current;
@@ -227,7 +242,7 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
       }
       setSearching(true);
       try {
-        if (isDbAdmin) {
+        if (useServerSearch) {
           const payload = serializeDynamicSearchPayload(activeFilters, headers);
           const result = await masterDataService.search({
             ...payload,
@@ -254,7 +269,7 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
         setSearching(false);
       }
     },
-    [allRows, headers, isDbAdmin],
+    [allRows, headers, useServerSearch],
   );
 
   const runSearch = useCallback(async () => {
@@ -263,13 +278,13 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
   }, [executeSearch, pageSize]);
 
   useEffect(() => {
-    if (!isDbAdmin) return;
+    if (!useServerSearch) return;
     if (!canAutoSearchMasterData(filters)) return;
     const timer = setTimeout(() => {
       void runSearch();
     }, 400);
     return () => clearTimeout(timer);
-  }, [filters, isDbAdmin, runSearch]);
+  }, [filters, useServerSearch, runSearch]);
 
   const fetchFilteredPage = useCallback(
     async (targetPage: number, targetPageSize: number) => {
@@ -307,7 +322,7 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
     setFilterFieldQuery('');
     setSelected(new Set());
     setPage(1);
-    if (isDbAdmin) {
+    if (useServerSearch) {
       setDisplayRows([]);
       setSourceIndices([]);
       setHasSearched(false);
@@ -318,7 +333,7 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
       setFilteredTotal(allRows.length);
       setHasSearched(true);
     }
-  }, [allRows, isDbAdmin]);
+  }, [allRows, useServerSearch]);
 
   const removeTag = useCallback((key: string) => {
     const current = filtersRef.current;
@@ -359,20 +374,20 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
   }, [onFiltersChange]);
 
   const pageRows = useMemo(() => {
-    if (isDbAdmin) return displayRows;
+    if (useServerSearch) return displayRows;
     const start = (page - 1) * pageSize;
     return displayRows.slice(start, start + pageSize);
-  }, [displayRows, isDbAdmin, page, pageSize]);
+  }, [displayRows, page, pageSize, useServerSearch]);
 
   const pageSourceIndices = useMemo(() => {
-    if (isDbAdmin) return sourceIndices;
+    if (useServerSearch) return sourceIndices;
     const start = (page - 1) * pageSize;
     return sourceIndices.slice(start, start + pageSize);
-  }, [isDbAdmin, page, pageSize, sourceIndices]);
+  }, [page, pageSize, sourceIndices, useServerSearch]);
 
   const totalPages = Math.max(
     1,
-    Math.ceil((isDbAdmin ? filteredTotal : displayRows.length) / pageSize),
+    Math.ceil((useServerSearch ? filteredTotal : displayRows.length) / pageSize),
   );
 
   const stats = useMemo(() => {
@@ -380,7 +395,7 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
     const verifiedPhones = displayRows.filter((r) => hasValidPhone(r, headers)).length;
     return {
       total: safeCount(masterTotalRows),
-      filtered: safeCount(hasSearched ? filteredTotal : isDbAdmin ? 0 : masterTotalRows),
+      filtered: safeCount(hasSearched ? filteredTotal : useServerSearch ? 0 : masterTotalRows),
       inCampaign: safeCount(coverage?.summary?.batchedRows),
       available: safeCount(coverage?.summary?.availableRows ?? masterTotalRows),
       verifiedEmails: hasSearched ? verifiedEmails : 0,
@@ -394,7 +409,7 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
     filteredTotal,
     hasSearched,
     headers,
-    isDbAdmin,
+    useServerSearch,
     masterTotalRows,
     selected.size,
   ]);
@@ -430,13 +445,13 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
 
   const goToPage = (p: number) => {
     setPage(p);
-    if (isDbAdmin && hasSearched) void fetchFilteredPage(p, pageSize);
+    if (useServerSearch && hasSearched) void fetchFilteredPage(p, pageSize);
   };
 
   const changePageSize = (size: number) => {
     setPageSize(size);
     setPage(1);
-    if (isDbAdmin && hasSearched) void fetchFilteredPage(1, size);
+    if (useServerSearch && hasSearched) void fetchFilteredPage(1, size);
   };
 
   const toggleSelectAllPage = () => {
@@ -483,7 +498,7 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
     try {
       let payload: { rows: string[][]; headers: string[]; sourceRowIndices: number[] };
 
-      if (isDbAdmin) {
+      if (useServerSearch) {
         const all = await fetchAllFilteredForCampaign();
         if (selected.size > 0) {
           const pick = new Set(selected);
@@ -540,7 +555,7 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
       setSelected(new Set());
       return;
     }
-    if (isDbAdmin) {
+    if (useServerSearch) {
       setLoadingCampaignRows(true);
       void fetchAllFilteredForCampaign()
         .then((all) => setSelected(new Set(all.sourceRowIndices)))

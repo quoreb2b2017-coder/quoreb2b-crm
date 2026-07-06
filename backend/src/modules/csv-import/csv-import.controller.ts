@@ -75,7 +75,7 @@ export class CsvImportController {
     @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
   ) {
     const actor = actorFromJwt(user);
-    return this.csvImport.uploadAndQueue(
+    return this.csvImport.uploadStagingAndQueue(
       file.path,
       file.originalname,
       file.size,

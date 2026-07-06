@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   Logger,
+  OnModuleInit,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -11,6 +12,10 @@ import {
   GetObjectCommand,
   DeleteObjectCommand,
   PutObjectCommand,
+  HeadBucketCommand,
+  CreateBucketCommand,
+  PutBucketCorsCommand,
+  BucketLocationConstraint,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Upload } from '@aws-sdk/lib-storage';
@@ -21,7 +26,7 @@ import { join } from 'path';
 import { randomUUID } from 'crypto';
 
 @Injectable()
-export class CsvImportS3Service {
+export class CsvImportS3Service implements OnModuleInit {
   private readonly logger = new Logger(CsvImportS3Service.name);
   private readonly client: S3Client | null;
   private readonly bucket: string;
@@ -47,6 +52,17 @@ export class CsvImportS3Service {
       this.logger.warn(
         'S3 not configured (AWS_S3_BUCKET / credentials missing) — CSV imports use local disk fallback',
       );
+    }
+  }
+
+  async onModuleInit(): Promise<void> {
+    if (!this.client || !this.bucket) return;
+    try {
+      await this.ensureBucketExists();
+      await this.ensureCorsConfiguration();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`S3 bootstrap failed for bucket ${this.bucket}: ${msg}`);
     }
   }
 
@@ -161,6 +177,68 @@ export class CsvImportS3Service {
     mkdirSync(dir, { recursive: true });
     const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_') || `${randomUUID()}.csv`;
     return join(dir, safeName);
+  }
+
+  private async ensureBucketExists(): Promise<void> {
+    try {
+      await this.client!.send(new HeadBucketCommand({ Bucket: this.bucket }));
+      this.logger.log(`S3 bucket ready: ${this.bucket}`);
+    } catch (err: unknown) {
+      const status = (err as { $metadata?: { httpStatusCode?: number } })?.$metadata
+        ?.httpStatusCode;
+      const name = (err as { name?: string })?.name;
+      if (status === 404 || name === 'NotFound' || name === 'NoSuchBucket') {
+        this.logger.warn(`Creating S3 bucket ${this.bucket} in ${this.region}`);
+        const input: {
+          Bucket: string;
+          CreateBucketConfiguration?: { LocationConstraint: BucketLocationConstraint };
+        } = { Bucket: this.bucket };
+        if (this.region !== 'us-east-1') {
+          input.CreateBucketConfiguration = {
+            LocationConstraint: this.region as BucketLocationConstraint,
+          };
+        }
+        await this.client!.send(new CreateBucketCommand(input));
+        this.logger.log(`Created S3 bucket ${this.bucket}`);
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  private async ensureCorsConfiguration(): Promise<void> {
+    const origins = this.resolveCorsOrigins();
+    await this.client!.send(
+      new PutBucketCorsCommand({
+        Bucket: this.bucket,
+        CORSConfiguration: {
+          CORSRules: [
+            {
+              AllowedHeaders: ['*'],
+              AllowedMethods: ['GET', 'PUT', 'POST', 'HEAD'],
+              AllowedOrigins: origins,
+              ExposeHeaders: ['ETag', 'x-amz-request-id'],
+              MaxAgeSeconds: 3600,
+            },
+          ],
+        },
+      }),
+    );
+    this.logger.log(`S3 CORS configured for ${origins.length} origin(s)`);
+  }
+
+  private resolveCorsOrigins(): string[] {
+    const raw = this.config.get<string>('CORS_ORIGINS', '');
+    const fromEnv = raw
+      .split(',')
+      .map((o) => o.trim())
+      .filter(Boolean);
+    const defaults = [
+      'https://crm.quoreb2b.com',
+      'http://localhost:3000',
+      'https://65-2-186-189.sslip.io',
+    ];
+    return [...new Set([...fromEnv, ...defaults])];
   }
 
   private assertEnabled(): void {

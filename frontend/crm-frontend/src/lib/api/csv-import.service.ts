@@ -5,6 +5,7 @@ import { useAuthStore } from '@/store/auth.store';
 
 const CSV_UPLOAD_TIMEOUT_MS = 7_200_000;
 const CSV_POLL_TIMEOUT_MS = 300_000;
+const CSV_API_TIMEOUT_MS = 120_000;
 
 function isProductionCrmHost(): boolean {
   if (typeof window === 'undefined') return false;
@@ -22,6 +23,11 @@ function getCsvImportApiBaseUrl(): string {
 function getAccessToken(): string | null {
   if (typeof window === 'undefined') return null;
   return useAuthStore.getState().accessToken ?? localStorage.getItem('accessToken');
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getAccessToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 function unwrap<T>(response: { data: unknown }): T {
@@ -49,6 +55,14 @@ export interface CsvImportJobStatus {
   errorCsvAvailable?: boolean;
 }
 
+interface PresignResult {
+  jobId: string;
+  uploadUrl: string;
+  s3Key: string;
+  bucket: string;
+  expiresIn: number;
+}
+
 function mapCsvPhase(status: string): string {
   switch (status) {
     case 'pending_upload':
@@ -73,7 +87,7 @@ export function mapCsvImportToProgress(status: CsvImportJobStatus): MasterDataIm
   const phase = mapCsvPhase(status.status);
   const message =
     status.status === 'paused'
-      ? 'Import paused — resume from admin tools or refresh'
+      ? 'Import paused'
       : progress.message || status.errorMessage || 'Processing…';
 
   return {
@@ -85,55 +99,155 @@ export function mapCsvImportToProgress(status: CsvImportJobStatus): MasterDataIm
   };
 }
 
+async function presignUpload(
+  file: File,
+  mode: MasterDataSaveMode,
+): Promise<PresignResult> {
+  const base = getCsvImportApiBaseUrl();
+  const { data } = await axios.post(
+    `${base}/csv-imports/presign`,
+    {
+      fileName: file.name,
+      fileSizeBytes: file.size,
+      contentType: file.type || 'text/csv',
+      mode,
+    },
+    {
+      timeout: CSV_API_TIMEOUT_MS,
+      withCredentials: true,
+      headers: authHeaders(),
+    },
+  );
+  return unwrap<PresignResult>({ data });
+}
+
+async function uploadFileToS3(
+  uploadUrl: string,
+  file: File,
+  onUploadProgress?: (progress: MasterDataImportProgress) => void,
+): Promise<void> {
+  await axios.put(uploadUrl, file, {
+    timeout: CSV_UPLOAD_TIMEOUT_MS,
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
+    headers: { 'Content-Type': file.type || 'text/csv' },
+    onUploadProgress: (event) => {
+      if (!onUploadProgress || !event.total) return;
+      const uploadPct = Math.min(85, Math.round((event.loaded / event.total) * 85));
+      onUploadProgress({
+        percent: uploadPct,
+        phase: 'uploading',
+        message: `Uploading directly to S3… ${uploadPct}%`,
+      });
+    },
+  });
+}
+
+async function startImportJob(jobId: string): Promise<void> {
+  const base = getCsvImportApiBaseUrl();
+  await axios.post(
+    `${base}/csv-imports/${jobId}/start`,
+    {},
+    {
+      timeout: CSV_API_TIMEOUT_MS,
+      withCredentials: true,
+      headers: authHeaders(),
+    },
+  );
+}
+
+async function uploadViaMultipartFallback(
+  file: File,
+  mode: MasterDataSaveMode,
+  onUploadProgress?: (progress: MasterDataImportProgress) => void,
+): Promise<string> {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('mode', mode);
+  const base = getCsvImportApiBaseUrl();
+
+  const { data } = await axios.post(`${base}/csv-imports/upload`, form, {
+    timeout: CSV_UPLOAD_TIMEOUT_MS,
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
+    withCredentials: true,
+    headers: {
+      ...authHeaders(),
+      'Content-Type': 'multipart/form-data',
+    },
+    onUploadProgress: (event) => {
+      if (!onUploadProgress || !event.total) return;
+      const uploadPct = Math.min(40, Math.round((event.loaded / event.total) * 40));
+      onUploadProgress({
+        percent: uploadPct,
+        phase: 'uploading',
+        message: `Uploading to server… ${uploadPct}%`,
+      });
+    },
+  });
+
+  const { jobId } = unwrap<{ jobId: string }>({ data });
+  return jobId;
+}
+
 export const csvImportService = {
   isCsvFile(file: File): boolean {
     const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
     return ext === 'csv';
   },
 
+  /**
+   * Enterprise flow: presign → browser PUT to S3 → start (API returns in <1s after S3).
+   * Falls back to EC2 multipart if presign/S3 direct upload fails.
+   */
   uploadAndQueue: async (
     file: File,
     mode: MasterDataSaveMode = 'replace',
     onUploadProgress?: (progress: MasterDataImportProgress) => void,
   ): Promise<string> => {
-    const form = new FormData();
-    form.append('file', file);
-    form.append('mode', mode);
-
-    const token = getAccessToken();
-    const base = getCsvImportApiBaseUrl();
-
-    const { data } = await axios.post(`${base}/csv-imports/upload`, form, {
-      timeout: CSV_UPLOAD_TIMEOUT_MS,
-      maxBodyLength: Infinity,
-      maxContentLength: Infinity,
-      withCredentials: true,
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        'Content-Type': 'multipart/form-data',
-      },
-      onUploadProgress: (event) => {
-        if (!onUploadProgress || !event.total) return;
-        const uploadPct = Math.min(30, Math.round((event.loaded / event.total) * 30));
-        onUploadProgress({
-          percent: uploadPct,
-          phase: 'uploading',
-          message: `Uploading to S3… ${uploadPct}%`,
-        });
-      },
+    onUploadProgress?.({
+      percent: 2,
+      phase: 'uploading',
+      message: 'Preparing S3 upload…',
     });
 
-    const { jobId } = unwrap<{ jobId: string }>({ data });
-    return jobId;
+    try {
+      const presign = await presignUpload(file, mode);
+      await uploadFileToS3(presign.uploadUrl, file, onUploadProgress);
+
+      onUploadProgress?.({
+        percent: 88,
+        phase: 'uploading',
+        message: 'S3 upload complete — starting background import…',
+      });
+
+      await startImportJob(presign.jobId);
+
+      onUploadProgress?.({
+        percent: 12,
+        phase: 'queued',
+        message: 'Import queued — processing on server',
+      });
+
+      return presign.jobId;
+    } catch (presignErr) {
+      const reason =
+        presignErr instanceof Error ? presignErr.message : 'Presigned S3 upload failed';
+      onUploadProgress?.({
+        percent: 5,
+        phase: 'uploading',
+        message: `S3 direct upload unavailable (${reason}) — using server upload…`,
+      });
+      return uploadViaMultipartFallback(file, mode, onUploadProgress);
+    }
   },
 
   getJobStatus: async (jobId: string): Promise<CsvImportJobStatus> => {
-    const token = getAccessToken();
     const base = getCsvImportApiBaseUrl();
     const { data } = await axios.get(`${base}/csv-imports/${jobId}`, {
       timeout: CSV_POLL_TIMEOUT_MS,
       withCredentials: true,
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: authHeaders(),
     });
     return unwrap<CsvImportJobStatus>({ data });
   },
@@ -142,15 +256,14 @@ export const csvImportService = {
     jobId: string,
     action: 'pause' | 'resume' | 'cancel',
   ): Promise<CsvImportJobStatus> => {
-    const token = getAccessToken();
     const base = getCsvImportApiBaseUrl();
     const { data } = await axios.post(
       `${base}/csv-imports/${jobId}/control`,
       { action },
       {
-        timeout: 60_000,
+        timeout: CSV_API_TIMEOUT_MS,
         withCredentials: true,
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers: authHeaders(),
       },
     );
     return unwrap<CsvImportJobStatus>({ data });

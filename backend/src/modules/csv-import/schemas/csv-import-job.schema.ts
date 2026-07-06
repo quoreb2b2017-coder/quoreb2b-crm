@@ -96,6 +96,10 @@ export class CsvImportJob extends Document {
   @Prop({ required: true })
   s3Key: string;
 
+  /** EC2 disk path while multipart upload is transferred to S3 (fallback flow). */
+  @Prop({ default: '' })
+  stagingLocalPath: string;
+
   @Prop({ default: '' })
   errorCsvS3Key: string;
 

@@ -31,13 +31,33 @@ export class CsvImportQueueService {
     );
     const job = await this.orchestratorQueue.add(
       'process-import',
-      { jobId },
+      { jobId, kind: 'process' },
       {
         jobId: `csv-orchestrator-${jobId}`,
         attempts: maxRetries,
         backoff: { type: 'exponential', delay: 5000 },
         removeOnComplete: 100,
         removeOnFail: 200,
+      },
+    );
+    return String(job.id);
+  }
+
+  /** Transfer EC2 staging file to S3, then chain to process-import. */
+  async enqueueTransfer(jobId: string, localPath: string): Promise<string> {
+    const maxRetries = this.config.get<number>(
+      'CSV_IMPORT_MAX_RETRIES',
+      DEFAULT_CSV_IMPORT_MAX_RETRIES,
+    );
+    const job = await this.orchestratorQueue.add(
+      'transfer-to-s3',
+      { jobId, kind: 'transfer', localPath },
+      {
+        jobId: `csv-transfer-${jobId}`,
+        attempts: maxRetries,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: 50,
+        removeOnFail: 100,
       },
     );
     return String(job.id);

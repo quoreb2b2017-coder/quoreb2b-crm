@@ -89,9 +89,55 @@ export class CsvImportService {
   }
 
   /**
-   * Upload local file to S3 (or disk fallback) and return immediately.
-   * Processing is queued via BullMQ.
+   * Multipart fallback: save to EC2 disk, return jobId immediately, transfer to S3 in background.
    */
+  async uploadStagingAndQueue(
+    localPath: string,
+    fileName: string,
+    fileSizeBytes: number,
+    mode: CsvImportMode,
+    actor: CsvImportActor,
+    batchSize?: number,
+  ): Promise<{ jobId: string; status: string }> {
+    this.assertEnabled();
+    if (!this.s3.isEnabled()) {
+      throw new ServiceUnavailableException(
+        'S3 is required for CSV import. Configure AWS_S3_BUCKET and credentials.',
+      );
+    }
+
+    const jobId = this.jobs.generateJobId();
+    const normalizedBatch = this.normalizeBatchSize(batchSize);
+    const s3Key = this.s3.buildImportKey(jobId, fileName);
+
+    await this.jobs.create({
+      jobId,
+      target: 'master-data',
+      masterKey: MASTER_DATA_KEY,
+      mode,
+      status: 'pending_upload',
+      fileName,
+      fileSizeBytes,
+      s3Bucket: this.s3.getBucket(),
+      s3Key,
+      stagingLocalPath: localPath,
+      batchSize: normalizedBatch,
+      uploadedBy: new Types.ObjectId(actor.userId),
+      uploadedByEmail: actor.email,
+    });
+
+    await this.jobs.updateProgress(jobId, {
+      percent: 5,
+      message: 'File received — transferring to S3 in background…',
+    });
+
+    const bullId = await this.queue.enqueueTransfer(jobId, localPath);
+    await this.jobs.updateStatus(jobId, 'pending_upload', { bullJobId: bullId });
+
+    return { jobId, status: 'pending_upload' };
+  }
+
+  /** @deprecated Use uploadStagingAndQueue or presigned flow */
   async uploadAndQueue(
     localPath: string,
     fileName: string,
@@ -100,48 +146,50 @@ export class CsvImportService {
     actor: CsvImportActor,
     batchSize?: number,
   ): Promise<{ jobId: string }> {
-    this.assertEnabled();
-    const jobId = this.jobs.generateJobId();
-    const normalizedBatch = this.normalizeBatchSize(batchSize);
-    let s3Key = '';
-    let s3Bucket = '';
-
-    if (this.s3.isEnabled()) {
-      s3Key = this.s3.buildImportKey(jobId, fileName);
-      s3Bucket = this.s3.getBucket();
-      await this.s3.uploadLocalFile(localPath, s3Key, 'text/csv');
-    } else {
-      s3Key = this.s3.localFallbackPath(jobId, fileName);
-      const { copyFileSync } = await import('fs');
-      copyFileSync(localPath, s3Key);
-    }
-
-    const head = this.s3.isEnabled()
-      ? await this.s3.headObject(s3Key)
-      : { size: fileSizeBytes, etag: `${fileSizeBytes}-${fileName}` };
-
-    await this.assertNoDuplicate(head.etag, MASTER_DATA_KEY);
-
-    await this.jobs.create({
-      jobId,
-      target: 'master-data',
-      masterKey: MASTER_DATA_KEY,
-      mode,
-      status: 'queued',
+    const result = await this.uploadStagingAndQueue(
+      localPath,
       fileName,
-      fileSizeBytes: head.size,
-      contentHash: head.etag,
-      s3Bucket,
-      s3Key,
-      batchSize: normalizedBatch,
-      uploadedBy: new Types.ObjectId(actor.userId),
-      uploadedByEmail: actor.email,
-    });
+      fileSizeBytes,
+      mode,
+      actor,
+      batchSize,
+    );
+    return { jobId: result.jobId };
+  }
 
-    const bullId = await this.queue.enqueueOrchestrator(jobId);
-    await this.jobs.updateStatus(jobId, 'queued', { bullJobId: bullId });
+  async runTransferToS3(jobId: string, localPath: string): Promise<void> {
+    const job = await this.jobs.findByJobId(jobId);
+    if (!job || job.cancelRequested) return;
 
-    return { jobId };
+    try {
+      await this.jobs.updateProgress(jobId, {
+        percent: 8,
+        message: 'Uploading file to S3…',
+      });
+      await this.s3.uploadLocalFile(localPath, job.s3Key, 'text/csv');
+      const head = await this.s3.headObject(job.s3Key);
+      await this.assertNoDuplicate(head.etag, job.masterKey, jobId);
+
+      const bullId = await this.queue.enqueueOrchestrator(jobId);
+      await this.jobs.updateStatus(jobId, 'queued', {
+        contentHash: head.etag,
+        fileSizeBytes: head.size,
+        bullJobId: bullId,
+        stagingLocalPath: '',
+      });
+      await this.jobs.updateProgress(jobId, {
+        percent: 12,
+        message: 'S3 upload complete — queued for processing',
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'S3 transfer failed';
+      this.logger.error(`S3 transfer failed for ${jobId}: ${message}`);
+      await this.jobs.updateStatus(jobId, 'failed', { errorMessage: message });
+      throw err;
+    } finally {
+      const { unlink } = await import('fs/promises');
+      await unlink(localPath).catch(() => undefined);
+    }
   }
 
   async confirmUploadAndStart(
@@ -151,8 +199,10 @@ export class CsvImportService {
     this.assertEnabled();
     const job = await this.jobs.findByJobId(jobId);
     if (!job) throw new NotFoundException('Import job not found');
-    if (job.status !== 'pending_upload') {
-      throw new BadRequestException(`Job is not awaiting upload (status: ${job.status})`);
+    if (job.status !== 'pending_upload' || job.stagingLocalPath) {
+      throw new BadRequestException(
+        `Job is not awaiting S3 upload (status: ${job.status})`,
+      );
     }
 
     const head = await this.s3.headObject(job.s3Key);

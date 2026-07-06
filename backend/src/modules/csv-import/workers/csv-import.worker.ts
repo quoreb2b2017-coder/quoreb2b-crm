@@ -10,6 +10,7 @@ import {
   CsvImportOrchestratorJobData,
 } from '../csv-import.types';
 import { CsvImportProcessorService } from '../services/csv-import-processor.service';
+import { CsvImportService } from '../csv-import.service';
 
 @Processor(CSV_IMPORT_QUEUE, {
   concurrency: parseInt(process.env.CSV_IMPORT_QUEUE_CONCURRENCY || '2', 10),
@@ -19,11 +20,17 @@ export class CsvImportOrchestratorWorker extends WorkerHost {
 
   constructor(
     private readonly processor: CsvImportProcessorService,
+    private readonly csvImport: CsvImportService,
   ) {
     super();
   }
 
   async process(job: Job<CsvImportOrchestratorJobData>) {
+    if (job.data.kind === 'transfer' && job.data.localPath) {
+      this.logger.log(`S3 transfer job ${job.id} for import ${job.data.jobId}`);
+      await this.csvImport.runTransferToS3(job.data.jobId, job.data.localPath);
+      return;
+    }
     this.logger.log(`Orchestrator job ${job.id} for import ${job.data.jobId}`);
     await this.processor.runOrchestrator(job.data.jobId);
   }

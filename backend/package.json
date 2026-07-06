@@ -15,6 +15,9 @@
     "clear-session-data": "ts-node -r tsconfig-paths/register scripts/clear-session-data.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1079.0",
+    "@aws-sdk/lib-storage": "^3.1079.0",
+    "@aws-sdk/s3-request-presigner": "^3.1079.0",
     "@elastic/elasticsearch": "^8.15.0",
     "@nestjs/bullmq": "^10.2.0",
     "@nestjs/common": "^10.4.0",

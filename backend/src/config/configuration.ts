@@ -82,4 +82,24 @@ export default () => ({
   BULK_EMAIL_VERIFICATION_PROVIDER: 'internal',
   BULK_EMAIL_SKIP_SMTP_PROBE: process.env.BULK_EMAIL_SKIP_SMTP_PROBE === 'true',
   BULK_EMAIL_FORCE_SMTP_PROBE: process.env.BULK_EMAIL_FORCE_SMTP_PROBE === 'true',
+  // ── Enterprise CSV import (S3 + BullMQ) ──
+  AWS_REGION: process.env.AWS_REGION || 'ap-south-1',
+  AWS_S3_BUCKET: process.env.AWS_S3_BUCKET || '',
+  AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID || '',
+  AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY || '',
+  CSV_IMPORT_ENABLED: process.env.CSV_IMPORT_ENABLED !== 'false',
+  CSV_IMPORT_BATCH_SIZE: parseInt(process.env.CSV_IMPORT_BATCH_SIZE || '1000', 10),
+  CSV_IMPORT_WRITE_CONCURRENCY: parseInt(process.env.CSV_IMPORT_WRITE_CONCURRENCY || '2', 10),
+  CSV_IMPORT_QUEUE_CONCURRENCY: parseInt(process.env.CSV_IMPORT_QUEUE_CONCURRENCY || '2', 10),
+  CSV_IMPORT_BATCH_QUEUE_CONCURRENCY: parseInt(
+    process.env.CSV_IMPORT_BATCH_QUEUE_CONCURRENCY || '4',
+    10,
+  ),
+  CSV_IMPORT_MAX_RETRIES: parseInt(process.env.CSV_IMPORT_MAX_RETRIES || '3', 10),
+  CSV_IMPORT_PRESIGN_TTL_SECONDS: parseInt(process.env.CSV_IMPORT_PRESIGN_TTL_SECONDS || '3600', 10),
+  CSV_IMPORT_S3_PREFIX: process.env.CSV_IMPORT_S3_PREFIX || 'csv-imports',
+  CSV_IMPORT_MAX_FILE_BYTES: parseInt(
+    process.env.CSV_IMPORT_MAX_FILE_BYTES || String(2 * 1024 * 1024 * 1024),
+    10,
+  ),
 });

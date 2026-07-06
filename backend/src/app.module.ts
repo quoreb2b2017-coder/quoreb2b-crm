@@ -41,6 +41,7 @@ import { BulkEmailVerificationModule } from './modules/bulk-email-verification/b
 import { PersonalNotesModule } from './modules/personal-notes/personal-notes.module';
 import { BreakPunchesModule } from './modules/break-punches/break-punches.module';
 import { QcModule } from './modules/qc/qc.module';
+import { CsvImportModule } from './modules/csv-import/csv-import.module';
 
 @Module({})
 export class AppModule {
@@ -109,6 +110,7 @@ export class AppModule {
         BreakPunchesModule,
         QcModule,
         BulkEmailVerificationModule.register(),
+        CsvImportModule.register(),
         EventsModule,
         HealthModule,
       ],

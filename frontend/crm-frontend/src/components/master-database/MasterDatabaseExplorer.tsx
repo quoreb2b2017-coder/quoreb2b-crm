@@ -65,9 +65,22 @@ import {
 
 const ACCEPT = '.csv,.xlsx,.xls';
 const PAGE_SIZES = [20, 50, 100, 200];
+const EMBEDDED_PAGE_SIZES = [50, 100, 200];
 const CAMPAIGN_FETCH_CAP = 2000;
 
 export type MasterDatabaseVariant = 'admin' | 'db_admin';
+
+export interface MasterDatabaseExplorerProps {
+  variant?: MasterDatabaseVariant;
+  /** Renders inside Super Admin upload panel — same filters/grid as DB Admin master file */
+  embedded?: boolean;
+  campaignRowFilter?: 'all' | 'in_campaign' | 'remaining';
+  onCreateBatch?: (payload: {
+    rows: string[][];
+    headers: string[];
+    sourceRowIndices: number[];
+  }) => void;
+}
 
 function toggleSet(set: Set<string>, value: string): Set<string> {
   const next = new Set(set);
@@ -76,7 +89,12 @@ function toggleSet(set: Set<string>, value: string): Set<string> {
   return next;
 }
 
-export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: MasterDatabaseVariant }) {
+export function MasterDatabaseExplorer({
+  variant = 'admin',
+  embedded = false,
+  campaignRowFilter = 'all',
+  onCreateBatch,
+}: MasterDatabaseExplorerProps) {
   const isDbAdmin = variant === 'db_admin';
   const canExport = useCanExportSpreadsheet();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -89,6 +107,7 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
   const [isLargeMasterDataset, setIsLargeMasterDataset] = useState(false);
   const [filteredTotal, setFilteredTotal] = useState(0);
   const [hasSearched, setHasSearched] = useState(false);
+  const [isFilteredView, setIsFilteredView] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
   const [fileName, setFileName] = useState('');
@@ -100,7 +119,7 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
   const [filters, setFilters] = useState<DynamicMasterDbFilters>(emptyDynamicMasterDbFilters());
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(embedded ? 100 : 20);
   const [sortBy, setSortBy] = useState('recent');
   const [moreOpen, setMoreOpen] = useState(false);
   const [filterSidebarOpen, setFilterSidebarOpen] = useState(true);
@@ -221,7 +240,7 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
   }, [loadData]);
 
   useEffect(() => {
-    if (loading || isDbAdmin || !isLargeMasterDataset || hasSearched) return;
+    if (loading || isDbAdmin || (!embedded && !isLargeMasterDataset) || hasSearched) return;
     let cancelled = false;
     setSearching(true);
     void masterDataService
@@ -233,6 +252,7 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
         setFilteredTotal(result.totalRows);
         setBatchedByRow(result.batchedByRow ?? {});
         setHasSearched(true);
+        setIsFilteredView(false);
       })
       .catch((e) => {
         if (!cancelled) toast.error('Could not load data', extractApiError(e));
@@ -243,84 +263,139 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
     return () => {
       cancelled = true;
     };
-  }, [hasSearched, isDbAdmin, isLargeMasterDataset, loading, pageSize]);
+  }, [embedded, hasSearched, isDbAdmin, isLargeMasterDataset, loading, pageSize]);
 
   useEffect(() => {
-    if (!isDbAdmin) return;
-    const onBatchCreated = () => void loadCoverage();
-    window.addEventListener('batch-created', onBatchCreated);
-    window.addEventListener('master-data-updated', onBatchCreated);
+    if (!embedded && !isDbAdmin) return;
+    const onRefresh = () => void loadCoverage();
+    window.addEventListener('batch-created', onRefresh);
+    window.addEventListener('master-data-updated', onRefresh);
     return () => {
-      window.removeEventListener('batch-created', onBatchCreated);
-      window.removeEventListener('master-data-updated', onBatchCreated);
+      window.removeEventListener('batch-created', onRefresh);
+      window.removeEventListener('master-data-updated', onRefresh);
     };
-  }, [isDbAdmin, loadCoverage]);
+  }, [embedded, isDbAdmin, loadCoverage]);
 
-  const useServerSearch = isDbAdmin || isLargeMasterDataset;
-  const useFilterSidebar = isDbAdmin || isLargeMasterDataset;
+  const useServerSearch = embedded || isDbAdmin || isLargeMasterDataset;
+  const useFilterSidebar = embedded || isDbAdmin || isLargeMasterDataset;
+  const pageSizeOptions = embedded ? EMBEDDED_PAGE_SIZES : PAGE_SIZES;
 
-  const executeSearch = useCallback(
+  const effectiveFilterColumns = useMemo<MasterDataColumnFilterSchema[]>(() => {
+    if (filterColumns.length > 0) return filterColumns;
+    return headers.map((header) => ({
+      header,
+      kind: 'text',
+      options: [],
+      filledCount: 1,
+    }));
+  }, [filterColumns, headers]);
+
+  const loadBrowsePage = useCallback(
+    async (targetPage: number, targetPageSize: number, opts?: { resetSelection?: boolean }) => {
+      setSearching(true);
+      try {
+        const result = await masterDataService.search({
+          page: targetPage,
+          limit: targetPageSize,
+        });
+        setDisplayRows(result.rows);
+        setSourceIndices(result.sourceRowIndices);
+        setFilteredTotal(result.totalRows);
+        setBatchedByRow(result.batchedByRow ?? {});
+        setHasSearched(true);
+        setIsFilteredView(false);
+        if (opts?.resetSelection !== false) setSelected(new Set());
+      } catch (e) {
+        toast.error('Could not load data', extractApiError(e));
+      } finally {
+        setSearching(false);
+      }
+    },
+    [],
+  );
+
+  const executeFilteredSearch = useCallback(
     async (targetPage: number, targetPageSize: number, opts?: { resetSelection?: boolean }) => {
       const activeFilters = filtersRef.current;
-      if (!hasAnyDynamicSearchCriteria(activeFilters)) {
-        toast.error('Add filters', 'Type to search or pick a quick filter');
+      if (!useServerSearch) {
+        const { rows, indices } = applyDynamicFiltersClient(allRows, headers, activeFilters);
+        setDisplayRows(rows);
+        setSourceIndices(indices);
+        setFilteredTotal(rows.length);
+        setHasSearched(true);
+        setIsFilteredView(hasAnyDynamicSearchCriteria(activeFilters));
+        if (opts?.resetSelection !== false) setSelected(new Set());
         return;
+      }
+      if (!hasAnyDynamicSearchCriteria(activeFilters)) {
+        return loadBrowsePage(targetPage, targetPageSize, opts);
       }
       setSearching(true);
       try {
-        if (useServerSearch) {
-          const payload = serializeDynamicSearchPayload(activeFilters, headers);
-          const result = await masterDataService.search({
-            ...payload,
-            page: targetPage,
-            limit: targetPageSize,
-          });
-          setDisplayRows(result.rows);
-          setSourceIndices(result.sourceRowIndices);
-          setFilteredTotal(result.totalMatches);
-          setBatchedByRow(result.batchedByRow);
-          setHasSearched(true);
-          if (opts?.resetSelection !== false) setSelected(new Set());
-        } else {
-          const { rows, indices } = applyDynamicFiltersClient(allRows, headers, activeFilters);
-          setDisplayRows(rows);
-          setSourceIndices(indices);
-          setFilteredTotal(rows.length);
-          setHasSearched(true);
-          if (opts?.resetSelection !== false) setSelected(new Set());
-        }
+        const payload = serializeDynamicSearchPayload(activeFilters, headers);
+        const result = await masterDataService.search({
+          ...payload,
+          page: targetPage,
+          limit: targetPageSize,
+        });
+        setDisplayRows(result.rows);
+        setSourceIndices(result.sourceRowIndices);
+        setFilteredTotal(result.totalMatches);
+        setBatchedByRow(result.batchedByRow);
+        setHasSearched(true);
+        setIsFilteredView(true);
+        if (opts?.resetSelection !== false) setSelected(new Set());
       } catch (e) {
         toast.error('Search failed', extractApiError(e));
       } finally {
         setSearching(false);
       }
     },
-    [allRows, headers, useServerSearch],
+    [allRows, headers, loadBrowsePage, useServerSearch],
   );
 
   const runSearch = useCallback(async () => {
+    const activeFilters = filtersRef.current;
+    if (isDbAdmin && !hasAnyDynamicSearchCriteria(activeFilters)) {
+      toast.error('Add filters', 'Type to search or pick a quick filter');
+      return;
+    }
     setPage(1);
-    await executeSearch(1, pageSize, { resetSelection: true });
-  }, [executeSearch, pageSize]);
+    await executeFilteredSearch(1, pageSize, { resetSelection: true });
+  }, [executeFilteredSearch, isDbAdmin, pageSize]);
 
   useEffect(() => {
     if (!useServerSearch) return;
-    if (!canAutoSearchMasterData(filters)) return;
+    if (!canAutoSearchMasterData(filters)) {
+      if (!hasAnyDynamicSearchCriteria(filters) && isFilteredView) {
+        setPage(1);
+        void loadBrowsePage(1, pageSize, { resetSelection: true });
+      }
+      return;
+    }
     const timer = setTimeout(() => {
       void runSearch();
-    }, 400);
+    }, embedded ? 700 : 400);
     return () => clearTimeout(timer);
-  }, [filters, useServerSearch, runSearch]);
+  }, [embedded, filters, isFilteredView, loadBrowsePage, pageSize, runSearch, useServerSearch]);
 
   const fetchFilteredPage = useCallback(
     async (targetPage: number, targetPageSize: number) => {
-      await executeSearch(targetPage, targetPageSize, { resetSelection: false });
+      if (isFilteredView) {
+        await executeFilteredSearch(targetPage, targetPageSize, { resetSelection: false });
+      } else {
+        await loadBrowsePage(targetPage, targetPageSize, { resetSelection: false });
+      }
     },
-    [executeSearch],
+    [executeFilteredSearch, isFilteredView, loadBrowsePage],
   );
 
   const fetchAllFilteredForCampaign = useCallback(async () => {
     const activeFilters = filtersRef.current;
+    if (!isFilteredView) {
+      const limit = Math.min(Math.max(filteredTotal, 1), CAMPAIGN_FETCH_CAP);
+      return masterDataService.search({ page: 1, limit });
+    }
     const payload = serializeDynamicSearchPayload(activeFilters, headers);
     const limit = Math.min(Math.max(filteredTotal, 1), CAMPAIGN_FETCH_CAP);
     const result = await masterDataService.search({
@@ -338,8 +413,10 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
       rows: result.rows,
       headers: result.headers,
       sourceRowIndices: result.sourceRowIndices,
+      totalMatches: result.totalMatches,
+      totalRows: result.totalRows,
     };
-  }, [filteredTotal, headers]);
+  }, [filteredTotal, headers, isFilteredView]);
 
   const clearFilters = useCallback(() => {
     const empty = emptyDynamicMasterDbFilters();
@@ -349,17 +426,23 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
     setSelected(new Set());
     setPage(1);
     if (useServerSearch) {
-      setDisplayRows([]);
-      setSourceIndices([]);
-      setHasSearched(false);
-      setFilteredTotal(0);
+      if (embedded || (!isDbAdmin && isLargeMasterDataset)) {
+        void loadBrowsePage(1, pageSize, { resetSelection: true });
+      } else {
+        setDisplayRows([]);
+        setSourceIndices([]);
+        setHasSearched(false);
+        setIsFilteredView(false);
+        setFilteredTotal(0);
+      }
     } else {
       setDisplayRows(allRows);
       setSourceIndices(allRows.map((_, i) => i));
       setFilteredTotal(allRows.length);
       setHasSearched(true);
+      setIsFilteredView(false);
     }
-  }, [allRows, useServerSearch]);
+  }, [allRows, embedded, isDbAdmin, isLargeMasterDataset, loadBrowsePage, pageSize, useServerSearch]);
 
   const removeTag = useCallback((key: string) => {
     const current = filtersRef.current;
@@ -540,9 +623,17 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
             toast.error('No selection', 'Selected companies are not in the current results');
             return;
           }
-          payload = { rows, headers, sourceRowIndices };
+          payload = { rows, headers: all.headers, sourceRowIndices };
         } else {
           payload = { rows: all.rows, headers: all.headers, sourceRowIndices: all.sourceRowIndices };
+        }
+        const cap = isFilteredView ? all.totalMatches : all.totalRows;
+        if (cap > CAMPAIGN_FETCH_CAP && !selected.size) {
+          toast.error(
+            'Too many results',
+            `Narrow filters — max ${CAMPAIGN_FETCH_CAP.toLocaleString('en-US')} per campaign`,
+          );
+          return;
         }
       } else {
         if (selected.size > 0) {
@@ -554,6 +645,11 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
           toast.error('No selection', 'Select companies from the table first');
           return;
         }
+      }
+
+      if (embedded && onCreateBatch) {
+        onCreateBatch(payload);
+        return;
       }
 
       const now = new Date().toLocaleDateString('en-US', {
@@ -669,7 +765,7 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
     }
   };
 
-  if (loading) {
+  if (loading && !embedded) {
     return (
       <div className="mdb-page">
         <div className="mdb-loading-bar">
@@ -680,16 +776,273 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
     );
   }
 
+  const resultCount = hasSearched ? filteredTotal : undefined;
+  const paginationTotal = useServerSearch ? filteredTotal : displayRows.length;
+
+  const gridBlock = (
+    <>
+      {!hasSearched ? (
+        <div className="mdb-empty mdb-empty--workbook">
+          <div className="mdb-empty__icon-wrap">
+            <Database className="h-8 w-8" />
+          </div>
+          <p className="mdb-empty__title">
+            {masterTotalRows ? 'Ready to search' : 'No master data yet'}
+          </p>
+          <p className="mdb-empty__sub">
+            {isDbAdmin
+              ? 'Use the search bar above to load companies into the spreadsheet view.'
+              : masterTotalRows
+                ? 'Use filters or click Search Companies to view the table.'
+                : 'Super Admin can import data using Import Data.'}
+          </p>
+        </div>
+      ) : (
+        <>
+          {searching && (
+            <div className="mdb-grid-loading" aria-live="polite">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Updating results…
+            </div>
+          )}
+          <div className={`mdb-xl-grid${embedded ? ' min-h-0 flex-1' : ''}`}>
+            <ExcelPreviewGrid
+              data={gridData}
+              dataResetKey={gridResetKey}
+              editable={false}
+              fillHeight
+              batchedByRow={mergedBatchedByRow}
+              campaignRowFilter={embedded ? campaignRowFilter : undefined}
+              externalSourceIndices={pageSourceIndices}
+              selectable
+              selectedSourceRows={selected}
+              onToggleSourceRow={toggleRow}
+              pageAllSelected={allPageSelected}
+              onTogglePageSelection={toggleSelectAllPage}
+              datasetRowCount={embedded ? filteredTotal : undefined}
+              onCreateBatch={embedded ? onCreateBatch : undefined}
+            />
+          </div>
+
+          <div className="mdb-pagination">
+            <p>
+              Showing {(page - 1) * pageSize + 1} to{' '}
+              {Math.min(page * pageSize, paginationTotal)} of{' '}
+              {paginationTotal.toLocaleString('en-US')}
+              {isFilteredView
+                ? ' matches'
+                : useServerSearch && masterTotalRows
+                  ? ` of ${masterTotalRows.toLocaleString('en-US')} total`
+                  : ' results'}
+            </p>
+            <div className="mdb-pagination__pages">
+              <button type="button" className="mdb-page-btn" disabled={page <= 1 || searching} onClick={() => goToPage(page - 1)}>‹</button>
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                const p = i + 1;
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    className={`mdb-page-btn${page === p ? ' is-active' : ''}`}
+                    onClick={() => goToPage(p)}
+                    disabled={searching}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
+              {totalPages > 5 && <span>…</span>}
+              <button type="button" className="mdb-page-btn" disabled={page >= totalPages || searching} onClick={() => goToPage(page + 1)}>›</button>
+            </div>
+            <label className="mdb-page-size">
+              <span className="mdb-page-size__label">Rows</span>
+              <XlToolbarSelect
+                tone="light"
+                className="mdb-page-size__select"
+                value={String(pageSize)}
+                onChange={(v) => changePageSize(Number(v))}
+                options={pageSizeOptions.map((s) => ({
+                  value: String(s),
+                  label: `${s} / page`,
+                }))}
+              />
+            </label>
+          </div>
+        </>
+      )}
+    </>
+  );
+
+  const toolbarBlock = (
+    <div className="mdb-table-toolbar">
+      <div className="mdb-table-toolbar__left">
+        {useFilterSidebar && !filterSidebarOpen && (
+          <button
+            type="button"
+            className="mdb-btn mdb-btn--filter"
+            onClick={() => setFilterSidebarOpen(true)}
+          >
+            <Filter className="h-3.5 w-3.5" />
+            Filters
+            {tags.length > 0 && <span className="mdb-btn__count">{tags.length}</span>}
+          </button>
+        )}
+        {hasSearched && filteredTotal > 0 && (
+          <button
+            type="button"
+            className="mdb-btn mdb-btn--ghost"
+            onClick={toggleSelectAllFiltered}
+            disabled={loadingCampaignRows}
+          >
+            {allFilteredSelected ? 'Clear all' : `Select all ${Math.min(filteredTotal, CAMPAIGN_FETCH_CAP).toLocaleString('en-US')}`}
+          </button>
+        )}
+        {selected.size > 0 && (
+          <span className="mdb-selection-count">{selected.size.toLocaleString('en-US')} selected</span>
+        )}
+        {canExport && hasSearched && displayRows.length > 0 && (
+          <>
+            <button type="button" className="mdb-btn" onClick={() => exportRows('csv')}>Export CSV</button>
+            <button type="button" className="mdb-btn" onClick={() => exportRows('xlsx')}>Export Excel</button>
+          </>
+        )}
+        <button
+          type="button"
+          className="mdb-btn mdb-btn--green"
+          onClick={handleAssignToSales}
+          disabled={loadingCampaignRows || !hasSearched || filteredTotal === 0}
+        >
+          {loadingCampaignRows ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Users className="h-3.5 w-3.5" />
+          )}
+          {embedded || isDbAdmin
+            ? selected.size > 0
+              ? `Create campaign (${selected.size})`
+              : hasSearched && filteredTotal > 0
+                ? `Create campaign (${Math.min(filteredTotal, CAMPAIGN_FETCH_CAP).toLocaleString('en-US')})`
+                : 'Create campaign'
+            : 'Assign to Sales'}
+        </button>
+        {!embedded && (
+          <div className="mdb-more-menu">
+            <button type="button" className="mdb-btn" onClick={() => setMoreOpen((v) => !v)}>
+              More Actions <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+            {moreOpen && (
+              <div className="mdb-dropdown mdb-dropdown--animated">
+                {!isDbAdmin && (
+                  <button type="button" onClick={() => { inputRef.current?.click(); setMoreOpen(false); }}>
+                    <Upload className="h-3.5 w-3.5" /> Import data
+                  </button>
+                )}
+                <button type="button" onClick={() => { clearFilters(); setMoreOpen(false); }}>Clear filters</button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="mdb-table-toolbar__right">
+        {!isDbAdmin && !embedded && (
+          <>
+            <span className="mdb-toolbar-label">Sort by</span>
+            <XlToolbarSelect
+              tone="light"
+              className="mdb-toolbar-select"
+              value={sortBy}
+              onChange={setSortBy}
+              options={[
+                { value: 'recent', label: 'Recently Updated' },
+                { value: 'name', label: primaryHeader },
+                { value: 'employees', label: 'Employees' },
+              ]}
+            />
+          </>
+        )}
+      </div>
+    </div>
+  );
+
+  if (embedded) {
+    return (
+      <div className="mdb-page mdb-page--db-admin mdb-page--embedded flex min-h-0 flex-1 flex-col">
+        <div
+          className={`mdb-layout flex min-h-0 flex-1${filterSidebarOpen ? ' mdb-layout--sidebar-open' : ''}`}
+        >
+          {useFilterSidebar && headers.length > 0 && (
+            <MasterDatabaseFilterSidebar
+              open={filterSidebarOpen}
+              onOpenChange={setFilterSidebarOpen}
+              columns={effectiveFilterColumns}
+              headers={headers}
+              filters={filters}
+              onChange={onFiltersChange}
+              onSearch={() => void runSearch()}
+              onClear={clearFilters}
+              searching={searching}
+              resultCount={resultCount}
+              tags={tags}
+              onRemoveTag={removeTag}
+              activeFilterCount={tags.length}
+            />
+          )}
+
+          <div className="mdb-main flex min-h-0 min-w-0 flex-1 flex-col">
+            <div className="border-b border-[#2e7ad1]/20 bg-[#e8f1fb] px-4 py-2 text-xs text-[#1d5a9e]">
+              <strong>{masterTotalRows.toLocaleString('en-US')} contacts</strong> in master database.
+              {isFilteredView ? (
+                <>
+                  {' '}
+                  Showing <strong>{filteredTotal.toLocaleString('en-US')}</strong> matches — clear filters to
+                  browse all.
+                </>
+              ) : hasSearched ? (
+                <>
+                  {' '}
+                  Showing rows <strong>{(page - 1) * pageSize + 1}</strong>–
+                  <strong>{Math.min(page * pageSize, filteredTotal)}</strong> — use{' '}
+                  <strong>Filters</strong> to search the full database.
+                </>
+              ) : null}
+            </div>
+
+            <div className="mdb-table-card mdb-table-card--workbook mdb-table-card--embedded flex min-h-0 flex-1 flex-col border-0 shadow-none">
+              {loading ? (
+                <div className="flex flex-1 items-center justify-center bg-white text-sm text-slate-500">
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  Loading contacts…
+                </div>
+              ) : (
+                <>
+                  {toolbarBlock}
+                  {gridBlock}
+                </>
+              )}
+            </div>
+
+            {!filterSidebarOpen && headers.length > 0 && (
+              <div className="mdb-db-hint mdb-db-hint--inline">
+                <PanelLeftOpen className="h-3.5 w-3.5 shrink-0" />
+                Open <strong>Filters</strong> from the left — same as DB Admin Master File.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`mdb-page${useFilterSidebar ? ' mdb-page--db-admin' : ''}`}>
       <input ref={inputRef} type="file" accept={ACCEPT} className="sr-only" onChange={onFileChange} />
 
       <div className={useFilterSidebar ? `mdb-layout${filterSidebarOpen ? ' mdb-layout--sidebar-open' : ''}` : undefined}>
-        {useFilterSidebar && filterColumns.length > 0 && (
+        {useFilterSidebar && headers.length > 0 && (
           <MasterDatabaseFilterSidebar
             open={filterSidebarOpen}
             onOpenChange={setFilterSidebarOpen}
-            columns={filterColumns}
+            columns={effectiveFilterColumns}
             headers={headers}
             filters={filters}
             onChange={onFiltersChange}
@@ -770,8 +1123,8 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
           </div>
         )}
 
-        {/* Global search — admin only */}
-        {!isDbAdmin && (
+        {/* Global search — small admin layout only */}
+        {!isDbAdmin && !useFilterSidebar && (
           <div className="mdb-global-search">
             <Search className="mdb-global-search__icon h-4 w-4" />
             <input
@@ -784,8 +1137,8 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
           </div>
         )}
 
-        {/* Stats — admin layout only */}
-        {!isDbAdmin && (
+        {/* Stats — small admin layout only */}
+        {!isDbAdmin && !useFilterSidebar && (
         <div className="mdb-stats">
           <div className="mdb-stat">
             <div className="mdb-stat__icon mdb-stat__icon--blue"><Building2 className="h-4 w-4" /></div>
@@ -857,173 +1210,8 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
 
         {/* Workbook */}
         <div className={`mdb-table-card${useFilterSidebar ? ' mdb-table-card--workbook' : ''}`}>
-          <div className="mdb-table-toolbar">
-            <div className="mdb-table-toolbar__left">
-              {useFilterSidebar && !filterSidebarOpen && (
-                <button
-                  type="button"
-                  className="mdb-btn mdb-btn--filter"
-                  onClick={() => setFilterSidebarOpen(true)}
-                >
-                  <Filter className="h-3.5 w-3.5" />
-                  Filters
-                  {tags.length > 0 && <span className="mdb-btn__count">{tags.length}</span>}
-                </button>
-              )}
-              {hasSearched && filteredTotal > 0 && (
-                <button
-                  type="button"
-                  className="mdb-btn mdb-btn--ghost"
-                  onClick={toggleSelectAllFiltered}
-                  disabled={loadingCampaignRows}
-                >
-                  {allFilteredSelected ? 'Clear all' : `Select all ${Math.min(filteredTotal, CAMPAIGN_FETCH_CAP).toLocaleString('en-US')}`}
-                </button>
-              )}
-              {selected.size > 0 && (
-                <span className="mdb-selection-count">{selected.size.toLocaleString('en-US')} selected</span>
-              )}
-              {canExport && (
-                <>
-                  <button type="button" className="mdb-btn" onClick={() => exportRows('csv')}>Export CSV</button>
-                  <button type="button" className="mdb-btn" onClick={() => exportRows('xlsx')}>Export Excel</button>
-                </>
-              )}
-              <button
-                type="button"
-                className="mdb-btn mdb-btn--green"
-                onClick={handleAssignToSales}
-                disabled={loadingCampaignRows || !hasSearched || filteredTotal === 0}
-              >
-                {loadingCampaignRows ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Users className="h-3.5 w-3.5" />
-                )}
-                {isDbAdmin
-                  ? selected.size > 0
-                    ? `Create Campaign (${selected.size})`
-                    : hasSearched && filteredTotal > 0
-                      ? `Create Campaign (${filteredTotal.toLocaleString('en-US')})`
-                      : 'Create Campaign & Share'
-                  : 'Assign to Sales'}
-              </button>
-              <div className="mdb-more-menu">
-                <button type="button" className="mdb-btn" onClick={() => setMoreOpen((v) => !v)}>
-                  More Actions <ChevronDown className="h-3.5 w-3.5" />
-                </button>
-                {moreOpen && (
-                  <div className="mdb-dropdown mdb-dropdown--animated">
-                    {!isDbAdmin && (
-                      <button type="button" onClick={() => { inputRef.current?.click(); setMoreOpen(false); }}>
-                        <Upload className="h-3.5 w-3.5" /> Import data
-                      </button>
-                    )}
-                    <button type="button" onClick={() => { clearFilters(); setMoreOpen(false); }}>Clear filters</button>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="mdb-table-toolbar__right">
-              {!isDbAdmin && (
-                <>
-                  <span className="mdb-toolbar-label">Sort by</span>
-                  <XlToolbarSelect
-                    tone="light"
-                    className="mdb-toolbar-select"
-                    value={sortBy}
-                    onChange={setSortBy}
-                    options={[
-                      { value: 'recent', label: 'Recently Updated' },
-                      { value: 'name', label: primaryHeader },
-                      { value: 'employees', label: 'Employees' },
-                    ]}
-                  />
-                </>
-              )}
-            </div>
-          </div>
-
-          {!hasSearched ? (
-            <div className="mdb-empty mdb-empty--workbook">
-              <div className="mdb-empty__icon-wrap">
-                <Database className="h-8 w-8" />
-              </div>
-              <p className="mdb-empty__title">
-                {masterTotalRows ? 'Ready to search' : 'No master data yet'}
-              </p>
-              <p className="mdb-empty__sub">
-                {isDbAdmin
-                  ? 'Use the search bar above to load companies into the spreadsheet view.'
-                  : masterTotalRows
-                    ? 'Use filters or click Search Companies to view the table.'
-                    : 'Super Admin can import data using Import Data.'}
-              </p>
-            </div>
-          ) : (
-            <>
-              {searching && (
-                <div className="mdb-grid-loading" aria-live="polite">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Updating results…
-                </div>
-              )}
-              <div className="mdb-xl-grid">
-                <ExcelPreviewGrid
-                  data={gridData}
-                  dataResetKey={gridResetKey}
-                  editable={false}
-                  fillHeight
-                  batchedByRow={mergedBatchedByRow}
-                  externalSourceIndices={pageSourceIndices}
-                  selectable
-                  selectedSourceRows={selected}
-                  onToggleSourceRow={toggleRow}
-                  pageAllSelected={allPageSelected}
-                  onTogglePageSelection={toggleSelectAllPage}
-                />
-              </div>
-
-              <div className="mdb-pagination">
-                <p>
-                  Showing {(page - 1) * pageSize + 1} to{' '}
-                  {Math.min(page * pageSize, isDbAdmin ? filteredTotal : displayRows.length)} of{' '}
-                  {(isDbAdmin ? filteredTotal : displayRows.length).toLocaleString('en-US')} results
-                </p>
-                <div className="mdb-pagination__pages">
-                  <button type="button" className="mdb-page-btn" disabled={page <= 1} onClick={() => goToPage(page - 1)}>‹</button>
-                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    const p = i + 1;
-                    return (
-                      <button
-                        key={p}
-                        type="button"
-                        className={`mdb-page-btn${page === p ? ' is-active' : ''}`}
-                        onClick={() => goToPage(p)}
-                      >
-                        {p}
-                      </button>
-                    );
-                  })}
-                  {totalPages > 5 && <span>…</span>}
-                  <button type="button" className="mdb-page-btn" disabled={page >= totalPages} onClick={() => goToPage(page + 1)}>›</button>
-                </div>
-                <label className="mdb-page-size">
-                  <span className="mdb-page-size__label">Rows</span>
-                  <XlToolbarSelect
-                    tone="light"
-                    className="mdb-page-size__select"
-                    value={String(pageSize)}
-                    onChange={(v) => changePageSize(Number(v))}
-                    options={PAGE_SIZES.map((s) => ({
-                      value: String(s),
-                      label: `${s} / page`,
-                    }))}
-                  />
-                </label>
-              </div>
-            </>
-          )}
+          {toolbarBlock}
+          {gridBlock}
         </div>
       </div>
         </div>

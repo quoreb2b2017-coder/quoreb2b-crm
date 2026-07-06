@@ -27,7 +27,7 @@ import { useCanExportSpreadsheet } from '@/hooks/useSpreadsheetCopyGuard';
 import { useDebouncedAutoSave, type AutoSaveStatus } from '@/hooks/useDebouncedAutoSave';
 import { MasterDataClearConfirmModal } from '@/components/master-data/MasterDataClearConfirmModal';
 import { DbAdminCampaignWizard } from '@/components/db-admin/DbAdminCampaignWizard';
-import { MasterDataLargeDatasetSearch } from '@/components/master-data/MasterDataLargeDatasetSearch';
+import { MasterDatabaseExplorer } from '@/components/master-database/MasterDatabaseExplorer';
 
 import {
   alignRowToMasterHeaders,
@@ -830,17 +830,15 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
             </>
           )}
         </div>
-      ) : isLargeDatasetPreview && !isDbAdminView && totalRows > 5000 ? (
-        <MasterDataLargeDatasetSearch
-          headers={data.headers}
-          fileName={data.fileName}
-          totalRows={totalRows}
-          coverage={coverage}
-          campaignRowFilter={activeViewTab.filter}
-          initialRows={data.rows}
-          initialSourceIndices={previewSourceIndices}
-          onCreateBatch={openBatchModal}
-        />
+      ) : !isDbAdminView && data && (isLargeDatasetPreview || totalRows > 5000) ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <MasterDatabaseExplorer
+            variant="admin"
+            embedded
+            campaignRowFilter={activeViewTab.filter}
+            onCreateBatch={openBatchModal}
+          />
+        </div>
       ) : (
         <div className="flex-1 min-h-0 p-0 bg-slate-100">
           {isLargeDatasetPreview && totalRows > 0 && (

@@ -21,7 +21,7 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     }
 
     // Large master-data uploads can take many minutes — do not throttle.
-    if (url.includes('/master-data/import')) {
+    if (url.includes('/master-data/import') || url.includes('/csv-imports')) {
       return `skip-throttle-${Date.now()}-${Math.random()}`;
     }
 

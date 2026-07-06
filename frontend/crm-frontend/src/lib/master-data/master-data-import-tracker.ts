@@ -1,15 +1,22 @@
 import { masterDataService, type MasterDataImportProgress, type MasterDataSaveMode } from '@/lib/api/master-data.service';
+import {
+  csvImportService,
+  mapCsvImportToProgress,
+} from '@/lib/api/csv-import.service';
 import { useMasterDataImportStore } from '@/store/master-data-import.store';
 import { toast } from '@/stores/toast.store';
 import { estimatePartsFromFileSize } from '@/lib/master-data/split-upload-parts';
 
 const STORAGE_KEY = 'quoreb2b-master-import-job';
 
+type ImportPipeline = 'csv-import' | 'legacy';
+
 interface PersistedImportJob {
   jobId: string;
   fileName: string;
   mode: MasterDataSaveMode;
   startedAt: string;
+  pipeline?: ImportPipeline;
   progress?: MasterDataImportProgress;
   uploadPartIndex?: number;
   uploadPartTotal?: number;
@@ -96,6 +103,79 @@ export function hydrateMasterImportFromStorage(): void {
   }
 }
 
+async function pollCsvImportUntilDone(
+  jobId: string,
+  fileName: string,
+  mode: MasterDataSaveMode,
+  options?: { silentComplete?: boolean },
+) {
+  if (pollingJobId === jobId) return;
+  pollingJobId = jobId;
+
+  const store = useMasterDataImportStore.getState();
+  store.setJobId(jobId);
+  if (!store.fileName) {
+    useMasterDataImportStore.setState({ fileName, mode, uiPhase: 'active' });
+  }
+
+  const deadline = Date.now() + 10_800_000;
+  let pollMs = 800;
+  let lastPercent = -1;
+
+  try {
+    while (Date.now() < deadline) {
+      await sleep(pollMs);
+      const status = await csvImportService.getJobStatus(jobId);
+      const mapped = mapCsvImportToProgress(status);
+      if (mapped.percent === lastPercent && mapped.phase !== 'done' && mapped.phase !== 'failed') {
+        pollMs = Math.min(pollMs + 400, 5000);
+      } else {
+        pollMs = 800;
+        lastPercent = mapped.percent;
+      }
+      applyProgress(mapped);
+
+      if (status.status === 'completed') {
+        if (!options?.silentComplete) {
+          clearPersistedJob();
+          useMasterDataImportStore.getState().markDone();
+          const rowCount = status.progress?.success ?? status.progress?.processed ?? 0;
+          toast.success(
+            mode === 'append' ? 'Master data import complete' : 'Master data replaced',
+            rowCount > 0
+              ? `${rowCount.toLocaleString()} rows in database`
+              : 'Import finished successfully',
+          );
+          window.dispatchEvent(new CustomEvent('master-data-updated'));
+          setTimeout(() => useMasterDataImportStore.getState().reset(), 8000);
+        }
+        return;
+      }
+
+      if (status.status === 'failed' || status.status === 'cancelled') {
+        clearPersistedJob();
+        useMasterDataImportStore.getState().markFailed();
+        const msg = status.errorMessage || status.progress?.message || 'Import failed';
+        toast.error('Master data import failed', msg);
+        setTimeout(() => useMasterDataImportStore.getState().reset(), 3000);
+        throw new Error(msg);
+      }
+    }
+    throw new Error('Import timed out — check back later or retry with a smaller file.');
+  } catch (err) {
+    if (!options?.silentComplete && useMasterDataImportStore.getState().uiPhase !== 'failed') {
+      clearPersistedJob();
+      useMasterDataImportStore.getState().markFailed();
+      const msg = err instanceof Error ? err.message : 'Import failed';
+      toast.error('Master data import failed', msg);
+      setTimeout(() => useMasterDataImportStore.getState().reset(), 3000);
+    }
+    throw err;
+  } finally {
+    if (pollingJobId === jobId) pollingJobId = null;
+  }
+}
+
 async function pollImportUntilDone(
   jobId: string,
   fileName: string,
@@ -104,8 +184,13 @@ async function pollImportUntilDone(
     silentComplete?: boolean;
     uploadPartIndex?: number;
     uploadPartTotal?: number;
+    pipeline?: ImportPipeline;
   },
 ) {
+  if (options?.pipeline === 'csv-import') {
+    return pollCsvImportUntilDone(jobId, fileName, mode, options);
+  }
+
   if (pollingJobId === jobId) return;
   pollingJobId = jobId;
 
@@ -197,30 +282,47 @@ export async function enqueueMasterDataImport(
   masterDataService.validateUploadFile(file);
   store.begin(file.name, mode);
 
+  const useEnterpriseCsv = csvImportService.isCsvFile(file);
+
   try {
-    const estParts = estimatePartsFromFileSize(file);
-    if (estParts > 1) {
+    if (!useEnterpriseCsv) {
+      const estParts = estimatePartsFromFileSize(file);
+      if (estParts > 1) {
+        applyProgress({
+          percent: 5,
+          phase: 'uploading',
+          message: `Uploading full file — server will save in ~${estParts} batches of 50k rows…`,
+          totalParts: estParts,
+        });
+      }
+    } else {
       applyProgress({
-        percent: 5,
+        percent: 2,
         phase: 'uploading',
-        message: `Uploading full file — server will save in ~${estParts} batches of 50k rows…`,
-        totalParts: estParts,
+        message: 'Uploading CSV to S3 — processing continues on the server…',
       });
     }
 
-    const jobId = await masterDataService.uploadImportJob(file, mode, (progress) => {
-      applyProgress(progress);
-    });
+    const jobId = useEnterpriseCsv
+      ? await csvImportService.uploadAndQueue(file, mode, (progress) => {
+          applyProgress(progress);
+        })
+      : await masterDataService.uploadImportJob(file, mode, (progress) => {
+          applyProgress(progress);
+        });
+
+    const pipeline: ImportPipeline = useEnterpriseCsv ? 'csv-import' : 'legacy';
 
     persistJob({
       jobId,
       fileName: file.name,
       mode,
+      pipeline,
       startedAt: new Date().toISOString(),
       progress: useMasterDataImportStore.getState().progress ?? undefined,
     });
 
-    void pollImportUntilDone(jobId, file.name, mode);
+    void pollImportUntilDone(jobId, file.name, mode, { pipeline });
   } catch (err) {
     useMasterDataImportStore.getState().markFailed();
     throw err;
@@ -234,7 +336,30 @@ export async function resumeMasterDataImportIfNeeded(): Promise<void> {
 
   hydrateMasterImportFromStorage();
 
+  const pipeline = saved.pipeline ?? 'legacy';
+
   try {
+    if (pipeline === 'csv-import') {
+      const status = await csvImportService.getJobStatus(saved.jobId);
+      if (status.status === 'completed') {
+        clearPersistedJob();
+        useMasterDataImportStore.getState().reset();
+        window.dispatchEvent(new CustomEvent('master-data-updated'));
+        return;
+      }
+      if (status.status === 'failed' || status.status === 'cancelled') {
+        clearPersistedJob();
+        useMasterDataImportStore.getState().reset();
+        return;
+      }
+
+      applyProgress(mapCsvImportToProgress(status));
+      void pollImportUntilDone(saved.jobId, saved.fileName, saved.mode, {
+        pipeline: 'csv-import',
+      });
+      return;
+    }
+
     const status = await masterDataService.getImportJobStatus(saved.jobId);
     if (status.phase === 'done') {
       clearPersistedJob();
@@ -255,6 +380,7 @@ export async function resumeMasterDataImportIfNeeded(): Promise<void> {
     void pollImportUntilDone(saved.jobId, saved.fileName, saved.mode, {
       uploadPartIndex: saved.uploadPartIndex,
       uploadPartTotal: saved.uploadPartTotal,
+      pipeline: 'legacy',
     });
   } catch (err) {
     const status = (err as { response?: { status?: number } })?.response?.status;
@@ -262,6 +388,5 @@ export async function resumeMasterDataImportIfNeeded(): Promise<void> {
       clearPersistedJob();
       useMasterDataImportStore.getState().reset();
     }
-    // Keep persisted job for other errors — retry on next focus when auth is ready.
   }
 }

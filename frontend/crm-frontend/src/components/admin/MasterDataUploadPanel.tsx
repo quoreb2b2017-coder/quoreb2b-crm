@@ -76,6 +76,11 @@ const MASTER_DATA_VIEW_TABS: Array<{
   },
 ];
 
+function safeCount(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function rowKey(row: string[]) {
   return row.join('\u001f');
 }
@@ -189,7 +194,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
     setData(sheet);
     setFilteredRows(sheet.rows);
     setFilteredViewActive(false);
-    setTotalRows(record.rowCount);
+    setTotalRows(safeCount(record.rowCount));
     setIsLargeDatasetPreview(false);
     setPreviewSourceIndices([]);
     setSavedAt(record.updatedAt ?? record.createdAt ?? new Date().toISOString());
@@ -308,7 +313,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
         const msg =
           'Master data exists but row data was not returned for this role. Open as Super Admin, or redeploy the latest backend.';
         setError(msg);
-        setTotalRows(record.rowCount);
+        setTotalRows(safeCount(record.rowCount));
         toast.error('Cannot load master grid', msg);
         return;
       }
@@ -333,7 +338,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
         setIsLargeDatasetPreview(true);
         setFilteredRows(previewRows);
         setFilteredViewActive(false);
-        setTotalRows(rowCount);
+        setTotalRows(safeCount(rowCount));
         setSavedAt(record.updatedAt ?? record.createdAt ?? new Date().toISOString());
         setDirty(false);
         await loadCoverage();
@@ -345,7 +350,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
         const msg =
           'Master data row count is set but no rows arrived from the API. Check backend deploy, CORS, and API timeout.';
         setError(msg);
-        setTotalRows(record.rowCount);
+        setTotalRows(safeCount(record.rowCount));
         toast.error('Master data incomplete', msg);
         return;
       }
@@ -546,9 +551,9 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   const busy = parsing || savingDb || loadingDb;
 
   const coverageStats = {
-    total: coverage?.summary.totalRows ?? totalRows,
-    inCampaign: coverage?.summary.batchedRows ?? 0,
-    remaining: coverage?.summary.availableRows ?? totalRows,
+    total: safeCount(coverage?.summary?.totalRows ?? totalRows),
+    inCampaign: safeCount(coverage?.summary?.batchedRows),
+    remaining: safeCount(coverage?.summary?.availableRows ?? totalRows),
   };
 
   const activeViewTab =
@@ -652,7 +657,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
             {MASTER_DATA_VIEW_TABS.map((tab) => {
               const active = dataViewTab === tab.id;
               const Icon = tab.icon;
-              const count = tabCounts[tab.id].toLocaleString('en-US');
+              const count = safeCount(tabCounts[tab.id]).toLocaleString('en-US');
               return (
                 <button
                   key={tab.id}
@@ -767,7 +772,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
         <div className="flex-1 min-h-0 p-0 bg-slate-100">
           {isLargeDatasetPreview && totalRows > 0 && (
             <div className="border-b border-[#2e7ad1]/20 bg-[#e8f1fb] px-4 py-2 text-xs text-[#1d5a9e]">
-              <strong>{totalRows.toLocaleString('en-US')} contacts</strong> saved in master database.
+              <strong>{safeCount(totalRows).toLocaleString('en-US')} contacts</strong> saved in master database.
               Grid shows the first {(data.rows?.length ?? 0).toLocaleString('en-US')} rows as preview — use column filters or{' '}
               <span className="font-semibold">DB Admin → Master File</span> for full search across all data.
             </div>

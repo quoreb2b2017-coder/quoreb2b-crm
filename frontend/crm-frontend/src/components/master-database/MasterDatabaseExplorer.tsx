@@ -43,6 +43,12 @@ import { MasterDataClearConfirmModal } from '@/components/master-data/MasterData
 import { DbAdminCampaignWizard } from '@/components/db-admin/DbAdminCampaignWizard';
 import { MasterDatabaseFilterPanel, MasterDatabaseFilterTags } from './MasterDatabaseFilterPanel';
 import { MasterDatabaseFilterSidebar } from './MasterDatabaseFilterSidebar';
+
+function safeCount(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
 import {
   activeDynamicFilterTags,
   applyDynamicFiltersClient,
@@ -373,10 +379,10 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
     const verifiedEmails = displayRows.filter((r) => hasValidEmail(r, headers)).length;
     const verifiedPhones = displayRows.filter((r) => hasValidPhone(r, headers)).length;
     return {
-      total: masterTotalRows,
-      filtered: hasSearched ? filteredTotal : isDbAdmin ? 0 : masterTotalRows,
-      inCampaign: coverage?.summary.batchedRows ?? 0,
-      available: coverage?.summary.availableRows ?? masterTotalRows,
+      total: safeCount(masterTotalRows),
+      filtered: safeCount(hasSearched ? filteredTotal : isDbAdmin ? 0 : masterTotalRows),
+      inCampaign: safeCount(coverage?.summary?.batchedRows),
+      available: safeCount(coverage?.summary?.availableRows ?? masterTotalRows),
       verifiedEmails: hasSearched ? verifiedEmails : 0,
       verifiedPhones: hasSearched ? verifiedPhones : 0,
       selected: selected.size,

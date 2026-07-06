@@ -141,4 +141,14 @@ export class CsvImportJobRepository {
   async setTotalBatches(jobId: string, totalBatches: number): Promise<void> {
     await this.jobModel.updateOne({ jobId }, { $set: { totalBatches } }).exec();
   }
+
+  /** Jobs that were processing when the server stopped — safe to re-enqueue. */
+  findRecoverableJobs(): Promise<CsvImportJob[]> {
+    return this.jobModel
+      .find({
+        status: { $in: ['queued', 'processing'] },
+        cancelRequested: { $ne: true },
+      })
+      .exec();
+  }
 }

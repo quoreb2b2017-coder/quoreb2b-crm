@@ -12,6 +12,7 @@ import { CsvImportProcessorService } from './services/csv-import-processor.servi
 import { CsvImportQueueService } from './services/csv-import-queue.service';
 import { CsvImportQueueServiceNoop } from './services/csv-import-queue.service.noop';
 import { CsvImportLockService } from './services/csv-import-lock.service';
+import { CsvImportRecoveryService } from './services/csv-import-recovery.service';
 import {
   CsvImportOrchestratorWorker,
   CsvImportBatchWorker,
@@ -47,6 +48,7 @@ const coreProviders = [
   CsvImportBatchWriterService,
   CsvImportProcessorService,
   CsvImportLockService,
+  CsvImportRecoveryService,
 ];
 
 @Module({})

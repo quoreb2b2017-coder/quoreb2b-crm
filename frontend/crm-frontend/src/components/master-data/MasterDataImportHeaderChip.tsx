@@ -16,7 +16,7 @@ export function MasterDataImportHeaderChip() {
     : 0;
   const rowLabel =
     progress.totalRows != null && progress.totalRows > 0
-      ? `${(progress.rowsProcessed ?? 0).toLocaleString()}/${progress.totalRows.toLocaleString()}`
+      ? `${(progress.rowsProcessed ?? 0).toLocaleString()}/${(Number(progress.totalRows) || 0).toLocaleString()}`
       : null;
 
   return (

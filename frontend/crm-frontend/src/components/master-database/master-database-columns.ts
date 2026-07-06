@@ -284,7 +284,7 @@ export function pickQuickFilterColumns(
 export function canAutoSearchMasterData(filters: DynamicMasterDbFilters): boolean {
   const q = filters.globalQuery.trim();
   if (q.length >= 2) return true;
-  if (Object.values(filters.columnText).some((v) => v.trim().length >= 1)) return true;
+  if (Object.values(filters.columnText).some((v) => v.trim().length >= 2)) return true;
   if (Object.values(filters.columnValues).some((s) => s.size > 0)) return true;
   if (Object.values(filters.columnDateRanges).some((r) => r.from?.trim() || r.to?.trim())) {
     return true;

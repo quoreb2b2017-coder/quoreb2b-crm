@@ -837,6 +837,8 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
           totalRows={totalRows}
           coverage={coverage}
           campaignRowFilter={activeViewTab.filter}
+          initialRows={data.rows}
+          initialSourceIndices={previewSourceIndices}
           onCreateBatch={openBatchModal}
         />
       ) : (

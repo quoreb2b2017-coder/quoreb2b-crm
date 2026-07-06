@@ -1985,25 +1985,26 @@ export class MasterDataService {
       };
     }
 
-    const allRows = await this.loadExistingRows(doc);
-    const indices = filterMasterDataRows(allRows, headers, {
+    const filterInput = {
       query,
       columnFilters,
       columnValueFilters: dto.columnValueFilters,
       columnDateRangeFilters: dto.columnDateRangeFilters,
       mustExistColumns: dto.mustExistColumns,
       filters: dto.filters,
-    });
+    };
+
+    const indices = await this.rowStore.filterChunkedRowIndices(doc, headers, filterInput);
 
     const totalMatches = indices.length;
     const start = (page - 1) * limit;
     const pageIndices = indices.slice(start, start + limit);
-    const rows = pageIndices.map((i) => allRows[i]);
+    const rows = await this.rowStore.getRowsByIndices(doc, pageIndices);
 
     const masterRevision = (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? 0;
     const fullCoverage = await this.batchesService.getMasterBatchCoverage(
       headers,
-      allRows,
+      rows,
       masterRevision,
     );
     const batchedByRow: Record<string, Array<{ id: string; name: string }>> = {};
@@ -2046,11 +2047,11 @@ export class MasterDataService {
       (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ??
       this.rowStore.getRowCount(doc);
     return this.cache.wrap(
-      `master:filter-schema:${revision}`,
+      `master:filter-schema:v2:${revision}`,
       cacheTtlSeconds(this.config, 'long'),
       async () => {
         const headers = doc.headers as string[];
-        const rows = await this.loadExistingRows(doc);
+        const rows = await this.rowStore.loadSampleRows(doc, 5000);
         const columns = buildMasterDataFilterSchema(headers, rows);
         return {
           totalRows: this.rowStore.getRowCount(doc),
@@ -2085,7 +2086,7 @@ export class MasterDataService {
       cacheKey,
       cacheTtlSeconds(this.config, 'short'),
       async () => {
-        const rows = await this.loadExistingRows(doc);
+        const rows = await this.rowStore.loadSampleRows(doc, 10_000);
         return {
           header,
           options: distinctColumnValues(headers, rows, header, q, limit),

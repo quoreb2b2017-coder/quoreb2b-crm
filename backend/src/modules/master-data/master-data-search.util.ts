@@ -174,6 +174,15 @@ export function hasMasterDataSearchCriteria(input: {
   return false;
 }
 
+/** True when a single row passes the same criteria as filterMasterDataRows. */
+export function rowMatchesMasterDataFilters(
+  row: string[],
+  headers: string[],
+  input: Parameters<typeof filterMasterDataRows>[2],
+): boolean {
+  return filterMasterDataRows([row], headers, input).length === 1;
+}
+
 export function filterMasterDataRows(
   allRows: string[][],
   headers: string[],

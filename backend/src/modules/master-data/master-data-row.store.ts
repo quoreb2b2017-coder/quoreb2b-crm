@@ -9,6 +9,21 @@ import {
   rowKey,
   type SheetSnapshot,
 } from './master-data-merge.util';
+import {
+  filterMasterDataRows,
+  rowMatchesMasterDataFilters,
+} from './master-data-search.util';
+import type { SearchMasterDataDto } from './dto/search-master-data.dto';
+
+export type MasterDataFilterInput = Pick<
+  SearchMasterDataDto,
+  | 'query'
+  | 'columnFilters'
+  | 'columnValueFilters'
+  | 'columnDateRangeFilters'
+  | 'mustExistColumns'
+  | 'filters'
+>;
 
 export const MASTER_DATA_CHUNK_SIZE = 1000;
 export const MASTER_DATA_INLINE_ROW_LIMIT = 5000;
@@ -451,5 +466,54 @@ export class MasterDataRowStore {
     }
 
     return { rows, sourceRowIndices };
+  }
+
+  /** First N rows for filter-schema sampling (avoids loading full dataset). */
+  async loadSampleRows(
+    doc: Pick<MasterDataRecord, 'key' | 'rows' | 'storage'>,
+    maxRows = 5000,
+  ): Promise<string[][]> {
+    const { rows } = await this.loadPageRows(doc, 0, maxRows);
+    return rows;
+  }
+
+  /**
+   * Scan chunked storage and return absolute row indices matching filters (streams chunks).
+   */
+  async filterChunkedRowIndices(
+    doc: Pick<MasterDataRecord, 'key' | 'rows' | 'storage'>,
+    headers: string[],
+    input: MasterDataFilterInput,
+  ): Promise<number[]> {
+    if (!this.isChunked(doc)) {
+      const all = (doc.rows as string[][]) ?? [];
+      return filterMasterDataRows(all, headers, input);
+    }
+
+    const indices: number[] = [];
+    const chunkSize = MASTER_DATA_CHUNK_SIZE;
+    const cursor = this.chunkModel
+      .find({ masterKey: doc.key })
+      .sort({ chunkIndex: 1 })
+      .select('chunkIndex rows')
+      .lean()
+      .cursor();
+
+    let scanned = 0;
+    for await (const chunk of cursor) {
+      const chunkRows = (chunk.rows as string[][]) ?? [];
+      for (let i = 0; i < chunkRows.length; i += 1) {
+        const absIdx = chunk.chunkIndex * chunkSize + i;
+        if (rowMatchesMasterDataFilters(chunkRows[i], headers, input)) {
+          indices.push(absIdx);
+        }
+      }
+      scanned += chunkRows.length;
+      if (scanned % 50_000 === 0) {
+        await yieldToEventLoop();
+      }
+    }
+
+    return indices;
   }
 }

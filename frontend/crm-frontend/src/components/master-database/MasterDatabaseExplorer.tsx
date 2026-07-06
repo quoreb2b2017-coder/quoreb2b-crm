@@ -221,6 +221,31 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
   }, [loadData]);
 
   useEffect(() => {
+    if (loading || isDbAdmin || !isLargeMasterDataset || hasSearched) return;
+    let cancelled = false;
+    setSearching(true);
+    void masterDataService
+      .search({ page: 1, limit: pageSize })
+      .then((result) => {
+        if (cancelled) return;
+        setDisplayRows(result.rows);
+        setSourceIndices(result.sourceRowIndices);
+        setFilteredTotal(result.totalRows);
+        setBatchedByRow(result.batchedByRow ?? {});
+        setHasSearched(true);
+      })
+      .catch((e) => {
+        if (!cancelled) toast.error('Could not load data', extractApiError(e));
+      })
+      .finally(() => {
+        if (!cancelled) setSearching(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasSearched, isDbAdmin, isLargeMasterDataset, loading, pageSize]);
+
+  useEffect(() => {
     if (!isDbAdmin) return;
     const onBatchCreated = () => void loadCoverage();
     window.addEventListener('batch-created', onBatchCreated);
@@ -232,6 +257,7 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
   }, [isDbAdmin, loadCoverage]);
 
   const useServerSearch = isDbAdmin || isLargeMasterDataset;
+  const useFilterSidebar = isDbAdmin || isLargeMasterDataset;
 
   const executeSearch = useCallback(
     async (targetPage: number, targetPageSize: number, opts?: { resetSelection?: boolean }) => {
@@ -655,11 +681,11 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
   }
 
   return (
-    <div className={`mdb-page${isDbAdmin ? ' mdb-page--db-admin' : ''}`}>
+    <div className={`mdb-page${useFilterSidebar ? ' mdb-page--db-admin' : ''}`}>
       <input ref={inputRef} type="file" accept={ACCEPT} className="sr-only" onChange={onFileChange} />
 
-      <div className={isDbAdmin ? `mdb-layout${filterSidebarOpen ? ' mdb-layout--sidebar-open' : ''}` : undefined}>
-        {isDbAdmin && filterColumns.length > 0 && (
+      <div className={useFilterSidebar ? `mdb-layout${filterSidebarOpen ? ' mdb-layout--sidebar-open' : ''}` : undefined}>
+        {useFilterSidebar && filterColumns.length > 0 && (
           <MasterDatabaseFilterSidebar
             open={filterSidebarOpen}
             onOpenChange={setFilterSidebarOpen}
@@ -677,9 +703,9 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
           />
         )}
 
-        <div className={isDbAdmin ? 'mdb-main' : undefined}>
+        <div className={useFilterSidebar ? 'mdb-main' : undefined}>
       <div className="mdb-scroll">
-        {isDbAdmin ? (
+        {useFilterSidebar ? (
           <div className="mdb-titlebar">
             <div className="mdb-titlebar__brand">
               <span className="mdb-titlebar__icon">
@@ -801,7 +827,7 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
 
         {/* Filters — admin inline only */}
         {filterColumns.length > 0 ? (
-          !isDbAdmin ? (
+          !useFilterSidebar ? (
             <>
               <MasterDatabaseFilterPanel
                 columns={filterColumns}
@@ -822,7 +848,7 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
           </div>
         )}
 
-        {isDbAdmin && !hasSearched && !filterSidebarOpen && (
+        {useFilterSidebar && !hasSearched && !filterSidebarOpen && (
           <div className="mdb-db-hint mdb-db-hint--inline">
             <PanelLeftOpen className="h-3.5 w-3.5 shrink-0" />
             Open <strong>Filters</strong> from the left to search master data.
@@ -830,10 +856,10 @@ export function MasterDatabaseExplorer({ variant = 'admin' }: { variant?: Master
         )}
 
         {/* Workbook */}
-        <div className={`mdb-table-card${isDbAdmin ? ' mdb-table-card--workbook' : ''}`}>
+        <div className={`mdb-table-card${useFilterSidebar ? ' mdb-table-card--workbook' : ''}`}>
           <div className="mdb-table-toolbar">
             <div className="mdb-table-toolbar__left">
-              {isDbAdmin && !filterSidebarOpen && (
+              {useFilterSidebar && !filterSidebarOpen && (
                 <button
                   type="button"
                   className="mdb-btn mdb-btn--filter"

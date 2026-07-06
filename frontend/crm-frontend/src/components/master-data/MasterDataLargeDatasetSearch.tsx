@@ -3,15 +3,17 @@
 import '../master-database/master-database.css';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Database, Filter, Loader2, PanelLeftOpen, Users } from 'lucide-react';
+import { Filter, Loader2, PanelLeftOpen, Users } from 'lucide-react';
 import { ExcelPreviewGrid } from '@/components/admin/ExcelPreviewGrid';
 import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
+import { downloadSpreadsheetXlsx } from '@/lib/spreadsheet/export-spreadsheet';
 import {
   masterDataService,
   type MasterBatchCoverage,
 } from '@/lib/api/master-data.service';
 import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
+import { useCanExportSpreadsheet } from '@/hooks/useSpreadsheetCopyGuard';
 import { MasterDatabaseFilterSidebar } from '@/components/master-database/MasterDatabaseFilterSidebar';
 import {
   activeDynamicFilterTags,
@@ -23,8 +25,10 @@ import {
   type MasterDataColumnFilterSchema,
 } from '@/components/master-database/master-database-columns';
 
-const PAGE_SIZES = [20, 50, 100, 200];
+const PAGE_SIZES = [50, 100, 200];
+const DEFAULT_PAGE_SIZE = 100;
 const CAMPAIGN_FETCH_CAP = 2000;
+const AUTO_SEARCH_MS = 700;
 
 function toggleSet(set: Set<string>, value: string): Set<string> {
   const next = new Set(set);
@@ -39,6 +43,8 @@ export interface MasterDataLargeDatasetSearchProps {
   totalRows: number;
   coverage: MasterBatchCoverage | null;
   campaignRowFilter?: 'all' | 'in_campaign' | 'remaining';
+  initialRows?: string[][];
+  initialSourceIndices?: number[];
   onCreateBatch: (payload: {
     rows: string[][];
     headers: string[];
@@ -52,26 +58,30 @@ export function MasterDataLargeDatasetSearch({
   totalRows,
   coverage,
   campaignRowFilter = 'all',
+  initialRows,
+  initialSourceIndices,
   onCreateBatch,
 }: MasterDataLargeDatasetSearchProps) {
+  const canExport = useCanExportSpreadsheet();
   const [headers, setHeaders] = useState(initialHeaders);
   const [filterColumns, setFilterColumns] = useState<MasterDataColumnFilterSchema[]>([]);
   const [filters, setFilters] = useState<DynamicMasterDbFilters>(emptyDynamicMasterDbFilters());
   const [filterSidebarOpen, setFilterSidebarOpen] = useState(true);
-  const [hasSearched, setHasSearched] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [isFilteredView, setIsFilteredView] = useState(false);
   const [searching, setSearching] = useState(false);
-  const [displayRows, setDisplayRows] = useState<string[][]>([]);
-  const [sourceIndices, setSourceIndices] = useState<number[]>([]);
-  const [filteredTotal, setFilteredTotal] = useState(0);
+  const [displayRows, setDisplayRows] = useState<string[][]>(initialRows ?? []);
+  const [sourceIndices, setSourceIndices] = useState<number[]>(initialSourceIndices ?? []);
+  const [resultTotal, setResultTotal] = useState(totalRows);
   const [batchedByRow, setBatchedByRow] = useState<MasterBatchCoverage['batchedByRow']>({});
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(50);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [loadingCampaignRows, setLoadingCampaignRows] = useState(false);
-  const [schemaLoading, setSchemaLoading] = useState(true);
 
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
+  const loadGen = useRef(0);
 
   const onFiltersChange = useCallback((next: DynamicMasterDbFilters) => {
     filtersRef.current = next;
@@ -83,35 +93,62 @@ export function MasterDataLargeDatasetSearch({
   }, [initialHeaders]);
 
   useEffect(() => {
-    let cancelled = false;
-    setSchemaLoading(true);
     void masterDataService
       .getFilterSchema()
       .then((schema) => {
-        if (cancelled) return;
         setFilterColumns(schema.columns);
         if (schema.headers?.length) setHeaders(schema.headers);
       })
-      .catch((err) => {
-        if (cancelled) return;
-        setFilterColumns([]);
-        toast.error('Could not load filters', extractApiError(err));
-      })
-      .finally(() => {
-        if (!cancelled) setSchemaLoading(false);
+      .catch(() => {
+        /* filters optional — browse still works */
       });
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
-  const executeSearch = useCallback(
+  const applyResult = useCallback(
+    (
+      result: Awaited<ReturnType<typeof masterDataService.search>>,
+      filtered: boolean,
+      opts?: { resetSelection?: boolean },
+    ) => {
+      setDisplayRows(result.rows ?? []);
+      setSourceIndices(result.sourceRowIndices ?? []);
+      setResultTotal(filtered ? result.totalMatches : result.totalRows);
+      setBatchedByRow(result.batchedByRow ?? {});
+      setHasLoaded(true);
+      setIsFilteredView(filtered);
+      if (opts?.resetSelection !== false) setSelected(new Set());
+    },
+    [],
+  );
+
+  const loadBrowsePage = useCallback(
+    async (targetPage: number, targetPageSize: number, opts?: { resetSelection?: boolean }) => {
+      const gen = ++loadGen.current;
+      setSearching(true);
+      try {
+        const result = await masterDataService.search({
+          page: targetPage,
+          limit: targetPageSize,
+        });
+        if (gen !== loadGen.current) return;
+        applyResult(result, false, opts);
+      } catch (e) {
+        if (gen !== loadGen.current) return;
+        toast.error('Could not load data', extractApiError(e));
+      } finally {
+        if (gen === loadGen.current) setSearching(false);
+      }
+    },
+    [applyResult],
+  );
+
+  const executeFilteredSearch = useCallback(
     async (targetPage: number, targetPageSize: number, opts?: { resetSelection?: boolean }) => {
       const activeFilters = filtersRef.current;
       if (!hasAnyDynamicSearchCriteria(activeFilters)) {
-        toast.error('Add filters', 'Type to search or pick a quick filter');
-        return;
+        return loadBrowsePage(targetPage, targetPageSize, opts);
       }
+      const gen = ++loadGen.current;
       setSearching(true);
       try {
         const payload = serializeDynamicSearchPayload(activeFilters, headers);
@@ -120,33 +157,46 @@ export function MasterDataLargeDatasetSearch({
           page: targetPage,
           limit: targetPageSize,
         });
-        setDisplayRows(result.rows);
-        setSourceIndices(result.sourceRowIndices);
-        setFilteredTotal(result.totalMatches);
-        setBatchedByRow(result.batchedByRow);
-        setHasSearched(true);
-        if (opts?.resetSelection !== false) setSelected(new Set());
+        if (gen !== loadGen.current) return;
+        applyResult(result, true, opts);
       } catch (e) {
+        if (gen !== loadGen.current) return;
         toast.error('Search failed', extractApiError(e));
       } finally {
-        setSearching(false);
+        if (gen === loadGen.current) setSearching(false);
       }
     },
-    [headers],
+    [applyResult, headers, loadBrowsePage],
   );
+
+  useEffect(() => {
+    if (initialRows?.length) {
+      setHasLoaded(true);
+      setIsFilteredView(false);
+      setResultTotal(totalRows);
+      return;
+    }
+    void loadBrowsePage(1, DEFAULT_PAGE_SIZE);
+  }, [initialRows, loadBrowsePage, totalRows]);
 
   const runSearch = useCallback(async () => {
     setPage(1);
-    await executeSearch(1, pageSize, { resetSelection: true });
-  }, [executeSearch, pageSize]);
+    await executeFilteredSearch(1, pageSize, { resetSelection: true });
+  }, [executeFilteredSearch, pageSize]);
 
   useEffect(() => {
-    if (!canAutoSearchMasterData(filters)) return;
+    if (!canAutoSearchMasterData(filters)) {
+      if (!hasAnyDynamicSearchCriteria(filters) && isFilteredView) {
+        setPage(1);
+        void loadBrowsePage(1, pageSize, { resetSelection: true });
+      }
+      return;
+    }
     const timer = setTimeout(() => {
       void runSearch();
-    }, 400);
+    }, AUTO_SEARCH_MS);
     return () => clearTimeout(timer);
-  }, [filters, runSearch]);
+  }, [filters, isFilteredView, loadBrowsePage, pageSize, runSearch]);
 
   const clearFilters = useCallback(() => {
     const empty = emptyDynamicMasterDbFilters();
@@ -154,11 +204,8 @@ export function MasterDataLargeDatasetSearch({
     setFilters(empty);
     setSelected(new Set());
     setPage(1);
-    setDisplayRows([]);
-    setSourceIndices([]);
-    setHasSearched(false);
-    setFilteredTotal(0);
-  }, []);
+    void loadBrowsePage(1, pageSize, { resetSelection: true });
+  }, [loadBrowsePage, pageSize]);
 
   const removeTag = useCallback(
     (key: string) => {
@@ -202,17 +249,19 @@ export function MasterDataLargeDatasetSearch({
   );
 
   const tags = activeDynamicFilterTags(filters);
-  const totalPages = Math.max(1, Math.ceil(filteredTotal / pageSize));
+  const totalPages = Math.max(1, Math.ceil(resultTotal / pageSize));
 
   const goToPage = (p: number) => {
     setPage(p);
-    if (hasSearched) void executeSearch(p, pageSize, { resetSelection: false });
+    if (isFilteredView) void executeFilteredSearch(p, pageSize, { resetSelection: false });
+    else void loadBrowsePage(p, pageSize, { resetSelection: false });
   };
 
   const changePageSize = (size: number) => {
     setPageSize(size);
     setPage(1);
-    if (hasSearched) void executeSearch(1, size, { resetSelection: false });
+    if (isFilteredView) void executeFilteredSearch(1, size, { resetSelection: false });
+    else void loadBrowsePage(1, size, { resetSelection: false });
   };
 
   const mergedBatchedByRow = useMemo(
@@ -231,12 +280,15 @@ export function MasterDataLargeDatasetSearch({
   );
 
   const gridResetKey = useMemo(
-    () => `p${page}-s${pageSize}-${sourceIndices.join('.')}-${hasSearched}`,
-    [hasSearched, page, pageSize, sourceIndices],
+    () => `p${page}-s${pageSize}-${sourceIndices.join('.')}-${isFilteredView}`,
+    [isFilteredView, page, pageSize, sourceIndices],
   );
 
   const allPageSelected =
     sourceIndices.length > 0 && sourceIndices.every((i) => selected.has(i));
+
+  const allFilteredSelected =
+    hasLoaded && resultTotal > 0 && selected.size >= Math.min(resultTotal, CAMPAIGN_FETCH_CAP);
 
   const toggleSelectAllPage = () => {
     setSelected((prev) => {
@@ -260,25 +312,30 @@ export function MasterDataLargeDatasetSearch({
   };
 
   const fetchAllFilteredForCampaign = useCallback(async () => {
-    const payload = serializeDynamicSearchPayload(filtersRef.current, headers);
-    const limit = Math.min(Math.max(filteredTotal, 1), CAMPAIGN_FETCH_CAP);
-    const result = await masterDataService.search({
-      ...payload,
-      page: 1,
-      limit,
-    });
-    if (result.totalMatches > limit) {
-      toast.error(
-        'Too many results',
-        `Showing first ${limit.toLocaleString('en-US')} of ${result.totalMatches.toLocaleString('en-US')} — narrow filters`,
-      );
+    if (!isFilteredView) {
+      const limit = Math.min(Math.max(resultTotal, 1), CAMPAIGN_FETCH_CAP);
+      return masterDataService.search({ page: 1, limit });
     }
-    return result;
-  }, [filteredTotal, headers]);
+    const payload = serializeDynamicSearchPayload(filtersRef.current, headers);
+    const limit = Math.min(Math.max(resultTotal, 1), CAMPAIGN_FETCH_CAP);
+    return masterDataService.search({ ...payload, page: 1, limit });
+  }, [headers, isFilteredView, resultTotal]);
+
+  const toggleSelectAllFiltered = () => {
+    if (allFilteredSelected) {
+      setSelected(new Set());
+      return;
+    }
+    setLoadingCampaignRows(true);
+    void fetchAllFilteredForCampaign()
+      .then((all) => setSelected(new Set(all.sourceRowIndices)))
+      .catch((e) => toast.error('Could not select all', extractApiError(e)))
+      .finally(() => setLoadingCampaignRows(false));
+  };
 
   const handleCreateCampaign = async () => {
-    if (!hasSearched || filteredTotal === 0) {
-      toast.error('No data', 'Search and filter master data first');
+    if (!hasLoaded || resultTotal === 0) {
+      toast.error('No data', 'No contacts to create a campaign from');
       return;
     }
     setLoadingCampaignRows(true);
@@ -307,6 +364,14 @@ export function MasterDataLargeDatasetSearch({
           sourceRowIndices: all.sourceRowIndices,
         };
       }
+      const cap = isFilteredView ? all.totalMatches : all.totalRows;
+      if (cap > CAMPAIGN_FETCH_CAP && !selected.size) {
+        toast.error(
+          'Too many results',
+          `Narrow filters — max ${CAMPAIGN_FETCH_CAP.toLocaleString('en-US')} per campaign`,
+        );
+        return;
+      }
       onCreateBatch(payload);
     } catch (e) {
       toast.error('Could not load contacts', extractApiError(e));
@@ -315,14 +380,29 @@ export function MasterDataLargeDatasetSearch({
     }
   };
 
-  if (schemaLoading) {
-    return (
-      <div className="flex flex-1 items-center justify-center bg-white text-sm text-slate-500 min-h-[320px]">
-        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-        Loading search filters…
-      </div>
-    );
-  }
+  const exportRows = (format: 'csv' | 'xlsx') => {
+    const rows =
+      selected.size > 0
+        ? sourceIndices
+            .map((idx, i) => (selected.has(idx) ? displayRows[i] : null))
+            .filter((r): r is string[] => Boolean(r))
+        : displayRows;
+    const payload = { fileName: fileName || 'master-database', sheetName: 'Master Data', headers, rows };
+    if (format === 'xlsx') {
+      void downloadSpreadsheetXlsx(payload);
+    } else {
+      const csv = [
+        headers.join(','),
+        ...rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')),
+      ].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'master-database.csv';
+      a.click();
+    }
+    toast.success('Export started');
+  };
 
   return (
     <div className="mdb-page mdb-page--db-admin mdb-page--embedded flex min-h-0 flex-1 flex-col">
@@ -340,7 +420,7 @@ export function MasterDataLargeDatasetSearch({
             onSearch={() => void runSearch()}
             onClear={clearFilters}
             searching={searching}
-            resultCount={hasSearched ? filteredTotal : undefined}
+            resultCount={hasLoaded ? resultTotal : undefined}
             tags={tags}
             onRemoveTag={removeTag}
             activeFilterCount={tags.length}
@@ -349,8 +429,21 @@ export function MasterDataLargeDatasetSearch({
 
         <div className="mdb-main flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="border-b border-[#2e7ad1]/20 bg-[#e8f1fb] px-4 py-2 text-xs text-[#1d5a9e]">
-            <strong>{totalRows.toLocaleString('en-US')} contacts</strong> in master database — use{' '}
-            <strong>Filters</strong> to search across all data (not just the 100-row preview).
+            <strong>{totalRows.toLocaleString('en-US')} contacts</strong> in master database.
+            {isFilteredView ? (
+              <>
+                {' '}
+                Showing <strong>{resultTotal.toLocaleString('en-US')}</strong> matches — clear filters to
+                browse all.
+              </>
+            ) : (
+              <>
+                {' '}
+                Showing rows <strong>{(page - 1) * pageSize + 1}</strong>–
+                <strong>{Math.min(page * pageSize, resultTotal)}</strong> — use{' '}
+                <strong>Filters</strong> to search the full database.
+              </>
+            )}
           </div>
 
           <div className="mdb-table-card mdb-table-card--workbook mdb-table-card--embedded flex min-h-0 flex-1 flex-col border-0 shadow-none">
@@ -367,17 +460,34 @@ export function MasterDataLargeDatasetSearch({
                     {tags.length > 0 && <span className="mdb-btn__count">{tags.length}</span>}
                   </button>
                 )}
-                {hasSearched && filteredTotal > 0 && (
-                  <span className="text-xs text-slate-600">
-                    {filteredTotal.toLocaleString('en-US')} matches
-                    {selected.size > 0 ? ` · ${selected.size} selected` : ''}
-                  </span>
+                {hasLoaded && resultTotal > 0 && (
+                  <button
+                    type="button"
+                    className="mdb-btn mdb-btn--ghost"
+                    onClick={toggleSelectAllFiltered}
+                    disabled={loadingCampaignRows}
+                  >
+                    {allFilteredSelected ? 'Clear all' : `Select all ${Math.min(resultTotal, CAMPAIGN_FETCH_CAP).toLocaleString('en-US')}`}
+                  </button>
+                )}
+                {selected.size > 0 && (
+                  <span className="mdb-selection-count">{selected.size.toLocaleString('en-US')} selected</span>
+                )}
+                {canExport && hasLoaded && displayRows.length > 0 && (
+                  <>
+                    <button type="button" className="mdb-btn" onClick={() => exportRows('csv')}>
+                      Export CSV
+                    </button>
+                    <button type="button" className="mdb-btn" onClick={() => exportRows('xlsx')}>
+                      Export Excel
+                    </button>
+                  </>
                 )}
                 <button
                   type="button"
                   className="mdb-btn mdb-btn--green"
                   onClick={() => void handleCreateCampaign()}
-                  disabled={loadingCampaignRows || !hasSearched || filteredTotal === 0}
+                  disabled={loadingCampaignRows || !hasLoaded || resultTotal === 0}
                 >
                   {loadingCampaignRows ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -386,32 +496,17 @@ export function MasterDataLargeDatasetSearch({
                   )}
                   {selected.size > 0
                     ? `Create campaign (${selected.size})`
-                    : hasSearched && filteredTotal > 0
-                      ? `Create campaign (${Math.min(filteredTotal, CAMPAIGN_FETCH_CAP).toLocaleString('en-US')})`
+                    : hasLoaded && resultTotal > 0
+                      ? `Create campaign (${Math.min(resultTotal, CAMPAIGN_FETCH_CAP).toLocaleString('en-US')})`
                       : 'Create campaign'}
                 </button>
               </div>
             </div>
 
-            {!hasSearched ? (
-              <div className="mdb-empty mdb-empty--workbook flex-1">
-                <div className="mdb-empty__icon-wrap">
-                  <Database className="h-8 w-8" />
-                </div>
-                <p className="mdb-empty__title">Search all master data</p>
-                <p className="mdb-empty__sub">
-                  Open <strong>Filters</strong> on the left, pick fields or type a search, then click Search.
-                </p>
-                {!filterSidebarOpen && (
-                  <button
-                    type="button"
-                    className="mdb-btn mdb-btn--filter mt-3"
-                    onClick={() => setFilterSidebarOpen(true)}
-                  >
-                    <PanelLeftOpen className="h-3.5 w-3.5" />
-                    Open filters
-                  </button>
-                )}
+            {!hasLoaded && searching ? (
+              <div className="flex flex-1 items-center justify-center bg-white text-sm text-slate-500">
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                Loading contacts…
               </div>
             ) : (
               <>
@@ -435,7 +530,7 @@ export function MasterDataLargeDatasetSearch({
                     onToggleSourceRow={toggleRow}
                     pageAllSelected={allPageSelected}
                     onTogglePageSelection={toggleSelectAllPage}
-                    datasetRowCount={filteredTotal}
+                    datasetRowCount={resultTotal}
                     onCreateBatch={onCreateBatch}
                   />
                 </div>
@@ -443,14 +538,15 @@ export function MasterDataLargeDatasetSearch({
                 <div className="mdb-pagination">
                   <p>
                     Showing {(page - 1) * pageSize + 1} to{' '}
-                    {Math.min(page * pageSize, filteredTotal)} of{' '}
-                    {filteredTotal.toLocaleString('en-US')} results
+                    {Math.min(page * pageSize, resultTotal)} of{' '}
+                    {resultTotal.toLocaleString('en-US')}
+                    {isFilteredView ? ' matches' : ` of ${totalRows.toLocaleString('en-US')} total`}
                   </p>
                   <div className="mdb-pagination__pages">
                     <button
                       type="button"
                       className="mdb-page-btn"
-                      disabled={page <= 1}
+                      disabled={page <= 1 || searching}
                       onClick={() => goToPage(page - 1)}
                     >
                       ‹
@@ -461,8 +557,9 @@ export function MasterDataLargeDatasetSearch({
                         <button
                           key={p}
                           type="button"
-                          className={`mdb-page-btn${page === p ? ' mdb-page-btn--active' : ''}`}
+                          className={`mdb-page-btn${page === p ? ' is-active' : ''}`}
                           onClick={() => goToPage(p)}
+                          disabled={searching}
                         >
                           {p}
                         </button>
@@ -471,7 +568,7 @@ export function MasterDataLargeDatasetSearch({
                     <button
                       type="button"
                       className="mdb-page-btn"
-                      disabled={page >= totalPages}
+                      disabled={page >= totalPages || searching}
                       onClick={() => goToPage(page + 1)}
                     >
                       ›
@@ -493,10 +590,10 @@ export function MasterDataLargeDatasetSearch({
             )}
           </div>
 
-          {!hasSearched && !filterSidebarOpen && (
+          {!filterSidebarOpen && filterColumns.length > 0 && (
             <div className="mdb-db-hint mdb-db-hint--inline">
               <PanelLeftOpen className="h-3.5 w-3.5 shrink-0" />
-              Open <strong>Filters</strong> from the left to search master data.
+              Open <strong>Filters</strong> from the left — same as DB Admin Master File.
             </div>
           )}
         </div>

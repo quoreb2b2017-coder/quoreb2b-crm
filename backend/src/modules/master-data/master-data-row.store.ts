@@ -400,4 +400,56 @@ export class MasterDataRowStore {
       return row.map((cell) => String(cell ?? ''));
     });
   }
+
+  /**
+   * Read a single page from chunked storage without loading the full dataset.
+   */
+  async loadPageRows(
+    doc: Pick<MasterDataRecord, 'key' | 'rows' | 'storage'>,
+    offset: number,
+    limit: number,
+  ): Promise<{ rows: string[][]; sourceRowIndices: number[] }> {
+    if (limit <= 0 || offset < 0) {
+      return { rows: [], sourceRowIndices: [] };
+    }
+
+    if (!this.isChunked(doc)) {
+      const all = (doc.rows as string[][]) ?? [];
+      const end = Math.min(all.length, offset + limit);
+      const sourceRowIndices: number[] = [];
+      const rows: string[][] = [];
+      for (let i = offset; i < end; i += 1) {
+        sourceRowIndices.push(i);
+        rows.push(all[i] ?? []);
+      }
+      return { rows, sourceRowIndices };
+    }
+
+    const chunkSize = MASTER_DATA_CHUNK_SIZE;
+    const startChunk = Math.floor(offset / chunkSize);
+    const endChunk = Math.floor((offset + limit - 1) / chunkSize);
+
+    const chunks = await this.chunkModel
+      .find({ masterKey: doc.key, chunkIndex: { $gte: startChunk, $lte: endChunk } })
+      .sort({ chunkIndex: 1 })
+      .select('chunkIndex rows')
+      .lean()
+      .exec();
+
+    const rows: string[][] = [];
+    const sourceRowIndices: number[] = [];
+
+    for (const chunk of chunks) {
+      const chunkRows = (chunk.rows as string[][]) ?? [];
+      for (let i = 0; i < chunkRows.length; i += 1) {
+        const absIdx = chunk.chunkIndex * chunkSize + i;
+        if (absIdx < offset) continue;
+        if (absIdx >= offset + limit) return { rows, sourceRowIndices };
+        sourceRowIndices.push(absIdx);
+        rows.push(chunkRows[i]);
+      }
+    }
+
+    return { rows, sourceRowIndices };
+  }
 }

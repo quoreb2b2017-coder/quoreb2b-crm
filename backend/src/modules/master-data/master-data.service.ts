@@ -1915,8 +1915,38 @@ export class MasterDataService {
     }
 
     const headers = doc.headers as string[];
-    const allRows = await this.loadExistingRows(doc);
     const rowCount = this.rowStore.getRowCount(doc);
+    const page = dto.page ?? 1;
+    const limit = Math.min(dto.limit ?? 100, 2000);
+
+    if (!hasMasterDataSearchCriteria(dto)) {
+      const offset = (page - 1) * limit;
+      const { rows, sourceRowIndices } = await this.rowStore.loadPageRows(doc, offset, limit);
+      const masterRevision = (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? 0;
+      const fullCoverage = await this.batchesService.getMasterBatchCoverage(
+        headers,
+        rows,
+        masterRevision,
+      );
+      const batchedByRow: Record<string, Array<{ id: string; name: string }>> = {};
+      for (const idx of sourceRowIndices) {
+        const key = String(idx);
+        const refs = fullCoverage.batchedByRow[key];
+        if (refs?.length) batchedByRow[key] = refs;
+      }
+      return {
+        headers,
+        rows,
+        sourceRowIndices,
+        totalMatches: rowCount,
+        totalRows: rowCount,
+        page,
+        limit,
+        batchedByRow,
+      };
+    }
+
+    const allRows = await this.loadExistingRows(doc);
     const indices = filterMasterDataRows(allRows, headers, {
       query,
       columnFilters,
@@ -1927,8 +1957,6 @@ export class MasterDataService {
     });
 
     const totalMatches = indices.length;
-    const page = dto.page ?? 1;
-    const limit = Math.min(dto.limit ?? 100, 2000);
     const start = (page - 1) * limit;
     const pageIndices = indices.slice(start, start + limit);
     const rows = pageIndices.map((i) => allRows[i]);

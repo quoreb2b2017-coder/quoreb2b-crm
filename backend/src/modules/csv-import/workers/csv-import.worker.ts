@@ -14,6 +14,8 @@ import { CsvImportService } from '../csv-import.service';
 
 @Processor(CSV_IMPORT_QUEUE, {
   concurrency: parseInt(process.env.CSV_IMPORT_QUEUE_CONCURRENCY || '2', 10),
+  lockDuration: 3_600_000,
+  stalledInterval: 600_000,
 })
 export class CsvImportOrchestratorWorker extends WorkerHost {
   private readonly logger = new Logger(CsvImportOrchestratorWorker.name);
@@ -29,6 +31,11 @@ export class CsvImportOrchestratorWorker extends WorkerHost {
     if (job.data.kind === 'transfer' && job.data.localPath) {
       this.logger.log(`S3 transfer job ${job.id} for import ${job.data.jobId}`);
       await this.csvImport.runTransferToS3(job.data.jobId, job.data.localPath);
+      return;
+    }
+    if (job.data.kind === 'finalize') {
+      this.logger.log(`Finalize job ${job.id} for import ${job.data.jobId}`);
+      await this.processor.runFinalize(job.data.jobId);
       return;
     }
     this.logger.log(`Orchestrator job ${job.id} for import ${job.data.jobId}`);

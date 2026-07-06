@@ -6,8 +6,8 @@ export type CsvImportMode = 'replace' | 'append';
 
 export interface CsvImportOrchestratorJobData {
   jobId: string;
-  /** When set, worker uploads staging file to S3 before processing. */
-  kind?: 'process' | 'transfer';
+  /** process = stream CSV; transfer = staging→S3; finalize = wait for batches + complete */
+  kind?: 'process' | 'transfer' | 'finalize';
   localPath?: string;
 }
 

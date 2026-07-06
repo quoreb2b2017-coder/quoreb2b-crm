@@ -187,6 +187,13 @@ export class CsvImportS3Service implements OnModuleInit {
       const status = (err as { $metadata?: { httpStatusCode?: number } })?.$metadata
         ?.httpStatusCode;
       const name = (err as { name?: string })?.name;
+      // 403 = bucket exists but IAM lacks s3:ListBucket — uploads still work.
+      if (status === 403) {
+        this.logger.log(
+          `S3 bucket ${this.bucket} reachable (HeadBucket denied — add s3:ListBucket to IAM if needed)`,
+        );
+        return;
+      }
       if (status === 404 || name === 'NotFound' || name === 'NoSuchBucket') {
         this.logger.warn(`Creating S3 bucket ${this.bucket} in ${this.region}`);
         const input: {
@@ -208,23 +215,31 @@ export class CsvImportS3Service implements OnModuleInit {
 
   private async ensureCorsConfiguration(): Promise<void> {
     const origins = this.resolveCorsOrigins();
-    await this.client!.send(
-      new PutBucketCorsCommand({
-        Bucket: this.bucket,
-        CORSConfiguration: {
-          CORSRules: [
-            {
-              AllowedHeaders: ['*'],
-              AllowedMethods: ['GET', 'PUT', 'POST', 'HEAD'],
-              AllowedOrigins: origins,
-              ExposeHeaders: ['ETag', 'x-amz-request-id'],
-              MaxAgeSeconds: 3600,
-            },
-          ],
-        },
-      }),
-    );
-    this.logger.log(`S3 CORS configured for ${origins.length} origin(s)`);
+    try {
+      await this.client!.send(
+        new PutBucketCorsCommand({
+          Bucket: this.bucket,
+          CORSConfiguration: {
+            CORSRules: [
+              {
+                AllowedHeaders: ['*'],
+                AllowedMethods: ['GET', 'PUT', 'POST', 'HEAD'],
+                AllowedOrigins: origins,
+                ExposeHeaders: ['ETag', 'x-amz-request-id'],
+                MaxAgeSeconds: 3600,
+              },
+            ],
+          },
+        }),
+      );
+      this.logger.log(`S3 CORS configured for ${origins.length} origin(s)`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `Could not set S3 CORS automatically (${msg}). ` +
+          'Add CORS in S3 console → bucket → Permissions → CORS.',
+      );
+    }
   }
 
   private resolveCorsOrigins(): string[] {

@@ -15,6 +15,7 @@ import { CsvImportStreamService } from './csv-import-stream.service';
 import { CsvImportBatchWriterService } from './csv-import-batch-writer.service';
 import { CsvImportQueueService } from './csv-import-queue.service';
 import { CsvImportLockService } from './csv-import-lock.service';
+import { AppCacheService } from '../../../redis/app-cache.service';
 import { CsvImportBatchJobData } from '../csv-import.types';
 import { CsvImportJob } from '../schemas/csv-import-job.schema';
 import {
@@ -46,6 +47,7 @@ export class CsvImportProcessorService {
     private readonly writer: CsvImportBatchWriterService,
     private readonly queue: CsvImportQueueService,
     private readonly lock: CsvImportLockService,
+    private readonly cache: AppCacheService,
     private readonly config: ConfigService,
     @InjectModel(MasterDataRecord.name)
     private readonly masterDataModel: Model<MasterDataRecord>,
@@ -74,14 +76,50 @@ export class CsvImportProcessorService {
       await this.processStream(job, useBatchQueue);
       const latest = await this.jobs.findByJobId(jobId);
       if (latest && !['paused', 'cancelled', 'failed'].includes(latest.status)) {
-        if (useBatchQueue) {
-          await this.waitForBatches(jobId, latest.totalBatches);
+        if (useBatchQueue && latest.totalBatches > 0) {
+          await this.queue.enqueueFinalize(jobId);
+          await this.jobs.updateProgress(jobId, {
+            percent: 96,
+            message: `All ${latest.totalBatches} batches queued — finishing writes…`,
+          });
+        } else if (!useBatchQueue) {
+          await this.finalizeJob((await this.jobs.findByJobId(jobId))!);
         }
-        await this.finalizeJob((await this.jobs.findByJobId(jobId))!);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Import failed';
       this.logger.error(`Orchestrator failed for ${jobId}: ${message}`);
+      await this.jobs.updateStatus(jobId, 'failed', { errorMessage: message });
+      throw err;
+    } finally {
+      await this.lock.release(job.masterKey, jobId);
+    }
+  }
+
+  async runFinalize(jobId: string): Promise<void> {
+    const job = await this.jobs.findByJobId(jobId);
+    if (!job || ['completed', 'cancelled', 'failed'].includes(job.status)) {
+      return;
+    }
+
+    const acquired = await this.lock.acquire(job.masterKey, jobId);
+    if (!acquired) {
+      this.logger.warn(`Finalize skipped for ${jobId} — lock held by another job`);
+      return;
+    }
+
+    try {
+      const total = job.totalBatches;
+      if (total > 0) {
+        await this.waitForBatches(jobId, total);
+      }
+      const latest = await this.jobs.findByJobId(jobId);
+      if (latest && !['paused', 'cancelled', 'failed', 'completed'].includes(latest.status)) {
+        await this.finalizeJob(latest);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Import finalize failed';
+      this.logger.error(`Finalize failed for ${jobId}: ${message}`);
       await this.jobs.updateStatus(jobId, 'failed', { errorMessage: message });
       throw err;
     } finally {
@@ -296,6 +334,7 @@ export class CsvImportProcessorService {
     });
 
     this.logger.log(`Import ${job.jobId} done: ${successRows} ok, ${failedCount} failed`);
+    void this.cache.delByPrefix('master:');
   }
 
   private async buildErrorCsv(jobId: string, headers: string[]): Promise<string> {
@@ -344,5 +383,6 @@ export class CsvImportProcessorService {
         { upsert: true, new: true, setDefaultsOnInsert: true },
       )
       .exec();
+    void this.cache.delByPrefix('master:');
   }
 }

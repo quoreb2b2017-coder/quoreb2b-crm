@@ -148,6 +148,22 @@ export class CsvImportJobRepository {
       .find({
         status: { $in: ['queued', 'processing'] },
         cancelRequested: { $ne: true },
+        $or: [
+          { totalBatches: 0 },
+          { $expr: { $lt: ['$completedBatches', '$totalBatches'] } },
+        ],
+      })
+      .exec();
+  }
+
+  /** Stream finished but finalize never ran (orchestrator lock expired). */
+  findJobsAwaitingFinalize(): Promise<CsvImportJob[]> {
+    return this.jobModel
+      .find({
+        status: 'processing',
+        totalBatches: { $gt: 0 },
+        $expr: { $gte: ['$completedBatches', '$totalBatches'] },
+        cancelRequested: { $ne: true },
       })
       .exec();
   }

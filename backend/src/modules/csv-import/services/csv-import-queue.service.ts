@@ -63,6 +63,22 @@ export class CsvImportQueueService {
     return String(job.id);
   }
 
+  /** Wait for batch workers, then mark job completed. */
+  async enqueueFinalize(jobId: string): Promise<string> {
+    const job = await this.orchestratorQueue.add(
+      'finalize-import',
+      { jobId, kind: 'finalize' },
+      {
+        jobId: `csv-finalize-${jobId}`,
+        attempts: 5,
+        backoff: { type: 'exponential', delay: 10_000 },
+        removeOnComplete: 100,
+        removeOnFail: 200,
+      },
+    );
+    return String(job.id);
+  }
+
   async enqueueBatch(
     data: CsvImportBatchJobData,
     attempt = 1,

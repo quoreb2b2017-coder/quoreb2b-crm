@@ -319,29 +319,40 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
       }
       if (record.largeDataset || (record.rowCount > 5000 && (record.rows?.length ?? 0) === 0)) {
         const rowCount = record.rowCount;
-        let previewRows: string[][] = [];
-        let sourceIndices: number[] = [];
-        try {
-          const preview = await masterDataService.search({ page: 1, limit: 100 });
-          previewRows = preview.rows ?? [];
-          sourceIndices = preview.sourceRowIndices ?? [];
-        } catch {
-          /* preview optional — totals still from record */
-        }
         setData({
           fileName: cleanMasterFileName(record.fileName),
           sheetName: record.sheetName,
           headers: record.headers ?? [],
-          rows: previewRows,
+          rows: [],
         });
-        setPreviewSourceIndices(sourceIndices);
+        setPreviewSourceIndices([]);
         setIsLargeDatasetPreview(true);
-        setFilteredRows(previewRows);
+        setFilteredRows([]);
         setFilteredViewActive(false);
         setTotalRows(safeCount(rowCount));
         setSavedAt(record.updatedAt ?? record.createdAt ?? new Date().toISOString());
         setDirty(false);
-        await loadCoverage();
+        void loadCoverage();
+        void masterDataService
+          .search({ page: 1, limit: 100 })
+          .then((preview) => {
+            const previewRows = preview.rows ?? [];
+            setData((prev) =>
+              prev
+                ? { ...prev, rows: previewRows }
+                : {
+                    fileName: cleanMasterFileName(record.fileName),
+                    sheetName: record.sheetName,
+                    headers: record.headers ?? [],
+                    rows: previewRows,
+                  },
+            );
+            setPreviewSourceIndices(preview.sourceRowIndices ?? []);
+            setFilteredRows(previewRows);
+          })
+          .catch(() => {
+            /* preview optional — totals still shown from record */
+          });
         return;
       }
       setIsLargeDatasetPreview(false);
@@ -372,12 +383,17 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   useEffect(() => { loadFromDb(); }, [loadFromDb]);
 
   useEffect(() => {
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const refresh = () => {
-      void loadFromDb().catch(() => undefined);
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        void loadFromDb().catch(() => undefined);
+      }, 1500);
     };
     window.addEventListener('master-data-updated', refresh);
     window.addEventListener('batch-created', refresh);
     return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
       window.removeEventListener('master-data-updated', refresh);
       window.removeEventListener('batch-created', refresh);
     };

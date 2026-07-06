@@ -30,6 +30,19 @@ export class CsvImportRecoveryService implements OnModuleInit {
   }
 
   private async recoverStuckJobs(): Promise<void> {
+    const awaitingFinalize = await this.jobs.findJobsAwaitingFinalize();
+    for (const job of awaitingFinalize) {
+      try {
+        await this.queue.enqueueFinalize(job.jobId);
+        this.logger.log(
+          `Finalize re-queued for import ${job.jobId} (${job.completedBatches}/${job.totalBatches} batches)`,
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.error(`Failed to finalize import ${job.jobId}: ${msg}`);
+      }
+    }
+
     const stuck = await this.jobs.findRecoverableJobs();
     if (!stuck.length) return;
 

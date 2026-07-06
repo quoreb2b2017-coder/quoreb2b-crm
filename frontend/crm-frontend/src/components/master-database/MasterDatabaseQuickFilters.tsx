@@ -25,7 +25,9 @@ import type {
 } from './master-database-columns';
 import {
   buildCuratedQuickFilters,
+  buildEffectiveFilterColumns,
   filterAdvancedColumns,
+  filterSidebarColumns,
   isExcludedDropdownColumn,
   isSizeCategoryHeader,
   pickQuickFilterColumns,
@@ -57,7 +59,7 @@ export function MasterDatabaseQuickFilters({
   resultCount,
   variant = 'inline',
 }: MasterDatabaseQuickFiltersProps) {
-  const [moreOpen, setMoreOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(variant === 'sidebar');
   const [moreQuery, setMoreQuery] = useState('');
 
   const curatedFields = useMemo(() => buildCuratedQuickFilters(columns), [columns]);
@@ -71,13 +73,17 @@ export function MasterDatabaseQuickFilters({
   );
 
   const advancedColumns = useMemo(() => {
-    const rest = filterAdvancedColumns(columns).filter(
+    const pool =
+      variant === 'sidebar'
+        ? filterSidebarColumns(columns)
+        : filterAdvancedColumns(columns);
+    const rest = pool.filter(
       (c) => !curatedHeaders.has(c.header) && !isExcludedDropdownColumn(c.header),
     );
     const q = moreQuery.trim().toLowerCase();
     if (!q) return rest;
     return rest.filter((c) => c.header.toLowerCase().includes(q));
-  }, [columns, curatedHeaders, moreQuery]);
+  }, [columns, curatedHeaders, moreQuery, variant]);
 
   const setColumnValue = (header: string, value: string) => {
     const columnValues = { ...filters.columnValues };
@@ -393,9 +399,9 @@ export function MasterDatabaseQuickFilters({
             Reset filters
           </button>
         </div>
-      ) : !schemaLoading && columns.length > 0 ? (
+      ) : !schemaLoading && columns.length > 0 && advancedColumns.length === 0 ? (
         <p className="mdb-quick__empty-hint">
-          Scroll down or open <strong>More filters</strong> for all columns.
+          Type in the search box above, or wait for filter fields to load.
         </p>
       ) : null}
 
@@ -436,6 +442,24 @@ export function MasterDatabaseQuickFilters({
                         {col.kind === 'email' ? <Mail className="h-3.5 w-3.5" /> : <Phone className="h-3.5 w-3.5" />}
                         Has {col.header}
                       </label>
+                    );
+                  }
+
+                  if (col.options.length < 2) {
+                    const textValue = filters.columnText[col.header] ?? '';
+                    return (
+                      <div key={col.header} className="mdb-advanced-filters__field">
+                        <span className="mdb-advanced-filters__label">{col.header}</span>
+                        <input
+                          type="text"
+                          className="mdb-filter-block__input"
+                          placeholder={`Contains…`}
+                          value={textValue}
+                          onChange={(e) => setColumnText(col.header, e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && onSearch()}
+                          onBlur={() => textValue.trim() && onSearch()}
+                        />
+                      </div>
                     );
                   }
 

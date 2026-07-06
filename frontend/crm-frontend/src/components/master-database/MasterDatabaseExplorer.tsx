@@ -52,6 +52,7 @@ function safeCount(value: unknown): number {
 import {
   activeDynamicFilterTags,
   applyDynamicFiltersClient,
+  buildEffectiveFilterColumns,
   canAutoSearchMasterData,
   emptyDynamicMasterDbFilters,
   hasAnyDynamicSearchCriteria,
@@ -244,7 +245,7 @@ export function MasterDatabaseExplorer({
   }, [loadData]);
 
   useEffect(() => {
-    if (loading || isDbAdmin || (!embedded && !isLargeMasterDataset) || hasSearched) return;
+    if (loading || (isDbAdmin && !embedded) || (!embedded && !isLargeMasterDataset) || hasSearched) return;
     let cancelled = false;
     setSearching(true);
     void masterDataService
@@ -284,15 +285,10 @@ export function MasterDatabaseExplorer({
   const useFilterSidebar = embedded || isDbAdmin || isLargeMasterDataset;
   const pageSizeOptions = embedded ? EMBEDDED_PAGE_SIZES : PAGE_SIZES;
 
-  const effectiveFilterColumns = useMemo<MasterDataColumnFilterSchema[]>(() => {
-    if (filterColumns.length > 0) return filterColumns;
-    return headers.map((header) => ({
-      header,
-      kind: 'text',
-      options: [],
-      filledCount: 1,
-    }));
-  }, [filterColumns, headers]);
+  const effectiveFilterColumns = useMemo(
+    () => buildEffectiveFilterColumns(headers, filterColumns),
+    [filterColumns, headers],
+  );
 
   const loadBrowsePage = useCallback(
     async (targetPage: number, targetPageSize: number, opts?: { resetSelection?: boolean }) => {

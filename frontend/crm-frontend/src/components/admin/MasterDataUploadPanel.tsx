@@ -833,7 +833,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
       ) : !isDbAdminView && data && (isLargeDatasetPreview || totalRows > 5000) ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <MasterDatabaseExplorer
-            variant="admin"
+            variant="db_admin"
             embedded
             campaignRowFilter={activeViewTab.filter}
             onCreateBatch={openBatchModal}

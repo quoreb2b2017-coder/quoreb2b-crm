@@ -118,6 +118,59 @@ export function isAdvancedFilterColumn(col: MasterDataColumnFilterSchema): boole
   return col.options.length >= 2;
 }
 
+export function inferMasterColumnKind(header: string): MasterDataColumnKind {
+  const h = header.toLowerCase();
+  if (h.includes('email')) return 'email';
+  if (h.includes('phone') || h.includes('mobile') || h.includes('tel')) return 'phone';
+  if (h.includes('status')) return 'status';
+  return 'text';
+}
+
+/**
+ * Merge API filter-schema with sheet headers so sidebar always has every column
+ * (DB Admin parity — even when schema sample rows are empty on large datasets).
+ */
+export function buildEffectiveFilterColumns(
+  headers: string[],
+  schemaColumns: MasterDataColumnFilterSchema[],
+): MasterDataColumnFilterSchema[] {
+  const schemaByHeader = new Map(
+    schemaColumns.map((c) => [c.header.trim().toLowerCase(), c]),
+  );
+  const orderedHeaders =
+    headers.length > 0
+      ? headers
+      : schemaColumns.map((c) => c.header);
+
+  return orderedHeaders
+    .filter((h) => h.trim().length > 0 && !isGenericColumnHeader(h))
+    .map((header) => {
+      const existing = schemaByHeader.get(header.trim().toLowerCase());
+      if (existing) {
+        return {
+          ...existing,
+          header,
+          filledCount: Math.max(existing.filledCount, 1),
+        };
+      }
+      return {
+        header,
+        kind: inferMasterColumnKind(header),
+        options: [],
+        filledCount: 1,
+      };
+    });
+}
+
+/** All filterable columns for sidebar "More filters" (includes text search fields). */
+export function filterSidebarColumns(
+  columns: MasterDataColumnFilterSchema[],
+): MasterDataColumnFilterSchema[] {
+  return columns.filter(
+    (c) => isMeaningfulFilterColumn(c) && !isExcludedDropdownColumn(c.header),
+  );
+}
+
 export function filterMeaningfulColumns(
   columns: MasterDataColumnFilterSchema[],
 ): MasterDataColumnFilterSchema[] {

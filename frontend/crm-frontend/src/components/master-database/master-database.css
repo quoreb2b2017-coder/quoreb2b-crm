@@ -1179,7 +1179,7 @@
 }
 
 .mdb-layout--sidebar-open .mdb-sidebar {
-  width: min(320px, 92vw);
+  width: min(340px, 94vw);
   border-right-color: #dce6f2;
   box-shadow: 4px 0 24px rgb(46 122 209 / 10%);
 }
@@ -1864,10 +1864,20 @@
   color: #475569;
 }
 
+.mdb-sidebar__body .mdb-quick__more-panel {
+  max-height: none;
+}
+
 .mdb-advanced-filters {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
+}
+
+.mdb-quick--sidebar .mdb-advanced-filters {
+  max-height: min(52vh, 520px);
+  overflow-y: auto;
+  padding-right: 0.15rem;
 }
 
 .mdb-advanced-filters__field {

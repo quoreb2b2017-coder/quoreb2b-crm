@@ -1,7 +1,6 @@
-# Single-stage image — avoids copying node_modules between layers (saves disk on small EC2).
+# Single-stage image — one npm install, then prune dev deps (low disk use on small EC2).
 FROM node:20-alpine
 WORKDIR /app
-ENV NODE_ENV=production
 
 COPY package.json ./
 RUN npm install
@@ -12,6 +11,7 @@ RUN npm run build \
   && npm cache clean --force \
   && rm -rf /root/.npm
 
+ENV NODE_ENV=production
 RUN mkdir -p uploads/master-data-imports uploads/csv-imports
 
 EXPOSE 4000

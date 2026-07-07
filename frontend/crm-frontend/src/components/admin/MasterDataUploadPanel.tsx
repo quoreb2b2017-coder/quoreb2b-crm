@@ -27,7 +27,7 @@ import { useCanExportSpreadsheet } from '@/hooks/useSpreadsheetCopyGuard';
 import { useDebouncedAutoSave, type AutoSaveStatus } from '@/hooks/useDebouncedAutoSave';
 import { MasterDataClearConfirmModal } from '@/components/master-data/MasterDataClearConfirmModal';
 import { DbAdminCampaignWizard } from '@/components/db-admin/DbAdminCampaignWizard';
-import { MasterDatabaseExplorer } from '@/components/master-database/MasterDatabaseExplorer';
+import { MasterDatabaseExplorer, type MasterBatchCreatePayload } from '@/components/master-database/MasterDatabaseExplorer';
 
 import {
   alignRowToMasterHeaders,
@@ -175,6 +175,9 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
     rows: string[][];
     headers: string[];
     sourceRowIndices: number[];
+    masterSearchFilter?: MasterBatchCreatePayload['masterSearchFilter'];
+    estimatedCount?: number;
+    selectAllFiltered?: boolean;
   } | null>(null);
   const [batchName, setBatchName] = useState('');
   const [batchDesc, setBatchDesc] = useState('');
@@ -562,8 +565,9 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
 
   // ── Open batch modal ──
   const openBatchModal = useCallback(
-    (payload: { rows: string[][]; headers: string[]; sourceRowIndices: number[] }) => {
-      if (!payload.sourceRowIndices.length) {
+    (payload: MasterBatchCreatePayload) => {
+      const count = payload.estimatedCount ?? payload.sourceRowIndices?.length ?? 0;
+      if (!count) {
         toast.error('No contacts selected', 'Apply filters or pick contacts that are not already in a campaign');
         return;
       }
@@ -574,7 +578,14 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
       });
       setBatchName(`Campaign ${now}`);
       setBatchDesc('');
-      setBatchModal(payload);
+      setBatchModal({
+        headers: payload.headers,
+        rows: payload.rows ?? [],
+        sourceRowIndices: payload.sourceRowIndices ?? [],
+        masterSearchFilter: payload.masterSearchFilter,
+        estimatedCount: count,
+        selectAllFiltered: payload.selectAllFiltered,
+      });
     },
     [],
   );
@@ -590,7 +601,10 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
         headers: batchModal.headers,
         rows: batchModal.rows,
         sourceFileName: data?.fileName,
-        masterSourceRowIndices: batchModal.sourceRowIndices,
+        masterSourceRowIndices: batchModal.sourceRowIndices?.length
+          ? batchModal.sourceRowIndices
+          : undefined,
+        masterSearchFilter: batchModal.masterSearchFilter,
       });
       await loadCoverage();
       toast.success('Campaign created!', `"${batch.name}" — ${batch.rowCount} contacts`);
@@ -905,7 +919,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
                   </p>
                   <div className="mt-1.5 flex flex-wrap gap-2">
                     <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-700">
-                      {batchModal.rows.length.toLocaleString('en-US')} contacts
+                      {(batchModal.estimatedCount ?? batchModal.rows.length).toLocaleString('en-US')} contacts
                     </span>
                     <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600">
                       {batchModal.headers.length} columns
@@ -955,7 +969,11 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-xs font-semibold text-slate-700">Campaign summary</p>
                     <p className="text-xs text-slate-500">
-                      <span className="font-medium text-slate-700">{batchModal.rows.length.toLocaleString('en-US')}</span> contacts selected
+                      <span className="font-medium text-slate-700">
+                        {(batchModal.estimatedCount ?? batchModal.rows.length).toLocaleString('en-US')}
+                      </span>{' '}
+                      contacts selected
+                      {batchModal.selectAllFiltered ? ' (all filtered matches — loaded on server)' : ''}
                     </p>
                   </div>
 

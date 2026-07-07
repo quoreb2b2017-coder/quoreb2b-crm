@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Upload, Download, Trash2, Cloud, Loader2, Save } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { ExcelPreviewGrid } from '@/components/admin/ExcelPreviewGrid';
+import type { MasterBatchCreatePayload } from '@/components/master-database/MasterDatabaseExplorer';
 import {
   getSampleMasterData,
   parseSpreadsheetFile,
@@ -359,8 +360,8 @@ export function DeliveredDataUploadPanel() {
 
   // ── Open batch modal ──
   const openBatchModal = useCallback(
-    (payload: { rows: string[][]; headers: string[]; sourceRowIndices: number[] }) => {
-      if (!payload.sourceRowIndices.length) {
+    (payload: MasterBatchCreatePayload) => {
+      if (!payload.sourceRowIndices?.length) {
         toast.error('No contacts selected', 'Apply filters or pick contacts that are not already in a delivered batch');
         return;
       }
@@ -371,7 +372,11 @@ export function DeliveredDataUploadPanel() {
       });
       setBatchName(`Delivered ${now}`);
       setBatchDesc('');
-      setBatchModal(payload);
+      setBatchModal({
+        rows: payload.rows ?? [],
+        headers: payload.headers,
+        sourceRowIndices: payload.sourceRowIndices ?? [],
+      });
     },
     [],
   );

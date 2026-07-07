@@ -9,7 +9,11 @@ import {
   MaxLength,
   ArrayMaxSize,
   Min,
+  ValidateIf,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+import { SearchMasterDataDto } from '../../master-data/dto/search-master-data.dto';
 
 export class CreateBatchDto {
   @IsString() @IsNotEmpty() @MaxLength(200)
@@ -18,9 +22,11 @@ export class CreateBatchDto {
   @IsOptional() @IsString() @MaxLength(500)
   description?: string;
 
+  @ValidateIf((o: CreateBatchDto) => !o.masterSearchFilter && !(o.masterSourceRowIndices?.length))
   @IsArray() @IsString({ each: true })
   headers: string[];
 
+  @ValidateIf((o: CreateBatchDto) => !o.masterSearchFilter && !(o.masterSourceRowIndices?.length))
   @IsArray() @ArrayMaxSize(50000) @IsArray({ each: true })
   rows: string[][];
 
@@ -38,6 +44,12 @@ export class CreateBatchDto {
   @IsInt({ each: true })
   @Min(0, { each: true })
   masterSourceRowIndices?: number[];
+
+  /** Resolve rows server-side from master-data search filters (all matches or subset indices) */
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SearchMasterDataDto)
+  masterSearchFilter?: SearchMasterDataDto;
 
   /** Parent batch row indices when creating a filtered sub-batch from sourceBatchId */
   @IsOptional()

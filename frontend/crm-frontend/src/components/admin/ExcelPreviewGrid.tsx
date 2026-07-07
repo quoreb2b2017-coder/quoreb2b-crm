@@ -17,6 +17,7 @@ import { useCanExportSpreadsheet, useShowSpreadsheetRestrictionHint } from '@/ho
 import { spreadsheetGuardProps } from '@/lib/spreadsheet/spreadsheet-access';
 import { GridScrollRails } from '@/components/spreadsheet/GridScrollRails';
 import { useDragToScroll } from '@/hooks/useDragToScroll';
+import type { MasterBatchCreatePayload } from '@/components/master-database/MasterDatabaseExplorer';
 
 function colLetter(index: number): string {
   let n = index;
@@ -55,11 +56,7 @@ interface ExcelPreviewGridProps {
   campaignRowFilter?: 'all' | 'in_campaign' | 'remaining';
   hideBatchedRows?: boolean;
   onHideBatchedRowsChange?: (hide: boolean) => void;
-  onCreateBatch?: (payload: {
-    rows: string[][];
-    headers: string[];
-    sourceRowIndices: number[];
-  }) => void;
+  onCreateBatch?: (payload: MasterBatchCreatePayload) => void;
   fillHeight?: boolean;
   /** When set, maps each data row index to master/source row index (for server-paginated views) */
   externalSourceIndices?: number[];
@@ -607,6 +604,7 @@ export function ExcelPreviewGrid({
                   rows: pairs.map((p) => p.row),
                   headers,
                   sourceRowIndices: pairs.map((p) => p.src as number),
+                  estimatedCount: pairs.length,
                 });
               }}
               disabled={createBatchStats.available === 0}

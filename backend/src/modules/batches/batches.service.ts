@@ -83,11 +83,32 @@ export class BatchesService {
     actor: { id: string; email?: string; name?: string },
     roles: string[] = [],
   ) {
+    const isAdmin =
+      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
     const isDbAdminOnly =
       roles.includes(SystemRole.DB_ADMIN) &&
       !roles.includes(SystemRole.ADMIN) &&
       !roles.includes(SystemRole.SUPER_ADMIN);
-    if (isDbAdminOnly) {
+
+    if (isAdmin && dto.masterSearchFilter) {
+      const resolved = await this.masterDataService.resolveMasterBatchFromSearch(
+        dto.masterSearchFilter,
+        actor.id,
+        dto.masterSourceRowIndices,
+      );
+      dto.headers = resolved.headers;
+      dto.rows = resolved.rows;
+      dto.masterSourceRowIndices = resolved.masterSourceRowIndices;
+    } else if (isDbAdminOnly && dto.masterSearchFilter) {
+      const resolved = await this.masterDataService.resolveMasterBatchFromSearch(
+        dto.masterSearchFilter,
+        actor.id,
+        dto.masterSourceRowIndices,
+      );
+      dto.headers = resolved.headers;
+      dto.rows = resolved.rows;
+      dto.masterSourceRowIndices = resolved.masterSourceRowIndices;
+    } else if (isDbAdminOnly) {
       const fromMaster = (dto.masterSourceRowIndices?.length ?? 0) > 0;
       if (fromMaster) {
         if (dto.sourceBatchId) {
@@ -105,6 +126,14 @@ export class BatchesService {
       } else {
         await this.assertDbAdminCreateFromSharedBatch(dto.sourceBatchId, actor.id);
       }
+    } else if (isAdmin && (dto.masterSourceRowIndices?.length ?? 0) > 0 && !dto.rows?.length) {
+      const resolved = await this.masterDataService.resolveMasterBatchCreate(
+        dto.masterSourceRowIndices!,
+        actor.id,
+      );
+      dto.headers = resolved.headers;
+      dto.rows = resolved.rows;
+      dto.masterSourceRowIndices = resolved.masterSourceRowIndices;
     }
     const period = currentPeriod();
     const sourceId =
@@ -120,8 +149,6 @@ export class BatchesService {
     const campaignChannel =
       dto.campaignChannel ?? parentChannel ?? detectCampaignChannel(dto.name);
 
-    const isAdmin =
-      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
     let autoSharedDbAdmins: Types.ObjectId[] = [];
     if (isAdmin && !sourceId) {
       const dbAdmins = await this.usersRepository.findActiveByRoles([SystemRole.DB_ADMIN]);

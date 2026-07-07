@@ -174,135 +174,149 @@ export function hasMasterDataSearchCriteria(input: {
   return false;
 }
 
+export type MasterDataFilterInput = {
+  query?: string;
+  columnFilters?: MasterDataColumnFilterDto[];
+  columnValueFilters?: MasterDataColumnValuesFilterDto[];
+  columnDateRangeFilters?: MasterDataColumnDateRangeFilterDto[];
+  mustExistColumns?: string[];
+  filters?: MasterDataAdvancedFiltersDto;
+};
+
 /** True when a single row passes the same criteria as filterMasterDataRows. */
 export function rowMatchesMasterDataFilters(
   row: string[],
   headers: string[],
-  input: Parameters<typeof filterMasterDataRows>[2],
+  input: MasterDataFilterInput,
 ): boolean {
-  return filterMasterDataRows([row], headers, input).length === 1;
-}
-
-export function filterMasterDataRows(
-  allRows: string[][],
-  headers: string[],
-  input: {
-    query?: string;
-    columnFilters?: MasterDataColumnFilterDto[];
-    columnValueFilters?: MasterDataColumnValuesFilterDto[];
-    columnDateRangeFilters?: MasterDataColumnDateRangeFilterDto[];
-    mustExistColumns?: string[];
-    filters?: MasterDataAdvancedFiltersDto;
-  },
-): number[] {
   const query = input.query?.trim() ?? '';
   const columnFilters = input.columnFilters ?? [];
   const columnValueFilters = input.columnValueFilters ?? [];
   const columnDateRangeFilters = input.columnDateRangeFilters ?? [];
   const mustExistColumns = input.mustExistColumns ?? [];
   const f = input.filters ?? {};
-  let indices = allRows.map((_, i) => i);
 
   for (const filter of columnFilters) {
-    indices = indices.filter((rowIndex) =>
-      rowMatchesColumnFilter(allRows[rowIndex], headers, filter),
-    );
+    if (!rowMatchesColumnFilter(row, headers, filter)) return false;
   }
-
   for (const filter of columnValueFilters) {
     if (!filter.values?.length) continue;
-    indices = indices.filter((rowIndex) =>
-      rowMatchesValueFilter(allRows[rowIndex], headers, filter),
-    );
+    if (!rowMatchesValueFilter(row, headers, filter)) return false;
   }
-
   for (const filter of columnDateRangeFilters) {
     if (!filter.from?.trim() && !filter.to?.trim()) continue;
-    indices = indices.filter((rowIndex) =>
-      rowMatchesDateRangeFilter(allRows[rowIndex], headers, filter),
-    );
+    if (!rowMatchesDateRangeFilter(row, headers, filter)) return false;
   }
-
   for (const header of mustExistColumns) {
     const colIdx = colIndex(headers, header);
-    if (colIdx < 0) continue;
-    indices = indices.filter((rowIndex) => {
-      const row = allRows[rowIndex];
-      const h = header.toLowerCase();
-      if (h.includes('email')) return hasValidEmail(row, headers);
-      if (h.includes('phone') || h.includes('mobile')) return hasValidPhone(row, headers);
-      return String(row[colIdx] ?? '').trim().length > 0;
-    });
+    if (colIdx < 0) return false;
+    const h = header.toLowerCase();
+    if (h.includes('email')) {
+      if (!hasValidEmail(row, headers)) return false;
+    } else if (h.includes('phone') || h.includes('mobile')) {
+      if (!hasValidPhone(row, headers)) return false;
+    } else if (!String(row[colIdx] ?? '').trim()) {
+      return false;
+    }
   }
 
   if (f.hasEmail || f.hasPhone || f.hasLinkedIn || f.hasWebsite || f.hasDecisionMaker) {
-    indices = indices.filter((rowIndex) => {
-      const row = allRows[rowIndex];
-      if (f.hasEmail && !hasValidEmail(row, headers)) return false;
-      if (f.hasPhone && !hasValidPhone(row, headers)) return false;
-      if (f.hasLinkedIn && !cellAt(row, headers, 'linkedin')) return false;
-      if (f.hasWebsite && !cellAt(row, headers, 'website', 'domain', 'url')) return false;
-      if (f.hasDecisionMaker && !cellAt(row, headers, 'contact name', 'decision maker')) return false;
-      return true;
-    });
+    if (f.hasEmail && !hasValidEmail(row, headers)) return false;
+    if (f.hasPhone && !hasValidPhone(row, headers)) return false;
+    if (f.hasLinkedIn && !cellAt(row, headers, 'linkedin')) return false;
+    if (f.hasWebsite && !cellAt(row, headers, 'website', 'domain', 'url')) return false;
+    if (f.hasDecisionMaker && !cellAt(row, headers, 'contact name', 'decision maker')) return false;
   }
 
-  indices = indices.filter((rowIndex) => {
-    const row = allRows[rowIndex];
-    const company = cellAt(row, headers, 'company name', 'company', 'organization');
-    const website = cellAt(row, headers, 'website', 'domain', 'url');
-    const industry = cellAt(row, headers, 'industry', 'sector');
-    const subIndustry = cellAt(row, headers, 'sub industry', 'sub-industry');
-    const country = cellAt(row, headers, 'country', 'nation');
-    const state = cellAt(row, headers, 'state', 'province');
-    const city = cellAt(row, headers, 'city', 'town');
-    const zip = cellAt(row, headers, 'zip', 'postal', 'pincode');
-    const employees = cellAt(row, headers, 'employees', 'employee size', 'headcount');
-    const revenue = cellAt(row, headers, 'revenue', 'annual revenue');
-    const companyType = cellAt(row, headers, 'company type', 'type');
-    const founded = cellAt(row, headers, 'founded', 'founded year', 'year founded');
-    const interested = cellAt(row, headers, 'interested in', 'solutions', 'product interest');
-    const technology = cellAt(row, headers, 'technology', 'technologies', 'tech stack');
-    const campaign = cellAt(row, headers, 'campaign');
-    const status = cellAt(row, headers, 'status', 'lead status');
+  const company = cellAt(row, headers, 'company name', 'company', 'organization');
+  const website = cellAt(row, headers, 'website', 'domain', 'url');
+  const industry = cellAt(row, headers, 'industry', 'sector');
+  const subIndustry = cellAt(row, headers, 'sub industry', 'sub-industry');
+  const country = cellAt(row, headers, 'country', 'nation');
+  const state = cellAt(row, headers, 'state', 'province');
+  const city = cellAt(row, headers, 'city', 'town');
+  const zip = cellAt(row, headers, 'zip', 'postal', 'pincode');
+  const employees = cellAt(row, headers, 'employees', 'employee size', 'headcount');
+  const revenue = cellAt(row, headers, 'revenue', 'annual revenue');
+  const companyType = cellAt(row, headers, 'company type', 'type');
+  const founded = cellAt(row, headers, 'founded', 'founded year', 'year founded');
+  const interested = cellAt(row, headers, 'interested in', 'solutions', 'product interest');
+  const technology = cellAt(row, headers, 'technology', 'technologies', 'tech stack');
+  const campaign = cellAt(row, headers, 'campaign');
+  const status = cellAt(row, headers, 'status', 'lead status');
 
-    if (!textMatch(company, f.companyName)) return false;
-    if (!textMatch(website, f.website)) return false;
-    if (!textMatch(industry, f.industry)) return false;
-    if (!textMatch(subIndustry, f.subIndustry)) return false;
-    if (!textMatch(country, f.country)) return false;
-    if (!textMatch(state, f.state)) return false;
-    if (!textMatch(city, f.city)) return false;
-    if (!textMatch(zip, f.zip)) return false;
-    if (!rangeMatch(employees, f.employeeRanges)) return false;
-    if (!rangeMatch(revenue, f.revenueRanges)) return false;
-    if (f.companyTypes?.length) {
-      const ok = f.companyTypes.some((t) =>
-        companyType.toLowerCase().includes(t.toLowerCase()),
-      );
-      if (!ok) return false;
+  if (!textMatch(company, f.companyName)) return false;
+  if (!textMatch(website, f.website)) return false;
+  if (!textMatch(industry, f.industry)) return false;
+  if (!textMatch(subIndustry, f.subIndustry)) return false;
+  if (!textMatch(country, f.country)) return false;
+  if (!textMatch(state, f.state)) return false;
+  if (!textMatch(city, f.city)) return false;
+  if (!textMatch(zip, f.zip)) return false;
+  if (!rangeMatch(employees, f.employeeRanges)) return false;
+  if (!rangeMatch(revenue, f.revenueRanges)) return false;
+  if (f.companyTypes?.length) {
+    const ok = f.companyTypes.some((t) =>
+      companyType.toLowerCase().includes(t.toLowerCase()),
+    );
+    if (!ok) return false;
+  }
+  if (f.foundedFrom?.trim() && founded && founded < f.foundedFrom.trim()) return false;
+  if (f.foundedTo?.trim() && founded && founded > f.foundedTo.trim()) return false;
+  if (f.interestedIn?.length) {
+    const ok = f.interestedIn.some((x) =>
+      interested.toLowerCase().includes(x.toLowerCase()),
+    );
+    if (!ok) return false;
+  }
+  if (!textMatch(technology, f.technology)) return false;
+  if (!textMatch(campaign, f.campaign)) return false;
+  if (!textMatch(status, f.leadStatus)) return false;
+
+  if (query) {
+    const q = query.toLowerCase();
+    if (!row.some((c) => String(c ?? '').toLowerCase().includes(q))) return false;
+  }
+
+  return true;
+}
+
+export function filterMasterDataRows(
+  allRows: string[][],
+  headers: string[],
+  input: MasterDataFilterInput,
+): number[] {
+  const indices: number[] = [];
+  for (let i = 0; i < allRows.length; i += 1) {
+    if (rowMatchesMasterDataFilters(allRows[i], headers, input)) {
+      indices.push(i);
     }
-    if (f.foundedFrom?.trim() && founded && founded < f.foundedFrom.trim()) return false;
-    if (f.foundedTo?.trim() && founded && founded > f.foundedTo.trim()) return false;
-    if (f.interestedIn?.length) {
-      const ok = f.interestedIn.some((x) =>
-        interested.toLowerCase().includes(x.toLowerCase()),
-      );
-      if (!ok) return false;
-    }
-    if (!textMatch(technology, f.technology)) return false;
-    if (!textMatch(campaign, f.campaign)) return false;
-    if (!textMatch(status, f.leadStatus)) return false;
-
-    if (query) {
-      const q = query.toLowerCase();
-      if (!row.some((c) => String(c ?? '').toLowerCase().includes(q))) return false;
-    }
-
-    return true;
-  });
-
+  }
   return indices;
+}
+
+/** Stable cache key for filtered index lists (pagination + campaign create). */
+export function hashMasterDataFilterInput(input: MasterDataFilterInput): string {
+  const normalized = {
+    query: input.query?.trim() ?? '',
+    columnFilters: (input.columnFilters ?? []).map((f) => ({
+      header: f.header,
+      value: f.value,
+      match: f.match ?? 'contains',
+    })),
+    columnValueFilters: (input.columnValueFilters ?? []).map((f) => ({
+      header: f.header,
+      values: [...(f.values ?? [])].sort(),
+    })),
+    columnDateRangeFilters: (input.columnDateRangeFilters ?? []).map((f) => ({
+      header: f.header,
+      from: f.from ?? '',
+      to: f.to ?? '',
+    })),
+    mustExistColumns: [...(input.mustExistColumns ?? [])].sort(),
+    filters: input.filters ?? {},
+  };
+  return JSON.stringify(normalized);
 }
 
 export function distinctColumnValues(

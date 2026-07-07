@@ -36,6 +36,8 @@ export interface DbAdminCampaignWizardProps {
   rows: string[][];
   sourceRowIndices: number[];
   sourceFileName?: string;
+  masterSearchFilter?: Record<string, unknown>;
+  estimatedCount?: number;
   onCreated?: () => void;
 }
 
@@ -52,6 +54,8 @@ export function DbAdminCampaignWizard({
   rows,
   sourceRowIndices,
   sourceFileName,
+  masterSearchFilter,
+  estimatedCount,
   onCreated,
 }: DbAdminCampaignWizardProps) {
   const router = useRouter();
@@ -207,7 +211,8 @@ export function DbAdminCampaignWizard({
         headers,
         rows,
         sourceFileName,
-        masterSourceRowIndices: sourceRowIndices,
+        masterSourceRowIndices: sourceRowIndices.length ? sourceRowIndices : undefined,
+        masterSearchFilter,
       });
 
       const employeeIds = Array.from(selectedUserIds);

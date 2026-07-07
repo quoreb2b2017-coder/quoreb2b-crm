@@ -67,7 +67,8 @@ import {
 const ACCEPT = '.csv,.xlsx,.xls';
 const PAGE_SIZES = [20, 50, 100, 200];
 const EMBEDDED_PAGE_SIZES = [50, 100, 200];
-const CAMPAIGN_FETCH_CAP = 2000;
+const CAMPAIGN_MAX_ROWS = 50_000;
+const AUTO_SEARCH_MS = 1200;
 
 export type MasterDatabaseVariant = 'admin' | 'db_admin';
 
@@ -76,12 +77,17 @@ export interface MasterDatabaseExplorerProps {
   /** Renders inside Super Admin upload panel — same filters/grid as DB Admin master file */
   embedded?: boolean;
   campaignRowFilter?: 'all' | 'in_campaign' | 'remaining';
-  onCreateBatch?: (payload: {
-    rows: string[][];
-    headers: string[];
-    sourceRowIndices: number[];
-  }) => void;
+  onCreateBatch?: (payload: MasterBatchCreatePayload) => void;
 }
+
+export type MasterBatchCreatePayload = {
+  headers: string[];
+  rows?: string[][];
+  sourceRowIndices?: number[];
+  masterSearchFilter?: ReturnType<typeof serializeDynamicSearchPayload>;
+  estimatedCount?: number;
+  selectAllFiltered?: boolean;
+};
 
 function toggleSet(set: Set<string>, value: string): Set<string> {
   const next = new Set(set);
@@ -120,6 +126,7 @@ export function MasterDatabaseExplorer({
   const [filterFieldQuery, setFilterFieldQuery] = useState('');
   const [filters, setFilters] = useState<DynamicMasterDbFilters>(emptyDynamicMasterDbFilters());
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [selectAllFiltered, setSelectAllFiltered] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(embedded ? 100 : 20);
   const [sortBy, setSortBy] = useState('recent');
@@ -132,6 +139,9 @@ export function MasterDatabaseExplorer({
     rows: string[][];
     headers: string[];
     sourceRowIndices: number[];
+    masterSearchFilter?: ReturnType<typeof serializeDynamicSearchPayload>;
+    estimatedCount?: number;
+    selectAllFiltered?: boolean;
   } | null>(null);
   const [batchName, setBatchName] = useState('');
   const [batchDesc, setBatchDesc] = useState('');
@@ -375,7 +385,7 @@ export function MasterDatabaseExplorer({
     }
     const timer = setTimeout(() => {
       void runSearch();
-    }, embedded ? 700 : 400);
+    }, embedded ? AUTO_SEARCH_MS : 600);
     return () => clearTimeout(timer);
   }, [embedded, filters, isFilteredView, loadBrowsePage, pageSize, runSearch, useServerSearch]);
 
@@ -390,33 +400,9 @@ export function MasterDatabaseExplorer({
     [executeFilteredSearch, isFilteredView, loadBrowsePage],
   );
 
-  const fetchAllFilteredForCampaign = useCallback(async () => {
-    const activeFilters = filtersRef.current;
-    if (!isFilteredView) {
-      const limit = Math.min(Math.max(filteredTotal, 1), CAMPAIGN_FETCH_CAP);
-      return masterDataService.search({ page: 1, limit });
-    }
-    const payload = serializeDynamicSearchPayload(activeFilters, headers);
-    const limit = Math.min(Math.max(filteredTotal, 1), CAMPAIGN_FETCH_CAP);
-    const result = await masterDataService.search({
-      ...payload,
-      page: 1,
-      limit,
-    });
-    if (result.totalMatches > limit) {
-      toast.error(
-        'Too many results',
-        `Showing first ${limit.toLocaleString('en-US')} of ${result.totalMatches.toLocaleString('en-US')} — narrow filters`,
-      );
-    }
-    return {
-      rows: result.rows,
-      headers: result.headers,
-      sourceRowIndices: result.sourceRowIndices,
-      totalMatches: result.totalMatches,
-      totalRows: result.totalRows,
-    };
-  }, [filteredTotal, headers, isFilteredView]);
+  useEffect(() => {
+    setSelectAllFiltered(false);
+  }, [filters]);
 
   const clearFilters = useCallback(() => {
     const empty = emptyDynamicMasterDbFilters();
@@ -424,6 +410,7 @@ export function MasterDatabaseExplorer({
     setFilters(empty);
     setFilterFieldQuery('');
     setSelected(new Set());
+    setSelectAllFiltered(false);
     setPage(1);
     if (useServerSearch) {
       if (embedded || (!isDbAdmin && isLargeMasterDataset)) {
@@ -550,7 +537,8 @@ export function MasterDatabaseExplorer({
     pageSourceIndices.length > 0 && pageSourceIndices.every((i) => selected.has(i));
 
   const allFilteredSelected =
-    hasSearched && filteredTotal > 0 && selected.size >= Math.min(filteredTotal, CAMPAIGN_FETCH_CAP);
+    selectAllFiltered ||
+    (hasSearched && filteredTotal > 0 && selected.size >= filteredTotal);
 
   const goToPage = (p: number) => {
     setPage(p);
@@ -576,6 +564,7 @@ export function MasterDatabaseExplorer({
   };
 
   const toggleRow = (sourceIdx: number) => {
+    setSelectAllFiltered(false);
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(sourceIdx)) next.delete(sourceIdx);
@@ -597,6 +586,14 @@ export function MasterDatabaseExplorer({
     return { rows, headers, sourceRowIndices: indices };
   };
 
+  const campaignSelectionCount = selectAllFiltered
+    ? filteredTotal
+    : selected.size > 0
+      ? selected.size
+      : isFilteredView
+        ? filteredTotal
+        : 0;
+
   const handleCreateCampaign = async () => {
     if (!hasSearched || filteredTotal === 0) {
       toast.error('No data', 'Search and filter master data first');
@@ -605,43 +602,59 @@ export function MasterDatabaseExplorer({
 
     setLoadingCampaignRows(true);
     try {
-      let payload: { rows: string[][]; headers: string[]; sourceRowIndices: number[] };
+      let payload: MasterBatchCreatePayload;
 
       if (useServerSearch) {
-        const all = await fetchAllFilteredForCampaign();
-        if (selected.size > 0) {
-          const pick = new Set(selected);
-          const rows: string[][] = [];
-          const sourceRowIndices: number[] = [];
-          all.sourceRowIndices.forEach((idx, i) => {
-            if (pick.has(idx)) {
-              sourceRowIndices.push(idx);
-              rows.push(all.rows[i]);
-            }
-          });
-          if (!sourceRowIndices.length) {
-            toast.error('No selection', 'Selected companies are not in the current results');
+        if (selected.size > 0 && !selectAllFiltered) {
+          const indices = [...selected].sort((a, b) => a - b);
+          if (indices.length > CAMPAIGN_MAX_ROWS) {
+            toast.error(
+              'Too many selected',
+              `Max ${CAMPAIGN_MAX_ROWS.toLocaleString('en-US')} contacts per campaign — narrow selection`,
+            );
             return;
           }
-          payload = { rows, headers: all.headers, sourceRowIndices };
+          payload = {
+            headers,
+            sourceRowIndices: indices,
+            estimatedCount: indices.length,
+          };
+        } else if (isFilteredView || selectAllFiltered) {
+          if (filteredTotal > CAMPAIGN_MAX_ROWS) {
+            toast.error(
+              'Too many results',
+              `Narrow filters — max ${CAMPAIGN_MAX_ROWS.toLocaleString('en-US')} per campaign`,
+            );
+            return;
+          }
+          payload = {
+            headers,
+            masterSearchFilter: serializeDynamicSearchPayload(filtersRef.current, headers),
+            selectAllFiltered: true,
+            estimatedCount: filteredTotal,
+          };
         } else {
-          payload = { rows: all.rows, headers: all.headers, sourceRowIndices: all.sourceRowIndices };
-        }
-        const cap = isFilteredView ? all.totalMatches : all.totalRows;
-        if (cap > CAMPAIGN_FETCH_CAP && !selected.size) {
-          toast.error(
-            'Too many results',
-            `Narrow filters — max ${CAMPAIGN_FETCH_CAP.toLocaleString('en-US')} per campaign`,
-          );
+          toast.error('No selection', 'Apply filters or select contacts from the table');
           return;
         }
       } else {
         if (selected.size > 0) {
-          payload = getSelectedPayload();
+          const picked = getSelectedPayload();
+          payload = {
+            headers: picked.headers,
+            rows: picked.rows,
+            sourceRowIndices: picked.sourceRowIndices,
+            estimatedCount: picked.sourceRowIndices.length,
+          };
         } else {
-          payload = { rows: displayRows, headers, sourceRowIndices: sourceIndices };
+          payload = {
+            headers,
+            rows: displayRows,
+            sourceRowIndices: sourceIndices,
+            estimatedCount: sourceIndices.length,
+          };
         }
-        if (!payload.sourceRowIndices.length) {
+        if (!payload.sourceRowIndices?.length) {
           toast.error('No selection', 'Select companies from the table first');
           return;
         }
@@ -660,7 +673,14 @@ export function MasterDatabaseExplorer({
       });
       setBatchName(`Campaign ${now}`);
       setBatchDesc('');
-      setBatchModal(payload);
+      setBatchModal({
+        headers: payload.headers,
+        rows: payload.rows ?? [],
+        sourceRowIndices: payload.sourceRowIndices ?? [],
+        masterSearchFilter: payload.masterSearchFilter,
+        estimatedCount: payload.estimatedCount,
+        selectAllFiltered: payload.selectAllFiltered,
+      });
     } catch (e) {
       toast.error('Could not load companies', extractApiError(e));
     } finally {
@@ -673,19 +693,24 @@ export function MasterDatabaseExplorer({
   };
 
   const toggleSelectAllFiltered = () => {
-    if (allFilteredSelected) {
+    if (selectAllFiltered || (selected.size > 0 && selected.size >= filteredTotal)) {
+      setSelectAllFiltered(false);
       setSelected(new Set());
       return;
     }
-    if (useServerSearch) {
-      setLoadingCampaignRows(true);
-      void fetchAllFilteredForCampaign()
-        .then((all) => setSelected(new Set(all.sourceRowIndices)))
-        .catch((e) => toast.error('Could not select all', extractApiError(e)))
-        .finally(() => setLoadingCampaignRows(false));
+    if (!useServerSearch || !isFilteredView) {
+      setSelected(new Set(sourceIndices));
       return;
     }
-    setSelected(new Set(sourceIndices));
+    if (filteredTotal > CAMPAIGN_MAX_ROWS) {
+      toast.error(
+        'Too many results',
+        `Narrow filters — max ${CAMPAIGN_MAX_ROWS.toLocaleString('en-US')} per campaign`,
+      );
+      return;
+    }
+    setSelectAllFiltered(true);
+    setSelected(new Set());
   };
 
   const handleSaveBatch = async () => {
@@ -698,7 +723,10 @@ export function MasterDatabaseExplorer({
         headers: batchModal.headers,
         rows: batchModal.rows,
         sourceFileName: fileName,
-        masterSourceRowIndices: batchModal.sourceRowIndices,
+        masterSourceRowIndices: batchModal.sourceRowIndices?.length
+          ? batchModal.sourceRowIndices
+          : undefined,
+        masterSearchFilter: batchModal.masterSearchFilter,
       });
       toast.success('Campaign created', `"${batch.name}" — ${batch.rowCount} contacts`);
       setBatchModal(null);
@@ -894,11 +922,15 @@ export function MasterDatabaseExplorer({
             onClick={toggleSelectAllFiltered}
             disabled={loadingCampaignRows}
           >
-            {allFilteredSelected ? 'Clear all' : `Select all ${Math.min(filteredTotal, CAMPAIGN_FETCH_CAP).toLocaleString('en-US')}`}
+            {allFilteredSelected
+              ? 'Clear all'
+              : `Select all ${Math.min(filteredTotal, CAMPAIGN_MAX_ROWS).toLocaleString('en-US')}`}
           </button>
         )}
-        {selected.size > 0 && (
-          <span className="mdb-selection-count">{selected.size.toLocaleString('en-US')} selected</span>
+        {(selected.size > 0 || selectAllFiltered) && (
+          <span className="mdb-selection-count">
+            {(selectAllFiltered ? filteredTotal : selected.size).toLocaleString('en-US')} selected
+          </span>
         )}
         {canExport && hasSearched && displayRows.length > 0 && (
           <>
@@ -918,10 +950,10 @@ export function MasterDatabaseExplorer({
             <Users className="h-3.5 w-3.5" />
           )}
           {embedded || isDbAdmin
-            ? selected.size > 0
+            ? selected.size > 0 && !selectAllFiltered
               ? `Create campaign (${selected.size})`
-              : hasSearched && filteredTotal > 0
-                ? `Create campaign (${Math.min(filteredTotal, CAMPAIGN_FETCH_CAP).toLocaleString('en-US')})`
+              : campaignSelectionCount > 0
+                ? `Create campaign (${campaignSelectionCount.toLocaleString('en-US')})`
                 : 'Create campaign'
             : 'Assign to Sales'}
         </button>
@@ -1226,7 +1258,11 @@ export function MasterDatabaseExplorer({
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
             <div className="pointer-events-auto w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
               <h2 className="text-lg font-bold text-slate-900">Create Campaign</h2>
-              <p className="mt-1 text-xs text-slate-500">{batchModal.sourceRowIndices.length} companies selected</p>
+              <p className="mt-1 text-xs text-slate-500">
+                {(batchModal.estimatedCount ?? batchModal.sourceRowIndices.length).toLocaleString('en-US')}{' '}
+                companies selected
+                {batchModal.selectAllFiltered ? ' (all filtered matches)' : ''}
+              </p>
               <div className="mt-4 space-y-3">
                 <div>
                   <label className="text-xs font-medium text-slate-600">Campaign name</label>
@@ -1256,6 +1292,8 @@ export function MasterDatabaseExplorer({
           rows={batchModal.rows}
           sourceRowIndices={batchModal.sourceRowIndices}
           sourceFileName={fileName}
+          masterSearchFilter={batchModal.masterSearchFilter}
+          estimatedCount={batchModal.estimatedCount}
           onCreated={() => {
             setBatchModal(null);
             void loadCoverage();

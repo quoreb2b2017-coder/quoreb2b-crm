@@ -182,6 +182,7 @@ export const batchesService = {
     sourceBatchId?: string;
     masterSourceRowIndices?: number[];
     parentSourceRowIndices?: number[];
+    masterSearchFilter?: Record<string, unknown>;
   }) => apiClient.post('/batches', payload).then(r => {
     const result = unwrap<BatchRecord>(r);
     if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('master-data-updated'));

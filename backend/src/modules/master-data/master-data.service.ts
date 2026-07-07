@@ -17,6 +17,8 @@ import {
   distinctColumnValues,
   filterMasterDataRows,
   hasMasterDataSearchCriteria,
+  hashMasterDataFilterInput,
+  type MasterDataFilterInput,
 } from './master-data-search.util';
 import { ShareMasterDataDto } from './dto/share-master-data.dto';
 import {
@@ -100,6 +102,9 @@ const CRM_OPERATIONAL_COLLECTIONS = [
   'email_verification_records',
   'email_verification_prospects',
 ] as const;
+
+const MASTER_BATCH_MAX_ROWS = 50_000;
+const MASTER_FILTER_INDEX_CACHE_TTL_SEC = 300;
 
 @Injectable()
 export class MasterDataService {
@@ -1985,7 +1990,7 @@ export class MasterDataService {
       };
     }
 
-    const filterInput = {
+    const filterInput: MasterDataFilterInput = {
       query,
       columnFilters,
       columnValueFilters: dto.columnValueFilters,
@@ -1994,14 +1999,14 @@ export class MasterDataService {
       filters: dto.filters,
     };
 
-    const indices = await this.rowStore.filterChunkedRowIndices(doc, headers, filterInput);
+    const masterRevision = (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? rowCount;
+    const indices = await this.getFilteredIndicesCached(doc, headers, filterInput, masterRevision);
 
     const totalMatches = indices.length;
     const start = (page - 1) * limit;
     const pageIndices = indices.slice(start, start + limit);
     const rows = await this.rowStore.getRowsByIndices(doc, pageIndices);
 
-    const masterRevision = (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? 0;
     const fullCoverage = await this.batchesService.getMasterBatchCoverage(
       headers,
       rows,
@@ -2129,6 +2134,64 @@ export class MasterDataService {
         'No master data available. Ask admin to upload master file first.',
       );
     }
+  }
+
+  async resolveMasterBatchFromSearch(
+    filter: Omit<SearchMasterDataDto, 'page' | 'limit'>,
+    actorId: string,
+    subsetIndices?: number[],
+  ): Promise<{ headers: string[]; rows: string[][]; masterSourceRowIndices: number[] }> {
+    await this.assertBatchCreatorAccess(actorId);
+    const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+    if (!doc) {
+      throw new NotFoundException('No master data uploaded yet');
+    }
+
+    const headers = doc.headers as string[];
+    const rowCount = this.rowStore.getRowCount(doc);
+    const masterRevision = (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? rowCount;
+    const filterInput: MasterDataFilterInput = {
+      query: filter.query,
+      columnFilters: filter.columnFilters,
+      columnValueFilters: filter.columnValueFilters,
+      columnDateRangeFilters: filter.columnDateRangeFilters,
+      mustExistColumns: filter.mustExistColumns,
+      filters: filter.filters,
+    };
+
+    let indices = await this.getFilteredIndicesCached(doc, headers, filterInput, masterRevision);
+    if (subsetIndices?.length) {
+      const pick = new Set(subsetIndices);
+      indices = indices.filter((idx) => pick.has(idx));
+    }
+    if (!indices.length) {
+      throw new BadRequestException('No contacts match the current filters');
+    }
+    if (indices.length > MASTER_BATCH_MAX_ROWS) {
+      throw new BadRequestException(
+        `Too many contacts (${indices.length.toLocaleString('en-US')}). Narrow filters — max ${MASTER_BATCH_MAX_ROWS.toLocaleString('en-US')} per campaign.`,
+      );
+    }
+
+    const rows = await this.rowStore.getRowsByIndices(doc, indices);
+    return {
+      headers: [...headers],
+      rows,
+      masterSourceRowIndices: indices,
+    };
+  }
+
+  private async getFilteredIndicesCached(
+    doc: Parameters<MasterDataRowStore['filterChunkedRowIndices']>[0],
+    headers: string[],
+    filterInput: MasterDataFilterInput,
+    revision: number,
+  ): Promise<number[]> {
+    const filterHash = hashMasterDataFilterInput(filterInput);
+    const cacheKey = `master:filter-idx:v1:${revision}:${filterHash}`;
+    return this.cache.wrap(cacheKey, MASTER_FILTER_INDEX_CACHE_TTL_SEC, async () =>
+      this.rowStore.filterChunkedRowIndices(doc, headers, filterInput),
+    );
   }
 
   async resolveMasterBatchCreate(

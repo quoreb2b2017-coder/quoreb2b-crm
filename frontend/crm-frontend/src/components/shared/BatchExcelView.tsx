@@ -9,6 +9,7 @@ import { useLeadActivityTracker } from '@/hooks/useLeadActivityTracker';
 import { useRouter } from 'next/navigation';
 import { Save, Loader2, Users, ShieldAlert } from 'lucide-react';
 import { ExcelPreviewGrid } from '@/components/admin/ExcelPreviewGrid';
+import type { MasterBatchCreatePayload } from '@/components/master-database/MasterDatabaseExplorer';
 import { batchesService } from '@/lib/api/batches.service';
 import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
 import { extractApiError } from '@/lib/api/errors';
@@ -147,7 +148,7 @@ export function BatchExcelView({
   };
 
   const openCreateModal = useCallback(
-    (payload: { rows: string[][]; headers: string[]; sourceRowIndices: number[] }) => {
+    (payload: MasterBatchCreatePayload) => {
     const now = new Date().toLocaleDateString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
       day: '2-digit',
       month: 'short',
@@ -156,9 +157,9 @@ export function BatchExcelView({
     setBatchName(`Campaign ${now}`);
     setBatchDesc('');
     setBatchModal({
-      rows: payload.rows,
+      rows: payload.rows ?? [],
       headers: payload.headers,
-      sourceRowIndices: payload.sourceRowIndices,
+      sourceRowIndices: payload.sourceRowIndices ?? [],
     });
   },
   [],

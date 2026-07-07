@@ -1,5 +1,8 @@
 import apiClient from './client';
 
+/** Server resolves masterSearchFilter → rows (up to 50K) before saving batch. */
+const MASTER_BATCH_CREATE_TIMEOUT_MS = 600_000;
+
 export interface BatchRecord {
   id: string;
   name: string;
@@ -183,11 +186,20 @@ export const batchesService = {
     masterSourceRowIndices?: number[];
     parentSourceRowIndices?: number[];
     masterSearchFilter?: Record<string, unknown>;
-  }) => apiClient.post('/batches', payload).then(r => {
-    const result = unwrap<BatchRecord>(r);
-    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('master-data-updated'));
-    return result;
-  }),
+  }) =>
+    apiClient
+      .post('/batches', payload, {
+        timeout: payload.masterSearchFilter
+          ? MASTER_BATCH_CREATE_TIMEOUT_MS
+          : undefined,
+      })
+      .then((r) => {
+        const result = unwrap<BatchRecord>(r);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('master-data-updated'));
+        }
+        return result;
+      }),
 
   list: () => apiClient.get('/batches').then(r => {
     const result = unwrap<BatchRecord[] | { data: BatchRecord[] }>(r);

@@ -26,6 +26,7 @@ export type MasterDataFilterInput = Pick<
   | 'columnDateRangeFilters'
   | 'mustExistColumns'
   | 'filters'
+  | 'availabilityFilter'
 >;
 
 export const MASTER_DATA_CHUNK_SIZE = 1000;

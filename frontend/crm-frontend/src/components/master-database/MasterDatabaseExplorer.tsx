@@ -327,6 +327,14 @@ export function MasterDatabaseExplorer({
     [filterColumns, headers],
   );
 
+  const buildSearchPayload = useCallback(
+    (activeFilters: DynamicMasterDbFilters) =>
+      serializeDynamicSearchPayload(activeFilters, headers, {
+        availabilityFilter: campaignRowFilter !== 'all' ? campaignRowFilter : undefined,
+      }),
+    [campaignRowFilter, headers],
+  );
+
   const loadBrowsePage = useCallback(
     async (targetPage: number, targetPageSize: number, opts?: { resetSelection?: boolean }) => {
       setSearching(true);
@@ -369,7 +377,7 @@ export function MasterDatabaseExplorer({
       }
       setSearching(true);
       try {
-        const payload = serializeDynamicSearchPayload(activeFilters, headers);
+        const payload = buildSearchPayload(activeFilters);
         const result = await masterDataService.search({
           ...payload,
           page: targetPage,
@@ -381,14 +389,15 @@ export function MasterDatabaseExplorer({
         setBatchedByRow(result.batchedByRow);
         setHasSearched(true);
         setIsFilteredView(true);
-        if (opts?.resetSelection !== false) setSelected(new Set());
+        setSelectAllFiltered(true);
+        setSelected(new Set());
       } catch (e) {
         toast.error('Search failed', extractApiError(e));
       } finally {
         setSearching(false);
       }
     },
-    [allRows, headers, loadBrowsePage, useServerSearch],
+    [allRows, buildSearchPayload, headers, loadBrowsePage, useServerSearch],
   );
 
   const runSearch = useCallback(async () => {
@@ -415,6 +424,12 @@ export function MasterDatabaseExplorer({
     }, embedded ? AUTO_SEARCH_MS : 600);
     return () => clearTimeout(timer);
   }, [embedded, filters, isFilteredView, loadBrowsePage, pageSize, runSearch, useServerSearch]);
+
+  useEffect(() => {
+    if (!useServerSearch || !isFilteredView) return;
+    setPage(1);
+    void executeFilteredSearch(1, pageSize, { resetSelection: true });
+  }, [campaignRowFilter]); // eslint-disable-line react-hooks/exhaustive-deps -- re-scan full DB when Total/Remaining tab changes
 
   const fetchFilteredPage = useCallback(
     async (targetPage: number, targetPageSize: number) => {
@@ -632,7 +647,24 @@ export function MasterDatabaseExplorer({
       let payload: MasterBatchCreatePayload;
 
       if (useServerSearch) {
-        if (selected.size > 0 && !selectAllFiltered) {
+        const useAllFiltered =
+          isFilteredView && (selectAllFiltered || selected.size === 0);
+
+        if (useAllFiltered) {
+          if (filteredTotal > CAMPAIGN_MAX_ROWS) {
+            toast.error(
+              'Too many results',
+              `Narrow filters — max ${CAMPAIGN_MAX_ROWS.toLocaleString('en-US')} per campaign`,
+            );
+            return;
+          }
+          payload = {
+            headers,
+            masterSearchFilter: buildSearchPayload(filtersRef.current),
+            selectAllFiltered: true,
+            estimatedCount: filteredTotal,
+          };
+        } else if (selected.size > 0) {
           const indices = [...selected].sort((a, b) => a - b);
           if (indices.length > CAMPAIGN_MAX_ROWS) {
             toast.error(
@@ -645,20 +677,6 @@ export function MasterDatabaseExplorer({
             headers,
             sourceRowIndices: indices,
             estimatedCount: indices.length,
-          };
-        } else if (isFilteredView || selectAllFiltered) {
-          if (filteredTotal > CAMPAIGN_MAX_ROWS) {
-            toast.error(
-              'Too many results',
-              `Narrow filters — max ${CAMPAIGN_MAX_ROWS.toLocaleString('en-US')} per campaign`,
-            );
-            return;
-          }
-          payload = {
-            headers,
-            masterSearchFilter: serializeDynamicSearchPayload(filtersRef.current, headers),
-            selectAllFiltered: true,
-            estimatedCount: filteredTotal,
           };
         } else {
           toast.error('No selection', 'Apply filters or select contacts from the table');
@@ -969,7 +987,12 @@ export function MasterDatabaseExplorer({
           type="button"
           className="mdb-btn mdb-btn--green"
           onClick={handleAssignToSales}
-          disabled={loadingCampaignRows || !hasSearched || filteredTotal === 0}
+          disabled={
+            loadingCampaignRows ||
+            !hasSearched ||
+            filteredTotal === 0 ||
+            (useServerSearch && !isFilteredView && selected.size === 0 && !selectAllFiltered)
+          }
         >
           {loadingCampaignRows ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1054,8 +1077,15 @@ export function MasterDatabaseExplorer({
               {isFilteredView ? (
                 <>
                   {' '}
-                  Showing <strong>{filteredTotal.toLocaleString('en-US')}</strong> matches — clear filters to
-                  browse all.
+                  <strong>{filteredTotal.toLocaleString('en-US')}</strong> matches across the full database
+                  {campaignRowFilter === 'remaining'
+                    ? ' (available for new campaigns)'
+                    : campaignRowFilter === 'in_campaign'
+                      ? ' (already in a campaign)'
+                      : ''}
+                  . Grid shows page {page} —{' '}
+                  <strong>Create campaign</strong> includes all {filteredTotal.toLocaleString('en-US')} matches
+                  (server loads them; max {CAMPAIGN_MAX_ROWS.toLocaleString('en-US')} per campaign).
                 </>
               ) : hasSearched ? (
                 <>

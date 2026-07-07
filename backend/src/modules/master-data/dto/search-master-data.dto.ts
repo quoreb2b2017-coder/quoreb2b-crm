@@ -195,4 +195,9 @@ export class SearchMasterDataDto {
   @Min(1)
   @Max(2000)
   limit?: number;
+
+  /** Limit matches to rows not yet in a campaign, or only rows already campaigned. */
+  @IsOptional()
+  @IsIn(['all', 'remaining', 'in_campaign'])
+  availabilityFilter?: 'all' | 'remaining' | 'in_campaign';
 }

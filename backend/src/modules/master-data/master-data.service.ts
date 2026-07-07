@@ -1997,6 +1997,7 @@ export class MasterDataService {
       columnDateRangeFilters: dto.columnDateRangeFilters,
       mustExistColumns: dto.mustExistColumns,
       filters: dto.filters,
+      availabilityFilter: dto.availabilityFilter,
     };
 
     const masterRevision = (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? rowCount;
@@ -2157,6 +2158,7 @@ export class MasterDataService {
       columnDateRangeFilters: filter.columnDateRangeFilters,
       mustExistColumns: filter.mustExistColumns,
       filters: filter.filters,
+      availabilityFilter: filter.availabilityFilter,
     };
 
     let indices = await this.getFilteredIndicesCached(doc, headers, filterInput, masterRevision);
@@ -2189,9 +2191,24 @@ export class MasterDataService {
   ): Promise<number[]> {
     const filterHash = hashMasterDataFilterInput(filterInput);
     const cacheKey = `master:filter-idx:v1:${revision}:${filterHash}`;
-    return this.cache.wrap(cacheKey, MASTER_FILTER_INDEX_CACHE_TTL_SEC, async () =>
-      this.rowStore.filterChunkedRowIndices(doc, headers, filterInput),
-    );
+    return this.cache.wrap(cacheKey, MASTER_FILTER_INDEX_CACHE_TTL_SEC, async () => {
+      const raw = await this.rowStore.filterChunkedRowIndices(doc, headers, filterInput);
+      return this.applyAvailabilityFilter(raw, filterInput.availabilityFilter, revision);
+    });
+  }
+
+  private async applyAvailabilityFilter(
+    indices: number[],
+    availabilityFilter: MasterDataFilterInput['availabilityFilter'],
+    masterRevision: number,
+  ): Promise<number[]> {
+    const mode = availabilityFilter ?? 'all';
+    if (mode === 'all') return indices;
+    const batched = await this.batchesService.getBatchedMasterIndexSet(masterRevision);
+    if (mode === 'remaining') {
+      return indices.filter((idx) => !batched.has(idx));
+    }
+    return indices.filter((idx) => batched.has(idx));
   }
 
   async resolveMasterBatchCreate(

@@ -181,6 +181,7 @@ export type MasterDataFilterInput = {
   columnDateRangeFilters?: MasterDataColumnDateRangeFilterDto[];
   mustExistColumns?: string[];
   filters?: MasterDataAdvancedFiltersDto;
+  availabilityFilter?: 'all' | 'remaining' | 'in_campaign';
 };
 
 export type CompiledMasterDataFilter = {
@@ -478,6 +479,7 @@ export function hashMasterDataFilterInput(input: MasterDataFilterInput): string 
     })),
     mustExistColumns: [...(input.mustExistColumns ?? [])].sort(),
     filters: input.filters ?? {},
+    availabilityFilter: input.availabilityFilter ?? 'all',
   };
   return JSON.stringify(normalized);
 }

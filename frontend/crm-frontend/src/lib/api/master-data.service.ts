@@ -117,6 +117,7 @@ export interface MasterDataSearchParams {
   mustExistColumns?: string[];
   page?: number;
   limit?: number;
+  availabilityFilter?: 'all' | 'remaining' | 'in_campaign';
 }
 
 export interface MasterDataFilterSchemaResponse {

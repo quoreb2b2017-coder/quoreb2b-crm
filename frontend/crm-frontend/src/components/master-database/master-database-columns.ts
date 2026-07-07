@@ -437,6 +437,7 @@ export function canAutoSearchMasterData(filters: DynamicMasterDbFilters): boolea
 export function serializeDynamicSearchPayload(
   filters: DynamicMasterDbFilters,
   headers: string[],
+  options?: { availabilityFilter?: 'all' | 'remaining' | 'in_campaign' },
 ) {
   const columnFilters = headers
     .map((header) => ({ header, value: (filters.columnText[header] ?? '').trim() }))
@@ -466,6 +467,10 @@ export function serializeDynamicSearchPayload(
     columnValueFilters: columnValueFilters.length ? columnValueFilters : undefined,
     columnDateRangeFilters: columnDateRangeFilters.length ? columnDateRangeFilters : undefined,
     mustExistColumns: mustExistColumns.length ? mustExistColumns : undefined,
+    availabilityFilter:
+      options?.availabilityFilter && options.availabilityFilter !== 'all'
+        ? options.availabilityFilter
+        : undefined,
   };
 }
 

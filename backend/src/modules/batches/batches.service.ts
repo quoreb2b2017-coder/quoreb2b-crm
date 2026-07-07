@@ -296,6 +296,26 @@ export class BatchesService {
     });
   }
 
+  /** All master row indices already assigned to a root campaign (for full-DB search filters). */
+  async getBatchedMasterIndexSet(masterRevision = 0): Promise<Set<number>> {
+    const cacheKey = `master:batched-idx:${masterRevision}`;
+    return this.cache.wrap(cacheKey, cacheTtlSeconds(this.config, 'long'), async () => {
+      const batches = await this.model
+        .find({ $or: [{ sourceBatchId: { $exists: false } }, { sourceBatchId: null }] })
+        .select('masterSourceRowIndices')
+        .lean()
+        .exec();
+      const set = new Set<number>();
+      for (const batch of batches) {
+        for (const idx of batch.masterSourceRowIndices ?? []) {
+          const n = Number(idx);
+          if (Number.isFinite(n) && n >= 0) set.add(n);
+        }
+      }
+      return set;
+    });
+  }
+
   async findAll(actorId: string, roles: string[] = []) {
     const isAdmin =
       roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);

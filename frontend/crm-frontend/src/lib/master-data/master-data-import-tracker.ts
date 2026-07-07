@@ -6,6 +6,7 @@ import {
 import { useMasterDataImportStore } from '@/store/master-data-import.store';
 import { toast } from '@/stores/toast.store';
 import { estimatePartsFromFileSize } from '@/lib/master-data/split-upload-parts';
+import { emitMasterDataDuplicatePopup } from '@/lib/master-data/master-data-duplicate-popup';
 
 const STORAGE_KEY = 'quoreb2b-master-import-job';
 
@@ -228,6 +229,21 @@ async function pollImportUntilDone(
             typeof status.result.rowCount === 'number'
               ? status.result.rowCount
               : status.rowsProcessed;
+          const skipped = status.result.skippedDuplicates ?? 0;
+          if (skipped > 0) {
+            emitMasterDataDuplicatePopup({
+              fileName: status.result.fileName || fileName,
+              duplicateCount: skipped,
+              addedRows: status.result.addedRows ?? 0,
+              totalRows: status.result.rowCount ?? rowCount ?? 0,
+              headers: status.result.headers ?? [],
+              duplicateRows: [],
+            });
+            toast.info(
+              'Duplicates skipped',
+              `${skipped.toLocaleString('en-US')} duplicate contact(s) were not added`,
+            );
+          }
           toast.success(
             mode === 'append' ? 'Master data import complete' : 'Master data replaced',
             rowCount != null

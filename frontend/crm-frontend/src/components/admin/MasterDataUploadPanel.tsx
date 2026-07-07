@@ -18,6 +18,11 @@ import {
   type MasterBatchCoverage,
 } from '@/lib/api/master-data.service';
 import { enqueueMasterDataImport } from '@/lib/master-data/master-data-import-tracker';
+import {
+  emitMasterDataDuplicatePopup,
+  MASTER_DATA_UPLOAD_DUPLICATES_EVENT,
+  type MasterDataDuplicatePopupDetail,
+} from '@/lib/master-data/master-data-duplicate-popup';
 import { useMasterDataImportStore } from '@/store/master-data-import.store';
 import { batchesService } from '@/lib/api/batches.service';
 import { extractApiError } from '@/lib/api/errors';
@@ -292,7 +297,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
           toast.success('Added to master database', `+${record.addedRows} contacts · ${record.rowCount} total${skipped}`);
           window.dispatchEvent(new CustomEvent('master-data-updated'));
           if ((record.skippedDuplicates ?? 0) > 0) {
-            setDuplicateModal({
+            emitMasterDataDuplicatePopup({
               fileName: payload.fileName,
               headers: duplicatePreview?.headers ?? payload.headers,
               duplicateRows: duplicatePreview?.duplicateRows ?? [],
@@ -423,6 +428,16 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   useEffect(() => { loadFromDb(); }, [loadFromDb]);
 
   useEffect(() => {
+    const onDuplicates = (event: Event) => {
+      const detail = (event as CustomEvent<MasterDataDuplicatePopupDetail>).detail;
+      if (!detail || detail.duplicateCount <= 0) return;
+      setDuplicateModal(detail);
+    };
+    window.addEventListener(MASTER_DATA_UPLOAD_DUPLICATES_EVENT, onDuplicates);
+    return () => window.removeEventListener(MASTER_DATA_UPLOAD_DUPLICATES_EVENT, onDuplicates);
+  }, []);
+
+  useEffect(() => {
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const refresh = () => {
       if (refreshTimer) clearTimeout(refreshTimer);
@@ -537,7 +552,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
         );
         window.dispatchEvent(new CustomEvent('master-data-updated'));
         if ((record.skippedDuplicates ?? 0) > 0) {
-          setDuplicateModal({
+          emitMasterDataDuplicatePopup({
             fileName: parsed.fileName,
             headers: duplicatePreview?.headers ?? normalized.headers,
             duplicateRows: duplicatePreview?.duplicateRows ?? [],
@@ -1187,30 +1202,32 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
                   <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Duplicates</p>
                     <p className="mt-1 text-2xl font-bold text-amber-700">
-                      {duplicateModal.duplicateCount}
+                      {duplicateModal.duplicateCount.toLocaleString('en-US')}
                     </p>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Added</p>
                     <p className="mt-1 text-2xl font-bold text-[#2e7ad1]">
-                      {duplicateModal.addedRows}
+                      {duplicateModal.addedRows.toLocaleString('en-US')}
                     </p>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                     <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Total DB contacts</p>
                     <p className="mt-1 text-2xl font-bold text-slate-900">
-                      {duplicateModal.totalRows}
+                      {duplicateModal.totalRows.toLocaleString('en-US')}
                     </p>
                   </div>
                 </div>
 
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                   <p className="font-medium">
-                    {duplicateModal.duplicateCount} contact(s) were already present in the master database
+                    {duplicateModal.duplicateCount.toLocaleString('en-US')} contact(s) were already present in the master database
                     or repeated inside the uploaded file.
                   </p>
                   <p className="mt-1 text-xs text-amber-800">
-                    Download the duplicate sheet to review them. This popup will stay open until you close it manually.
+                    {duplicateModal.duplicateRows.length > 0
+                      ? 'Download the duplicate sheet to review them.'
+                      : 'Large import — duplicate list is not stored, but the count above is accurate.'}
                   </p>
                 </div>
               </div>

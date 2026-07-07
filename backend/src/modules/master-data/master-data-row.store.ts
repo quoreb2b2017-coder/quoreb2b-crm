@@ -275,6 +275,38 @@ export class MasterDataRowStore {
     chunkSize = MASTER_DATA_CHUNK_SIZE,
     onProgress?: (savedRows: number, totalRows: number) => void,
   ): Promise<{ rowCount: number; addedRows: number; skippedDuplicates: number }> {
+    const run = () =>
+      this.rewriteMergedAppendUnlocked(
+        doc,
+        existingHeaders,
+        incoming,
+        mergedHeaders,
+        masterKey,
+        chunkSize,
+        onProgress,
+      );
+    const previous = this.appendChains.get(masterKey) ?? Promise.resolve();
+    const current = previous.then(run, run);
+    this.appendChains.set(masterKey, current);
+    try {
+      return await current;
+    } finally {
+      if (this.appendChains.get(masterKey) === current) {
+        this.appendChains.delete(masterKey);
+      }
+    }
+  }
+
+  private async rewriteMergedAppendUnlocked(
+    doc: Pick<MasterDataRecord, 'key' | 'headers' | 'storage'>,
+    existingHeaders: string[],
+    incoming: SheetSnapshot,
+    mergedHeaders: string[],
+    masterKey: string = MASTER_DATA_KEY,
+    chunkSize = MASTER_DATA_CHUNK_SIZE,
+    onProgress?: (savedRows: number, totalRows: number) => void,
+  ): Promise<{ rowCount: number; addedRows: number; skippedDuplicates: number }> {
+    const stagingKey = `${masterKey}__rewrite_${Date.now()}`;
     const existingIdx = buildHeaderIndexMap(existingHeaders);
     const incomingIdx = buildHeaderIndexMap(incoming.headers);
     const seen = new Set<string>();
@@ -289,7 +321,7 @@ export class MasterDataRowStore {
     const flushCarry = async () => {
       while (carry.length >= chunkSize) {
         const chunkRows = carry.splice(0, chunkSize);
-        insertBatch.push({ masterKey, chunkIndex, rows: chunkRows });
+        insertBatch.push({ masterKey: stagingKey, chunkIndex, rows: chunkRows });
         chunkIndex += 1;
         savedRows += chunkRows.length;
         if (insertBatch.length >= INSERT_BATCH_SIZE) {
@@ -303,7 +335,7 @@ export class MasterDataRowStore {
 
     const finish = async () => {
       if (carry.length) {
-        insertBatch.push({ masterKey, chunkIndex, rows: carry });
+        insertBatch.push({ masterKey: stagingKey, chunkIndex, rows: carry });
         savedRows += carry.length;
         carry = [];
       }
@@ -314,63 +346,69 @@ export class MasterDataRowStore {
       onProgress?.(savedRows, estimatedTotal);
     };
 
-    if (this.isChunked(doc)) {
-      const cursor = this.chunkModel
-        .find({ masterKey: doc.key })
-        .sort({ chunkIndex: 1 })
-        .select('rows chunkIndex')
-        .lean()
-        .cursor();
+    try {
+      if (this.isChunked(doc)) {
+        const cursor = this.chunkModel
+          .find({ masterKey: doc.key })
+          .sort({ chunkIndex: 1 })
+          .select('rows chunkIndex')
+          .lean()
+          .cursor();
 
-      for await (const chunk of cursor) {
-        for (const row of (chunk.rows as string[][]) ?? []) {
-          const aligned = alignRowWithIndex(row, existingIdx, mergedHeaders);
-          seen.add(rowKey(aligned));
-          carry.push(aligned);
-          if (carry.length >= chunkSize * 2) {
-            await flushCarry();
+        for await (const chunk of cursor) {
+          for (const row of (chunk.rows as string[][]) ?? []) {
+            const aligned = alignRowWithIndex(row, existingIdx, mergedHeaders);
+            seen.add(rowKey(aligned));
+            carry.push(aligned);
+            if (carry.length >= chunkSize * 2) {
+              await flushCarry();
+            }
           }
+          await yieldToEventLoop();
         }
-
-        await this.chunkModel
-          .deleteOne({ masterKey: doc.key, chunkIndex: chunk.chunkIndex })
-          .exec();
-        await yieldToEventLoop();
+      } else {
+        throw new Error('rewriteMergedAppend requires chunked storage');
       }
-    } else {
-      throw new Error('rewriteMergedAppend requires chunked storage');
+
+      for (const row of incoming.rows) {
+        const aligned = alignRowWithIndex(row, incomingIdx, mergedHeaders);
+        if (!row.some((cell) => cell.length > 0)) {
+          skippedDuplicates += 1;
+          continue;
+        }
+        const key = rowKey(aligned);
+        if (seen.has(key)) {
+          skippedDuplicates += 1;
+          continue;
+        }
+        seen.add(key);
+        carry.push(aligned);
+        addedRows += 1;
+        if (carry.length >= chunkSize * 2) {
+          await flushCarry();
+        }
+        if (addedRows % YIELD_EVERY_ROWS === 0) {
+          await yieldToEventLoop();
+        }
+      }
+
+      await flushCarry();
+      await finish();
+
+      await this.chunkModel.deleteMany({ masterKey: doc.key }).exec();
+      await this.chunkModel
+        .updateMany({ masterKey: stagingKey }, { $set: { masterKey: doc.key } })
+        .exec();
+
+      return {
+        rowCount: savedRows,
+        addedRows,
+        skippedDuplicates,
+      };
+    } catch (err) {
+      await this.chunkModel.deleteMany({ masterKey: stagingKey }).exec();
+      throw err;
     }
-
-    for (const row of incoming.rows) {
-      const aligned = alignRowWithIndex(row, incomingIdx, mergedHeaders);
-      if (!row.some((cell) => cell.length > 0)) {
-        skippedDuplicates += 1;
-        continue;
-      }
-      const key = rowKey(aligned);
-      if (seen.has(key)) {
-        skippedDuplicates += 1;
-        continue;
-      }
-      seen.add(key);
-      carry.push(aligned);
-      addedRows += 1;
-      if (carry.length >= chunkSize * 2) {
-        await flushCarry();
-      }
-      if (addedRows % YIELD_EVERY_ROWS === 0) {
-        await yieldToEventLoop();
-      }
-    }
-
-    await flushCarry();
-    await finish();
-
-    return {
-      rowCount: savedRows,
-      addedRows,
-      skippedDuplicates,
-    };
   }
 
   async loadAllRows(doc: Pick<MasterDataRecord, 'key' | 'rows' | 'storage' | 'rowCount'>): Promise<string[][]> {

@@ -17,6 +17,7 @@ export function MasterDataUploadProgressModal({
   if (!open || !progress) return null;
 
   const percent = Math.max(0, Math.min(100, progress.percent));
+  const isDone = progress.phase === 'done';
   const rowLabel =
     progress.totalRows && progress.totalRows > 0
       ? `${(progress.rowsProcessed ?? 0).toLocaleString()} / ${progress.totalRows.toLocaleString()} rows`
@@ -30,7 +31,9 @@ export function MasterDataUploadProgressModal({
             <Loader2 className="h-5 w-5 animate-spin text-[#2e7ad1]" />
           </div>
           <div className="min-w-0">
-            <h3 className="text-base font-semibold text-slate-900">Uploading master data</h3>
+            <h3 className="text-base font-semibold text-slate-900">
+              {isDone ? 'Upload complete' : 'Uploading master data'}
+            </h3>
             {fileName && (
               <p className="mt-0.5 truncate text-xs text-slate-500" title={fileName}>
                 {fileName}
@@ -56,7 +59,9 @@ export function MasterDataUploadProgressModal({
         )}
 
         <p className="mt-4 text-center text-xs text-slate-400">
-          Import continues on the server — you can switch tabs or use other CRM pages.
+          {isDone
+            ? 'Your data is saved in the master database.'
+            : 'Import continues on the server — you can switch tabs or use other CRM pages.'}
         </p>
       </div>
     </div>

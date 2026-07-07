@@ -18,6 +18,7 @@ import {
   type MasterBatchCoverage,
 } from '@/lib/api/master-data.service';
 import { enqueueMasterDataImport } from '@/lib/master-data/master-data-import-tracker';
+import { useMasterDataImportStore } from '@/store/master-data-import.store';
 import { batchesService } from '@/lib/api/batches.service';
 import { extractApiError } from '@/lib/api/errors';
 import { activityLogsService } from '@/lib/api/activity-logs.service';
@@ -181,6 +182,9 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   } | null>(null);
   const [batchName, setBatchName] = useState('');
   const [batchDesc, setBatchDesc] = useState('');
+  const importPhase = useMasterDataImportStore((s) => s.uiPhase);
+  const importProgress = useMasterDataImportStore((s) => s.progress);
+  const importFileName = useMasterDataImportStore((s) => s.fileName);
   const [savingBatch, setSavingBatch] = useState(false);
   const [duplicateModal, setDuplicateModal] = useState<{
     fileName: string;
@@ -449,24 +453,60 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   }, [loadFromDb]);
 
   const processFile = useCallback(async (file: File) => {
-    setParsing(true); setError('');
+    setParsing(true);
+    setError('');
+    const importStore = useMasterDataImportStore.getState();
     try {
       masterDataService.validateUploadFile(file);
       const mode = replaceOnUpload ? 'replace' : 'append';
-      if (masterDataService.shouldUseServerImport(file)) {
+      const existing = await masterDataService.getCurrent();
+      const existingIsLarge =
+        Boolean(existing?.largeDataset) ||
+        safeCount(existing?.rowCount) > 5000;
+      if (existingIsLarge || masterDataService.shouldUseServerImport(file)) {
         await enqueueMasterDataImport(file, mode);
-        toast.success(
-          'Import started',
-          'Large file import runs in the background — switch pages or tabs freely.',
-        );
         return;
       }
+
+      importStore.begin(file.name, mode);
+      importStore.setProgress({
+        percent: 5,
+        phase: 'parsing',
+        message: 'Reading file…',
+      });
+
       const parsed = await parseSpreadsheetFile(file);
+      const rowCount = parsed.rows.length;
+      importStore.setProgress({
+        percent: 35,
+        phase: 'parsing',
+        message: `Parsed ${rowCount.toLocaleString('en-US')} rows`,
+        rowsProcessed: rowCount,
+        totalRows: rowCount,
+      });
+
       const normalized = prepareMasterDataSheet(parsed.headers, parsed.rows, {
         existingHeaders: dataRef.current?.headers,
         replace: mode === 'replace',
       });
-      await persistToDb(
+
+      importStore.setProgress({
+        percent: 55,
+        phase: 'saving',
+        message: 'Saving to database…',
+        rowsProcessed: normalized.rows.length,
+        totalRows: normalized.rows.length,
+      });
+
+      const duplicatePreview =
+        mode === 'append'
+          ? collectDuplicateRows(dataRef.current, {
+              ...parsed,
+              headers: normalized.headers,
+              rows: normalized.rows,
+            })
+          : null;
+      const record = await masterDataService.save(
         {
           ...parsed,
           headers: normalized.headers,
@@ -474,7 +514,45 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
         },
         mode,
       );
+
+      importStore.setProgress({
+        percent: 100,
+        phase: 'done',
+        message: 'Upload complete',
+        rowsProcessed: record.rowCount,
+        totalRows: record.rowCount,
+      });
+      importStore.markDone();
+
+      applyRecord(record);
+      await logUploadActivity(mode, record, parsed.fileName);
+      if (mode === 'append' && record.addedRows != null) {
+        const skipped =
+          record.skippedDuplicates && record.skippedDuplicates > 0
+            ? ` · ${record.skippedDuplicates} duplicate(s) skipped`
+            : '';
+        toast.success(
+          'Added to master database',
+          `+${record.addedRows} contacts · ${record.rowCount} total${skipped}`,
+        );
+        window.dispatchEvent(new CustomEvent('master-data-updated'));
+        if ((record.skippedDuplicates ?? 0) > 0) {
+          setDuplicateModal({
+            fileName: parsed.fileName,
+            headers: duplicatePreview?.headers ?? normalized.headers,
+            duplicateRows: duplicatePreview?.duplicateRows ?? [],
+            addedRows: record.addedRows ?? 0,
+            duplicateCount:
+              record.skippedDuplicates ?? duplicatePreview?.duplicateRows.length ?? 0,
+            totalRows: record.rowCount,
+          });
+        }
+      } else {
+        toast.success('Saved to database', `${record.rowCount} contacts in master data`);
+        window.dispatchEvent(new CustomEvent('master-data-updated'));
+      }
     } catch (e) {
+      importStore.markFailed();
       const msg = e instanceof Error ? e.message : 'Failed to read file';
       setError(msg);
       if (!(e as { response?: unknown })?.response) setData(null);
@@ -482,7 +560,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
     } finally {
       setParsing(false);
     }
-  }, [persistToDb, replaceOnUpload]);
+  }, [applyRecord, logUploadActivity, replaceOnUpload]);
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -671,6 +749,12 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
             </span>
           )}
           <AutoSaveHint status={isDbAdminView ? 'idle' : autoSaveStatus} />
+          {importPhase === 'active' && importProgress && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-[#e8f1fb] px-2.5 py-0.5 text-xs font-semibold text-[#2e7ad1]">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Upload {Math.round(importProgress.percent)}%
+            </span>
+          )}
           {(savingDb || loadingDb) && (
             <span className="inline-flex items-center gap-1 text-xs text-slate-500">
               <Loader2 className="h-3 w-3 animate-spin" />
@@ -836,11 +920,35 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
             </>
           ) : (
             <>
-              <p className="text-sm text-slate-600">
-                Drop <span className="font-medium">.xlsx</span>, <span className="font-medium">.xls</span>, or{' '}
-                <span className="font-medium">.csv</span> here
-              </p>
-              <p className="mt-1 text-xs text-slate-400">Data is stored in MongoDB after upload</p>
+              {importPhase === 'active' && importProgress ? (
+                <div className="flex w-full max-w-md flex-col items-center gap-3 px-6">
+                  <Loader2 className="h-8 w-8 animate-spin text-[#2e7ad1]" />
+                  <p className="text-sm font-semibold text-slate-800">Uploading master data</p>
+                  {importFileName && (
+                    <p className="truncate text-xs text-slate-500" title={importFileName}>
+                      {importFileName}
+                    </p>
+                  )}
+                  <p className="text-xs text-slate-600">{importProgress.message}</p>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-[#2e7ad1] to-[#00d19e] transition-all duration-500"
+                      style={{ width: `${Math.round(importProgress.percent)}%` }}
+                    />
+                  </div>
+                  <p className="text-sm font-bold tabular-nums text-[#2e7ad1]">
+                    {Math.round(importProgress.percent)}%
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-slate-600">
+                    Drop <span className="font-medium">.xlsx</span>, <span className="font-medium">.xls</span>, or{' '}
+                    <span className="font-medium">.csv</span> here
+                  </p>
+                  <p className="mt-1 text-xs text-slate-400">Data is stored in MongoDB after upload</p>
+                </>
+              )}
             </>
           )}
         </div>

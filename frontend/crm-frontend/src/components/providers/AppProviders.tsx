@@ -6,6 +6,7 @@ import { NotificationProvider } from '@/components/notifications/NotificationPro
 import { LoginWelcomeToast } from '@/components/auth/LoginWelcomeToast';
 import { MasterDataImportBanner } from '@/components/master-data/MasterDataImportBanner';
 import { MasterDataImportResume } from '@/components/master-data/MasterDataImportResume';
+import { MasterDataUploadProgressHost } from '@/components/master-data/MasterDataUploadProgressHost';
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
@@ -13,6 +14,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
       <NotificationProvider>
         <MasterDataImportResume />
         {children}
+        <MasterDataUploadProgressHost />
         <MasterDataImportBanner />
         <Toaster />
         <LoginWelcomeToast />

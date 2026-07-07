@@ -7,8 +7,14 @@ export default () => ({
   APP_URL: process.env.APP_URL || 'http://localhost:4000',
   CORS_ORIGINS: process.env.CORS_ORIGINS || 'http://localhost:3000,http://localhost:3001',
   MONGODB_URI: process.env.MONGODB_URI,
-  MONGODB_MAX_POOL_SIZE: parseInt(process.env.MONGODB_MAX_POOL_SIZE || '10', 10),
+  MONGODB_MAX_POOL_SIZE: parseInt(process.env.MONGODB_MAX_POOL_SIZE || '25', 10),
+  MONGODB_MIN_POOL_SIZE: parseInt(process.env.MONGODB_MIN_POOL_SIZE || '5', 10),
+  MONGODB_MAX_IDLE_TIME_MS: parseInt(process.env.MONGODB_MAX_IDLE_TIME_MS || '60000', 10),
   MONGODB_SYNC_INDEXES: process.env.MONGODB_SYNC_INDEXES !== 'false',
+  /** api | worker | all — split HTTP and BullMQ for horizontal scaling */
+  PROCESS_ROLE: process.env.PROCESS_ROLE || 'all',
+  PROMETHEUS_ENABLED: process.env.PROMETHEUS_ENABLED !== 'false',
+  SOCKET_REDIS_ADAPTER: process.env.SOCKET_REDIS_ADAPTER !== 'false',
   
   REDIS_ENABLED: process.env.REDIS_ENABLED !== 'false',
   REDIS_HOST: process.env.REDIS_HOST || 'localhost',

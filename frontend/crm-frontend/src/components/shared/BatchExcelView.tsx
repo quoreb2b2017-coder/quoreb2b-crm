@@ -16,6 +16,7 @@ import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
 import { CheckSuppressionModal } from '@/components/employee/CheckSuppressionModal';
 import { handleSuppressionCheckComplete } from '@/lib/master-data/handle-suppression-result';
+import { EMPLOYEE_DISPOSITION_OPTIONS } from '@/lib/disposition/disposition-values';
 
 export interface BatchExcelViewProps {
   batchId?: string;
@@ -41,6 +42,8 @@ export interface BatchExcelViewProps {
   /** Employee: check rows against admin suppression campaigns */
   enableCheckSuppression?: boolean;
   checkSuppressionBatchId?: string;
+  /** Employee: Status/Disposition dropdown instead of free text */
+  enableDispositionDropdown?: boolean;
 }
 
 export function BatchExcelView({
@@ -62,6 +65,7 @@ export function BatchExcelView({
   teamHref,
   enableCheckSuppression = false,
   checkSuppressionBatchId,
+  enableDispositionDropdown = false,
 }: BatchExcelViewProps) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -289,6 +293,9 @@ export function BatchExcelView({
             }
             duplicateRowIndices={duplicateHighlightRows}
             markedRowIndices={markedLeadRows}
+            dispositionSelectOptions={
+              enableDispositionDropdown ? EMPLOYEE_DISPOSITION_OPTIONS : undefined
+            }
           />
         )}
       </div>

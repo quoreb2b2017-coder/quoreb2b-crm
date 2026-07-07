@@ -100,6 +100,7 @@ docker run -d \
   -e "BUILD_SHA=$(git -C "$APP_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)" \
   -e "NODE_OPTIONS=--max-old-space-size=3072" \
   -e "API_CLUSTER_WORKERS=2" \
+  -e "PROCESS_ROLE=api" \
   "$IMAGE_NAME"
 
 echo "==> Waiting for API..."

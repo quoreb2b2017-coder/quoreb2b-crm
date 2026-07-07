@@ -1,4 +1,5 @@
 import { findStatusColumnIndex, classifyRowStatus } from '../activity-logs/sheet-lead-stats.util';
+import { classifyDispositionKind } from '../disposition/disposition-status.util';
 
 export function isStatusColumnName(label: string): boolean {
   const lower = label.trim().toLowerCase();
@@ -18,7 +19,9 @@ export function readRowStatus(headers: string[], row: string[]): string {
   return (row[idx] ?? '').trim();
 }
 
-/** Only Lead / Won / Active marks go to QC — not phone edits or other columns. */
+/** Only Lead / Won / Active marks go to QC — not DNC, voicemail, or other columns. */
 export function isLeadMarkedForQc(headers: string[], row: string[]): boolean {
+  const status = readRowStatus(headers, row);
+  if (classifyDispositionKind(status)) return false;
   return classifyRowStatus(headers, row) !== null;
 }

@@ -18,6 +18,7 @@ const crmNav: AdminNavItem[] = [
   { label: 'Attendance', href: '/admin/attendance', section: 'Operations' },
   { label: 'Analytics', href: '/admin/analytics', section: 'Operations' },
   { label: 'QC review', href: '/admin/qc', section: 'Operations' },
+  { label: 'Dispositions', href: '/admin/disposition', section: 'Operations' },
   { label: 'Ready QC', href: '/admin/qc/ready', section: 'Operations' },
   { label: 'Leave requests', href: '/admin/leave-apply', section: 'Operations' },
   { label: 'Personal notes', href: '/admin/personal-notes', section: 'Operations' },

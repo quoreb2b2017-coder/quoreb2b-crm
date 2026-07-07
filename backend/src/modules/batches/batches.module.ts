@@ -10,12 +10,14 @@ import { ActivityLog, ActivityLogSchema } from '../activity-logs/schemas/activit
 import { NotificationsModule } from '../notifications/notifications.module';
 import { MasterDataModule } from '../master-data/master-data.module';
 import { QcModule } from '../qc/qc.module';
+import { DispositionModule } from '../disposition/disposition.module';
 import { detectCampaignChannel } from '../qc/qc-channel.util';
 
 @Module({
   imports: [
     forwardRef(() => MasterDataModule),
     forwardRef(() => QcModule),
+    DispositionModule,
     UsersModule,
     ActivityLogsModule,
     NotificationsModule,

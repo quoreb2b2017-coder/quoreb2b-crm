@@ -4,6 +4,7 @@ import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { MasterDataRecord, MasterDataSchema } from '../master-data/schemas/master-data.schema';
+import { MasterDataChunk, MasterDataChunkSchema } from '../master-data/schemas/master-data-chunk.schema';
 import { Batch, BatchSchema } from '../batches/schemas/batch.schema';
 import {
   ActivityLog,
@@ -19,6 +20,7 @@ import { BatchesModule } from '../batches/batches.module';
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: MasterDataRecord.name, schema: MasterDataSchema },
+      { name: MasterDataChunk.name, schema: MasterDataChunkSchema },
       { name: Batch.name, schema: BatchSchema },
       { name: ActivityLog.name, schema: ActivityLogSchema },
     ]),

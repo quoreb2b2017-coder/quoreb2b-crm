@@ -106,6 +106,7 @@ export default function EmployeeBatchViewPage() {
       onClose={() => router.push('/employee/batches')}
       enableCheckSuppression
       checkSuppressionBatchId={id}
+      enableDispositionDropdown={canEdit}
     />
   );
 }

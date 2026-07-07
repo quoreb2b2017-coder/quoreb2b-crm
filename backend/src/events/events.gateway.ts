@@ -3,11 +3,16 @@ import {
   WebSocketServer,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { createAdapter } from '@socket.io/redis-adapter';
+import Redis from 'ioredis';
+import { isRedisEnabled } from '../config/env';
+import { buildRedisOptions } from '../redis/redis.factory';
 
 @WebSocketGateway({
   cors: {
@@ -20,7 +25,7 @@ import { JwtService } from '@nestjs/jwt';
   namespace: '/events',
   transports: ['websocket', 'polling'],
 })
-export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
@@ -31,6 +36,17 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private jwtService: JwtService,
     private config: ConfigService,
   ) {}
+
+  afterInit(server: Server): void {
+    const useAdapter =
+      isRedisEnabled() && this.config.get<boolean>('SOCKET_REDIS_ADAPTER', true);
+    if (!useAdapter) return;
+
+    const pub = new Redis(buildRedisOptions(this.config));
+    const sub = pub.duplicate();
+    server.adapter(createAdapter(pub, sub));
+    this.logger.log('Socket.io Redis adapter enabled — safe for multi-instance deploy');
+  }
 
   async handleConnection(client: Socket) {
     try {

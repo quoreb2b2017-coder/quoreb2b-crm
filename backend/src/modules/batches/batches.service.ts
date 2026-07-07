@@ -31,6 +31,7 @@ import { AppCacheService } from '../../redis/app-cache.service';
 import { cacheTtlSeconds } from '../../redis/cache.util';
 import { MasterDataService } from '../master-data/master-data.service';
 import { QcService } from '../qc/qc.service';
+import { DispositionService } from '../disposition/disposition.service';
 import { detectCampaignChannel } from '../qc/qc-channel.util';
 
 import {
@@ -76,6 +77,7 @@ export class BatchesService {
     private masterDataService: MasterDataService,
     @Inject(forwardRef(() => QcService))
     private qcService: QcService,
+    private dispositionService: DispositionService,
   ) {}
 
   async create(
@@ -284,15 +286,17 @@ export class BatchesService {
     masterHeaders: string[],
     masterRows: string[][],
     masterRevision = 0,
+    totalRowCount?: number,
   ): Promise<MasterBatchCoverageResult> {
-    const cacheKey = `master:coverage:${masterRows.length}:${masterHeaders.length}:${masterRevision}`;
+    const rowTotal = totalRowCount ?? masterRows.length;
+    const cacheKey = `master:coverage:${rowTotal}:${masterHeaders.length}:${masterRevision}`;
     return this.cache.wrap(cacheKey, cacheTtlSeconds(this.config, 'long'), async () => {
       const batches = await this.model
         .find({ $or: [{ sourceBatchId: { $exists: false } }, { sourceBatchId: null }] })
-        .select('name headers rows sourceBatchId masterSourceRowIndices')
+        .select('name sourceBatchId masterSourceRowIndices')
         .lean()
         .exec();
-      return buildMasterBatchCoverage(masterHeaders, masterRows, batches);
+      return buildMasterBatchCoverage(masterHeaders, masterRows, batches, rowTotal);
     });
   }
 
@@ -707,7 +711,7 @@ export class BatchesService {
       if (changes.length > 0 && actor?.id) {
         void this.logLeadUpdates(actor, batchId, String(batch.name), changes);
         // Assigned employee edits stay on this batch only — never write back to master file.
-        void this.qcService.enqueueFromBatchUpdate({
+        const enqueueParams = {
           batch,
           actorId: actor.id,
           actorName: [actor.firstName, actor.lastName].filter(Boolean).join(' ') || actor.email,
@@ -717,7 +721,9 @@ export class BatchesService {
           newHeaders,
           newRows: dto.rows,
           changes,
-        });
+        };
+        void this.qcService.enqueueFromBatchUpdate(enqueueParams);
+        void this.dispositionService.enqueueFromBatchUpdate(enqueueParams);
       }
       batch.rows = dto.rows;
       batch.rowCount = dto.rows.length;
@@ -1260,26 +1266,32 @@ export class BatchesService {
   appendDeliveredDuplicates = this.appendSuppressionDuplicates.bind(this);
 
   async getSuppressionRowKeys(): Promise<Set<string>> {
-    const batches = await this.model
-      .find({
-        $or: [
-          { batchKind: { $in: [...SUPPRESSION_BATCH_KINDS] } },
-          {
-            batchKind: 'standard',
-            suppressionSourceRowIndices: { $exists: true, $not: { $size: 0 } },
-          },
-        ],
-      })
-      .select('rows')
-      .lean()
-      .exec();
-    const keys = new Set<string>();
-    for (const batch of batches) {
-      for (const row of batch.rows ?? []) {
-        keys.add(row.map((cell) => String(cell ?? '').trim()).join('\u001f'));
-      }
-    }
-    return keys;
+    return this.cache.wrap(
+      'batch:suppression-keys',
+      cacheTtlSeconds(this.config, 'medium'),
+      async () => {
+        const batches = await this.model
+          .find({
+            $or: [
+              { batchKind: { $in: [...SUPPRESSION_BATCH_KINDS] } },
+              {
+                batchKind: 'standard',
+                suppressionSourceRowIndices: { $exists: true, $not: { $size: 0 } },
+              },
+            ],
+          })
+          .select('rows rowCount')
+          .lean()
+          .exec();
+        const keys = new Set<string>();
+        for (const batch of batches) {
+          for (const row of batch.rows ?? []) {
+            keys.add(row.map((cell) => String(cell ?? '').trim()).join('\u001f'));
+          }
+        }
+        return keys;
+      },
+    );
   }
 
   /** @deprecated */

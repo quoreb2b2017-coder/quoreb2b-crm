@@ -6,6 +6,7 @@ export const dbAdminNav = [
   { label: 'Attendance', href: '/db-admin/attendance', section: 'Operations' },
   { label: 'Leave apply', href: '/db-admin/leave-apply', section: 'Operations' },
   { label: 'Activity logs', href: '/db-admin/activity-logs', section: 'Operations' },
+  { label: 'Dispositions', href: '/db-admin/disposition', section: 'Operations' },
   { label: 'My data', href: '/db-admin/master-data', section: 'Data' },
   { label: 'Employee data', href: '/db-admin/master-data?tab=employee', section: 'Data' },
   { label: 'Email verification', href: '/db-admin/bulk-email-verification', section: 'Data' },

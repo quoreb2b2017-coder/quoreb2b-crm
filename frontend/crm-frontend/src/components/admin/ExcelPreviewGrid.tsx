@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { Filter, ChevronDown, ArrowUpAZ, ArrowDownAZ, X, Plus, Rows3, Columns3 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
@@ -18,6 +19,7 @@ import { spreadsheetGuardProps } from '@/lib/spreadsheet/spreadsheet-access';
 import { GridScrollRails } from '@/components/spreadsheet/GridScrollRails';
 import { useDragToScroll } from '@/hooks/useDragToScroll';
 import type { MasterBatchCreatePayload } from '@/components/master-database/MasterDatabaseExplorer';
+import { isStatusDispositionColumn } from '@/lib/disposition/disposition-values';
 
 function colLetter(index: number): string {
   let n = index;
@@ -86,6 +88,8 @@ interface ExcelPreviewGridProps {
   onDatasetRowSeek?: (globalRowIndex: number) => void;
   /** Scroll to this display row when value changes */
   focusDisplayRow?: number;
+  /** Status/Disposition column dropdown options (employee campaign edit) */
+  dispositionSelectOptions?: readonly string[];
 }
 
 export function ExcelPreviewGrid({
@@ -117,6 +121,7 @@ export function ExcelPreviewGrid({
   datasetRowOffset = 0,
   onDatasetRowSeek,
   focusDisplayRow,
+  dispositionSelectOptions,
 }: ExcelPreviewGridProps) {
   const editable = editableProp ?? Boolean(onDataChange);
   const canExport = useCanExportSpreadsheet();
@@ -257,6 +262,22 @@ export function ExcelPreviewGrid({
   const dragScrollEnabled = enableDragScroll ?? false;
   const scrollRailsEnabled = showScrollRails ?? false;
   useDragToScroll(containerRef, dragScrollEnabled);
+
+  const VIRTUAL_ROW_THRESHOLD = 40;
+  const enableVirtualRows =
+    displayRows.length > VIRTUAL_ROW_THRESHOLD && !isEditing && !editable;
+  const rowVirtualizer = useVirtualizer({
+    count: displayRows.length,
+    getScrollElement: () => containerRef.current,
+    estimateSize: () => 32,
+    overscan: 12,
+  });
+  const virtualRows = enableVirtualRows ? rowVirtualizer.getVirtualItems() : null;
+  const paddingTop = virtualRows?.[0]?.start ?? 0;
+  const paddingBottom =
+    virtualRows && virtualRows.length > 0
+      ? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end
+      : 0;
 
   useEffect(() => {
     if (focusDisplayRow == null || !containerRef.current) return;
@@ -795,7 +816,20 @@ export function ExcelPreviewGrid({
                 </td>
               </tr>
             ) : (
-              displayRows.map((row, displayRowIndex) => {
+              <>
+                {enableVirtualRows && paddingTop > 0 && (
+                  <tr aria-hidden>
+                    <td
+                      colSpan={headers.length + 1 + (selectable ? 1 : 0)}
+                      style={{ height: paddingTop, padding: 0, border: 'none' }}
+                    />
+                  </tr>
+                )}
+                {(enableVirtualRows
+                  ? (virtualRows ?? []).map((v) => v.index)
+                  : displayRows.map((_, i) => i)
+                ).map((displayRowIndex) => {
+                const row = displayRows[displayRowIndex];
                 const sourceRow = sourceIndices[displayRowIndex];
                 const batchRefs =
                   sourceRow != null ? batchedByRow?.[String(sourceRow)] : undefined;
@@ -875,6 +909,9 @@ export function ExcelPreviewGrid({
                         editTarget.col === colIndex;
                       const active = isActive(displayRowIndex, colIndex);
                       const value = row[colIndex] ?? '';
+                      const isDispositionCol =
+                        Boolean(dispositionSelectOptions?.length) &&
+                        isStatusDispositionColumn(headers[colIndex] ?? '');
 
                       return (
                         <td
@@ -884,6 +921,7 @@ export function ExcelPreviewGrid({
                           tabIndex={0}
                           onDoubleClick={() =>
                             editable &&
+                            !isDispositionCol &&
                             startEdit({ kind: 'cell', sourceRow, col: colIndex })
                           }
                           className={cn(
@@ -893,7 +931,23 @@ export function ExcelPreviewGrid({
                           )}
                           title={value}
                         >
-                          {editingCell ? (
+                          {isDispositionCol ? (
+                            <select
+                              value={value}
+                              disabled={!editable}
+                              onChange={(e) => {
+                                sheet.updateCell(sourceRow, colIndex, e.target.value);
+                                onLeadCellFocus?.(sourceRow, colIndex);
+                              }}
+                              className="w-full min-w-[140px] border-0 bg-white px-2 py-1 text-[13px] outline-none disabled:bg-transparent"
+                            >
+                              {dispositionSelectOptions!.map((opt) => (
+                                <option key={opt || '__empty'} value={opt}>
+                                  {opt || '— Select —'}
+                                </option>
+                              ))}
+                            </select>
+                          ) : editingCell ? (
                             <input
                               ref={inputRef}
                               value={editDraft}
@@ -920,7 +974,16 @@ export function ExcelPreviewGrid({
                     })}
                   </tr>
                 );
-              })
+              })}
+                {enableVirtualRows && paddingBottom > 0 && (
+                  <tr aria-hidden>
+                    <td
+                      colSpan={headers.length + 1 + (selectable ? 1 : 0)}
+                      style={{ height: paddingBottom, padding: 0, border: 'none' }}
+                    />
+                  </tr>
+                )}
+              </>
             )}
           </tbody>
         </table>

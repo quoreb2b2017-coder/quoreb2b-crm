@@ -20,8 +20,8 @@ type BatchLike = {
   _id?: { toString(): string };
   id?: string;
   name: string;
-  headers: string[];
-  rows: string[][];
+  headers?: string[];
+  rows?: string[][];
   sourceBatchId?: { toString(): string } | string | null;
   masterSourceRowIndices?: number[];
 };
@@ -45,19 +45,24 @@ export function buildMasterBatchCoverage(
   masterHeaders: string[],
   masterRows: string[][],
   batches: BatchLike[],
+  totalRowCount?: number,
 ): MasterBatchCoverageResult {
   const batchedMap = new Map<number, BatchRef[]>();
   const fromMaster = batches.filter((b) => !b.sourceBatchId);
+  const rowTotal = totalRowCount ?? masterRows.length;
 
   for (const batch of fromMaster) {
     const ref: BatchRef = { id: batchId(batch), name: batch.name };
     const indices = batch.masterSourceRowIndices;
     if (indices?.length) {
       for (const idx of indices) {
-        if (idx >= 0 && idx < masterRows.length) addBatchToRow(batchedMap, idx, ref);
+        if (idx >= 0 && idx < rowTotal) addBatchToRow(batchedMap, idx, ref);
       }
       continue;
     }
+
+    // Legacy fallback: fingerprint match only when batch rows are loaded (avoid O(n*m) on millions)
+    if (!batch.rows?.length || !batch.headers?.length) continue;
 
     for (let bi = 0; bi < batch.rows.length; bi++) {
       const fp = fingerprintLeadRow(batch.headers, batch.rows[bi], bi);
@@ -76,9 +81,9 @@ export function buildMasterBatchCoverage(
   const batchedRows = batchedMap.size;
   return {
     summary: {
-      totalRows: masterRows.length,
+      totalRows: rowTotal,
       batchedRows,
-      availableRows: Math.max(0, masterRows.length - batchedRows),
+      availableRows: Math.max(0, rowTotal - batchedRows),
       batchesFromMaster: fromMaster.length,
     },
     batchedByRow,

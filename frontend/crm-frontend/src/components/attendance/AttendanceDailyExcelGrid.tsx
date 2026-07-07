@@ -19,7 +19,8 @@ import {
   isDailyGrossQuotaMet,
   isDailyNetQuotaMet,
 } from '@/lib/attendance/net-work-minutes';
-import { useLiveAttendanceRows } from '@/hooks/useLiveAttendanceRows';
+import { useHistoricalAttendanceRows } from '@/hooks/useLiveAttendanceRows';
+import { AttendanceTodayLiveRow } from '@/components/attendance/AttendanceTodayLiveRow';
 import { todayDateKeyIst } from '@/lib/attendance/ist-date';
 import { isWeekendDateKey, weekdayShortFromDateKey } from '@/lib/constants/workspace-timezone';
 import { formatDateShort } from '@/lib/datetime';
@@ -116,10 +117,7 @@ export function AttendanceDailyExcelGrid({
   onEditRow,
   liveToday = false,
 }: AttendanceDailyExcelGridProps) {
-  const { rows: displayRows, liveSeconds, isRunning: sessionLive } = useLiveAttendanceRows(
-    rows,
-    liveToday,
-  );
+  const displayRows = useHistoricalAttendanceRows(rows, liveToday);
   const todayKey = todayDateKeyIst();
   const columns = canEdit ? [...BASE_COLUMNS, 'Edit'] : [...BASE_COLUMNS];
   const colCount = columns.length;
@@ -190,45 +188,50 @@ export function AttendanceDailyExcelGrid({
             ) : (
               displayRows.map((day, rowIdx) => {
                 const dateKey = day.date.slice(0, 10);
+                const isTodayRow = dateKey === todayKey;
+
+                const renderRow = (
+                  rowDay: AttendanceDailyRow,
+                  live: { liveSeconds: number; isRunning: boolean },
+                ) => {
                 const dayName = weekdayShortFromDateKey(dateKey);
                 const dateStr = formatDateShort(`${dateKey}T12:00:00`);
-                const rawStatus = day.status?.toLowerCase() ?? '';
+                const rawStatus = rowDay.status?.toLowerCase() ?? '';
                 const effectiveStatus =
                   rawStatus === 'weekend' && !isWeekendDateKey(dateKey) ? 'absent' : rawStatus;
                 const statusKey =
-                  day.isLate && (effectiveStatus === 'present' || effectiveStatus === 'half-day')
+                  rowDay.isLate && (effectiveStatus === 'present' || effectiveStatus === 'half-day')
                     ? 'late'
-                    : effectiveStatus === 'leave' && day.isPaidLeave
+                    : effectiveStatus === 'leave' && rowDay.isPaidLeave
                       ? 'paid-leave'
                       : effectiveStatus;
                 const statusClass = STATUS_STYLES[statusKey] ?? 'bg-slate-100 text-slate-700';
                 const statusLabel = formatAttendanceStatusLabel(
                   effectiveStatus,
-                  day.isLate,
-                  day.isPaidLeave,
+                  rowDay.isLate,
+                  rowDay.isPaidLeave,
                 );
 
-                const grossMinutes = day.grossWorkDurationMinutes ?? resolveGrossMinutes(day);
-                const netMinutes = day.workDurationMinutes ?? resolveNetMinutes(day);
-                const isTodayRow = day.date.slice(0, 10) === todayKey;
-                const isLive = liveToday && isTodayRow && sessionLive;
+                const grossMinutes = rowDay.grossWorkDurationMinutes ?? resolveGrossMinutes(rowDay);
+                const netMinutes = rowDay.workDurationMinutes ?? resolveNetMinutes(rowDay);
+                const isLive = liveToday && isTodayRow && live.isRunning;
 
                 const cells: React.ReactNode[] = [
                   rowIdx + 1,
                   dateStr,
                   dayName,
                   statusLabel,
-                  day.checkInTime ?? '—',
-                  day.checkOutTime ?? '—',
+                  rowDay.checkInTime ?? '—',
+                  rowDay.checkOutTime ?? '—',
                   <WorkDurationCell
                     key="gross"
                     variant="gross"
                     minutes={grossMinutes}
                     targetMinutes={DAILY_GROSS_TARGET_MINUTES}
                     targetLabel={DAILY_GROSS_TARGET_LABEL}
-                    met={day.dailyGrossTargetMet ?? isDailyGrossQuotaMet(grossMinutes)}
+                    met={rowDay.dailyGrossTargetMet ?? isDailyGrossQuotaMet(grossMinutes)}
                     inProgress={isLive}
-                    liveSeconds={isLive ? liveSeconds : undefined}
+                    liveSeconds={isLive ? live.liveSeconds : undefined}
                   />,
                   <WorkDurationCell
                     key="net"
@@ -236,14 +239,14 @@ export function AttendanceDailyExcelGrid({
                     minutes={netMinutes}
                     targetMinutes={DAILY_NET_WORK_TARGET_MINUTES}
                     targetLabel={DAILY_NET_WORK_TARGET_LABEL}
-                    met={day.dailyTargetMet ?? isDailyNetQuotaMet(netMinutes)}
-                    inProgress={isLive && !(day.dailyTargetMet ?? isDailyNetQuotaMet(netMinutes))}
-                    liveSeconds={isLive ? liveSeconds : undefined}
+                    met={rowDay.dailyTargetMet ?? isDailyNetQuotaMet(netMinutes)}
+                    inProgress={isLive && !(rowDay.dailyTargetMet ?? isDailyNetQuotaMet(netMinutes))}
+                    liveSeconds={isLive ? live.liveSeconds : undefined}
                   />,
                 ];
 
                 return (
-                  <tr key={day.date + rowIdx} className="even:bg-[#fafafa] transition-colors duration-150 hover:bg-[#e7f3ff]/30">
+                  <tr key={rowDay.date + rowIdx} className="even:bg-[#fafafa] transition-colors duration-150 hover:bg-[#e7f3ff]/30">
                     {cells.map((content, col) => {
                       const active = activeCell.row === rowIdx && activeCell.col === col;
                       const onActivate = () => setCell({ row: rowIdx, col });
@@ -276,7 +279,7 @@ export function AttendanceDailyExcelGrid({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            onEditRow?.(day);
+                            onEditRow?.(rowDay);
                           }}
                           className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
                         >
@@ -287,6 +290,17 @@ export function AttendanceDailyExcelGrid({
                     )}
                   </tr>
                 );
+                };
+
+                if (liveToday && isTodayRow) {
+                  return (
+                    <AttendanceTodayLiveRow key={day.date + rowIdx} baseRow={day} enabled>
+                      {(liveDay, live) => renderRow(liveDay, live)}
+                    </AttendanceTodayLiveRow>
+                  );
+                }
+
+                return renderRow(day, { liveSeconds: 0, isRunning: false });
               })
             )}
           </tbody>

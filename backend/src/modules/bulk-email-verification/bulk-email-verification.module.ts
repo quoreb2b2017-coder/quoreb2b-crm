@@ -2,6 +2,7 @@ import { DynamicModule, Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { BullModule } from '@nestjs/bullmq';
 import { isRedisEnabled } from '../../config/env';
+import { shouldRunHttp, shouldRunWorkers } from '../../common/utils/process-role.util';
 import { BulkEmailVerificationController } from './bulk-email-verification.controller';
 import { BulkEmailVerificationService } from './bulk-email-verification.service';
 import { BulkEmailVerificationProcessorService } from './bulk-email-verification-processor.service';
@@ -42,7 +43,9 @@ const coreProviders = [
 @Module({})
 export class BulkEmailVerificationModule {
   static register(): DynamicModule {
+    const controllers = shouldRunHttp() ? [BulkEmailVerificationController] : [];
     if (isRedisEnabled()) {
+      const workers = shouldRunWorkers() ? [BulkEmailVerificationWorker] : [];
       return {
         module: BulkEmailVerificationModule,
         imports: [
@@ -51,11 +54,11 @@ export class BulkEmailVerificationModule {
           ActivityLogsModule,
           NotificationsModule,
         ],
-        controllers: [BulkEmailVerificationController],
+        controllers,
         providers: [
           ...coreProviders,
           BulkEmailVerificationQueueService,
-          BulkEmailVerificationWorker,
+          ...workers,
         ],
         exports: [BulkEmailVerificationService],
       };
@@ -64,7 +67,7 @@ export class BulkEmailVerificationModule {
     return {
       module: BulkEmailVerificationModule,
       imports: [mongooseFeatures, ActivityLogsModule, NotificationsModule],
-      controllers: [BulkEmailVerificationController],
+      controllers,
       providers: [
         ...coreProviders,
         {

@@ -2,6 +2,7 @@ import { DynamicModule, Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { BullModule } from '@nestjs/bullmq';
 import { isRedisEnabled } from '../../config/env';
+import { shouldRunHttp, shouldRunWorkers } from '../../common/utils/process-role.util';
 import { CsvImportController } from './csv-import.controller';
 import { CsvImportService } from './csv-import.service';
 import { CsvImportJobRepository } from './repositories/csv-import-job.repository';
@@ -54,7 +55,11 @@ const coreProviders = [
 @Module({})
 export class CsvImportModule {
   static register(): DynamicModule {
+    const controllers = shouldRunHttp() ? [CsvImportController] : [];
     if (isRedisEnabled()) {
+      const workers = shouldRunWorkers()
+        ? [CsvImportOrchestratorWorker, CsvImportBatchWorker]
+        : [];
       return {
         module: CsvImportModule,
         imports: [
@@ -65,12 +70,11 @@ export class CsvImportModule {
             { name: CSV_IMPORT_BATCH_QUEUE },
           ),
         ],
-        controllers: [CsvImportController],
+        controllers,
         providers: [
           ...coreProviders,
           CsvImportQueueService,
-          CsvImportOrchestratorWorker,
-          CsvImportBatchWorker,
+          ...workers,
         ],
         exports: [CsvImportService],
       };
@@ -79,7 +83,7 @@ export class CsvImportModule {
     return {
       module: CsvImportModule,
       imports: [mongooseFeatures],
-      controllers: [CsvImportController],
+      controllers,
       providers: [
         ...coreProviders,
         { provide: CsvImportQueueService, useClass: CsvImportQueueServiceNoop },

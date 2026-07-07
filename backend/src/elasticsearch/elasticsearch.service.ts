@@ -40,7 +40,7 @@ export class ElasticsearchService {
         index: this.indexName(resource),
         id,
         document,
-        refresh: 'wait_for',
+        refresh: false,
       });
     } catch (error) {
       this.logger.error(`Failed to index ${resource}/${id}`, error);
@@ -57,6 +57,23 @@ export class ElasticsearchService {
       return result.hits.hits.map((hit) => hit._source as T);
     } catch (error) {
       this.logger.error(`Elasticsearch search failed for ${resource}`, error);
+      return [];
+    }
+  }
+
+  /** Returns document ids for cursor/filter hydration. */
+  async searchIds(resource: string, query: Record<string, unknown>): Promise<string[]> {
+    if (!this.enabled || !this.client) return [];
+    try {
+      const result = await this.client.search({
+        index: this.indexName(resource),
+        ...query,
+      });
+      return result.hits.hits
+        .map((hit) => String(hit._id ?? ''))
+        .filter((id) => id.length > 0);
+    } catch (error) {
+      this.logger.error(`Elasticsearch searchIds failed for ${resource}`, error);
       return [];
     }
   }

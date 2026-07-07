@@ -180,7 +180,7 @@ export class UsersService {
     const result = await this.repository.findPaginated(filter, dto);
     return {
       ...result,
-      data: result.data.map((u) => this.sanitizeUser(u)),
+      data: result.data.map((u) => this.sanitizeUser(u as User)),
     };
   }
 

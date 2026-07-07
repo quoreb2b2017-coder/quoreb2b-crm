@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { User } from '../users/schemas/user.schema';
 import { MasterDataRecord, MASTER_DATA_KEY } from '../master-data/schemas/master-data.schema';
+import { MasterDataChunk } from '../master-data/schemas/master-data-chunk.schema';
 import { Batch } from '../batches/schemas/batch.schema';
 import { ActivityLog } from '../activity-logs/schemas/activity-log.schema';
 import { ElasticsearchService } from '../../elasticsearch/elasticsearch.service';
@@ -66,7 +67,7 @@ interface SheetCounts {
   statusBreakdown: Map<string, number>;
 }
 
-function countFromSheet(headers: string[], rows: string[][]): SheetCounts {
+function countFromSheet(headers: string[], rows: string[][], totalRows?: number): SheetCounts {
   const statusIdx = headers.findIndex((h) => h.trim().toLowerCase() === 'status');
   const dispositionIdx = headers.findIndex((h) => h.trim().toLowerCase() === 'disposition');
 
@@ -74,10 +75,10 @@ function countFromSheet(headers: string[], rows: string[][]): SheetCounts {
   let leads = 0;
   const statusMap = new Map<string, number>();
 
-  // Decide which column to use
   const colIdx = statusIdx !== -1 ? statusIdx : dispositionIdx;
+  const rowTotal = totalRows ?? rows.length;
 
-  if (colIdx !== -1) {
+  if (colIdx !== -1 && rows.length > 0) {
     for (const row of rows) {
       const raw = row[colIdx]?.trim() ?? '';
       if (!raw || raw === '-') continue;
@@ -86,9 +87,19 @@ function countFromSheet(headers: string[], rows: string[][]): SheetCounts {
       if (lower === 'lead' || lower === 'leads') leads++;
       statusMap.set(raw, (statusMap.get(raw) ?? 0) + 1);
     }
+
+    // Scale sampled counts to full dataset when using chunked sample
+    if (totalRows && rows.length < totalRows && rows.length > 0) {
+      const scale = totalRows / rows.length;
+      active = Math.round(active * scale);
+      leads = Math.round(leads * scale);
+      for (const [k, v] of statusMap) {
+        statusMap.set(k, Math.round(v * scale));
+      }
+    }
   }
 
-  return { total: rows.length, active, leads, statusBreakdown: statusMap };
+  return { total: rowTotal, active, leads, statusBreakdown: statusMap };
 }
 
 /* ── service ───────────────────────────────────────────────────── */
@@ -97,6 +108,7 @@ export class AnalyticsService {
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
     @InjectModel(MasterDataRecord.name) private masterDataModel: Model<MasterDataRecord>,
+    @InjectModel(MasterDataChunk.name) private masterChunkModel: Model<MasterDataChunk>,
     @InjectModel(Batch.name) private batchModel: Model<Batch>,
     @InjectModel(ActivityLog.name) private activityLogModel: Model<ActivityLog>,
     private elasticsearch: ElasticsearchService,
@@ -128,7 +140,7 @@ export class AnalyticsService {
         .sort({ updatedAt: -1 })
         .lean()
         .exec(),
-      this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).select('headers rows sharedWithDbAdmins updatedAt').lean().exec(),
+      this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).select('headers rows rowCount storage sharedWithDbAdmins updatedAt').lean().exec(),
       this.activityLogModel
         .find({
           userId: oid,
@@ -164,16 +176,17 @@ export class AnalyticsService {
       }
     }
 
-    if (masterDoc?.rows?.length && (masterDoc.headers as string[])?.length) {
-      const masterCounts = countFromSheet(
-        masterDoc.headers as string[],
-        masterDoc.rows as string[][],
-      );
+    const masterRowCount =
+      (masterDoc?.rowCount as number) ?? (masterDoc?.rows as string[][])?.length ?? 0;
+
+    if (masterRowCount > 0 && masterDoc && (masterDoc.headers as string[])?.length) {
+      const sampleRows = await this.sampleMasterRows(masterDoc);
+      const masterCounts = countFromSheet(masterDoc.headers as string[], sampleRows, masterRowCount);
       activeLeads = masterCounts.active;
       wonLeads = masterCounts.leads;
     }
 
-    const hasMasterAccess = !!masterDoc?.rows?.length;
+    const hasMasterAccess = masterRowCount > 0;
 
     let masterData: {
       totalRows: number;
@@ -182,15 +195,16 @@ export class AnalyticsService {
       batchesFromMaster: number;
     } | null = null;
 
-    if (hasMasterAccess && masterDoc?.rows?.length) {
+    if (hasMasterAccess && masterDoc) {
       const masterUpdatedAt = (masterDoc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? 0;
       const coverage = await this.batchesService.getMasterBatchCoverage(
         masterDoc.headers as string[],
-        masterDoc.rows as string[][],
+        (masterDoc.rows as string[][]) ?? [],
         masterUpdatedAt,
+        masterRowCount,
       );
       masterData = {
-        totalRows: masterDoc.rows.length,
+        totalRows: masterRowCount,
         batchedRows: coverage.summary.batchedRows,
         availableRows: coverage.summary.availableRows,
         batchesFromMaster: coverage.summary.batchesFromMaster,
@@ -493,7 +507,7 @@ export class AnalyticsService {
     const [totalUsers, newUsersThisMonth, masterData, batches] = await Promise.all([
       this.userModel.countDocuments({ isActive: true }),
       this.userModel.countDocuments({ createdAt: { $gte: startOfMonth } }),
-      this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).select('headers rows').lean().exec(),
+      this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).select('headers rows rowCount storage').lean().exec(),
       this.batchModel.find().select('rowCount').lean().exec(),
     ]);
 
@@ -501,14 +515,19 @@ export class AnalyticsService {
     let activeLeads = 0;
     let statusLeads = 0;
 
-    if (masterData?.rows?.length) {
-      const c = countFromSheet(
-        (masterData as { headers?: string[] }).headers ?? [],
-        masterData.rows as string[][],
-      );
-      totalLeads = c.total;
-      activeLeads = c.active;
-      statusLeads = c.leads;
+    if (masterData) {
+      const rowCount = (masterData.rowCount as number) ?? (masterData.rows as string[][])?.length ?? 0;
+      if (rowCount > 0 && (masterData.headers as string[])?.length) {
+        const sampleRows = await this.sampleMasterRows(masterData);
+        const c = countFromSheet(
+          (masterData as { headers?: string[] }).headers ?? [],
+          sampleRows,
+          rowCount,
+        );
+        totalLeads = c.total;
+        activeLeads = c.active;
+        statusLeads = c.leads;
+      }
     }
 
     const batchCount = batches.length;
@@ -539,20 +558,25 @@ export class AnalyticsService {
 
   private async loadChartData() {
     const [masterData, batchCount] = await Promise.all([
-      this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).select('headers rows').lean().exec(),
+      this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).select('headers rows rowCount storage').lean().exec(),
       this.batchModel.countDocuments().exec(),
     ]);
 
     const combinedMap = new Map<string, number>();
     let totalLeads = 0;
 
-    if (masterData?.rows?.length) {
-      const c = countFromSheet(
-        (masterData as { headers?: string[] }).headers ?? [],
-        masterData.rows as string[][],
-      );
-      totalLeads = c.total;
-      c.statusBreakdown.forEach((v, k) => combinedMap.set(k, (combinedMap.get(k) ?? 0) + v));
+    if (masterData) {
+      const rowCount = (masterData.rowCount as number) ?? (masterData.rows as string[][])?.length ?? 0;
+      if (rowCount > 0 && (masterData.headers as string[])?.length) {
+        const sampleRows = await this.sampleMasterRows(masterData);
+        const c = countFromSheet(
+          (masterData as { headers?: string[] }).headers ?? [],
+          sampleRows,
+          rowCount,
+        );
+        totalLeads = c.total;
+        c.statusBreakdown.forEach((v, k) => combinedMap.set(k, (combinedMap.get(k) ?? 0) + v));
+      }
     }
 
     if (combinedMap.size === 0) {
@@ -581,6 +605,39 @@ export class AnalyticsService {
       topStatus,
       topStatusPct,
     };
+  }
+
+  /** Sample up to 5k rows for dashboard stats — avoids loading millions into RAM. */
+  private async sampleMasterRows(
+    doc: {
+      key: string;
+      rows?: string[][];
+      storage?: string;
+      rowCount?: number;
+    },
+    maxSample = 5000,
+  ): Promise<string[][]> {
+    const inline = (doc.rows as string[][]) ?? [];
+    if (doc.storage !== 'chunked' || inline.length >= maxSample) {
+      return inline.slice(0, maxSample);
+    }
+
+    const chunks = await this.masterChunkModel
+      .find({ masterKey: doc.key })
+      .sort({ chunkIndex: 1 })
+      .limit(Math.ceil(maxSample / 1000))
+      .select('rows')
+      .lean()
+      .exec();
+
+    const sample: string[][] = [];
+    for (const chunk of chunks) {
+      for (const row of (chunk.rows as string[][]) ?? []) {
+        sample.push(row);
+        if (sample.length >= maxSample) return sample;
+      }
+    }
+    return sample;
   }
 
   async searchLeads(query: string) {

@@ -358,6 +358,37 @@ export class ActivityLogsService {
       return paginate([], 0, { ...dto, page, limit });
     }
 
+    if (dto.cursor) {
+      const qFilter = { ...filter } as Record<string, unknown>;
+      qFilter.occurredAt = { $lt: new Date(dto.cursor) };
+
+      const items = await this.model
+        .find(qFilter)
+        .sort({ occurredAt: -1, createdAt: -1 })
+        .limit(limit + 1)
+        .lean()
+        .exec();
+
+      const hasMore = items.length > limit;
+      const pageItems = hasMore ? items.slice(0, limit) : items;
+      const userMap = await this.loadUserMap(pageItems as Record<string, unknown>[]);
+      const data = pageItems.map((row) =>
+        this.formatLogRow(row as Record<string, unknown>, userMap),
+      );
+      const last = pageItems[pageItems.length - 1] as { occurredAt?: Date } | undefined;
+      const nextCursor =
+        hasMore && last?.occurredAt ? last.occurredAt.toISOString() : null;
+
+      return {
+        data,
+        meta: {
+          limit,
+          hasNextPage: hasMore,
+          nextCursor,
+        },
+      };
+    }
+
     const [items, total] = await Promise.all([
       this.model
         .find(filter)

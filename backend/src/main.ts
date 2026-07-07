@@ -10,6 +10,8 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
+import { MetricsInterceptor } from './common/interceptors/metrics.interceptor';
+import { readProcessRole, shouldRunHttp } from './common/utils/process-role.util';
 import { initSentry } from './config/sentry.config';
 import { isRedisEnabled } from './config/env';
 import {
@@ -43,7 +45,16 @@ async function bootstrap() {
   initSentry(config);
 
   app.use(helmet());
-  app.use(compression());
+  app.use(
+    compression({
+      level: 6,
+      threshold: 1024,
+      filter: (req, res) => {
+        if (req.headers['x-no-compression']) return false;
+        return compression.filter(req, res);
+      },
+    }),
+  );
 
   // Increase body size limit for large payloads (e.g. master-data bulk imports)
   app.use(require('express').json({ limit: '100mb' }));
@@ -69,7 +80,11 @@ async function bootstrap() {
   );
 
   app.useGlobalFilters(new HttpExceptionFilter());
-  app.useGlobalInterceptors(new LoggingInterceptor(), new TransformInterceptor());
+  app.useGlobalInterceptors(
+    new LoggingInterceptor(),
+    new TransformInterceptor(),
+    app.get(MetricsInterceptor),
+  );
 
   const port = config.get<number>('PORT', 4000);
   const server = await app.listen(port);
@@ -77,7 +92,7 @@ async function bootstrap() {
   server.requestTimeout = 0;
   server.keepAliveTimeout = 75_000;
   server.headersTimeout = 76_000;
-  console.log(`API running on port ${port}`);
+  console.log(`API running on port ${port} (PROCESS_ROLE=${readProcessRole()})`);
   if (isLoginIpRestrictionActive()) {
     console.log(
       `Login IP restriction enabled (production): ${parseAllowedLoginIps().join(', ')}`,
@@ -94,7 +109,7 @@ async function bootstrap() {
   }
 }
 
-if (process.env.NODE_ENV === 'production' && PRODUCTION_WORKERS > 1 && cluster.isPrimary) {
+if (process.env.NODE_ENV === 'production' && PRODUCTION_WORKERS > 1 && cluster.isPrimary && readProcessRole() !== 'worker') {
   console.log(`Starting ${PRODUCTION_WORKERS} API workers (imports on one worker won't block login on the other)…`);
   for (let i = 0; i < PRODUCTION_WORKERS; i += 1) {
     cluster.fork();

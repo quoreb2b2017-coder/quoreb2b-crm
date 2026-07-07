@@ -34,6 +34,8 @@ import { MasterDataModule } from './modules/master-data/master-data.module';
 import { SuppressionDataModule } from './modules/delivered-data/delivered-data.module';
 import { EventsModule } from './events/events.module';
 import { HealthModule } from './health/health.module';
+import { MetricsModule } from './metrics/metrics.module';
+import { MetricsInterceptor } from './common/interceptors/metrics.interceptor';
 import { BatchesModule } from './modules/batches/batches.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { LeaveModule } from './modules/leave/leave.module';
@@ -41,6 +43,7 @@ import { BulkEmailVerificationModule } from './modules/bulk-email-verification/b
 import { PersonalNotesModule } from './modules/personal-notes/personal-notes.module';
 import { BreakPunchesModule } from './modules/break-punches/break-punches.module';
 import { QcModule } from './modules/qc/qc.module';
+import { DispositionModule } from './modules/disposition/disposition.module';
 import { CsvImportModule } from './modules/csv-import/csv-import.module';
 
 @Module({})
@@ -67,6 +70,7 @@ export class AppModule {
             uri: config.get<string>('MONGODB_URI'),
             maxPoolSize: config.get<number>('MONGODB_MAX_POOL_SIZE', 25),
             minPoolSize: config.get<number>('MONGODB_MIN_POOL_SIZE', 5),
+            maxIdleTimeMS: config.get<number>('MONGODB_MAX_IDLE_TIME_MS', 60_000),
             serverSelectionTimeoutMS: 10_000,
             socketTimeoutMS: 45_000,
           }),
@@ -109,12 +113,15 @@ export class AppModule {
         PersonalNotesModule,
         BreakPunchesModule,
         QcModule,
+        DispositionModule,
         BulkEmailVerificationModule.register(),
         CsvImportModule.register(),
         EventsModule,
         HealthModule,
+        MetricsModule,
       ],
       providers: [
+        MetricsInterceptor,
         { provide: APP_GUARD, useClass: CustomThrottlerGuard },
         { provide: APP_GUARD, useClass: JwtAuthGuard },
         { provide: APP_GUARD, useClass: RolesGuard },

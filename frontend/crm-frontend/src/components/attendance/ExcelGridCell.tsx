@@ -1,5 +1,6 @@
 'use client';
 
+import { memo } from 'react';
 import { cn } from '@/lib/utils/cn';
 import { xlCellClass } from '@/lib/attendance/xl-sheet-theme';
 
@@ -14,7 +15,7 @@ interface ExcelGridCellProps {
   children: React.ReactNode;
 }
 
-export function ExcelGridCell({
+export const ExcelGridCell = memo(function ExcelGridCell({
   row,
   col,
   active,
@@ -38,4 +39,4 @@ export function ExcelGridCell({
       </div>
     </td>
   );
-}
+});

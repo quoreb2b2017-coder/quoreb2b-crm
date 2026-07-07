@@ -70,7 +70,7 @@ const ACCEPT = '.csv,.xlsx,.xls';
 const PAGE_SIZES = [20, 50, 100, 200, 500, 1000];
 const EMBEDDED_PAGE_SIZES = [100, 200, 500, 1000];
 const CAMPAIGN_MAX_ROWS = 50_000;
-const AUTO_SEARCH_MS = 1200;
+const AUTO_SEARCH_MS = 500;
 
 export type MasterDatabaseVariant = 'admin' | 'db_admin';
 
@@ -145,6 +145,7 @@ export function MasterDatabaseExplorer({
     estimatedCount?: number;
     selectAllFiltered?: boolean;
   } | null>(null);
+  const lastSearchPayloadRef = useRef<ReturnType<typeof serializeDynamicSearchPayload> | null>(null);
   const [batchName, setBatchName] = useState('');
   const [batchDesc, setBatchDesc] = useState('');
   const [savingBatch, setSavingBatch] = useState(false);
@@ -349,6 +350,7 @@ export function MasterDatabaseExplorer({
         setBatchedByRow(result.batchedByRow ?? {});
         setHasSearched(true);
         setIsFilteredView(false);
+        lastSearchPayloadRef.current = null;
         if (opts?.resetSelection !== false) setSelected(new Set());
       } catch (e) {
         toast.error('Could not load data', extractApiError(e));
@@ -389,6 +391,7 @@ export function MasterDatabaseExplorer({
         setBatchedByRow(result.batchedByRow);
         setHasSearched(true);
         setIsFilteredView(true);
+        lastSearchPayloadRef.current = payload;
         setSelectAllFiltered(true);
         setSelected(new Set());
       } catch (e) {
@@ -660,7 +663,8 @@ export function MasterDatabaseExplorer({
           }
           payload = {
             headers,
-            masterSearchFilter: buildSearchPayload(filtersRef.current),
+            // Use the exact payload that produced current grid/count to avoid race with in-progress edits.
+            masterSearchFilter: lastSearchPayloadRef.current ?? buildSearchPayload(filtersRef.current),
             selectAllFiltered: true,
             estimatedCount: filteredTotal,
           };

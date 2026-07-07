@@ -67,8 +67,8 @@ import {
 } from './master-database-columns';
 
 const ACCEPT = '.csv,.xlsx,.xls';
-const PAGE_SIZES = [20, 50, 100, 200];
-const EMBEDDED_PAGE_SIZES = [50, 100, 200];
+const PAGE_SIZES = [20, 50, 100, 200, 500, 1000];
+const EMBEDDED_PAGE_SIZES = [100, 200, 500, 1000];
 const CAMPAIGN_MAX_ROWS = 50_000;
 const AUTO_SEARCH_MS = 1200;
 

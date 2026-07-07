@@ -12,6 +12,9 @@ import {
 import {
   filterMasterDataRows,
   rowMatchesMasterDataFilters,
+  compileMasterDataFilter,
+  rowMatchesCompiledFilter,
+  hasAdvancedMasterFilters,
 } from './master-data-search.util';
 import type { SearchMasterDataDto } from './dto/search-master-data.dto';
 
@@ -490,27 +493,40 @@ export class MasterDataRowStore {
       return filterMasterDataRows(all, headers, input);
     }
 
-    const indices: number[] = [];
+    const useCompiled = !hasAdvancedMasterFilters(input);
+    const compiled = useCompiled ? compileMasterDataFilter(headers, input) : null;
+    const matches = (row: string[]) =>
+      compiled
+        ? rowMatchesCompiledFilter(row, compiled)
+        : rowMatchesMasterDataFilters(row, headers, input);
+
     const chunkSize = MASTER_DATA_CHUNK_SIZE;
-    const cursor = this.chunkModel
+    const metas = await this.chunkModel
       .find({ masterKey: doc.key })
       .sort({ chunkIndex: 1 })
-      .select('chunkIndex rows')
+      .select('chunkIndex')
       .lean()
-      .cursor();
+      .exec();
 
-    let scanned = 0;
-    for await (const chunk of cursor) {
-      const chunkRows = (chunk.rows as string[][]) ?? [];
-      for (let i = 0; i < chunkRows.length; i += 1) {
-        const absIdx = chunk.chunkIndex * chunkSize + i;
-        if (rowMatchesMasterDataFilters(chunkRows[i], headers, input)) {
-          indices.push(absIdx);
+    const indices: number[] = [];
+    const PARALLEL = 8;
+
+    for (let b = 0; b < metas.length; b += PARALLEL) {
+      const batchIdx = metas.slice(b, b + PARALLEL).map((m) => m.chunkIndex);
+      const chunks = await this.chunkModel
+        .find({ masterKey: doc.key, chunkIndex: { $in: batchIdx } })
+        .select('chunkIndex rows')
+        .lean()
+        .exec();
+
+      for (const chunk of chunks) {
+        const chunkRows = (chunk.rows as string[][]) ?? [];
+        for (let i = 0; i < chunkRows.length; i += 1) {
+          const absIdx = chunk.chunkIndex * chunkSize + i;
+          if (matches(chunkRows[i])) {
+            indices.push(absIdx);
+          }
         }
-      }
-      scanned += chunkRows.length;
-      if (scanned % 50_000 === 0) {
-        await yieldToEventLoop();
       }
     }
 

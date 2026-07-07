@@ -183,6 +183,169 @@ export type MasterDataFilterInput = {
   filters?: MasterDataAdvancedFiltersDto;
 };
 
+export type CompiledMasterDataFilter = {
+  headers: string[];
+  queryLower: string;
+  columnText: Array<{
+    colIdx: number;
+    valueLower: string;
+    match: 'contains' | 'equals' | 'startsWith';
+  }>;
+  columnValues: Array<{ colIdx: number; valuesLower: string[] }>;
+  dateRanges: Array<{
+    colIdx: number;
+    fromTime: number | null;
+    toTime: number | null;
+    fromStr?: string;
+    toStr?: string;
+  }>;
+  mustExist: Array<{
+    colIdx: number;
+    kind: 'email' | 'phone' | 'text';
+  }>;
+};
+
+/** Legacy advanced panel filters — require full row matcher. */
+export function hasAdvancedMasterFilters(input: MasterDataFilterInput): boolean {
+  const f = input.filters;
+  if (!f) return false;
+  if (f.hasEmail || f.hasPhone || f.hasLinkedIn || f.hasWebsite || f.hasDecisionMaker) return true;
+  if (f.companyName?.trim()) return true;
+  if (f.website?.trim()) return true;
+  if (f.industry?.trim()) return true;
+  if (f.subIndustry?.trim()) return true;
+  if (f.country?.trim()) return true;
+  if (f.state?.trim()) return true;
+  if (f.city?.trim()) return true;
+  if (f.zip?.trim()) return true;
+  if (f.technology?.trim()) return true;
+  if (f.campaign?.trim()) return true;
+  if (f.leadStatus?.trim()) return true;
+  if (f.foundedFrom?.trim() || f.foundedTo?.trim()) return true;
+  if (f.employeeRanges?.length) return true;
+  if (f.revenueRanges?.length) return true;
+  if (f.companyTypes?.length) return true;
+  if (f.interestedIn?.length) return true;
+  return false;
+}
+
+export function compileMasterDataFilter(
+  headers: string[],
+  input: MasterDataFilterInput,
+): CompiledMasterDataFilter {
+  const headerIdx = new Map<string, number>();
+  for (let i = 0; i < headers.length; i += 1) {
+    headerIdx.set(headers[i].toLowerCase(), i);
+  }
+  const idx = (header: string) => headerIdx.get(header.toLowerCase()) ?? -1;
+
+  return {
+    headers,
+    queryLower: input.query?.trim().toLowerCase() || '',
+    columnText: (input.columnFilters ?? [])
+      .map((f) => ({
+        colIdx: idx(f.header),
+        valueLower: f.value.trim().toLowerCase(),
+        match: (f.match ?? 'contains') as 'contains' | 'equals' | 'startsWith',
+      }))
+      .filter((f) => f.colIdx >= 0 && f.valueLower),
+    columnValues: (input.columnValueFilters ?? [])
+      .filter((f) => f.values?.length)
+      .map((f) => ({
+        colIdx: idx(f.header),
+        valuesLower: f.values.map((v) => v.trim().toLowerCase()).filter(Boolean),
+      }))
+      .filter((f) => f.colIdx >= 0 && f.valuesLower.length),
+    dateRanges: (input.columnDateRangeFilters ?? [])
+      .filter((f) => f.from?.trim() || f.to?.trim())
+      .map((f) => {
+        const from = f.from?.trim();
+        const to = f.to?.trim();
+        return {
+          colIdx: idx(f.header),
+          fromTime: from ? parseFlexibleDate(from) : null,
+          toTime: to ? parseFlexibleDate(to) : null,
+          fromStr: from?.toLowerCase(),
+          toStr: to?.toLowerCase(),
+        };
+      })
+      .filter((f) => f.colIdx >= 0),
+    mustExist: (input.mustExistColumns ?? [])
+      .map((header) => {
+        const h = header.toLowerCase();
+        const kind: 'email' | 'phone' | 'text' = h.includes('email')
+          ? 'email'
+          : h.includes('phone') || h.includes('mobile')
+            ? 'phone'
+            : 'text';
+        return { colIdx: idx(header), kind };
+      })
+      .filter((m) => m.kind !== 'text' || m.colIdx >= 0),
+  };
+}
+
+export function rowMatchesCompiledFilter(
+  row: string[],
+  compiled: CompiledMasterDataFilter,
+): boolean {
+  for (const f of compiled.columnText) {
+    const cellLower = String(row[f.colIdx] ?? '').toLowerCase();
+    if (f.match === 'equals' && cellLower !== f.valueLower) return false;
+    if (f.match === 'startsWith' && !cellLower.startsWith(f.valueLower)) return false;
+    if (f.match === 'contains' && !cellLower.includes(f.valueLower)) return false;
+  }
+
+  for (const f of compiled.columnValues) {
+    const cell = String(row[f.colIdx] ?? '').trim().toLowerCase();
+    if (!cell) return false;
+    let matched = false;
+    for (const v of f.valuesLower) {
+      if (cell === v || cell.includes(v)) {
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) return false;
+  }
+
+  for (const f of compiled.dateRanges) {
+    const cell = String(row[f.colIdx] ?? '').trim();
+    if (!cell) return false;
+    const cellTime = parseFlexibleDate(cell);
+    if (cellTime != null) {
+      if (f.fromTime != null && cellTime < f.fromTime) return false;
+      if (f.toTime != null) {
+        const end = new Date(f.toTime);
+        end.setHours(23, 59, 59, 999);
+        if (cellTime > end.getTime()) return false;
+      }
+    } else {
+      const cellLower = cell.toLowerCase();
+      if (f.fromStr && !cellLower.includes(f.fromStr)) return false;
+      if (f.toStr && !cellLower.includes(f.toStr)) return false;
+    }
+  }
+
+  for (const m of compiled.mustExist) {
+    if (m.kind === 'email' && !hasValidEmail(row, compiled.headers)) return false;
+    if (m.kind === 'phone' && !hasValidPhone(row, compiled.headers)) return false;
+    if (m.kind === 'text' && !String(row[m.colIdx] ?? '').trim()) return false;
+  }
+
+  if (compiled.queryLower) {
+    let found = false;
+    for (let i = 0; i < row.length; i += 1) {
+      if (String(row[i] ?? '').toLowerCase().includes(compiled.queryLower)) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) return false;
+  }
+
+  return true;
+}
+
 /** True when a single row passes the same criteria as filterMasterDataRows. */
 export function rowMatchesMasterDataFilters(
   row: string[],

@@ -12,7 +12,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { SaveMasterDataDto } from './dto/save-master-data.dto';
 import { SearchMasterDataDto } from './dto/search-master-data.dto';
-import { buildMasterDataFilterSchema } from './master-data-filter-schema.util';
+import { buildMasterDataFilterSchema, enrichFilterSchemaColumns } from './master-data-filter-schema.util';
 import {
   distinctColumnValues,
   filterMasterDataRows,
@@ -2056,8 +2056,8 @@ export class MasterDataService {
       cacheTtlSeconds(this.config, 'long'),
       async () => {
         const headers = doc.headers as string[];
-        const rows = await this.rowStore.loadSampleRows(doc, 5000);
-        const columns = buildMasterDataFilterSchema(headers, rows);
+        const rows = await this.rowStore.loadSampleRows(doc, 10_000);
+        const columns = enrichFilterSchemaColumns(buildMasterDataFilterSchema(headers, rows));
         return {
           totalRows: this.rowStore.getRowCount(doc),
           headers,

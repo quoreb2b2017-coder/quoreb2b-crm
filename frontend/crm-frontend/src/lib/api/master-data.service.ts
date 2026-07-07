@@ -10,6 +10,8 @@ const MASTER_DATA_UPLOAD_TIMEOUT_MS = 7_200_000;
 const MASTER_DATA_IMPORT_DEADLINE_MS = 10_800_000;
 /** Read/search endpoints — fail fast instead of holding 3h connections. */
 const MASTER_DATA_READ_TIMEOUT_MS = 60_000;
+/** Filtered search over 400K+ rows may need a full chunked scan on first request. */
+const MASTER_DATA_SEARCH_TIMEOUT_MS = 180_000;
 const MASTER_DATA_WRITE_TIMEOUT_MS = MASTER_DATA_IMPORT_DEADLINE_MS;
 /** Per-poll timeout — server may be slow while parsing large files. */
 const MASTER_IMPORT_POLL_TIMEOUT_MS = 300_000;
@@ -372,7 +374,7 @@ export const masterDataService = {
 
   search: async (params: MasterDataSearchParams): Promise<MasterDataSearchResult> => {
     const { data } = await apiClient.post('/master-data/search', params, {
-      timeout: MASTER_DATA_READ_TIMEOUT_MS,
+      timeout: MASTER_DATA_SEARCH_TIMEOUT_MS,
     });
     return unwrap<MasterDataSearchResult>({ data });
   },
@@ -382,6 +384,18 @@ export const masterDataService = {
       timeout: MASTER_DATA_READ_TIMEOUT_MS,
     });
     return unwrap<MasterDataFilterSchemaResponse>({ data });
+  },
+
+  getColumnOptions: async (
+    header: string,
+    q?: string,
+    limit = 40,
+  ): Promise<{ header: string; options: string[] }> => {
+    const { data } = await apiClient.get('/master-data/column-options', {
+      params: { header, q, limit },
+      timeout: MASTER_DATA_READ_TIMEOUT_MS,
+    });
+    return unwrap<{ header: string; options: string[] }>({ data });
   },
 
   createUploadRequest: async (

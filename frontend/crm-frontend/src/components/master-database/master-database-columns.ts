@@ -126,6 +126,62 @@ export function inferMasterColumnKind(header: string): MasterDataColumnKind {
   return 'text';
 }
 
+const SIZE_CATEGORY_DEFAULTS: Record<string, string[]> = {
+  'employee size category': [
+    '1 to 10',
+    '11 to 50',
+    '51 to 200',
+    '201 to 500',
+    '501 to 1000',
+    '1001 to 5000',
+    '5001 and above',
+  ],
+  'revenue size category': [
+    'Less than 1M',
+    '1M - 10M',
+    '10M - 50M',
+    '50M - 100M',
+    '100M - 500M',
+    '500M - 1B',
+    '1B and above',
+  ],
+};
+
+const CURATED_OPTION_PATTERNS: RegExp[] = [
+  /^lead type$/i,
+  /^country$/i,
+  /^state$/i,
+  /^industry type$/i,
+  /^standard industry$/i,
+  /employee size category/i,
+  /revenue size category/i,
+];
+
+export function needsLazyColumnOptions(col: MasterDataColumnFilterSchema): boolean {
+  if (col.options.length >= 2) return false;
+  return CURATED_OPTION_PATTERNS.some((p) => p.test(col.header.trim()));
+}
+
+export function enrichFilterColumnOptions(
+  col: MasterDataColumnFilterSchema,
+): MasterDataColumnFilterSchema {
+  const key = col.header.trim().toLowerCase();
+  const defaults = SIZE_CATEGORY_DEFAULTS[key];
+  const merged = new Set<string>([...col.options, ...(defaults ?? [])]);
+  const options = isSizeCategoryHeader(col.header)
+    ? sortCategoryOptions([...merged]).slice(0, 80)
+    : [...merged].filter(Boolean).slice(0, 80);
+  if (options.length >= 2 && col.kind !== 'email' && col.kind !== 'phone') {
+    return {
+      ...col,
+      kind: col.kind === 'status' ? 'status' : 'select',
+      options,
+      filledCount: Math.max(col.filledCount, 1),
+    };
+  }
+  return { ...col, filledCount: Math.max(col.filledCount, 1) };
+}
+
 /**
  * Merge API filter-schema with sheet headers so sidebar always has every column
  * (DB Admin parity — even when schema sample rows are empty on large datasets).
@@ -146,19 +202,19 @@ export function buildEffectiveFilterColumns(
     .filter((h) => h.trim().length > 0 && !isGenericColumnHeader(h))
     .map((header) => {
       const existing = schemaByHeader.get(header.trim().toLowerCase());
-      if (existing) {
-        return {
-          ...existing,
-          header,
-          filledCount: Math.max(existing.filledCount, 1),
-        };
-      }
-      return {
-        header,
-        kind: inferMasterColumnKind(header),
-        options: [],
-        filledCount: 1,
-      };
+      const base: MasterDataColumnFilterSchema = existing
+        ? {
+            ...existing,
+            header,
+            filledCount: Math.max(existing.filledCount, 1),
+          }
+        : {
+            header,
+            kind: inferMasterColumnKind(header),
+            options: [],
+            filledCount: 1,
+          };
+      return enrichFilterColumnOptions(base);
     });
 }
 

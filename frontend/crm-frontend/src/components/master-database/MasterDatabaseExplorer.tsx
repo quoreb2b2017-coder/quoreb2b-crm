@@ -54,10 +54,12 @@ import {
   applyDynamicFiltersClient,
   buildEffectiveFilterColumns,
   canAutoSearchMasterData,
+  enrichFilterColumnOptions,
   emptyDynamicMasterDbFilters,
   hasAnyDynamicSearchCriteria,
   hasValidEmail,
   hasValidPhone,
+  needsLazyColumnOptions,
   primaryDisplayHeader,
   serializeDynamicSearchPayload,
   type DynamicMasterDbFilters,
@@ -169,7 +171,32 @@ export function MasterDatabaseExplorer({
     setFilterSchemaLoading(true);
     try {
       const schema = await masterDataService.getFilterSchema();
-      setFilterColumns(schema.columns);
+      let columns = buildEffectiveFilterColumns(schema.headers, schema.columns);
+      const lazyHeaders = columns.filter(needsLazyColumnOptions);
+      if (lazyHeaders.length > 0) {
+        const fetched = await Promise.all(
+          lazyHeaders.map(async (col) => {
+            try {
+              const result = await masterDataService.getColumnOptions(col.header, undefined, 60);
+              return { header: col.header, options: result.options };
+            } catch {
+              return { header: col.header, options: [] as string[] };
+            }
+          }),
+        );
+        const optionsByHeader = new Map(
+          fetched.map((row) => [row.header.trim().toLowerCase(), row.options]),
+        );
+        columns = columns.map((col) => {
+          const extra = optionsByHeader.get(col.header.trim().toLowerCase());
+          if (!extra?.length) return col;
+          return enrichFilterColumnOptions({
+            ...col,
+            options: [...new Set([...col.options, ...extra])],
+          });
+        });
+      }
+      setFilterColumns(columns);
       setHeaders(schema.headers);
       setMasterTotalRows(schema.totalRows);
       return true;
@@ -1213,7 +1240,7 @@ export function MasterDatabaseExplorer({
         )}
 
         {/* Filters — admin inline only */}
-        {filterColumns.length > 0 ? (
+        {filterColumns.length > 0 || headers.length > 0 ? (
           !useFilterSidebar ? (
             <>
               <MasterDatabaseFilterPanel

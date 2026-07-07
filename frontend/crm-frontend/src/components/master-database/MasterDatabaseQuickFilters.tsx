@@ -90,7 +90,6 @@ export function MasterDatabaseQuickFilters({
     if (value) columnValues[header] = new Set([value]);
     else delete columnValues[header];
     onChange({ ...filters, columnValues });
-    onSearch();
   };
 
   const setColumnMultiValues = (header: string, values: Set<string>) => {
@@ -120,7 +119,6 @@ export function MasterDatabaseQuickFilters({
     if (!next.from && !next.to) delete columnDateRanges[header];
     else columnDateRanges[header] = next;
     onChange({ ...filters, columnDateRanges });
-    onSearch();
   };
 
   const toggleMustExist = (header: string, checked: boolean) => {
@@ -128,7 +126,6 @@ export function MasterDatabaseQuickFilters({
     if (checked) mustExist.add(header);
     else mustExist.delete(header);
     onChange({ ...filters, mustExist });
-    onSearch();
   };
 
   const placeholder = headers.length

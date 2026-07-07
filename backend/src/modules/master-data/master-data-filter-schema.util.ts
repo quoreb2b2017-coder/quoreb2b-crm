@@ -11,6 +11,47 @@ export interface MasterDataColumnFilterSchema {
 const MAX_OPTIONS = 40;
 const MAX_OPTION_LEN = 80;
 
+const SIZE_CATEGORY_DEFAULTS: Record<string, string[]> = {
+  'employee size category': [
+    '1 to 10',
+    '11 to 50',
+    '51 to 200',
+    '201 to 500',
+    '501 to 1000',
+    '1001 to 5000',
+    '5001 and above',
+  ],
+  'revenue size category': [
+    'Less than 1M',
+    '1M - 10M',
+    '10M - 50M',
+    '50M - 100M',
+    '100M - 500M',
+    '500M - 1B',
+    '1B and above',
+  ],
+};
+
+export function enrichFilterSchemaColumns(
+  columns: MasterDataColumnFilterSchema[],
+): MasterDataColumnFilterSchema[] {
+  return columns.map((col) => {
+    const key = col.header.trim().toLowerCase();
+    const defaults = SIZE_CATEGORY_DEFAULTS[key];
+    const merged = new Set<string>([...col.options, ...(defaults ?? [])]);
+    const options = [...merged].filter(Boolean).slice(0, MAX_OPTIONS);
+    if (options.length >= 2) {
+      return {
+        ...col,
+        kind: col.kind === 'email' || col.kind === 'phone' ? col.kind : 'select',
+        options,
+        filledCount: Math.max(col.filledCount, 1),
+      };
+    }
+    return { ...col, filledCount: Math.max(col.filledCount, 1) };
+  });
+}
+
 function headerKind(header: string): MasterDataColumnKind {
   const h = header.toLowerCase();
   if (h.includes('email')) return 'email';

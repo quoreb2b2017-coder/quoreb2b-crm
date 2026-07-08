@@ -2,6 +2,7 @@ export const dbAdminNav = [
   { label: 'Dashboard', href: '/db-admin/dashboard', section: 'Workspace' },
   { label: 'All campaigns', href: '/db-admin/batches', section: 'Workspace' },
   { label: 'Master file', href: '/db-admin/master-file', section: 'Workspace' },
+  { label: 'Chat', href: '/db-admin/chat', section: 'Workspace' },
   { label: 'Personal notes', href: '/db-admin/personal-notes', section: 'Workspace' },
   { label: 'Attendance', href: '/db-admin/attendance', section: 'Operations' },
   { label: 'Leave apply', href: '/db-admin/leave-apply', section: 'Operations' },

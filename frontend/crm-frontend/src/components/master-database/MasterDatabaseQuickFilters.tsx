@@ -298,15 +298,14 @@ export function MasterDatabaseQuickFilters({
                     <span className="mdb-filter-block__badge">{selected.size}</span>
                   )}
                 </span>
-                {isSizeCategory && column.options.length >= 2 && (
+                {isSizeCategory && column.options.length >= 2 ? (
                   <CategoryRangeSlider
                     options={column.options}
                     selected={selected}
                     onChange={(values) => setColumnRangeValues(column.header, values)}
                     onCommit={onSearch}
                   />
-                )}
-                {isMultiSelect ? (
+                ) : isMultiSelect ? (
                   <XlToolbarMultiSelect
                     tone="light"
                     className="mdb-filter-block__select"
@@ -321,15 +320,9 @@ export function MasterDatabaseQuickFilters({
                   <XlToolbarSelect
                     tone="light"
                     className="mdb-filter-block__select"
-                    menuMinWidth={isSizeCategory ? 300 : 240}
+                    menuMinWidth={240}
                     value={value}
-                    placeholder={
-                      isSizeCategory
-                        ? selected.size > 1
-                          ? `${selected.size} selected`
-                          : 'Pick one'
-                        : 'All'
-                    }
+                    placeholder="All"
                     onChange={(v) => setColumnValue(column.header, v)}
                     options={selectOptions(column)}
                   />
@@ -466,29 +459,24 @@ export function MasterDatabaseQuickFilters({
                       className={`mdb-advanced-filters__field${isSizeCategory ? ' mdb-advanced-filters__field--category' : ''}`}
                     >
                       <span className="mdb-advanced-filters__label">{col.header}</span>
-                      {isSizeCategory && col.options.length >= 2 && (
+                      {isSizeCategory && col.options.length >= 2 ? (
                         <CategoryRangeSlider
                           options={col.options}
                           selected={selected}
                           onChange={(values) => setColumnRangeValues(col.header, values)}
                           onCommit={onSearch}
                         />
+                      ) : (
+                        <XlToolbarSelect
+                          tone="light"
+                          className="mdb-filter-block__select"
+                          menuMinWidth={260}
+                          value={value}
+                          placeholder="All"
+                          onChange={(v) => setColumnValue(col.header, v)}
+                          options={selectOptions(col)}
+                        />
                       )}
-                      <XlToolbarSelect
-                        tone="light"
-                        className="mdb-filter-block__select"
-                        menuMinWidth={isSizeCategory ? 320 : 260}
-                        value={value}
-                        placeholder={
-                          isSizeCategory
-                            ? selected.size > 1
-                              ? `${selected.size} selected`
-                              : 'Select option'
-                            : 'All'
-                        }
-                        onChange={(v) => setColumnValue(col.header, v)}
-                        options={selectOptions(col)}
-                      />
                     </div>
                   );
                 })}

@@ -21,6 +21,7 @@ const crmNav: AdminNavItem[] = [
   { label: 'Dispositions', href: '/admin/disposition', section: 'Operations' },
   { label: 'Ready QC', href: '/admin/qc/ready', section: 'Operations' },
   { label: 'Leave requests', href: '/admin/leave-apply', section: 'Operations' },
+  { label: 'Chat', href: '/admin/chat', section: 'Workspace' },
   { label: 'Personal notes', href: '/admin/personal-notes', section: 'Operations' },
   { label: 'Bulk email verify', href: '/admin/bulk-email-verification', section: 'Data' },
   { label: 'Suppression', href: '/admin/suppression-campaigns', section: 'Data' },

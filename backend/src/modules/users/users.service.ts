@@ -48,6 +48,29 @@ export class UsersService {
     return users.map((u) => this.sanitizeUser(u));
   }
 
+  /** Alias used by in-app chat */
+  async findUsersByIds(ids: string[]) {
+    return this.findManyByIds(ids);
+  }
+
+  async findByIdSafe(id: string) {
+    const user = await this.repository.findById(id);
+    if (!user) return null;
+    return this.sanitizeUser(user);
+  }
+
+  /** Active CRM users for WhatsApp-style chat contacts (auto by name). */
+  async findActiveChatContacts(limit = 500) {
+    const roles = [
+      SystemRole.SUPER_ADMIN,
+      SystemRole.ADMIN,
+      SystemRole.EMPLOYEE,
+      SystemRole.DB_ADMIN,
+    ];
+    const users = await this.repository.findActiveByRoles(roles, limit);
+    return users.map((u) => this.sanitizeUser(u));
+  }
+
   async findDocumentById(id: string) {
     const user = await this.repository.findById(id);
     if (!user) throw new NotFoundException('User not found');

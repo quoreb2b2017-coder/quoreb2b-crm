@@ -114,41 +114,51 @@ export class ElasticsearchService implements OnModuleInit {
   async ensureMasterDataIndex(): Promise<void> {
     if (!this.enabled || !this.client || this.masterIndexReady) return;
     const index = this.masterDataIndexName();
-    const exists = await this.client.indices.exists({ index });
-    const existsBody = (exists as { body?: boolean }).body ?? exists;
-    if (!existsBody) {
-      await this.client.indices.create({
-        index,
-        body: {
-          settings: {
-            number_of_shards: 1,
-            number_of_replicas: 1,
-            refresh_interval: '5s',
-            analysis: {
-              normalizer: {
-                lowercase_normalizer: {
-                  type: 'custom',
-                  filter: ['lowercase', 'trim'],
+    try {
+      const exists = await this.client.indices.exists({ index });
+      const existsBody = (exists as { body?: boolean }).body ?? exists;
+      if (!existsBody) {
+        await this.client.indices.create({
+          index,
+          body: {
+            settings: {
+              number_of_shards: 1,
+              number_of_replicas: 1,
+              refresh_interval: '5s',
+              analysis: {
+                normalizer: {
+                  lowercase_normalizer: {
+                    type: 'custom',
+                    filter: ['lowercase', 'trim'],
+                  },
                 },
               },
             },
-          },
-          mappings: {
-            dynamic: true,
-            properties: {
-              rowIndex: { type: 'integer' },
-              masterKey: { type: 'keyword' },
-              revision: { type: 'long' },
-              searchText: { type: 'text', analyzer: 'standard' },
-              cells: { type: 'object', dynamic: true },
-              cellsKeyword: { type: 'object', dynamic: true },
+            mappings: {
+              dynamic: true,
+              properties: {
+                rowIndex: { type: 'integer' },
+                masterKey: { type: 'keyword' },
+                revision: { type: 'long' },
+                searchText: { type: 'text', analyzer: 'standard' },
+                cells: { type: 'object', dynamic: true },
+                cellsKeyword: { type: 'object', dynamic: true },
+              },
             },
           },
-        },
-      });
-      this.logger.log(`Created search index ${index}`);
+        });
+        this.logger.log(`Created search index ${index}`);
+      }
+      this.masterIndexReady = true;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      // API + worker may race on first boot
+      if (msg.includes('resource_already_exists') || msg.includes('already_exists')) {
+        this.masterIndexReady = true;
+        return;
+      }
+      throw error;
     }
-    this.masterIndexReady = true;
   }
 
   async bulkIndexMasterRows(

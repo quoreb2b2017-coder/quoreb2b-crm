@@ -45,6 +45,7 @@ import { BreakPunchesModule } from './modules/break-punches/break-punches.module
 import { QcModule } from './modules/qc/qc.module';
 import { DispositionModule } from './modules/disposition/disposition.module';
 import { CsvImportModule } from './modules/csv-import/csv-import.module';
+import { ChatModule } from './modules/chat/chat.module';
 
 @Module({})
 export class AppModule {
@@ -111,6 +112,7 @@ export class AppModule {
         AttendanceModule,
         LeaveModule,
         PersonalNotesModule,
+        ChatModule,
         BreakPunchesModule,
         QcModule,
         DispositionModule,

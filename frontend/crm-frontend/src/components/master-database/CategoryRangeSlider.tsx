@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo } from 'react';
 import { sortCategoryOptions } from './master-database-columns';
+import { XlToolbarSelect } from '@/components/admin/XlToolbarSelect';
 
 interface CategoryRangeSliderProps {
   options: string[];
@@ -16,6 +17,10 @@ function indicesFromSelection(sorted: string[], selected: Set<string>, count: nu
   return { min: Math.min(...hits), max: Math.max(...hits), active: true };
 }
 
+/**
+ * Two select boxes for a category range (e.g. Employee / Revenue size).
+ * Each option keeps the full label ("1 to 10") — never split into parts.
+ */
 export function CategoryRangeSlider({
   options,
   selected,
@@ -24,150 +29,78 @@ export function CategoryRangeSlider({
 }: CategoryRangeSliderProps) {
   const sorted = useMemo(() => sortCategoryOptions(options), [options]);
   const count = sorted.length;
-  const trackRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<'min' | 'max' | null>(null);
-
   const derived = useMemo(
     () => indicesFromSelection(sorted, selected, count),
     [count, selected, sorted],
   );
 
-  const [minIdx, setMinIdx] = useState(derived.min);
-  const [maxIdx, setMaxIdx] = useState(derived.max);
+  if (count < 1) return null;
 
-  useEffect(() => {
-    setMinIdx(derived.min);
-    setMaxIdx(derived.max);
-  }, [derived.min, derived.max]);
+  const lo = derived.active ? derived.min : -1;
+  const hi = derived.active ? derived.max : -1;
+  const fromValue = lo >= 0 ? sorted[lo] : '';
+  const toValue = hi >= 0 ? sorted[hi] : '';
+  const span = derived.active ? hi - lo + 1 : 0;
 
-  const applyRange = useCallback(
-    (min: number, max: number, commit: boolean) => {
-      const lo = Math.min(min, max);
-      const hi = Math.max(min, max);
-      setMinIdx(lo);
-      setMaxIdx(hi);
-      onChange(sorted.slice(lo, hi + 1));
-      if (commit) onCommit();
-    },
-    [onChange, onCommit, sorted],
-  );
+  const selectOptions = sorted.map((opt) => ({ value: opt, label: opt }));
 
-  const indexAtPointer = useCallback(
-    (clientX: number) => {
-      const track = trackRef.current;
-      if (!track || count <= 1) return 0;
-      const rect = track.getBoundingClientRect();
-      const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-      return Math.round(ratio * (count - 1));
-    },
-    [count],
-  );
-
-  useEffect(() => {
-    const onMove = (e: PointerEvent) => {
-      const thumb = dragRef.current;
-      if (!thumb) return;
-      const idx = indexAtPointer(e.clientX);
-      if (thumb === 'min') applyRange(idx, maxIdx, false);
-      else applyRange(minIdx, idx, false);
-    };
-
-    const onUp = () => {
-      if (!dragRef.current) return;
-      dragRef.current = null;
+  const applyFrom = (label: string) => {
+    if (!label) {
+      onChange([]);
       onCommit();
-    };
+      return;
+    }
+    const fromIdx = sorted.indexOf(label);
+    if (fromIdx < 0) return;
+    const toIdx = hi >= 0 ? Math.max(fromIdx, hi) : fromIdx;
+    onChange(sorted.slice(fromIdx, toIdx + 1));
+    onCommit();
+  };
 
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
-    return () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
-    };
-  }, [applyRange, indexAtPointer, maxIdx, minIdx, onCommit]);
-
-  if (count < 2) return null;
-
-  const lo = Math.min(minIdx, maxIdx);
-  const hi = Math.max(minIdx, maxIdx);
-  const leftPct = count > 1 ? (lo / (count - 1)) * 100 : 0;
-  const widthPct = count > 1 ? ((hi - lo) / (count - 1)) * 100 : 100;
-  const minPct = count > 1 ? (minIdx / (count - 1)) * 100 : 0;
-  const maxPct = count > 1 ? (maxIdx / (count - 1)) * 100 : 100;
-  const span = hi - lo + 1;
+  const applyTo = (label: string) => {
+    if (!label) {
+      onChange([]);
+      onCommit();
+      return;
+    }
+    const toIdx = sorted.indexOf(label);
+    if (toIdx < 0) return;
+    const fromIdx = lo >= 0 ? Math.min(lo, toIdx) : toIdx;
+    onChange(sorted.slice(fromIdx, toIdx + 1));
+    onCommit();
+  };
 
   return (
     <div className="mdb-category-range">
       <div className="mdb-category-range__summary">
-        <span className="mdb-category-range__pill" title={sorted[lo]}>
-          {sorted[lo]}
-        </span>
+        <div className="mdb-category-range__box">
+          <XlToolbarSelect
+            tone="light"
+            className="mdb-category-range__select"
+            menuMinWidth={220}
+            value={fromValue}
+            placeholder="From…"
+            onChange={applyFrom}
+            options={selectOptions}
+          />
+        </div>
         <span className="mdb-category-range__arrow" aria-hidden>
           →
         </span>
-        <span className="mdb-category-range__pill" title={sorted[hi]}>
-          {sorted[hi]}
-        </span>
+        <div className="mdb-category-range__box">
+          <XlToolbarSelect
+            tone="light"
+            className="mdb-category-range__select"
+            menuMinWidth={220}
+            value={toValue}
+            placeholder="To…"
+            onChange={applyTo}
+            options={selectOptions}
+          />
+        </div>
         <span className="mdb-category-range__badge">
           {derived.active ? `${span}/${count}` : `${count} opts`}
         </span>
-      </div>
-
-      <div
-        ref={trackRef}
-        className="mdb-category-range__track"
-        onPointerDown={(e) => {
-          const idx = indexAtPointer(e.clientX);
-          const distMin = Math.abs(idx - minIdx);
-          const distMax = Math.abs(idx - maxIdx);
-          dragRef.current = distMin <= distMax ? 'min' : 'max';
-          applyRange(
-            dragRef.current === 'min' ? idx : minIdx,
-            dragRef.current === 'max' ? idx : maxIdx,
-            false,
-          );
-          trackRef.current?.setPointerCapture(e.pointerId);
-        }}
-      >
-        <div className="mdb-category-range__rail" />
-        <div
-          className="mdb-category-range__fill"
-          style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
-        />
-        <button
-          type="button"
-          className="mdb-category-range__thumb"
-          style={{ left: `calc(${minPct}% - 7px)` }}
-          aria-label="Range start"
-          onPointerDown={(e) => {
-            e.stopPropagation();
-            dragRef.current = 'min';
-            (e.currentTarget as HTMLButtonElement).setPointerCapture(e.pointerId);
-          }}
-        />
-        <button
-          type="button"
-          className="mdb-category-range__thumb"
-          style={{ left: `calc(${maxPct}% - 7px)` }}
-          aria-label="Range end"
-          onPointerDown={(e) => {
-            e.stopPropagation();
-            dragRef.current = 'max';
-            (e.currentTarget as HTMLButtonElement).setPointerCapture(e.pointerId);
-          }}
-        />
-      </div>
-
-      <div className="mdb-category-range__ticks" aria-hidden>
-        {sorted.map((opt, i) => (
-          <span
-            key={opt}
-            className={`mdb-category-range__tick${i >= lo && i <= hi ? ' is-active' : ''}`}
-            title={opt}
-          />
-        ))}
       </div>
     </div>
   );

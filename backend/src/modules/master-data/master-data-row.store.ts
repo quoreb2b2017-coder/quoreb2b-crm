@@ -23,6 +23,7 @@ export type MasterDataFilterInput = Pick<
   | 'query'
   | 'columnFilters'
   | 'columnValueFilters'
+  | 'columnValueOrFilters'
   | 'columnDateRangeFilters'
   | 'mustExistColumns'
   | 'filters'
@@ -58,6 +59,30 @@ export class MasterDataRowStore {
       return doc.rowCount;
     }
     return doc.rows?.length ?? 0;
+  }
+
+  /** Authoritative total — for chunked storage, sum chunk row lengths when metadata drifts. */
+  async countStoredRows(
+    doc: Pick<MasterDataRecord, 'key' | 'rowCount' | 'rows' | 'storage'>,
+  ): Promise<number> {
+    if (!this.isChunked(doc)) {
+      return this.getRowCount(doc);
+    }
+
+    const declared = this.getRowCount(doc);
+    const agg = await this.chunkModel
+      .aggregate<{ total: number }>([
+        { $match: { masterKey: doc.key } },
+        { $project: { rowLen: { $size: { $ifNull: ['$rows', []] } } } },
+        { $group: { _id: null, total: { $sum: '$rowLen' } } },
+      ])
+      .exec();
+
+    const chunkTotal = agg[0]?.total ?? 0;
+    if (chunkTotal > 0 && chunkTotal !== declared) {
+      return chunkTotal;
+    }
+    return declared || chunkTotal;
   }
 
   isChunked(doc: Pick<MasterDataRecord, 'storage'>): boolean {

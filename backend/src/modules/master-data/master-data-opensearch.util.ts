@@ -114,6 +114,22 @@ export function buildMasterDataOpenSearchQuery(
     filter.push({ terms: { [field]: values } });
   }
 
+  for (const f of input.columnValueOrFilters ?? []) {
+    if (!f.headers?.length || !f.values?.length) continue;
+    const values = f.values.map((v) => v.trim()).filter(Boolean);
+    if (!values.length) continue;
+    const should = f.headers
+      .map((header) => {
+        if (!header?.trim()) return null;
+        const field = flatFieldName(header);
+        return { terms: { [field]: values } };
+      })
+      .filter(Boolean);
+    if (should.length) {
+      filter.push({ bool: { should, minimum_should_match: 1 } });
+    }
+  }
+
   for (const f of input.columnDateRangeFilters ?? []) {
     if (!f.header?.trim()) continue;
     const field = flatFieldName(f.header);
@@ -221,6 +237,23 @@ export function buildMasterDataSqlWhere(
       parts.push(`${field} = ${sqlQuote(values[0])}`);
     } else {
       parts.push(`${field} IN (${values.map(sqlQuote).join(', ')})`);
+    }
+  }
+
+  for (const f of input.columnValueOrFilters ?? []) {
+    if (!f.headers?.length || !f.values?.length) continue;
+    const values = f.values.map((v) => v.trim()).filter(Boolean);
+    if (!values.length) continue;
+    const orParts = f.headers
+      .map((header) => {
+        if (!header?.trim()) return null;
+        const field = flatFieldName(header);
+        if (values.length === 1) return `${field} = ${sqlQuote(values[0])}`;
+        return `${field} IN (${values.map(sqlQuote).join(', ')})`;
+      })
+      .filter(Boolean);
+    if (orParts.length) {
+      parts.push(orParts.length === 1 ? orParts[0]! : `(${orParts.join(' OR ')})`);
     }
   }
 

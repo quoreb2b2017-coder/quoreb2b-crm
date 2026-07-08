@@ -24,8 +24,11 @@ import type {
   MasterDataColumnFilterSchema,
 } from './master-database-columns';
 import {
+  buildCombinedIndustryOptions,
   buildCuratedQuickFilters,
   buildEffectiveFilterColumns,
+  COMBINED_INDUSTRY_FILTER_KEY,
+  curatedFilterHeaders,
   filterAdvancedColumns,
   filterSidebarColumns,
   isExcludedDropdownColumn,
@@ -67,10 +70,7 @@ export function MasterDatabaseQuickFilters({
     () => (curatedFields.length > 0 ? [] : pickQuickFilterColumns(columns, 8)),
     [columns, curatedFields.length],
   );
-  const curatedHeaders = useMemo(
-    () => new Set(curatedFields.map((f) => f.column.header)),
-    [curatedFields],
-  );
+  const curatedHeaders = useMemo(() => curatedFilterHeaders(curatedFields), [curatedFields]);
 
   const advancedColumns = useMemo(() => {
     const pool =
@@ -173,6 +173,36 @@ export function MasterDatabaseQuickFilters({
     return 'mdb-filter-block';
   };
 
+  const renderChipMultiSelect = (
+    header: string,
+    selected: Set<string>,
+    options: MasterDataColumnFilterSchema | MasterDataColumnFilterSchema['options'],
+    menuMinWidth = 300,
+  ) => {
+    const opts = Array.isArray(options)
+      ? options.slice(0, 80).map((opt) => ({
+          value: opt,
+          label: opt.length > 48 ? `${opt.slice(0, 46)}…` : opt,
+        }))
+      : multiSelectOptions(options as MasterDataColumnFilterSchema);
+
+    return (
+      <XlToolbarMultiSelect
+        tone="light"
+        displayMode="chips"
+        className="mdb-filter-block__select"
+        menuMinWidth={menuMinWidth}
+        values={selected}
+        placeholder="All"
+        onChange={(next) => setColumnMultiValues(header, next)}
+        onApply={(next) => {
+          if (next.size > 0) onSearch();
+        }}
+        options={opts}
+      />
+    );
+  };
+
   return (
     <div className={`mdb-quick${variant === 'sidebar' ? ' mdb-quick--sidebar' : ''}`}>
       {variant !== 'sidebar' && (
@@ -226,6 +256,38 @@ export function MasterDatabaseQuickFilters({
       {curatedFields.length > 0 ? (
         <div className="mdb-quick__curated">
           {curatedFields.map((field) => {
+            if (field.type === 'combinedIndustry') {
+              const selected =
+                filters.columnValues[COMBINED_INDUSTRY_FILTER_KEY] ?? new Set<string>();
+              return (
+                <div
+                  key={COMBINED_INDUSTRY_FILTER_KEY}
+                  className="mdb-filter-block mdb-filter-block--multi"
+                >
+                  <span className="mdb-filter-block__label">
+                    <Building2 className="h-3 w-3" />
+                    {field.label}
+                    {selected.size > 0 && (
+                      <span className="mdb-filter-block__count">{selected.size}</span>
+                    )}
+                  </span>
+                  <XlToolbarMultiSelect
+                    tone="light"
+                    displayMode="chips"
+                    className="mdb-filter-block__select"
+                    menuMinWidth={300}
+                    values={selected}
+                    placeholder="All"
+                    onChange={(next) => setColumnMultiValues(COMBINED_INDUSTRY_FILTER_KEY, next)}
+                    onApply={(next) => {
+                      if (next.size > 0) onSearch();
+                    }}
+                    options={buildCombinedIndustryOptions(field.columns)}
+                  />
+                </div>
+              );
+            }
+
             const { column } = field;
 
             if (field.type === 'dateRange') {
@@ -295,28 +357,20 @@ export function MasterDatabaseQuickFilters({
                   {Icon ? <Icon className="h-3 w-3" /> : null}
                   {shortFilterLabel(column.header)}
                   {isMultiSelect && selected.size > 0 && (
-                    <span className="mdb-filter-block__badge">{selected.size}</span>
+                    <span className="mdb-filter-block__count">{selected.size}</span>
                   )}
                 </span>
                 {isSizeCategory && column.options.length >= 2 ? (
                   <CategoryRangeSlider
-                    listId={`size-${column.header.replace(/\W+/g, '-')}`}
                     options={column.options}
                     selected={selected}
                     onChange={(values) => setColumnRangeValues(column.header, values)}
                     onCommit={onSearch}
                   />
                 ) : isMultiSelect ? (
-                  <XlToolbarMultiSelect
-                    tone="light"
-                    className="mdb-filter-block__select"
-                    menuMinWidth={300}
-                    values={selected}
-                    placeholder="All"
-                    onChange={(next) => setColumnMultiValues(column.header, next)}
-                    onApply={onSearch}
-                    options={multiSelectOptions(column)}
-                  />
+                  <div className="mdb-filter-block__select-wrap">
+                    {renderChipMultiSelect(column.header, selected, column)}
+                  </div>
                 ) : (
                   <XlToolbarSelect
                     tone="light"
@@ -355,18 +409,10 @@ export function MasterDatabaseQuickFilters({
             }
             if (col.options.length >= 2) {
               const selected = filters.columnValues[col.header] ?? new Set<string>();
-              const value = selected.size === 1 ? [...selected][0] : '';
               return (
-                <div key={col.header} className="mdb-filter-block">
+                <div key={col.header} className="mdb-filter-block mdb-filter-block--multi">
                   <span className="mdb-filter-block__label">{col.header}</span>
-                  <XlToolbarSelect
-                    tone="light"
-                    className="mdb-filter-block__select"
-                    value={value}
-                    placeholder="All"
-                    onChange={(v) => setColumnValue(col.header, v)}
-                    options={selectOptions(col)}
-                  />
+                  {renderChipMultiSelect(col.header, selected, col, 260)}
                 </div>
               );
             }
@@ -418,20 +464,19 @@ export function MasterDatabaseQuickFilters({
               <div className="mdb-advanced-filters">
                 {advancedColumns.map((col) => {
                   const selected = filters.columnValues[col.header] ?? new Set<string>();
-                  const value = selected.size === 1 ? [...selected][0] : '';
                   const isSizeCategory = isSizeCategoryHeader(col.header);
 
                   if (col.kind === 'email' || col.kind === 'phone') {
                     const checked = filters.mustExist.has(col.header);
                     return (
-                      <label key={col.header} className="mdb-advanced-filters__toggle">
+                      <label key={col.header} className="mdb-filter-block mdb-filter-block--toggle">
                         <input
                           type="checkbox"
                           checked={checked}
                           onChange={(e) => toggleMustExist(col.header, e.target.checked)}
                         />
                         {col.kind === 'email' ? <Mail className="h-3.5 w-3.5" /> : <Phone className="h-3.5 w-3.5" />}
-                        Has {col.header}
+                        <span>Has {col.header}</span>
                       </label>
                     );
                   }
@@ -439,12 +484,12 @@ export function MasterDatabaseQuickFilters({
                   if (col.options.length < 2) {
                     const textValue = filters.columnText[col.header] ?? '';
                     return (
-                      <div key={col.header} className="mdb-advanced-filters__field">
-                        <span className="mdb-advanced-filters__label">{col.header}</span>
+                      <div key={col.header} className="mdb-filter-block">
+                        <span className="mdb-filter-block__label">{col.header}</span>
                         <input
                           type="text"
                           className="mdb-filter-block__input"
-                          placeholder={`Contains…`}
+                          placeholder="Contains…"
                           value={textValue}
                           onChange={(e) => setColumnText(col.header, e.target.value)}
                           onKeyDown={(e) => e.key === 'Enter' && onSearch()}
@@ -457,27 +502,25 @@ export function MasterDatabaseQuickFilters({
                   return (
                     <div
                       key={col.header}
-                      className={`mdb-advanced-filters__field${isSizeCategory ? ' mdb-advanced-filters__field--category' : ''}`}
+                      className={blockClass(col.header, true, isSizeCategory)}
                     >
-                      <span className="mdb-advanced-filters__label">{col.header}</span>
+                      <span className="mdb-filter-block__label">
+                        {col.header}
+                        {selected.size > 0 && (
+                          <span className="mdb-filter-block__count">{selected.size}</span>
+                        )}
+                      </span>
                       {isSizeCategory && col.options.length >= 2 ? (
                         <CategoryRangeSlider
-                          listId={`adv-size-${col.header.replace(/\W+/g, '-')}`}
                           options={col.options}
                           selected={selected}
                           onChange={(values) => setColumnRangeValues(col.header, values)}
                           onCommit={onSearch}
                         />
                       ) : (
-                        <XlToolbarSelect
-                          tone="light"
-                          className="mdb-filter-block__select"
-                          menuMinWidth={260}
-                          value={value}
-                          placeholder="All"
-                          onChange={(v) => setColumnValue(col.header, v)}
-                          options={selectOptions(col)}
-                        />
+                        <div className="mdb-filter-block__select-wrap">
+                          {renderChipMultiSelect(col.header, selected, col, 260)}
+                        </div>
                       )}
                     </div>
                   );

@@ -38,6 +38,18 @@ export class MasterDataColumnValuesFilterDto {
   values: string[];
 }
 
+export class MasterDataColumnValuesOrFilterDto {
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsString({ each: true })
+  headers: string[];
+
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  values: string[];
+}
+
 export class MasterDataColumnDateRangeFilterDto {
   @IsString()
   @IsNotEmpty()
@@ -164,6 +176,13 @@ export class SearchMasterDataDto {
   @ValidateNested({ each: true })
   @Type(() => MasterDataColumnValuesFilterDto)
   columnValueFilters?: MasterDataColumnValuesFilterDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => MasterDataColumnValuesOrFilterDto)
+  columnValueOrFilters?: MasterDataColumnValuesOrFilterDto[];
 
   @IsOptional()
   @IsArray()

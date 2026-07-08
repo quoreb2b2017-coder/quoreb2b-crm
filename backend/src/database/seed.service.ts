@@ -44,7 +44,8 @@ export class SeedService implements OnModuleInit {
   constructor(@InjectModel(User.name) private userModel: Model<User>) {}
 
   async onModuleInit() {
-    await this.reseed();
+    // Only ensure the bootstrap super admin exists — do not delete real accounts on every deploy.
+    await this.seedDefaultUsers();
   }
 
   async reseed() {

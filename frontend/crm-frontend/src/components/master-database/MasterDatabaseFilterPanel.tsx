@@ -190,14 +190,32 @@ export function MasterDatabaseFilterTags({
   tags,
   onRemove,
   onSearch,
+  onClearAll,
 }: {
   tags: Array<{ key: string; label: string }>;
   onRemove: (key: string) => void;
   onSearch?: () => void;
+  onClearAll?: () => void;
 }) {
   if (!tags.length) return null;
   return (
-    <div className="mdb-tags">
+    <div className="mdb-tags-wrap">
+      <div className="mdb-tags-head">
+        <span className="mdb-tags-title">Applied filters</span>
+        {onClearAll ? (
+          <button
+            type="button"
+            className="mdb-tags-clear"
+            onClick={() => {
+              onClearAll();
+              onSearch?.();
+            }}
+          >
+            Clear all filters
+          </button>
+        ) : null}
+      </div>
+      <div className="mdb-tags">
       {tags.map((t) => (
         <span key={t.key} className="mdb-tag">
           {t.label}
@@ -213,6 +231,7 @@ export function MasterDatabaseFilterTags({
           </button>
         </span>
       ))}
+      </div>
     </div>
   );
 }

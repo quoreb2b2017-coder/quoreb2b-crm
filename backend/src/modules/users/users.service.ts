@@ -124,6 +124,7 @@ export class UsersService {
     });
 
     const safe = this.sanitizeUser(user);
+    await this.bustUsersCache();
     if (actor) {
       await this.activityLogs.logWithActor(actor, {
         action: 'USER_CREATED',
@@ -238,6 +239,7 @@ export class UsersService {
     if (!isActive) {
       await this.revokeAllSessions(id);
     }
+    await this.bustUsersCache();
     const updated = this.sanitizeUser((await this.repository.findById(id))!);
     if (actor) {
       await this.activityLogs.logWithActor(actor, {
@@ -287,6 +289,7 @@ export class UsersService {
     }
     await this.revokeAllSessions(id);
     await this.repository.delete(id);
+    await this.bustUsersCache();
     return { message: 'User deleted successfully' };
   }
 
@@ -383,5 +386,12 @@ export class UsersService {
   private panelForRoles(roles: SystemRole[]): PanelType {
     if (roles.includes(SystemRole.DB_ADMIN)) return PanelType.DB_ADMIN;
     return PanelType.CRM;
+  }
+
+  private async bustUsersCache(): Promise<void> {
+    await Promise.all([
+      this.cache.delByPrefix('users:list:'),
+      this.cache.delByPrefix('users:team:'),
+    ]);
   }
 }

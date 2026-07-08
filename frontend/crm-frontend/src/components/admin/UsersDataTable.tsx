@@ -75,10 +75,18 @@ interface UsersDataTableProps {
   onDelete: (userId: string, name: string) => void;
 }
 
+function primaryRole(roles: string[]): string {
+  if (roles.includes('super_admin')) return 'super_admin';
+  if (roles.includes('admin')) return 'admin';
+  if (roles.includes('db_admin')) return 'db_admin';
+  if (roles.includes('employee')) return 'employee';
+  return roles[0] ?? '';
+}
+
 function parseRows(users: Record<string, unknown>[]): UserRowMeta[] {
   return users.map((u) => {
     const roles = Array.isArray(u.roles) ? (u.roles as string[]) : [];
-    const role = roles[0] ?? '';
+    const role = primaryRole(roles);
     return {
       userId: String(u.id ?? u._id ?? ''),
       name: `${String(u.firstName)} ${String(u.lastName)}`.trim(),

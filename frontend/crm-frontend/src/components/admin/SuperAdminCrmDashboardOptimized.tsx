@@ -20,6 +20,7 @@ import {
   type CrmDashboardStats,
   type ChartData,
 } from '@/lib/api/analytics.service';
+import { clearCache } from '@/lib/api/cache';
 import { healthService, type SystemHealthResponse } from '@/lib/api/health.service';
 import { useAdminProductStore } from '@/store/admin-product.store';
 import { extractApiError } from '@/lib/api/errors';
@@ -67,12 +68,12 @@ export function SuperAdminCrmDashboard() {
 
   const { data: stats, loading: statsLoading, refetch: refetchStats } = useFetch(
     'dashboard:stats',
-    fetchCrmDashboardStats,
+    () => fetchCrmDashboardStats(),
   );
 
-  const { data: chart, loading: chartLoading } = useFetch(
+  const { data: chart, loading: chartLoading, refetch: refetchChart } = useFetch(
     'dashboard:chart',
-    fetchChartData,
+    () => fetchChartData(),
   );
 
   const { data: health, loading: healthLoading } = useFetch(
@@ -83,8 +84,9 @@ export function SuperAdminCrmDashboard() {
   const loading = statsLoading || chartLoading || healthLoading;
 
   const handleRefresh = useCallback(async () => {
-    await refetchStats();
-  }, [refetchStats]);
+    clearCache('analytics');
+    await Promise.all([refetchStats(), refetchChart()]);
+  }, [refetchStats, refetchChart]);
 
   useEffect(() => {
     const onMasterDataUpdated = () => handleRefresh();

@@ -79,6 +79,12 @@ export function MasterDatabaseFilterSidebar({
         </div>
 
         <div className="mdb-sidebar__body">
+          <MasterDatabaseFilterTags
+            tags={tags}
+            onRemove={onRemoveTag}
+            onSearch={onSearch}
+            onClearAll={onClear}
+          />
           <MasterDatabaseQuickFilters
             variant="sidebar"
             columns={columns}
@@ -91,7 +97,6 @@ export function MasterDatabaseFilterSidebar({
             schemaLoading={schemaLoading}
             resultCount={resultCount}
           />
-          <MasterDatabaseFilterTags tags={tags} onRemove={onRemoveTag} onSearch={onSearch} />
         </div>
       </aside>
 

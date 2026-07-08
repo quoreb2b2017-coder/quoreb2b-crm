@@ -258,19 +258,19 @@ function findFilterColumn(
   );
 }
 
+export const COMBINED_INDUSTRY_FILTER_KEY = '__combined_industry__';
+
 export type CuratedFilterField =
   | { type: 'dateRange'; column: MasterDataColumnFilterSchema }
   | { type: 'text'; column: MasterDataColumnFilterSchema; placeholder: string }
-  | { type: 'select'; column: MasterDataColumnFilterSchema; multiple?: boolean };
+  | { type: 'select'; column: MasterDataColumnFilterSchema; multiple?: boolean }
+  | { type: 'combinedIndustry'; columns: MasterDataColumnFilterSchema[]; label: string };
 
-const CURATED_MULTI_SELECT_PATTERNS: RegExp[] = [
-  /^industry type$/i,
-  /^standard industry$/i,
-];
+const INDUSTRY_COLUMN_PATTERNS: RegExp[] = [/^industry type$/i, /^standard industry$/i];
+
+const CURATED_CHIP_MULTI_PATTERNS: RegExp[] = [/^country$/i, /^state$/i];
 
 const CURATED_SELECT_PATTERNS: RegExp[] = [
-  /^country$/i,
-  /^state$/i,
   /employee size category/i,
   /revenue size category/i,
 ];
@@ -298,7 +298,15 @@ export function buildCuratedQuickFilters(
     used.add(leadType.header);
   }
 
-  for (const pattern of CURATED_MULTI_SELECT_PATTERNS) {
+  const industryCols = INDUSTRY_COLUMN_PATTERNS.map((pattern) =>
+    findFilterColumn(columns, pattern),
+  ).filter((col): col is MasterDataColumnFilterSchema => Boolean(col));
+  if (industryCols.length > 0) {
+    fields.push({ type: 'combinedIndustry', columns: industryCols, label: 'Industry' });
+    for (const col of industryCols) used.add(col.header);
+  }
+
+  for (const pattern of CURATED_CHIP_MULTI_PATTERNS) {
     const col = findFilterColumn(columns, pattern);
     if (!col || used.has(col.header)) continue;
     if (col.options.length >= 2) {
@@ -373,7 +381,49 @@ export function isSizeCategoryHeader(header: string): boolean {
 }
 
 export function isMultiSelectHeader(header: string): boolean {
-  return CURATED_MULTI_SELECT_PATTERNS.some((p) => p.test(header.trim()));
+  const h = header.trim();
+  return (
+    INDUSTRY_COLUMN_PATTERNS.some((p) => p.test(h)) ||
+    CURATED_CHIP_MULTI_PATTERNS.some((p) => p.test(h)) ||
+    /^lead type$/i.test(h)
+  );
+}
+
+export function curatedFilterHeaders(fields: CuratedFilterField[]): Set<string> {
+  const headers = new Set<string>();
+  for (const field of fields) {
+    if (field.type === 'combinedIndustry') {
+      for (const col of field.columns) headers.add(col.header);
+    } else {
+      headers.add(field.column.header);
+    }
+  }
+  return headers;
+}
+
+export function buildCombinedIndustryOptions(
+  columns: MasterDataColumnFilterSchema[],
+): Array<{ value: string; label: string }> {
+  const seen = new Set<string>();
+  const merged: string[] = [];
+  for (const col of columns) {
+    for (const opt of col.options) {
+      const v = opt.trim();
+      if (!v || seen.has(v)) continue;
+      seen.add(v);
+      merged.push(v);
+    }
+  }
+  return merged
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+    .map((value) => ({
+      value,
+      label: value.length > 48 ? `${value.slice(0, 46)}…` : value,
+    }));
+}
+
+export function resolveCombinedIndustryHeaders(headers: string[]): string[] {
+  return headers.filter((h) => INDUSTRY_COLUMN_PATTERNS.some((p) => p.test(h.trim())));
 }
 
 export function curatedSelectDropdownCount(fields: CuratedFilterField[]): number {
@@ -444,12 +494,22 @@ export function serializeDynamicSearchPayload(
     .filter((f) => f.value.length > 0)
     .map((f) => ({ ...f, match: 'contains' as const }));
 
+  const combinedIndustryValues = [
+    ...(filters.columnValues[COMBINED_INDUSTRY_FILTER_KEY] ?? []),
+  ];
+  const industryHeaders = resolveCombinedIndustryHeaders(headers);
+
   const columnValueFilters = headers
     .map((header) => ({
       header,
       values: [...(filters.columnValues[header] ?? [])],
     }))
     .filter((f) => f.values.length > 0);
+
+  const columnValueOrFilters =
+    combinedIndustryValues.length > 0 && industryHeaders.length > 0
+      ? [{ headers: industryHeaders, values: combinedIndustryValues }]
+      : undefined;
 
   const mustExistColumns = [...filters.mustExist];
 
@@ -465,6 +525,7 @@ export function serializeDynamicSearchPayload(
     query: filters.globalQuery.trim() || undefined,
     columnFilters: columnFilters.length ? columnFilters : undefined,
     columnValueFilters: columnValueFilters.length ? columnValueFilters : undefined,
+    columnValueOrFilters,
     columnDateRangeFilters: columnDateRangeFilters.length ? columnDateRangeFilters : undefined,
     mustExistColumns: mustExistColumns.length ? mustExistColumns : undefined,
     availabilityFilter:
@@ -494,7 +555,9 @@ export function activeDynamicFilterTags(
   }
   for (const [header, values] of Object.entries(filters.columnValues)) {
     for (const v of values) {
-      tags.push({ key: `val:${header}:${v}`, label: `${header}: ${v}` });
+      const label =
+        header === COMBINED_INDUSTRY_FILTER_KEY ? `Industry: ${v}` : `${header}: ${v}`;
+      tags.push({ key: `val:${header}:${v}`, label });
     }
   }
   for (const header of filters.mustExist) {
@@ -530,6 +593,19 @@ export function applyDynamicFiltersClient(
     for (const f of payload.columnValueFilters ?? []) {
       const cell = cellByHeader(row, headers, f.header).toLowerCase();
       if (!f.values.some((v) => cell === v.toLowerCase() || cell.includes(v.toLowerCase()))) {
+        ok = false;
+        break;
+      }
+    }
+    if (!ok) continue;
+
+    for (const f of payload.columnValueOrFilters ?? []) {
+      const matched = f.headers.some((header) => {
+        const cell = cellByHeader(row, headers, header).toLowerCase();
+        if (!cell) return false;
+        return f.values.some((v) => cell === v.toLowerCase() || cell.includes(v.toLowerCase()));
+      });
+      if (!matched) {
         ok = false;
         break;
       }

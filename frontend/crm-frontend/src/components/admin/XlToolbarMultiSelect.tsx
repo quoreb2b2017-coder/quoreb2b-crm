@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, Check, Search } from 'lucide-react';
+import { ChevronDown, Check, Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import type { XlSelectOption } from './XlToolbarSelect';
 
@@ -30,6 +30,7 @@ export function XlToolbarMultiSelect({
   menuMinWidth = 260,
   onApply,
   searchable = true,
+  displayMode = 'label',
 }: {
   values: Set<string>;
   onChange: (values: Set<string>) => void;
@@ -39,8 +40,9 @@ export function XlToolbarMultiSelect({
   className?: string;
   tone?: 'toolbar' | 'light';
   menuMinWidth?: number;
-  onApply?: () => void;
+  onApply?: (values: Set<string>) => void;
   searchable?: boolean;
+  displayMode?: 'label' | 'chips';
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -103,20 +105,20 @@ export function XlToolbarMultiSelect({
   const closeMenu = useCallback(() => {
     setOpen(false);
     setQuery('');
-    onApply?.();
-  }, [onApply]);
+    onApply?.(values);
+  }, [onApply, values]);
 
   useEffect(() => {
     if (!open) return;
     updateMenuPosition();
 
-    const onPointerDown = (e: MouseEvent) => {
+    const onPointerDown = (e: globalThis.MouseEvent) => {
       const target = e.target as Node;
       if (rootRef.current?.contains(target)) return;
       if (menuRef.current?.contains(target)) return;
       closeMenu();
     };
-    const onKey = (e: KeyboardEvent) => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key === 'Escape') closeMenu();
     };
     const onReposition = () => updateMenuPosition();
@@ -141,7 +143,20 @@ export function XlToolbarMultiSelect({
     onChange(next);
   };
 
+  const removeValue = (value: string, e: MouseEvent) => {
+    e.stopPropagation();
+    const next = new Set(values);
+    next.delete(value);
+    onChange(next);
+  };
+
+  const chipLabel = (value: string) =>
+    options.find((o) => o.value === value)?.label ?? value;
+
   const clearAll = () => onChange(new Set());
+
+  const isChipBox = displayMode === 'chips';
+  const showChips = isChipBox && values.size > 0;
 
   const listMaxHeight = menuStyle ? menuStyle.maxHeight - (searchable && options.length > 5 ? 88 : 44) : 200;
 
@@ -260,37 +275,84 @@ export function XlToolbarMultiSelect({
           setOpen((o) => !o);
         }}
         className={cn(
-          'xl-multi-select-trigger flex w-full items-center justify-between gap-2 px-2.5 py-2 text-left text-sm transition-all duration-200',
+          'xl-multi-select-trigger flex w-full gap-1.5 text-left text-sm transition-all duration-200',
+          isChipBox
+            ? 'xl-multi-select-trigger--chips min-h-[2.125rem] flex-wrap items-center px-2 py-1.5'
+            : 'items-center justify-between gap-2 px-2.5 py-2',
           tone === 'toolbar'
             ? 'border border-white/25 bg-white text-slate-800 shadow-sm hover:border-white/50 hover:shadow-md'
             : cn(
-                'rounded-lg border border-slate-200 bg-white text-slate-800 shadow-sm',
-                'hover:border-[#2e7ad1]/30 hover:shadow-md',
-                values.size > 0 && 'border-[#2e7ad1]/35 bg-[#f8fbff]',
-                open && 'border-[#2e7ad1]/50 shadow-md ring-2 ring-[#2e7ad1]/12',
+                isChipBox
+                  ? 'rounded-[7px] border border-[#d8e3f0] bg-white text-slate-800'
+                  : 'rounded-lg border border-slate-200 bg-white text-slate-800 shadow-sm',
+                !isChipBox && 'hover:border-[#2e7ad1]/30 hover:shadow-md',
+                isChipBox && 'hover:border-[#2e7ad1]',
+                !isChipBox && values.size > 0 && 'border-[#2e7ad1]/35 bg-[#f8fbff]',
+                isChipBox && values.size > 0 && 'border-[#2e7ad1]/40 bg-[#fcfdff]',
+                open &&
+                  (isChipBox
+                    ? 'border-[#2e7ad1] shadow-[0_0_0_2px_rgb(46_122_209_/_12%)]'
+                    : 'border-[#2e7ad1]/50 shadow-md ring-2 ring-[#2e7ad1]/12'),
               ),
           disabled && 'cursor-not-allowed opacity-55',
         )}
       >
-        <span
-          className={cn(
-            'min-w-0 flex-1 truncate font-medium',
-            values.size > 0 ? 'text-[#1e40af]' : 'text-slate-600',
-          )}
-        >
-          {displayLabel}
-        </span>
-        {values.size > 1 && (
-          <span className="shrink-0 rounded-full bg-[#2e7ad1] px-1.5 py-px text-[10px] font-bold text-white">
-            {values.size}
-          </span>
+        {isChipBox ? (
+          <>
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+              {showChips ? (
+                [...values].map((value) => (
+                  <span
+                    key={value}
+                    className="xl-multi-select-chip inline-flex max-w-full items-center gap-1 rounded-[5px] border border-[#c7daf3] bg-[#e8f1fb] px-1.5 py-0.5 text-[11px] font-medium leading-tight text-[#1d4ed8]"
+                  >
+                    <span className="max-w-[10rem] truncate" title={chipLabel(value)}>
+                      {chipLabel(value)}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${chipLabel(value)}`}
+                      className="rounded p-0.5 text-[#1d4ed8] hover:bg-[#2e7ad1]/15"
+                      onClick={(e) => removeValue(value, e)}
+                    >
+                      <X className="h-3 w-3" strokeWidth={2.5} />
+                    </button>
+                  </span>
+                ))
+              ) : (
+                <span className="px-0.5 text-[12px] font-normal text-slate-500">{placeholder}</span>
+              )}
+            </div>
+            <ChevronDown
+              className={cn(
+                'ml-auto h-4 w-4 shrink-0 self-center text-slate-400 transition-transform duration-200',
+                open && 'rotate-180 text-[#2e7ad1]',
+              )}
+            />
+          </>
+        ) : (
+          <>
+            <span
+              className={cn(
+                'min-w-0 flex-1 truncate font-medium',
+                values.size > 0 ? 'text-[#1e40af]' : 'text-slate-600',
+              )}
+            >
+              {displayLabel}
+            </span>
+            {values.size > 1 && (
+              <span className="shrink-0 rounded-full bg-[#2e7ad1] px-1.5 py-px text-[10px] font-bold text-white">
+                {values.size}
+              </span>
+            )}
+            <ChevronDown
+              className={cn(
+                'h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200',
+                open && 'rotate-180 text-[#2e7ad1]',
+              )}
+            />
+          </>
         )}
-        <ChevronDown
-          className={cn(
-            'h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200',
-            open && 'rotate-180 text-[#2e7ad1]',
-          )}
-        />
       </button>
       {menu}
     </div>

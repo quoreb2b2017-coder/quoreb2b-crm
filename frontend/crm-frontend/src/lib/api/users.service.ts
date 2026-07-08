@@ -32,6 +32,15 @@ export const usersService = {
   list: (params?: { page?: number; limit?: number; search?: string }) =>
     apiClient.get('/users', { params }),
 
+  listParsed: async (params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+  }): Promise<Record<string, unknown>[]> => {
+    const res = await apiClient.get('/users', { params });
+    return unwrapList<Record<string, unknown>>(res);
+  },
+
   /** Employees (or employees + db_admins for admin) — for batch share modal */
   listTeamMembers: async (): Promise<TeamMember[]> => {
     const res = await apiClient.get('/users/team-members');

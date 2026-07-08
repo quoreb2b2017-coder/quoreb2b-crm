@@ -115,6 +115,43 @@ const MASTER_FILTER_INDEX_CACHE_TTL_SEC = Math.max(
   60,
   Number(process.env.MASTER_FILTER_INDEX_CACHE_TTL_SEC || 300),
 );
+const MASTER_COUNT_CACHE_KEY = 'master:counter:v1';
+const MASTER_PREVIEW_CACHE_KEY = 'master:preview:first:v1';
+const MASTER_PREVIEW_CACHE_TTL_SEC = 8;
+
+function emptyMasterBootstrap(limit: number) {
+  const safeLimit = Math.min(Math.max(limit, 1), 100);
+  return {
+    fileName: '',
+    sheetName: '',
+    headers: [] as string[],
+    rows: [] as string[][],
+    sourceRowIndices: [] as number[],
+    totalRows: 0,
+    limit: safeLimit,
+    hasMore: false,
+  };
+}
+
+function emptyMasterFilterSchema() {
+  return { totalRows: 0, headers: [] as string[], columns: [] };
+}
+
+function emptyMasterSearchResult(page: number, limit: number) {
+  const safeLimit = Math.min(Math.max(limit, 1), 2000);
+  const safePage = Math.max(page, 1);
+  return {
+    headers: [] as string[],
+    rows: [] as string[][],
+    sourceRowIndices: [] as number[],
+    totalMatches: 0,
+    totalRows: 0,
+    page: safePage,
+    limit: safeLimit,
+    batchedByRow: {} as Record<string, Array<{ id: string; name: string }>>,
+    searchEngine: 'mongo-page',
+  };
+}
 
 @Injectable()
 export class MasterDataService {
@@ -1864,7 +1901,11 @@ export class MasterDataService {
       isDbAdminOnly ? 'master:coverage:summary:dba' : 'master:coverage:summary',
       cacheTtlSeconds(this.config, 'long'),
       async () => {
-        const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+        const doc = await this.masterDataModel
+          .findOne({ key: MASTER_DATA_KEY })
+          .select('headers rows rowCount storage updatedAt')
+          .lean()
+          .exec();
         if (!doc) {
           return {
             summary: {
@@ -1876,11 +1917,14 @@ export class MasterDataService {
             batchedByRow: {},
           };
         }
-        const allRows = await this.loadExistingRows(doc);
+        const rowCount = await this.getCachedMasterCount(doc);
+        const revision =
+          (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? rowCount;
         const coverage = await this.batchesService.getMasterBatchCoverage(
-          doc.headers,
-          allRows,
-          (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? 0,
+          doc.headers as string[],
+          [],
+          revision,
+          rowCount,
         );
         if (isDbAdminOnly) {
           return { summary: coverage.summary, batchedByRow: {} };
@@ -1905,11 +1949,120 @@ export class MasterDataService {
           if (!doc) {
             return null;
           }
-          return this.toMetadataResponse(doc);
+          return this.toMetadataResponseAsync(doc);
         },
       );
     }
     throw new ForbiddenException('Access denied');
+  }
+
+  private async getCachedMasterCount(
+    doc: Pick<MasterDataRecord, 'key' | 'rowCount' | 'rows' | 'storage'> & {
+      updatedAt?: Date;
+    },
+  ): Promise<number> {
+    const revision =
+      (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? this.rowStore.getRowCount(doc);
+    const cacheKey = `${MASTER_COUNT_CACHE_KEY}:${revision}`;
+    const cached = await this.cache.getJson<number>(cacheKey);
+    if (typeof cached === 'number' && Number.isFinite(cached) && cached >= 0) {
+      return cached;
+    }
+    const rowCount = await this.rowStore.countStoredRows(doc);
+    await this.cache.setJson(cacheKey, rowCount, cacheTtlSeconds(this.config, 'long'));
+    await this.cache.setJson(MASTER_COUNT_CACHE_KEY, rowCount, cacheTtlSeconds(this.config, 'long'));
+    return rowCount;
+  }
+
+  /** Same total as Master Database — used by analytics dashboard. */
+  async getPublicMasterRowCount(): Promise<number> {
+    const doc = await this.masterDataModel
+      .findOne({ key: MASTER_DATA_KEY })
+      .select('key rowCount rows storage updatedAt')
+      .lean()
+      .exec();
+    if (!doc) return 0;
+    return this.getCachedMasterCount(doc);
+  }
+
+  async getPublicMasterStatsSample(maxSample = 5000): Promise<{
+    headers: string[];
+    rowCount: number;
+    sampleRows: string[][];
+  } | null> {
+    const doc = await this.masterDataModel
+      .findOne({ key: MASTER_DATA_KEY })
+      .select('key headers rowCount rows storage updatedAt')
+      .lean()
+      .exec();
+    if (!doc?.headers?.length) return null;
+    const rowCount = await this.getCachedMasterCount(doc);
+    if (rowCount <= 0) return null;
+    const sampleRows = await this.rowStore.loadSampleRows(doc, maxSample);
+    return {
+      headers: doc.headers as string[],
+      rowCount,
+      sampleRows,
+    };
+  }
+
+  private async cacheMasterCount(rowCount: number): Promise<void> {
+    await this.cache.setJson(MASTER_COUNT_CACHE_KEY, rowCount, cacheTtlSeconds(this.config, 'long'));
+  }
+
+  private async loadPreviewByCursor(
+    doc: Pick<MasterDataRecord, 'key' | 'rows' | 'storage'>,
+    limit: number,
+    cursor?: number,
+  ): Promise<{ rows: string[][]; sourceRowIndices: number[]; nextCursor?: number }> {
+    const startAfter = Number.isInteger(cursor) ? Math.max(cursor as number, -1) : -1;
+    const offset = startAfter + 1;
+    const { rows, sourceRowIndices } = await this.rowStore.loadPageRows(doc, offset, limit);
+    const nextCursor = sourceRowIndices.length
+      ? sourceRowIndices[sourceRowIndices.length - 1]
+      : undefined;
+    return { rows, sourceRowIndices, nextCursor };
+  }
+
+  async getBootstrapForUser(_actorId: string, roles: string[] = [], limit = 100) {
+    const isAdmin =
+      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
+    const isDbAdmin = roles.includes(SystemRole.DB_ADMIN);
+    if (!isAdmin && !isDbAdmin) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    const doc = await this.masterDataModel
+      .findOne({ key: MASTER_DATA_KEY })
+      .select('key fileName sheetName headers rowCount rows storage uploadedByEmail updatedAt createdAt')
+      .lean()
+      .exec();
+    if (!doc) {
+      return emptyMasterBootstrap(limit);
+    }
+
+    const safeLimit = Math.min(Math.max(limit, 1), 100);
+    const previewCacheKey = `${MASTER_PREVIEW_CACHE_KEY}:${safeLimit}`;
+    const [totalRows, preview] = await Promise.all([
+      this.getCachedMasterCount(doc),
+      this.cache.wrap(
+        previewCacheKey,
+        MASTER_PREVIEW_CACHE_TTL_SEC,
+        async () => this.loadPreviewByCursor(doc, safeLimit, -1),
+      ),
+    ]);
+
+    return {
+      fileName: doc.fileName,
+      sheetName: doc.sheetName,
+      headers: doc.headers as string[],
+      rows: preview.rows,
+      sourceRowIndices: preview.sourceRowIndices,
+      totalRows,
+      limit: safeLimit,
+      nextCursor: preview.nextCursor,
+      hasMore: typeof preview.nextCursor === 'number' && preview.nextCursor + 1 < totalRows,
+    };
   }
 
   /** Fast first-page read for large chunked master data (no full-table scan). */
@@ -1918,6 +2071,7 @@ export class MasterDataService {
     roles: string[] = [],
     page = 1,
     limit = 100,
+    cursor?: number,
   ) {
     const isAdmin =
       roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
@@ -1926,28 +2080,42 @@ export class MasterDataService {
       throw new ForbiddenException('Access denied');
     }
 
-    const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+    const doc = await this.masterDataModel
+      .findOne({ key: MASTER_DATA_KEY })
+      .select('key headers rowCount rows storage')
+      .lean()
+      .exec();
     if (!doc) {
-      throw new NotFoundException('No master data uploaded yet');
+      const safeLimit = Math.min(Math.max(limit, 1), 200);
+      const safePage = Math.max(page, 1);
+      return {
+        headers: [] as string[],
+        rows: [] as string[][],
+        sourceRowIndices: [] as number[],
+        totalRows: 0,
+        page: safePage,
+        limit: safeLimit,
+        hasMore: false,
+      };
     }
 
-    const rowCount = this.rowStore.getRowCount(doc);
+    const rowCount = await this.getCachedMasterCount(doc);
     const safeLimit = Math.min(Math.max(limit, 1), 200);
     const safePage = Math.max(page, 1);
-    const offset = (safePage - 1) * safeLimit;
-    const { rows, sourceRowIndices } = await this.rowStore.loadPageRows(
-      doc,
-      offset,
-      safeLimit,
-    );
+    const preview =
+      typeof cursor === 'number'
+        ? await this.loadPreviewByCursor(doc, safeLimit, cursor)
+        : await this.loadPreviewByCursor(doc, safeLimit, (safePage - 1) * safeLimit - 1);
 
     return {
       headers: doc.headers as string[],
-      rows,
-      sourceRowIndices,
+      rows: preview.rows,
+      sourceRowIndices: preview.sourceRowIndices,
       totalRows: rowCount,
       page: safePage,
       limit: safeLimit,
+      nextCursor: preview.nextCursor,
+      hasMore: typeof preview.nextCursor === 'number' && preview.nextCursor + 1 < rowCount,
     };
   }
 
@@ -1961,7 +2129,7 @@ export class MasterDataService {
 
     const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
     if (!doc) {
-      throw new NotFoundException('No master data uploaded yet');
+      return emptyMasterSearchResult(dto.page ?? 1, dto.limit ?? 100);
     }
 
     const query = dto.query?.trim() ?? '';
@@ -1998,6 +2166,7 @@ export class MasterDataService {
       query,
       columnFilters,
       columnValueFilters: dto.columnValueFilters,
+      columnValueOrFilters: dto.columnValueOrFilters,
       columnDateRangeFilters: dto.columnDateRangeFilters,
       mustExistColumns: dto.mustExistColumns,
       filters: dto.filters,
@@ -2150,25 +2319,25 @@ export class MasterDataService {
 
     const doc = await this.masterDataModel
       .findOne({ key: MASTER_DATA_KEY })
-      .select('headers rows updatedAt')
+      .select('headers rows rowCount storage updatedAt key')
       .lean()
       .exec();
     if (!doc) {
-      throw new NotFoundException('No master data uploaded yet');
+      return emptyMasterFilterSchema();
     }
 
+    const rowCount = await this.getCachedMasterCount(doc);
     const revision =
-      (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ??
-      this.rowStore.getRowCount(doc);
+      (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? rowCount;
     return this.cache.wrap(
       `master:filter-schema:v2:${revision}`,
       cacheTtlSeconds(this.config, 'long'),
       async () => {
         const headers = doc.headers as string[];
-        const rows = await this.rowStore.loadSampleRows(doc, 10_000);
+        const rows = await this.rowStore.loadSampleRows(doc, 2_500);
         const columns = enrichFilterSchemaColumns(buildMasterDataFilterSchema(headers, rows));
         return {
-          totalRows: this.rowStore.getRowCount(doc),
+          totalRows: rowCount,
           headers,
           columns,
         };
@@ -2186,7 +2355,7 @@ export class MasterDataService {
 
     const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
     if (!doc) {
-      throw new NotFoundException('No master data uploaded yet');
+      return { header, options: [] as string[] };
     }
 
     const headers = doc.headers as string[];
@@ -2200,7 +2369,7 @@ export class MasterDataService {
       cacheKey,
       cacheTtlSeconds(this.config, 'short'),
       async () => {
-        const rows = await this.rowStore.loadSampleRows(doc, 10_000);
+        const rows = await this.rowStore.loadSampleRows(doc, 2_500);
         return {
           header,
           options: distinctColumnValues(headers, rows, header, q, limit),
@@ -2263,6 +2432,7 @@ export class MasterDataService {
       query: filter.query,
       columnFilters: filter.columnFilters,
       columnValueFilters: filter.columnValueFilters,
+      columnValueOrFilters: filter.columnValueOrFilters,
       columnDateRangeFilters: filter.columnDateRangeFilters,
       mustExistColumns: filter.mustExistColumns,
       filters: filter.filters,
@@ -2501,6 +2671,14 @@ export class MasterDataService {
       ),
       updatedAt: (doc as MasterDataRecord & { updatedAt?: Date }).updatedAt,
       createdAt: (doc as MasterDataRecord & { createdAt?: Date }).createdAt,
+    };
+  }
+
+  private async toMetadataResponseAsync(doc: MasterDataRecord) {
+    const rowCount = await this.rowStore.countStoredRows(doc);
+    return {
+      ...this.toMetadataResponse(doc),
+      rowCount,
     };
   }
 

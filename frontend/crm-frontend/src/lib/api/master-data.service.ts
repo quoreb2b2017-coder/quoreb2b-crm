@@ -113,6 +113,7 @@ export interface MasterDataSearchParams {
   query?: string;
   columnFilters?: MasterDataColumnFilter[];
   columnValueFilters?: Array<{ header: string; values: string[] }>;
+  columnValueOrFilters?: Array<{ headers: string[]; values: string[] }>;
   columnDateRangeFilters?: Array<{ header: string; from?: string; to?: string }>;
   mustExistColumns?: string[];
   page?: number;
@@ -141,7 +142,21 @@ export interface MasterDataSearchResult {
   totalRows: number;
   page: number;
   limit: number;
+  nextCursor?: number;
+  hasMore?: boolean;
   batchedByRow: Record<string, Array<{ id: string; name: string }>>;
+}
+
+export interface MasterDataBootstrapResult {
+  fileName: string;
+  sheetName: string;
+  headers: string[];
+  rows: string[][];
+  sourceRowIndices: number[];
+  totalRows: number;
+  limit: number;
+  nextCursor?: number;
+  hasMore: boolean;
 }
 
 export type MasterDataUploadRequestStatus =
@@ -200,6 +215,27 @@ function unwrap<T>(response: { data: unknown }): T {
 function statusQuery(status?: MasterDataUploadRequestStatus | 'all') {
   return status && status !== 'all' ? `?status=${status}` : '';
 }
+
+function readApiStatus(err: unknown): number | undefined {
+  return (err as { response?: { status?: number } })?.response?.status;
+}
+
+const EMPTY_MASTER_BOOTSTRAP: MasterDataBootstrapResult = {
+  fileName: '',
+  sheetName: '',
+  headers: [],
+  rows: [],
+  sourceRowIndices: [],
+  totalRows: 0,
+  limit: 100,
+  hasMore: false,
+};
+
+const EMPTY_MASTER_FILTER_SCHEMA: MasterDataFilterSchemaResponse = {
+  totalRows: 0,
+  headers: [],
+  columns: [],
+};
 
 export const masterDataService = {
   save: async (payload: SpreadsheetData, mode: MasterDataSaveMode = 'append') => {
@@ -329,6 +365,12 @@ export const masterDataService = {
           batchedByRow: {},
         };
       }
+      if (status === 403) {
+        return {
+          summary: { totalRows: 0, batchedRows: 0, availableRows: 0, batchesFromMaster: 0 },
+          batchedByRow: {},
+        };
+      }
       throw err;
     }
   },
@@ -348,9 +390,9 @@ export const masterDataService = {
   },
 
   /** Fast chunked preview — first page only (100 rows via loadPageRows on server). */
-  getPreview: async (limit = 100): Promise<MasterDataSearchResult> => {
+  getPreview: async (limit = 100, cursor?: number): Promise<MasterDataSearchResult> => {
     const { data } = await apiClient.get('/master-data/preview', {
-      params: { page: 1, limit },
+      params: { page: 1, limit, cursor },
       timeout: MASTER_DATA_READ_TIMEOUT_MS,
     });
     const body = unwrap<{
@@ -360,6 +402,8 @@ export const masterDataService = {
       totalRows: number;
       page: number;
       limit: number;
+      nextCursor?: number;
+      hasMore?: boolean;
     }>({ data });
     return {
       headers: body.headers,
@@ -369,8 +413,26 @@ export const masterDataService = {
       totalRows: body.totalRows,
       page: body.page,
       limit: body.limit,
+      nextCursor: body.nextCursor,
+      hasMore: body.hasMore,
       batchedByRow: {},
     };
+  },
+
+  getBootstrap: async (limit = 100): Promise<MasterDataBootstrapResult> => {
+    try {
+      const { data } = await apiClient.get('/master-data/bootstrap', {
+        params: { limit },
+        timeout: MASTER_DATA_READ_TIMEOUT_MS,
+      });
+      return unwrap<MasterDataBootstrapResult>({ data });
+    } catch (err: unknown) {
+      const status = readApiStatus(err);
+      if (status === 404 || status === 403) {
+        return { ...EMPTY_MASTER_BOOTSTRAP, limit };
+      }
+      throw err;
+    }
   },
 
   search: async (params: MasterDataSearchParams): Promise<MasterDataSearchResult> => {
@@ -381,10 +443,16 @@ export const masterDataService = {
   },
 
   getFilterSchema: async (): Promise<MasterDataFilterSchemaResponse> => {
-    const { data } = await apiClient.get('/master-data/filter-schema', {
-      timeout: MASTER_DATA_READ_TIMEOUT_MS,
-    });
-    return unwrap<MasterDataFilterSchemaResponse>({ data });
+    try {
+      const { data } = await apiClient.get('/master-data/filter-schema', {
+        timeout: MASTER_DATA_READ_TIMEOUT_MS,
+      });
+      return unwrap<MasterDataFilterSchemaResponse>({ data });
+    } catch (err: unknown) {
+      const status = readApiStatus(err);
+      if (status === 404 || status === 403) return EMPTY_MASTER_FILTER_SCHEMA;
+      throw err;
+    }
   },
 
   getColumnOptions: async (
@@ -442,8 +510,14 @@ export const masterDataService = {
   getUploadRequests: async (
     status?: MasterDataUploadRequestStatus | 'all',
   ): Promise<MasterDataUploadRequest[]> => {
-    const { data } = await apiClient.get(`/master-data/upload-requests${statusQuery(status)}`);
-    return unwrap<MasterDataUploadRequest[]>({ data });
+    try {
+      const { data } = await apiClient.get(`/master-data/upload-requests${statusQuery(status)}`);
+      return unwrap<MasterDataUploadRequest[]>({ data });
+    } catch (err: unknown) {
+      const statusCode = readApiStatus(err);
+      if (statusCode === 404 || statusCode === 403) return [];
+      throw err;
+    }
   },
 
   getEmployeeUploadRequestsForDbAdmin: async (

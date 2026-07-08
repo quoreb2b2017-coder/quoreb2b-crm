@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { sortCategoryOptions } from './master-database-columns';
-import { XlToolbarSelect } from '@/components/admin/XlToolbarSelect';
 import { XlToolbarMultiSelect } from '@/components/admin/XlToolbarMultiSelect';
 
 interface CategoryRangeSliderProps {
@@ -10,8 +9,9 @@ interface CategoryRangeSliderProps {
   selected: Set<string>;
   onChange: (values: string[]) => void;
   onCommit: () => void;
-  listId?: string;
 }
+
+type FilterMode = 'manual' | 'range' | 'multi';
 
 function indicesFromSelection(sorted: string[], selected: Set<string>, count: number) {
   const hits = sorted.map((opt, i) => (selected.has(opt) ? i : -1)).filter((i) => i >= 0);
@@ -19,21 +19,64 @@ function indicesFromSelection(sorted: string[], selected: Set<string>, count: nu
   return { min: Math.min(...hits), max: Math.max(...hits), active: true };
 }
 
+function parseNumericHint(raw: string): number | null {
+  const s = raw.trim().replace(/,/g, '');
+  if (!s) return null;
+  const m = s.match(/(\d+(?:\.\d+)?)/);
+  return m ? Number(m[1]) : null;
+}
+
+function optionNumericBounds(opt: string): { lo: number; hi: number } | null {
+  const range = opt.match(/(\d[\d,]*(?:\.\d+)?)\s*[-–—to]+\s*(\d[\d,]*(?:\.\d+)?)/i);
+  if (range) {
+    return {
+      lo: Number(range[1].replace(/,/g, '')),
+      hi: Number(range[2].replace(/,/g, '')),
+    };
+  }
+  if (/less than/i.test(opt)) {
+    const n = opt.match(/(\d[\d,]*(?:\.\d+)?)/);
+    if (n) return { lo: 0, hi: Number(n[1].replace(/,/g, '')) - 1 };
+  }
+  if (/above|\+/i.test(opt)) {
+    const n = opt.match(/(\d[\d,]*(?:\.\d+)?)/);
+    if (n) return { lo: Number(n[1].replace(/,/g, '')), hi: Number.POSITIVE_INFINITY };
+  }
+  const leading = opt.match(/^(\d[\d,]*(?:\.\d+)?)/);
+  if (leading) {
+    const n = Number(leading[1].replace(/,/g, ''));
+    return { lo: n, hi: n };
+  }
+  return null;
+}
+
 function matchOption(sorted: string[], raw: string): string | null {
   const q = raw.trim();
   if (!q) return null;
+
   const exact = sorted.find((o) => o === q);
   if (exact) return exact;
+
   const lower = q.toLowerCase();
   const ci = sorted.find((o) => o.toLowerCase() === lower);
   if (ci) return ci;
+
+  const hint = parseNumericHint(q);
+  if (hint != null) {
+    for (const opt of sorted) {
+      const bounds = optionNumericBounds(opt);
+      if (!bounds) continue;
+      if (hint >= bounds.lo && hint <= bounds.hi) return opt;
+    }
+  }
+
   const partial = sorted.find((o) => o.toLowerCase().includes(lower));
   return partial ?? null;
 }
 
 /**
- * Employee / Revenue size — three ways to filter (all stay in sync):
- * 1. Manual From → To inputs (full labels like "1 to 10")
+ * Employee / Revenue size — three ways to filter (manual takes priority when typing):
+ * 1. Manual From → To text inputs
  * 2. Drag range on the track
  * 3. Multi-select dropdown
  */
@@ -42,17 +85,17 @@ export function CategoryRangeSlider({
   selected,
   onChange,
   onCommit,
-  listId = 'mdb-size-options',
 }: CategoryRangeSliderProps) {
   const sorted = useMemo(() => sortCategoryOptions(options), [options]);
   const count = sorted.length;
-  const datalistId = `${listId}-${sorted[0]?.slice(0, 8) ?? 'x'}`;
 
   const derived = useMemo(
     () => indicesFromSelection(sorted, selected, count),
     [count, selected, sorted],
   );
 
+  const [filterMode, setFilterMode] = useState<FilterMode>('multi');
+  const [manualDirty, setManualDirty] = useState(false);
   const [minIdx, setMinIdx] = useState(derived.min);
   const [maxIdx, setMaxIdx] = useState(derived.max);
   const [fromText, setFromText] = useState('');
@@ -61,44 +104,75 @@ export function CategoryRangeSlider({
   const dragRef = useRef<'min' | 'max' | null>(null);
 
   useEffect(() => {
+    if (manualDirty) return;
     setMinIdx(derived.min);
     setMaxIdx(derived.max);
-    if (derived.active) {
+    if (derived.active && filterMode !== 'manual') {
       setFromText(sorted[derived.min] ?? '');
       setToText(sorted[derived.max] ?? '');
-    } else {
+    } else if (!derived.active && filterMode !== 'manual') {
       setFromText('');
       setToText('');
     }
-  }, [derived.min, derived.max, derived.active, sorted]);
+  }, [derived.min, derived.max, derived.active, filterMode, manualDirty, sorted]);
 
   const applyRange = useCallback(
-    (min: number, max: number, commit: boolean) => {
+    (min: number, max: number, mode: FilterMode, commit: boolean) => {
       const lo = Math.min(min, max);
       const hi = Math.max(min, max);
+      setFilterMode(mode);
+      setManualDirty(false);
       setMinIdx(lo);
       setMaxIdx(hi);
-      setFromText(sorted[lo] ?? '');
-      setToText(sorted[hi] ?? '');
+      if (mode === 'manual') {
+        setFromText(sorted[lo] ?? '');
+        setToText(sorted[hi] ?? '');
+      }
       onChange(sorted.slice(lo, hi + 1));
       if (commit) onCommit();
     },
     [onChange, onCommit, sorted],
   );
 
-  const applyManualRange = () => {
-    const fromOpt = matchOption(sorted, fromText);
-    const toOpt = matchOption(sorted, toText);
-    if (!fromOpt && !toOpt) {
-      if (!fromText.trim() && !toText.trim()) {
-        onChange([]);
-        onCommit();
-      }
+  const applyManualRange = useCallback(() => {
+    const fromRaw = fromText.trim();
+    const toRaw = toText.trim();
+
+    if (!fromRaw && !toRaw) {
+      setFilterMode('manual');
+      setManualDirty(false);
+      onChange([]);
+      onCommit();
       return;
     }
+
+    const fromOpt = fromRaw ? matchOption(sorted, fromRaw) : null;
+    const toOpt = toRaw ? matchOption(sorted, toRaw) : null;
+
+    if (!fromOpt && !toOpt) {
+      setFilterMode('manual');
+      setManualDirty(true);
+      onChange([]);
+      return;
+    }
+
     const fromIdx = fromOpt ? sorted.indexOf(fromOpt) : toOpt ? sorted.indexOf(toOpt) : 0;
     const toIdx = toOpt ? sorted.indexOf(toOpt) : fromOpt ? sorted.indexOf(fromOpt) : 0;
-    applyRange(fromIdx, toIdx, true);
+    applyRange(fromIdx, toIdx, 'manual', true);
+  }, [applyRange, fromText, onChange, onCommit, sorted, toText]);
+
+  const onManualFromChange = (value: string) => {
+    setFilterMode('manual');
+    setManualDirty(true);
+    setFromText(value);
+    onChange([]);
+  };
+
+  const onManualToChange = (value: string) => {
+    setFilterMode('manual');
+    setManualDirty(true);
+    setToText(value);
+    onChange([]);
   };
 
   const indexAtPointer = useCallback(
@@ -117,8 +191,8 @@ export function CategoryRangeSlider({
       const thumb = dragRef.current;
       if (!thumb) return;
       const idx = indexAtPointer(e.clientX);
-      if (thumb === 'min') applyRange(idx, maxIdx, false);
-      else applyRange(minIdx, idx, false);
+      if (thumb === 'min') applyRange(idx, maxIdx, 'range', false);
+      else applyRange(minIdx, idx, 'range', false);
     };
 
     const onUp = () => {
@@ -147,61 +221,48 @@ export function CategoryRangeSlider({
   const maxPct = count > 1 ? (maxIdx / (count - 1)) * 100 : 100;
   const span = derived.active ? hi - lo + 1 : 0;
   const selectOptions = sorted.map((opt) => ({ value: opt, label: opt }));
-
-  const applyFromSelect = (label: string) => {
-    if (!label) {
-      onChange([]);
-      onCommit();
-      return;
-    }
-    const fromIdx = sorted.indexOf(label);
-    if (fromIdx < 0) return;
-    const toIdx = derived.active ? Math.max(fromIdx, hi) : fromIdx;
-    applyRange(fromIdx, toIdx, true);
-  };
-
-  const applyToSelect = (label: string) => {
-    if (!label) {
-      onChange([]);
-      onCommit();
-      return;
-    }
-    const toIdx = sorted.indexOf(label);
-    if (toIdx < 0) return;
-    const fromIdx = derived.active ? Math.min(lo, toIdx) : toIdx;
-    applyRange(fromIdx, toIdx, true);
-  };
+  const multiValues =
+    filterMode === 'manual' && manualDirty ? new Set<string>() : selected;
 
   return (
     <div className="mdb-category-range">
       <div className="mdb-category-range__head">
         <span className="mdb-category-range__pill" title={derived.active ? sorted[lo] : ''}>
-          {derived.active ? sorted[lo] : 'From…'}
+          {filterMode === 'manual' && manualDirty
+            ? fromText.trim() || 'From…'
+            : derived.active
+              ? sorted[lo]
+              : 'From…'}
         </span>
         <span className="mdb-category-range__arrow" aria-hidden>
           →
         </span>
         <span className="mdb-category-range__pill" title={derived.active ? sorted[hi] : ''}>
-          {derived.active ? sorted[hi] : 'To…'}
+          {filterMode === 'manual' && manualDirty
+            ? toText.trim() || 'To…'
+            : derived.active
+              ? sorted[hi]
+              : 'To…'}
         </span>
         <span className="mdb-category-range__badge">
-          {derived.active ? `${span}/${count}` : `${count} opts`}
+          {derived.active && filterMode !== 'manual'
+            ? `${span}/${count}`
+            : filterMode === 'manual' && derived.active
+              ? 'Manual'
+              : `${count} opts`}
         </span>
       </div>
 
-      {/* 1 — Manual type / pick From → To */}
       <div className="mdb-category-range__section">
         <span className="mdb-category-range__section-label">Manual range</span>
         <div className="mdb-category-range__manual">
           <input
             type="text"
             className="mdb-category-range__text"
-            list={datalistId}
             value={fromText}
             placeholder="From — e.g. 1 to 10"
-            onChange={(e) => setFromText(e.target.value)}
+            onChange={(e) => onManualFromChange(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && applyManualRange()}
-            onBlur={applyManualRange}
           />
           <span className="mdb-category-range__arrow" aria-hidden>
             →
@@ -209,42 +270,21 @@ export function CategoryRangeSlider({
           <input
             type="text"
             className="mdb-category-range__text"
-            list={datalistId}
             value={toText}
             placeholder="To — e.g. 5001 and above"
-            onChange={(e) => setToText(e.target.value)}
+            onChange={(e) => onManualToChange(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && applyManualRange()}
-            onBlur={applyManualRange}
           />
+          <button
+            type="button"
+            className="mdb-category-range__apply"
+            onClick={applyManualRange}
+          >
+            Apply
+          </button>
         </div>
-        <div className="mdb-category-range__pick">
-          <XlToolbarSelect
-            tone="light"
-            className="mdb-category-range__select"
-            menuMinWidth={240}
-            value={derived.active ? sorted[lo] : ''}
-            placeholder="Pick from…"
-            onChange={applyFromSelect}
-            options={selectOptions}
-          />
-          <XlToolbarSelect
-            tone="light"
-            className="mdb-category-range__select"
-            menuMinWidth={240}
-            value={derived.active ? sorted[hi] : ''}
-            placeholder="Pick to…"
-            onChange={applyToSelect}
-            options={selectOptions}
-          />
-        </div>
-        <datalist id={datalistId}>
-          {sorted.map((opt) => (
-            <option key={opt} value={opt} />
-          ))}
-        </datalist>
       </div>
 
-      {/* 2 — Drag range */}
       {count >= 2 && (
         <div className="mdb-category-range__section">
           <span className="mdb-category-range__section-label">Drag range</span>
@@ -259,6 +299,7 @@ export function CategoryRangeSlider({
               applyRange(
                 dragRef.current === 'min' ? idx : minIdx,
                 dragRef.current === 'max' ? idx : maxIdx,
+                'range',
                 false,
               );
               trackRef.current?.setPointerCapture(e.pointerId);
@@ -304,19 +345,24 @@ export function CategoryRangeSlider({
         </div>
       )}
 
-      {/* 3 — Dropdown multi-select */}
       <div className="mdb-category-range__section">
         <span className="mdb-category-range__section-label">Dropdown pick</span>
         <XlToolbarMultiSelect
           tone="light"
           className="mdb-category-range__multiselect"
           menuMinWidth={300}
-          values={selected}
+          values={multiValues}
           placeholder="Select one or more sizes…"
           onChange={(next) => {
+            setFilterMode('multi');
+            setManualDirty(false);
+            setFromText('');
+            setToText('');
             onChange([...next]);
           }}
-          onApply={onCommit}
+          onApply={(next) => {
+            if (next.size > 0) onCommit();
+          }}
           options={selectOptions}
         />
       </div>

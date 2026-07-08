@@ -3,6 +3,7 @@ import type {
   MasterDataColumnDateRangeFilterDto,
   MasterDataColumnFilterDto,
   MasterDataColumnValuesFilterDto,
+  MasterDataColumnValuesOrFilterDto,
 } from './dto/search-master-data.dto';
 
 function colIndex(headers: string[], header: string): number {
@@ -95,6 +96,24 @@ function rowMatchesValueFilter(
   });
 }
 
+function rowMatchesValueOrFilter(
+  row: string[],
+  headers: string[],
+  filter: MasterDataColumnValuesOrFilterDto,
+): boolean {
+  if (!filter.values?.length || !filter.headers?.length) return true;
+  return filter.headers.some((header) => {
+    const colIdx = colIndex(headers, header);
+    if (colIdx < 0) return false;
+    const cell = String(row[colIdx] ?? '').trim().toLowerCase();
+    if (!cell) return false;
+    return filter.values.some((v) => {
+      const needle = v.trim().toLowerCase();
+      return cell === needle || cell.includes(needle);
+    });
+  });
+}
+
 function cellAt(row: string[], headers: string[], ...needles: string[]): string {
   const norm = headers.map((h) => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
   for (const needle of needles) {
@@ -135,6 +154,7 @@ export function hasMasterDataSearchCriteria(input: {
   query?: string;
   columnFilters?: MasterDataColumnFilterDto[];
   columnValueFilters?: MasterDataColumnValuesFilterDto[];
+  columnValueOrFilters?: MasterDataColumnValuesOrFilterDto[];
   columnDateRangeFilters?: MasterDataColumnDateRangeFilterDto[];
   mustExistColumns?: string[];
   filters?: MasterDataAdvancedFiltersDto;
@@ -142,6 +162,7 @@ export function hasMasterDataSearchCriteria(input: {
   if (input.query?.trim()) return true;
   if (input.columnFilters?.length) return true;
   if (input.columnValueFilters?.some((f) => f.values?.length)) return true;
+  if (input.columnValueOrFilters?.some((f) => f.values?.length)) return true;
   if (input.columnDateRangeFilters?.some((f) => f.from?.trim() || f.to?.trim())) return true;
   if (input.mustExistColumns?.length) return true;
 
@@ -178,6 +199,7 @@ export type MasterDataFilterInput = {
   query?: string;
   columnFilters?: MasterDataColumnFilterDto[];
   columnValueFilters?: MasterDataColumnValuesFilterDto[];
+  columnValueOrFilters?: MasterDataColumnValuesOrFilterDto[];
   columnDateRangeFilters?: MasterDataColumnDateRangeFilterDto[];
   mustExistColumns?: string[];
   filters?: MasterDataAdvancedFiltersDto;
@@ -193,6 +215,7 @@ export type CompiledMasterDataFilter = {
     match: 'contains' | 'equals' | 'startsWith';
   }>;
   columnValues: Array<{ colIdx: number; valuesLower: string[] }>;
+  columnValueOr: Array<{ colIdxs: number[]; valuesLower: string[] }>;
   dateRanges: Array<{
     colIdx: number;
     fromTime: number | null;
@@ -257,6 +280,13 @@ export function compileMasterDataFilter(
         valuesLower: f.values.map((v) => v.trim().toLowerCase()).filter(Boolean),
       }))
       .filter((f) => f.colIdx >= 0 && f.valuesLower.length),
+    columnValueOr: (input.columnValueOrFilters ?? [])
+      .filter((f) => f.values?.length && f.headers?.length)
+      .map((f) => ({
+        colIdxs: f.headers.map((h) => idx(h)).filter((i) => i >= 0),
+        valuesLower: f.values.map((v) => v.trim().toLowerCase()).filter(Boolean),
+      }))
+      .filter((f) => f.colIdxs.length > 0 && f.valuesLower.length),
     dateRanges: (input.columnDateRangeFilters ?? [])
       .filter((f) => f.from?.trim() || f.to?.trim())
       .map((f) => {
@@ -305,6 +335,22 @@ export function rowMatchesCompiledFilter(
         matched = true;
         break;
       }
+    }
+    if (!matched) return false;
+  }
+
+  for (const f of compiled.columnValueOr) {
+    let matched = false;
+    for (const colIdx of f.colIdxs) {
+      const cell = String(row[colIdx] ?? '').trim().toLowerCase();
+      if (!cell) continue;
+      for (const v of f.valuesLower) {
+        if (cell === v || cell.includes(v)) {
+          matched = true;
+          break;
+        }
+      }
+      if (matched) break;
     }
     if (!matched) return false;
   }
@@ -366,6 +412,10 @@ export function rowMatchesMasterDataFilters(
   for (const filter of columnValueFilters) {
     if (!filter.values?.length) continue;
     if (!rowMatchesValueFilter(row, headers, filter)) return false;
+  }
+  for (const filter of input.columnValueOrFilters ?? []) {
+    if (!filter.values?.length) continue;
+    if (!rowMatchesValueOrFilter(row, headers, filter)) return false;
   }
   for (const filter of columnDateRangeFilters) {
     if (!filter.from?.trim() && !filter.to?.trim()) continue;
@@ -470,6 +520,10 @@ export function hashMasterDataFilterInput(input: MasterDataFilterInput): string 
     })),
     columnValueFilters: (input.columnValueFilters ?? []).map((f) => ({
       header: f.header,
+      values: [...(f.values ?? [])].sort(),
+    })),
+    columnValueOrFilters: (input.columnValueOrFilters ?? []).map((f) => ({
+      headers: [...(f.headers ?? [])].sort(),
       values: [...(f.values ?? [])].sort(),
     })),
     columnDateRangeFilters: (input.columnDateRangeFilters ?? []).map((f) => ({

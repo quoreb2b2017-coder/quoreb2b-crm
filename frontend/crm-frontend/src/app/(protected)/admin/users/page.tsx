@@ -57,13 +57,7 @@ export default function AdminUsersPage() {
   const loadUsers = async () => {
     setLoading(true);
     try {
-      const { data } = await usersService.list({ limit: 100 });
-      const outer = (data as { data?: unknown })?.data;
-      const list: Record<string, unknown>[] = Array.isArray(outer)
-        ? outer
-        : Array.isArray((outer as { data?: unknown[] })?.data)
-          ? (outer as { data: Record<string, unknown>[] }).data
-          : [];
+      const list = await usersService.listParsed({ limit: 200 });
       setUsers(list);
     } catch {
       setUsers([]);

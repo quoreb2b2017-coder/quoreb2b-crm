@@ -28,18 +28,20 @@ export interface ChartData {
   topStatusPct?: number;
 }
 
-export async function fetchCrmDashboardStats(): Promise<CrmDashboardStats> {
+export async function fetchCrmDashboardStats(opts?: { refresh?: boolean }): Promise<CrmDashboardStats> {
+  if (opts?.refresh) clearCache('analytics:dashboard');
   return deduplicatedFetch('analytics:dashboard', async () => {
     const { data } = await apiClient.get('/analytics/dashboard');
     return (data?.data ?? data) as CrmDashboardStats;
-  });
+  }, opts?.refresh ? 0 : 60_000);
 }
 
-export async function fetchChartData(): Promise<ChartData> {
+export async function fetchChartData(opts?: { refresh?: boolean }): Promise<ChartData> {
+  if (opts?.refresh) clearCache('analytics:charts');
   return deduplicatedFetch('analytics:charts', async () => {
     const { data } = await apiClient.get('/analytics/charts');
     return (data?.data ?? data) as ChartData;
-  });
+  }, opts?.refresh ? 0 : 60_000);
 }
 
 export interface RecentWorkActivityItem {

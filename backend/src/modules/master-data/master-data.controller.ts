@@ -141,11 +141,30 @@ export class MasterDataController {
     @Query('page') page = '1',
     @Query('limit') limit = '100',
     @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
+    @Query('cursor') cursor?: string,
   ) {
+    const parsedCursor =
+      typeof cursor === 'string' && cursor.trim().length
+        ? Number.parseInt(cursor, 10)
+        : undefined;
     return this.masterDataService.getPreviewForUser(
       user.id,
       user.roles ?? [],
       parseInt(page, 10) || 1,
+      parseInt(limit, 10) || 100,
+      Number.isInteger(parsedCursor) ? parsedCursor : undefined,
+    );
+  }
+
+  @Get('bootstrap')
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
+  getBootstrap(
+    @Query('limit') limit = '100',
+    @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
+  ) {
+    return this.masterDataService.getBootstrapForUser(
+      user.id,
+      user.roles ?? [],
       parseInt(limit, 10) || 100,
     );
   }

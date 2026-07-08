@@ -9,6 +9,7 @@ import { ActivityLog } from '../activity-logs/schemas/activity-log.schema';
 import { ElasticsearchService } from '../../elasticsearch/elasticsearch.service';
 import { HealthService } from '../../health/health.service';
 import { BatchesService } from '../batches/batches.service';
+import { MasterDataService } from '../master-data/master-data.service';
 import { AppCacheService } from '../../redis/app-cache.service';
 import { cacheTtlSeconds, stableHash } from '../../redis/cache.util';
 import { ConfigService } from '@nestjs/config';
@@ -114,6 +115,7 @@ export class AnalyticsService {
     private elasticsearch: ElasticsearchService,
     private healthService: HealthService,
     private batchesService: BatchesService,
+    private masterDataService: MasterDataService,
     private cache: AppCacheService,
     private config: ConfigService,
   ) {}
@@ -176,8 +178,7 @@ export class AnalyticsService {
       }
     }
 
-    const masterRowCount =
-      (masterDoc?.rowCount as number) ?? (masterDoc?.rows as string[][])?.length ?? 0;
+    const masterRowCount = await this.masterDataService.getPublicMasterRowCount();
 
     if (masterRowCount > 0 && masterDoc && (masterDoc.headers as string[])?.length) {
       const sampleRows = await this.sampleMasterRows(masterDoc);
@@ -459,9 +460,10 @@ export class AnalyticsService {
   }
 
   async getDashboardStats() {
+    const masterRevision = await this.masterDataService.getPublicMasterRowCount();
     return this.cache.wrap(
-      'analytics:stats:global',
-      cacheTtlSeconds(this.config, 'long'),
+      `analytics:stats:global:${masterRevision}`,
+      cacheTtlSeconds(this.config, 'short'),
       () => this.loadDashboardStats(),
     );
   }
@@ -504,10 +506,10 @@ export class AnalyticsService {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const [totalUsers, newUsersThisMonth, masterData, batches] = await Promise.all([
+    const [totalUsers, newUsersThisMonth, masterStats, batches] = await Promise.all([
       this.userModel.countDocuments({ isActive: true }),
       this.userModel.countDocuments({ createdAt: { $gte: startOfMonth } }),
-      this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).select('headers rows rowCount storage').lean().exec(),
+      this.masterDataService.getPublicMasterStatsSample(),
       this.batchModel.find().select('rowCount').lean().exec(),
     ]);
 
@@ -515,19 +517,11 @@ export class AnalyticsService {
     let activeLeads = 0;
     let statusLeads = 0;
 
-    if (masterData) {
-      const rowCount = (masterData.rowCount as number) ?? (masterData.rows as string[][])?.length ?? 0;
-      if (rowCount > 0 && (masterData.headers as string[])?.length) {
-        const sampleRows = await this.sampleMasterRows(masterData);
-        const c = countFromSheet(
-          (masterData as { headers?: string[] }).headers ?? [],
-          sampleRows,
-          rowCount,
-        );
-        totalLeads = c.total;
-        activeLeads = c.active;
-        statusLeads = c.leads;
-      }
+    if (masterStats) {
+      const c = countFromSheet(masterStats.headers, masterStats.sampleRows, masterStats.rowCount);
+      totalLeads = masterStats.rowCount;
+      activeLeads = c.active;
+      statusLeads = c.leads;
     }
 
     const batchCount = batches.length;
@@ -549,34 +543,27 @@ export class AnalyticsService {
   }
 
   async getChartData() {
+    const masterRevision = await this.masterDataService.getPublicMasterRowCount();
     return this.cache.wrap(
-      'analytics:chart:status-breakdown',
-      cacheTtlSeconds(this.config, 'long'),
+      `analytics:chart:status-breakdown:${masterRevision}`,
+      cacheTtlSeconds(this.config, 'short'),
       () => this.loadChartData(),
     );
   }
 
   private async loadChartData() {
-    const [masterData, batchCount] = await Promise.all([
-      this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).select('headers rows rowCount storage').lean().exec(),
+    const [masterStats, batchCount] = await Promise.all([
+      this.masterDataService.getPublicMasterStatsSample(),
       this.batchModel.countDocuments().exec(),
     ]);
 
     const combinedMap = new Map<string, number>();
     let totalLeads = 0;
 
-    if (masterData) {
-      const rowCount = (masterData.rowCount as number) ?? (masterData.rows as string[][])?.length ?? 0;
-      if (rowCount > 0 && (masterData.headers as string[])?.length) {
-        const sampleRows = await this.sampleMasterRows(masterData);
-        const c = countFromSheet(
-          (masterData as { headers?: string[] }).headers ?? [],
-          sampleRows,
-          rowCount,
-        );
-        totalLeads = c.total;
-        c.statusBreakdown.forEach((v, k) => combinedMap.set(k, (combinedMap.get(k) ?? 0) + v));
-      }
+    if (masterStats) {
+      const c = countFromSheet(masterStats.headers, masterStats.sampleRows, masterStats.rowCount);
+      totalLeads = masterStats.rowCount;
+      c.statusBreakdown.forEach((v, k) => combinedMap.set(k, (combinedMap.get(k) ?? 0) + v));
     }
 
     if (combinedMap.size === 0) {

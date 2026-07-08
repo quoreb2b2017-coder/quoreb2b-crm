@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
@@ -12,11 +12,13 @@ import {
 } from '../activity-logs/schemas/activity-log.schema';
 import { HealthModule } from '../../health/health.module';
 import { BatchesModule } from '../batches/batches.module';
+import { MasterDataModule } from '../master-data/master-data.module';
 
 @Module({
   imports: [
     HealthModule,
     BatchesModule,
+    forwardRef(() => MasterDataModule),
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: MasterDataRecord.name, schema: MasterDataSchema },

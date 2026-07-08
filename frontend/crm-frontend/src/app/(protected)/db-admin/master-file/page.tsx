@@ -1,20 +1,8 @@
-import dynamic from 'next/dynamic';
+'use client';
 
-const MasterDatabaseExplorer = dynamic(
-  () =>
-    import('@/components/master-database/MasterDatabaseExplorer').then((m) => ({
-      default: m.MasterDatabaseExplorer,
-    })),
-  {
-    loading: () => (
-      <div className="flex flex-1 items-center justify-center p-8 text-sm text-slate-500">
-        Loading master database…
-      </div>
-    ),
-  },
-);
+import { MasterDatabaseExplorer } from '@/components/master-database/MasterDatabaseExplorer';
 
-/** Filter-based master database (Compare Bazaar UI). Data visible only after search. */
+/** Filter-based master database — same fast bootstrap load as Super Admin embedded view. */
 export default function DbAdminMasterFilePage() {
   return (
     <div className="flex h-full min-h-0 w-full flex-col">

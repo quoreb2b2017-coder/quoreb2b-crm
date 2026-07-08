@@ -23,6 +23,7 @@ import {
 import { WelcomeBanner } from '@/components/dashboard/WelcomeBanner';
 import { CrmOverviewMetrics } from '@/components/dashboard/CrmOverviewMetrics';
 import { fetchCrmDashboardStats, fetchChartData } from '@/lib/api/analytics.service';
+import { clearCache } from '@/lib/api/cache';
 import { healthService } from '@/lib/api/health.service';
 import { useAdminProductStore } from '@/store/admin-product.store';
 import { cn } from '@/lib/utils/cn';
@@ -118,6 +119,7 @@ export function SuperAdminCrmDashboard() {
   const loading = statsLoading || chartLoading || healthLoading;
 
   const handleRefresh = useCallback(async () => {
+    clearCache('analytics');
     await Promise.all([refetchStats(), refetchChart(), refetchHealth()]);
   }, [refetchStats, refetchChart, refetchHealth]);
 

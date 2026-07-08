@@ -18,6 +18,7 @@ import {
   type CrmDashboardStats,
   type ChartData,
 } from '@/lib/api/analytics.service';
+import { clearCache } from '@/lib/api/cache';
 import { EmployeeAnalyticsPanel } from '@/components/admin/EmployeeAnalyticsPanel';
 import {
   AnalyticsPanel,
@@ -43,10 +44,14 @@ export function AnalyticsPage() {
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const load = () => {
+  const load = (refresh = false) => {
     setLoading(true);
     setError('');
-    Promise.all([fetchCrmDashboardStats(), fetchChartData()])
+    if (refresh) clearCache('analytics');
+    Promise.all([
+      fetchCrmDashboardStats({ refresh }),
+      fetchChartData({ refresh }),
+    ])
       .then(([s, c]) => {
         setStats(s);
         setChart(c);
@@ -62,7 +67,7 @@ export function AnalyticsPage() {
 
   useEffect(() => {
     const onUpdated = () => {
-      if (pageTab === 'crm') load();
+      if (pageTab === 'crm') load(true);
     };
     window.addEventListener('master-data-updated', onUpdated);
     window.addEventListener('crm-data-cleared', onUpdated);
@@ -120,7 +125,7 @@ export function AnalyticsPage() {
           {pageTab === 'crm' && (
             <button
               type="button"
-              onClick={load}
+              onClick={() => load(true)}
               disabled={loading}
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-50"
             >

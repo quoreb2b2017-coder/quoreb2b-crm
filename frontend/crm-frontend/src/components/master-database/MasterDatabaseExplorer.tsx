@@ -168,49 +168,44 @@ export function MasterDatabaseExplorer({
     }
   }, []);
 
-  const loadFilterSchema = useCallback(async () => {
-    setFilterSchemaLoading(true);
+  const enrichFilterSchemaInBackground = useCallback(async (knownHeaders: string[]) => {
     try {
       const schema = await masterDataService.getFilterSchema();
-      let columns = buildEffectiveFilterColumns(schema.headers, schema.columns);
-      const lazyHeaders = columns.filter(needsLazyColumnOptions);
-      if (lazyHeaders.length > 0) {
-        const fetched = await Promise.all(
-          lazyHeaders.map(async (col) => {
-            try {
-              const result = await masterDataService.getColumnOptions(col.header, undefined, 60);
-              return { header: col.header, options: result.options };
-            } catch {
-              return { header: col.header, options: [] as string[] };
-            }
-          }),
-        );
-        const optionsByHeader = new Map(
-          fetched.map((row) => [row.header.trim().toLowerCase(), row.options]),
-        );
-        columns = columns.map((col) => {
-          const extra = optionsByHeader.get(col.header.trim().toLowerCase());
-          if (!extra?.length) return col;
-          return enrichFilterColumnOptions({
-            ...col,
-            options: [...new Set([...col.options, ...extra])],
-          });
-        });
-      }
+      let columns = buildEffectiveFilterColumns(
+        knownHeaders.length ? knownHeaders : schema.headers,
+        schema.columns,
+      );
       setFilterColumns(columns);
-      setHeaders(schema.headers);
-      setMasterTotalRows(schema.totalRows);
-      return true;
-    } catch (err) {
-      setFilterColumns([]);
-      const status = (err as { response?: { status?: number } })?.response?.status;
-      if (status === 404) {
-        toast.error(
-          'Backend outdated',
-          'filter-schema API missing — redeploy backend: bash deploy/ec2/deploy-backend.sh',
-        );
+      if (schema.totalRows > 0) {
+        setMasterTotalRows(schema.totalRows);
       }
-      return false;
+      const lazyHeaders = columns.filter(needsLazyColumnOptions);
+      if (lazyHeaders.length === 0) return;
+
+      const fetched = await Promise.all(
+        lazyHeaders.map(async (col) => {
+          try {
+            const result = await masterDataService.getColumnOptions(col.header, undefined, 60);
+            return { header: col.header, options: result.options };
+          } catch {
+            return { header: col.header, options: [] as string[] };
+          }
+        }),
+      );
+      const optionsByHeader = new Map(
+        fetched.map((row) => [row.header.trim().toLowerCase(), row.options]),
+      );
+      columns = columns.map((col) => {
+        const extra = optionsByHeader.get(col.header.trim().toLowerCase());
+        if (!extra?.length) return col;
+        return enrichFilterColumnOptions({
+          ...col,
+          options: [...new Set([...col.options, ...extra])],
+        });
+      });
+      setFilterColumns(columns);
+    } catch {
+      /* filters still work from header-derived schema */
     } finally {
       setFilterSchemaLoading(false);
     }
@@ -219,54 +214,58 @@ export function MasterDatabaseExplorer({
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const schemaOk = await loadFilterSchema();
-      const record = await masterDataService.getCurrent();
-      if (!record) {
+      const bootstrap = await masterDataService
+        .getBootstrap(100)
+        .catch((err: unknown) => {
+          const status = (err as { response?: { status?: number } })?.response?.status;
+          if (status === 404 || status === 403) return null;
+          throw err;
+        });
+
+      if (!bootstrap?.headers?.length) {
         setAllRows([]);
         setDisplayRows([]);
         setSourceIndices([]);
+        setHeaders([]);
+        setFileName('');
         setMasterTotalRows(0);
         setFilteredTotal(0);
         setHasSearched(false);
+        setFilterColumns([]);
         return;
       }
-      setHeaders(record.headers);
-      setFileName(record.fileName);
-      setMasterTotalRows(record.rowCount);
-      const large =
-        Boolean(record.largeDataset) ||
-        record.rowCount > 5000 ||
-        (record.rowCount > 0 && (record.rows?.length ?? 0) < record.rowCount);
+
+      setHeaders(bootstrap.headers);
+      setFileName(bootstrap.fileName);
+      setMasterTotalRows(bootstrap.totalRows);
+      setFilterColumns(buildEffectiveFilterColumns(bootstrap.headers, []));
+      setFilterSchemaLoading(true);
+
+      const large = bootstrap.totalRows > 5000;
+      const showPreview = bootstrap.rows.length > 0;
       setIsLargeMasterDataset(large);
-      if (record.filterRequired) {
+      if (large) {
         setAllRows([]);
-        setDisplayRows([]);
-        setSourceIndices([]);
-        setHasSearched(false);
-        setFilteredTotal(0);
-        if (!schemaOk) {
-          toast.error(
-            'Master database unavailable',
-            'Apply filters after backend is redeployed with latest master-data APIs.',
-          );
-        }
+        setDisplayRows(bootstrap.rows);
+        setSourceIndices(bootstrap.sourceRowIndices);
       } else {
-        setAllRows(record.rows);
-        if (!isDbAdmin) {
-          if (large) {
-            setDisplayRows([]);
-            setSourceIndices([]);
-            setFilteredTotal(0);
-            setHasSearched(false);
-          } else {
-            setDisplayRows(record.rows);
-            setSourceIndices(record.rows.map((_, i) => i));
-            setFilteredTotal(record.rowCount);
-            setHasSearched(true);
-          }
-        }
+        setAllRows(bootstrap.rows);
+        setDisplayRows(bootstrap.rows);
+        setSourceIndices(bootstrap.sourceRowIndices);
       }
-      await loadCoverage();
+
+      if (isDbAdmin) {
+        setFilteredTotal(0);
+        setHasSearched(showPreview);
+        setIsFilteredView(false);
+      } else {
+        setFilteredTotal(bootstrap.totalRows);
+        setHasSearched(true);
+        setIsFilteredView(false);
+      }
+
+      void enrichFilterSchemaInBackground(bootstrap.headers);
+      void loadCoverage();
     } catch (err) {
       const msg = extractApiError(
         err,
@@ -276,7 +275,7 @@ export function MasterDatabaseExplorer({
     } finally {
       setLoading(false);
     }
-  }, [isDbAdmin, loadCoverage, loadFilterSchema]);
+  }, [enrichFilterSchemaInBackground, isDbAdmin, loadCoverage]);
 
   useEffect(() => {
     void loadData();
@@ -406,7 +405,6 @@ export function MasterDatabaseExplorer({
   const runSearch = useCallback(async () => {
     const activeFilters = filtersRef.current;
     if (isDbAdmin && !hasAnyDynamicSearchCriteria(activeFilters)) {
-      toast.error('Add filters', 'Type to search or pick a quick filter');
       return;
     }
     setPage(1);
@@ -493,10 +491,11 @@ export function MasterDatabaseExplorer({
       const [, header, ...rest] = key.split(':');
       const value = rest.join(':');
       const set = current.columnValues[header] ?? new Set<string>();
-      onFiltersChange({
-        ...current,
-        columnValues: { ...current.columnValues, [header]: toggleSet(set, value) },
-      });
+      const next = toggleSet(set, value);
+      const columnValues = { ...current.columnValues };
+      if (next.size) columnValues[header] = next;
+      else delete columnValues[header];
+      onFiltersChange({ ...current, columnValues });
       return;
     }
     if (key.startsWith('date:')) {
@@ -534,9 +533,18 @@ export function MasterDatabaseExplorer({
   const stats = useMemo(() => {
     const verifiedEmails = displayRows.filter((r) => hasValidEmail(r, headers)).length;
     const verifiedPhones = displayRows.filter((r) => hasValidPhone(r, headers)).length;
+    const matchedCount = isDbAdmin
+      ? isFilteredView
+        ? filteredTotal
+        : 0
+      : hasSearched
+        ? filteredTotal
+        : useServerSearch
+          ? 0
+          : masterTotalRows;
     return {
       total: safeCount(masterTotalRows),
-      filtered: safeCount(hasSearched ? filteredTotal : useServerSearch ? 0 : masterTotalRows),
+      filtered: safeCount(matchedCount),
       inCampaign: safeCount(coverage?.summary?.batchedRows),
       available: safeCount(coverage?.summary?.availableRows ?? masterTotalRows),
       verifiedEmails: hasSearched ? verifiedEmails : 0,
@@ -550,6 +558,8 @@ export function MasterDatabaseExplorer({
     filteredTotal,
     hasSearched,
     headers,
+    isDbAdmin,
+    isFilteredView,
     useServerSearch,
     masterTotalRows,
     selected.size,
@@ -1103,9 +1113,14 @@ export function MasterDatabaseExplorer({
 
             <div className="mdb-table-card mdb-table-card--workbook mdb-table-card--embedded flex min-h-0 flex-1 flex-col border-0 shadow-none">
               {loading ? (
-                <div className="flex flex-1 items-center justify-center bg-white text-sm text-slate-500">
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  Loading contacts…
+                <div className="mdb-loading-skeleton">
+                  <div className="mdb-loading-skeleton__bar" />
+                  <div className="mdb-loading-skeleton__bar mdb-loading-skeleton__bar--short" />
+                  <div className="mdb-loading-skeleton__grid">
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <div key={i} className="mdb-loading-skeleton__cell" />
+                    ))}
+                  </div>
                 </div>
               ) : (
                 <>
@@ -1287,7 +1302,7 @@ export function MasterDatabaseExplorer({
                 filterQuery={filterFieldQuery}
                 onFilterQueryChange={setFilterFieldQuery}
               />
-              <MasterDatabaseFilterTags tags={tags} onRemove={removeTag} />
+              <MasterDatabaseFilterTags tags={tags} onRemove={removeTag} onClearAll={clearFilters} />
             </>
           ) : null
         ) : (

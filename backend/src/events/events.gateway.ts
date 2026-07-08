@@ -37,15 +37,33 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
     private config: ConfigService,
   ) {}
 
-  afterInit(server: Server): void {
+  afterInit(namespaceOrServer: Server): void {
     const useAdapter =
-      isRedisEnabled() && this.config.get<boolean>('SOCKET_REDIS_ADAPTER', true);
+      isRedisEnabled() && this.config.get<boolean>('SOCKET_REDIS_ADAPTER', true) !== false;
     if (!useAdapter) return;
 
-    const pub = new Redis(buildRedisOptions(this.config));
-    const sub = pub.duplicate();
-    server.adapter(createAdapter(pub, sub));
-    this.logger.log('Socket.io Redis adapter enabled — safe for multi-instance deploy');
+    // Nest may pass a Namespace (has .server) rather than the root Server.
+    // Namespace.adapter is a getter object — only root Server.adapter() is settable.
+    const root =
+      (namespaceOrServer as unknown as { server?: Server }).server ??
+      (this.server as unknown as { server?: Server })?.server ??
+      namespaceOrServer;
+
+    if (typeof (root as { adapter?: unknown }).adapter !== 'function') {
+      this.logger.warn('Socket.io Redis adapter skipped — root Server.adapter() unavailable');
+      return;
+    }
+
+    try {
+      const pub = new Redis(buildRedisOptions(this.config));
+      const sub = pub.duplicate();
+      (root as Server).adapter(createAdapter(pub, sub) as never);
+      this.logger.log('Socket.io Redis adapter enabled — safe for multi-instance deploy');
+    } catch (err) {
+      this.logger.warn(
+        `Socket.io Redis adapter failed: ${err instanceof Error ? err.message : err}`,
+      );
+    }
   }
 
   async handleConnection(client: Socket) {

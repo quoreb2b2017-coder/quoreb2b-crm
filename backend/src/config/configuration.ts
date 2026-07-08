@@ -26,6 +26,19 @@ export default () => ({
   ELASTICSEARCH_USERNAME: process.env.ELASTICSEARCH_USERNAME || '',
   ELASTICSEARCH_PASSWORD: process.env.ELASTICSEARCH_PASSWORD || '',
   ELASTICSEARCH_INDEX_PREFIX: process.env.ELASTICSEARCH_INDEX_PREFIX || 'quoreb2b',
+  /** Bulk size when syncing Mongo master rows → OpenSearch */
+  MASTER_SEARCH_INDEX_BULK_SIZE: parseInt(
+    process.env.MASTER_SEARCH_INDEX_BULK_SIZE || '1000',
+    10,
+  ),
+  MASTER_FILTER_INDEX_CACHE_TTL_SEC: parseInt(
+    process.env.MASTER_FILTER_INDEX_CACHE_TTL_SEC || '300',
+    10,
+  ),
+  MASTER_FILTER_SCAN_PARALLEL: parseInt(
+    process.env.MASTER_FILTER_SCAN_PARALLEL || '12',
+    10,
+  ),
   REDIS_CACHE_PREFIX: process.env.REDIS_CACHE_PREFIX || 'quoreb2b:cache',
   REDIS_CACHE_TTL_SECONDS: parseInt(process.env.REDIS_CACHE_TTL_SECONDS || '60', 10),
   REDIS_CACHE_TTL_LIVE_SECONDS: parseInt(process.env.REDIS_CACHE_TTL_LIVE_SECONDS || '15', 10),

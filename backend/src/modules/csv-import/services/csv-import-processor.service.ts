@@ -22,6 +22,7 @@ import {
   MASTER_DATA_KEY,
   MasterDataRecord,
 } from '../../master-data/schemas/master-data.schema';
+import { MasterDataSearchIndexService } from '../../master-data/master-data-search-index.service';
 import {
   formatMasterDataCell,
   rowHasSourceData,
@@ -51,6 +52,7 @@ export class CsvImportProcessorService {
     private readonly config: ConfigService,
     @InjectModel(MasterDataRecord.name)
     private readonly masterDataModel: Model<MasterDataRecord>,
+    private readonly searchIndex: MasterDataSearchIndexService,
   ) {}
 
   async runOrchestrator(jobId: string): Promise<void> {
@@ -341,6 +343,8 @@ export class CsvImportProcessorService {
 
     this.logger.log(`Import ${job.jobId} done: ${successRows} ok, ${failedCount} failed`);
     void this.cache.delByPrefix('master:');
+    // Mongo is source of truth; rebuild OpenSearch asynchronously for <500ms filters.
+    this.searchIndex.enqueueFullReindex(job.masterKey || MASTER_DATA_KEY);
   }
 
   private async buildErrorCsv(jobId: string, headers: string[]): Promise<string> {

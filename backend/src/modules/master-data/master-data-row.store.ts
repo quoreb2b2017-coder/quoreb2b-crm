@@ -521,15 +521,22 @@ export class MasterDataRowStore {
 
   /**
    * Scan chunked storage and return absolute row indices matching filters (streams chunks).
+   * Prefer OpenSearch path in MasterDataService when available — this is the Mongo fallback.
    */
   async filterChunkedRowIndices(
     doc: Pick<MasterDataRecord, 'key' | 'rows' | 'storage'>,
     headers: string[],
     input: MasterDataFilterInput,
+    options?: { maxMatch?: number; startAfter?: number },
   ): Promise<number[]> {
     if (!this.isChunked(doc)) {
       const all = (doc.rows as string[][]) ?? [];
-      return filterMasterDataRows(all, headers, input);
+      const startAfter = options?.startAfter ?? -1;
+      const maxMatch = options?.maxMatch;
+      const allMatches = filterMasterDataRows(all, headers, input).filter(
+        (idx) => idx > startAfter,
+      );
+      return maxMatch != null ? allMatches.slice(0, maxMatch) : allMatches;
     }
 
     const useCompiled = !hasAdvancedMasterFilters(input);
@@ -540,17 +547,30 @@ export class MasterDataRowStore {
         : rowMatchesMasterDataFilters(row, headers, input);
 
     const chunkSize = MASTER_DATA_CHUNK_SIZE;
+    const startAfter = options?.startAfter ?? -1;
+    const maxMatch = options?.maxMatch;
+    const startChunk = startAfter >= 0 ? Math.floor((startAfter + 1) / chunkSize) : 0;
+
     const metas = await this.chunkModel
-      .find({ masterKey: doc.key })
+      .find({
+        masterKey: doc.key,
+        ...(startChunk > 0 ? { chunkIndex: { $gte: startChunk } } : {}),
+      })
       .sort({ chunkIndex: 1 })
       .select('chunkIndex')
       .lean()
       .exec();
 
     const indices: number[] = [];
-    const PARALLEL = 8;
+    // More parallelism on large disks / Atlas — still bounded to avoid pool starvation
+    const PARALLEL = Math.min(
+      16,
+      Math.max(8, Number(process.env.MASTER_FILTER_SCAN_PARALLEL || 12)),
+    );
 
     for (let b = 0; b < metas.length; b += PARALLEL) {
+      if (maxMatch != null && indices.length >= maxMatch) break;
+
       const batchIdx = metas.slice(b, b + PARALLEL).map((m) => m.chunkIndex);
       const chunks = await this.chunkModel
         .find({ masterKey: doc.key, chunkIndex: { $in: batchIdx } })
@@ -558,12 +578,18 @@ export class MasterDataRowStore {
         .lean()
         .exec();
 
+      // Preserve chunk order for deterministic pagination
+      chunks.sort((a, b) => a.chunkIndex - b.chunkIndex);
+
       for (const chunk of chunks) {
+        if (maxMatch != null && indices.length >= maxMatch) break;
         const chunkRows = (chunk.rows as string[][]) ?? [];
         for (let i = 0; i < chunkRows.length; i += 1) {
           const absIdx = chunk.chunkIndex * chunkSize + i;
+          if (absIdx <= startAfter) continue;
           if (matches(chunkRows[i])) {
             indices.push(absIdx);
+            if (maxMatch != null && indices.length >= maxMatch) break;
           }
         }
       }

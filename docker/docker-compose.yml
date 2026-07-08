@@ -29,6 +29,7 @@ services:
     networks:
       - quoreb2b-network
 
+  # Compatible with Amazon OpenSearch API via ELASTICSEARCH_NODE
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
     container_name: quoreb2b-elasticsearch
@@ -36,13 +37,19 @@ services:
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
-      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+      - indices.query.bool.max_clause_count=4096
     ports:
       - '9200:9200'
     volumes:
       - elasticsearch_data:/usr/share/elasticsearch/data
     networks:
       - quoreb2b-network
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -sf http://localhost:9200 >/dev/null || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 10
 
   api:
     build:
@@ -57,6 +64,7 @@ services:
     environment:
       MONGODB_URI: mongodb://quoreb2b:quoreb2b_secret@mongodb:27017/quoreb2b_crm?authSource=admin
       REDIS_HOST: redis
+      ELASTICSEARCH_ENABLED: 'true'
       ELASTICSEARCH_NODE: http://elasticsearch:9200
     depends_on:
       - mongodb

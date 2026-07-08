@@ -59,6 +59,9 @@ import { MasterDataRowStore, MASTER_DATA_LARGE_UI_ROW_LIMIT } from './master-dat
 import { parseSpreadsheetFileAsync, streamSpreadsheetFileAsync } from './master-data-import.util';
 import { MasterDataImportJobService } from './master-data-import-job.service';
 import { MasterDataImportLockService } from './master-data-import-lock.service';
+import { MasterDataSearchIndexService } from './master-data-search-index.service';
+import { buildMasterDataOpenSearchQuery } from './master-data-opensearch.util';
+import { ElasticsearchService } from '../../elasticsearch/elasticsearch.service';
 import { unlink } from 'fs/promises';
 import {
   formatMemoryUsage,
@@ -104,7 +107,11 @@ const CRM_OPERATIONAL_COLLECTIONS = [
 ] as const;
 
 const MASTER_BATCH_MAX_ROWS = 50_000;
-const MASTER_FILTER_INDEX_CACHE_TTL_SEC = 300;
+/** Filter-index cache TTL (Mongo fallback path). Overridable via env. */
+const MASTER_FILTER_INDEX_CACHE_TTL_SEC = Math.max(
+  60,
+  Number(process.env.MASTER_FILTER_INDEX_CACHE_TTL_SEC || 300),
+);
 
 @Injectable()
 export class MasterDataService {
@@ -126,6 +133,8 @@ export class MasterDataService {
     private rowStore: MasterDataRowStore,
     private importJobs: MasterDataImportJobService,
     private importLock: MasterDataImportLockService,
+    private searchIndex: MasterDataSearchIndexService,
+    private elasticsearch: ElasticsearchService,
   ) {}
 
   private maxTotalRows(): number {
@@ -1963,21 +1972,12 @@ export class MasterDataService {
     const page = dto.page ?? 1;
     const limit = Math.min(dto.limit ?? 100, 2000);
 
+    const masterRevision = (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? rowCount;
+
     if (!hasMasterDataSearchCriteria(dto)) {
       const offset = (page - 1) * limit;
       const { rows, sourceRowIndices } = await this.rowStore.loadPageRows(doc, offset, limit);
-      const masterRevision = (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? 0;
-      const fullCoverage = await this.batchesService.getMasterBatchCoverage(
-        headers,
-        rows,
-        masterRevision,
-      );
-      const batchedByRow: Record<string, Array<{ id: string; name: string }>> = {};
-      for (const idx of sourceRowIndices) {
-        const key = String(idx);
-        const refs = fullCoverage.batchedByRow[key];
-        if (refs?.length) batchedByRow[key] = refs;
-      }
+      const batchedByRow = await this.buildPageBatchedByRow(sourceRowIndices, masterRevision, rowCount);
       return {
         headers,
         rows,
@@ -1987,6 +1987,7 @@ export class MasterDataService {
         page,
         limit,
         batchedByRow,
+        searchEngine: 'mongo-page',
       };
     }
 
@@ -2000,25 +2001,33 @@ export class MasterDataService {
       availabilityFilter: dto.availabilityFilter,
     };
 
-    const masterRevision = (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? rowCount;
-    const indices = await this.getFilteredIndicesCached(doc, headers, filterInput, masterRevision);
+    // Prefer OpenSearch/ES for filtered search (<500ms at millions of rows).
+    // Mongo chunk scan remains the fallback when the search engine is off or errors.
+    if (this.elasticsearch.isEnabled) {
+      try {
+        const result = await this.searchViaOpenSearch(
+          doc,
+          headers,
+          filterInput,
+          page,
+          limit,
+          masterRevision,
+          rowCount,
+        );
+        return result;
+      } catch (err) {
+        this.logger.warn(
+          `OpenSearch master search failed — Mongo fallback: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
 
+    const indices = await this.getFilteredIndicesCached(doc, headers, filterInput, masterRevision);
     const totalMatches = indices.length;
     const start = (page - 1) * limit;
     const pageIndices = indices.slice(start, start + limit);
     const rows = await this.rowStore.getRowsByIndices(doc, pageIndices);
-
-    const fullCoverage = await this.batchesService.getMasterBatchCoverage(
-      headers,
-      rows,
-      masterRevision,
-    );
-    const batchedByRow: Record<string, Array<{ id: string; name: string }>> = {};
-    for (const idx of pageIndices) {
-      const key = String(idx);
-      const refs = fullCoverage.batchedByRow[key];
-      if (refs?.length) batchedByRow[key] = refs;
-    }
+    const batchedByRow = await this.buildPageBatchedByRow(pageIndices, masterRevision, rowCount);
 
     return {
       headers,
@@ -2029,7 +2038,96 @@ export class MasterDataService {
       page,
       limit,
       batchedByRow,
+      searchEngine: 'mongo-scan',
     };
+  }
+
+  /**
+   * Fast path: query OpenSearch for matching rowIndexes, hydrate cells from Mongo chunks.
+   * Availability (remaining / in_campaign) still applied via Redis-cached batched index set.
+   */
+  private async searchViaOpenSearch(
+    doc: MasterDataRecord,
+    headers: string[],
+    filterInput: MasterDataFilterInput,
+    page: number,
+    limit: number,
+    masterRevision: number,
+    rowCount: number,
+  ) {
+    const mode = filterInput.availabilityFilter ?? 'all';
+    const osQuery = buildMasterDataOpenSearchQuery(headers, filterInput);
+
+    if (mode === 'all') {
+      const from = (page - 1) * limit;
+      const { rowIndices, total } = await this.elasticsearch.searchMasterPage(
+        osQuery,
+        from,
+        limit,
+      );
+      const rows = await this.rowStore.getRowsByIndices(doc, rowIndices);
+      const batchedByRow = await this.buildPageBatchedByRow(rowIndices, masterRevision, rowCount);
+      return {
+        headers,
+        rows,
+        sourceRowIndices: rowIndices,
+        totalMatches: total,
+        totalRows: rowCount,
+        page,
+        limit,
+        batchedByRow,
+        searchEngine: 'opensearch',
+      };
+    }
+
+    // Availability filters need a larger candidate set. Cap at 50k then paginate in memory —
+    // still far cheaper than scanning millions of Mongo chunks.
+    const MAX_AVAIL_CANDIDATES = 50_000;
+    const { rowIndices: candidates, total: osTotal } =
+      await this.elasticsearch.searchMasterPage(osQuery, 0, MAX_AVAIL_CANDIDATES);
+    let indices = await this.applyAvailabilityFilter(candidates, mode, masterRevision);
+    // If OS reported more hits than we fetched, fall back to Mongo full-index for accurate totals
+    if (osTotal > candidates.length) {
+      indices = await this.getFilteredIndicesCached(doc, headers, filterInput, masterRevision);
+    }
+    const totalMatches = indices.length;
+    const start = (page - 1) * limit;
+    const pageIndices = indices.slice(start, start + limit);
+    const rows = await this.rowStore.getRowsByIndices(doc, pageIndices);
+    const batchedByRow = await this.buildPageBatchedByRow(pageIndices, masterRevision, rowCount);
+    return {
+      headers,
+      rows,
+      sourceRowIndices: pageIndices,
+      totalMatches,
+      totalRows: rowCount,
+      page,
+      limit,
+      batchedByRow,
+      searchEngine: 'opensearch',
+    };
+  }
+
+  /** Page-scoped campaign badges — uses coverage cache; never loads all batch row payloads. */
+  private async buildPageBatchedByRow(
+    pageIndices: number[],
+    masterRevision: number,
+    totalRowCount?: number,
+  ): Promise<Record<string, Array<{ id: string; name: string }>>> {
+    if (!pageIndices.length) return {};
+    const coverage = await this.batchesService.getMasterBatchCoverage(
+      [],
+      [],
+      masterRevision,
+      totalRowCount,
+    );
+    const batchedByRow: Record<string, Array<{ id: string; name: string }>> = {};
+    for (const idx of pageIndices) {
+      const key = String(idx);
+      const refs = coverage.batchedByRow[key];
+      if (refs?.length) batchedByRow[key] = refs;
+    }
+    return batchedByRow;
   }
 
   async getFilterSchema(roles: string[] = []) {
@@ -2161,7 +2259,32 @@ export class MasterDataService {
       availabilityFilter: filter.availabilityFilter,
     };
 
-    let indices = await this.getFilteredIndicesCached(doc, headers, filterInput, masterRevision);
+    let indices: number[];
+    if (this.elasticsearch.isEnabled && !subsetIndices?.length) {
+      try {
+        const osQuery = buildMasterDataOpenSearchQuery(headers, filterInput);
+        const { rowIndices, total } = await this.elasticsearch.searchMasterPage(
+          osQuery,
+          0,
+          MASTER_BATCH_MAX_ROWS + 1,
+        );
+        indices = await this.applyAvailabilityFilter(
+          rowIndices,
+          filterInput.availabilityFilter,
+          masterRevision,
+        );
+        if (total > MASTER_BATCH_MAX_ROWS || indices.length > MASTER_BATCH_MAX_ROWS) {
+          throw new BadRequestException(
+            `Too many contacts (${Math.max(total, indices.length).toLocaleString('en-US')}). Narrow filters — max ${MASTER_BATCH_MAX_ROWS.toLocaleString('en-US')} per campaign.`,
+          );
+        }
+      } catch (err) {
+        if (err instanceof BadRequestException) throw err;
+        indices = await this.getFilteredIndicesCached(doc, headers, filterInput, masterRevision);
+      }
+    } else {
+      indices = await this.getFilteredIndicesCached(doc, headers, filterInput, masterRevision);
+    }
     if (subsetIndices?.length) {
       const pick = new Set(subsetIndices);
       indices = indices.filter((idx) => pick.has(idx));
@@ -2181,6 +2304,11 @@ export class MasterDataService {
       rows,
       masterSourceRowIndices: indices,
     };
+  }
+
+  /** Trigger search-index rebuild after master data mutations (CSV import, save). */
+  notifySearchIndexDirty(masterKey = MASTER_DATA_KEY): void {
+    this.searchIndex.enqueueFullReindex(masterKey);
   }
 
   private async getFilteredIndicesCached(
@@ -2442,5 +2570,22 @@ export class MasterDataService {
     void this.cache.delByPrefix('master:');
     void this.cache.delByPrefix('analytics:');
     void this.cache.delByPrefix('dashboard:');
+    this.searchIndex.enqueueFullReindex(MASTER_DATA_KEY);
+  }
+
+  /** Admin: force rebuild of OpenSearch master-data index from Mongo. */
+  async reindexSearchEngine(roles: string[] = []) {
+    const isAdmin =
+      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
+    if (!isAdmin) throw new ForbiddenException('Access denied');
+    if (!this.elasticsearch.isEnabled) {
+      return {
+        ok: false,
+        message:
+          'Search engine disabled. Set ELASTICSEARCH_ENABLED=true and point ELASTICSEARCH_NODE at OpenSearch/ES.',
+      };
+    }
+    const { indexed } = await this.searchIndex.reindexAll(MASTER_DATA_KEY);
+    return { ok: true, indexed, index: this.elasticsearch.masterDataIndexName() };
   }
 }

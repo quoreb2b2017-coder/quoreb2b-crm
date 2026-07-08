@@ -165,6 +165,13 @@ export class MasterDataController {
     return this.masterDataService.searchForUser(dto, user.id, user.roles ?? []);
   }
 
+  /** Rebuild OpenSearch index from Mongo (source of truth). */
+  @Post('search-index/reindex')
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
+  reindexSearch(@CurrentUser() user: Parameters<typeof actorFromJwt>[0]) {
+    return this.masterDataService.reindexSearchEngine(user.roles ?? []);
+  }
+
   @Get('filter-schema')
   @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
   getFilterSchema(@CurrentUser() user: Parameters<typeof actorFromJwt>[0]) {

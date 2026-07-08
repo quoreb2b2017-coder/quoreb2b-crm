@@ -121,7 +121,7 @@ export class HealthService {
         },
         elasticsearch: {
           status: esStatus,
-          label: 'Elasticsearch (Leads search)',
+          label: 'OpenSearch/ES (master-data + leads search)',
           enabled: esConfigured,
         },
       },

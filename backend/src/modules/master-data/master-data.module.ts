@@ -1,4 +1,4 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { MasterDataController } from './master-data.controller';
 import { MasterDataService } from './master-data.service';
@@ -17,6 +17,7 @@ import {
 import { MasterDataRowStore } from './master-data-row.store';
 import { MasterDataImportJobService } from './master-data-import-job.service';
 import { MasterDataImportLockService } from './master-data-import-lock.service';
+import { MasterDataSearchIndexService } from './master-data-search-index.service';
 import { ActivityLogsModule } from '../activity-logs/activity-logs.module';
 import { BatchesModule } from '../batches/batches.module';
 import { NotificationsModule } from '../notifications/notifications.module';
@@ -33,7 +34,13 @@ import { NotificationsModule } from '../notifications/notifications.module';
     ]),
   ],
   controllers: [MasterDataController],
-  providers: [MasterDataService, MasterDataRowStore, MasterDataImportJobService, MasterDataImportLockService],
-  exports: [MasterDataService],
+  providers: [
+    MasterDataService,
+    MasterDataRowStore,
+    MasterDataImportJobService,
+    MasterDataImportLockService,
+    MasterDataSearchIndexService,
+  ],
+  exports: [MasterDataService, MasterDataSearchIndexService],
 })
 export class MasterDataModule {}

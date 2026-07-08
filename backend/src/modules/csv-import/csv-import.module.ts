@@ -33,6 +33,7 @@ import {
   MasterDataSchema,
 } from '../master-data/schemas/master-data.schema';
 import { RedisModule } from '../../redis/redis.module';
+import { MasterDataModule } from '../master-data/master-data.module';
 
 const mongooseFeatures = MongooseModule.forFeature([
   { name: CsvImportJob.name, schema: CsvImportJobSchema },
@@ -65,6 +66,7 @@ export class CsvImportModule {
         imports: [
           mongooseFeatures,
           RedisModule,
+          MasterDataModule,
           BullModule.registerQueue(
             { name: CSV_IMPORT_QUEUE },
             { name: CSV_IMPORT_BATCH_QUEUE },
@@ -82,7 +84,7 @@ export class CsvImportModule {
 
     return {
       module: CsvImportModule,
-      imports: [mongooseFeatures],
+      imports: [mongooseFeatures, MasterDataModule],
       controllers,
       providers: [
         ...coreProviders,

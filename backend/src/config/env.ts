@@ -13,6 +13,10 @@ export const isRedisEnabled = (): boolean => {
   return true;
 };
 
-/** Leads search index — off by default; set ELASTICSEARCH_ENABLED=true when ES is running. */
+/**
+ * OpenSearch / Elasticsearch — master-data filtered search + leads.
+ * Off by default; Mongo chunk scan remains the fallback.
+ * Amazon OpenSearch Service works with the same client via ELASTICSEARCH_NODE.
+ */
 export const isElasticsearchEnabled = (): boolean =>
   process.env.ELASTICSEARCH_ENABLED === 'true';

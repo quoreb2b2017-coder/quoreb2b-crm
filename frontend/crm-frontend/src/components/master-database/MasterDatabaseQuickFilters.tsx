@@ -300,6 +300,7 @@ export function MasterDatabaseQuickFilters({
                 </span>
                 {isSizeCategory && column.options.length >= 2 ? (
                   <CategoryRangeSlider
+                    listId={`size-${column.header.replace(/\W+/g, '-')}`}
                     options={column.options}
                     selected={selected}
                     onChange={(values) => setColumnRangeValues(column.header, values)}
@@ -461,6 +462,7 @@ export function MasterDatabaseQuickFilters({
                       <span className="mdb-advanced-filters__label">{col.header}</span>
                       {isSizeCategory && col.options.length >= 2 ? (
                         <CategoryRangeSlider
+                          listId={`adv-size-${col.header.replace(/\W+/g, '-')}`}
                           options={col.options}
                           selected={selected}
                           onChange={(values) => setColumnRangeValues(col.header, values)}

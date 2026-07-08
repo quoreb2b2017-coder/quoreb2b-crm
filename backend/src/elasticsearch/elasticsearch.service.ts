@@ -10,6 +10,7 @@ export interface MasterSearchPageResult {
 }
 
 type SearchClient = OpenSearchClient;
+type EngineMode = 'unknown' | 'dsl' | 'sql';
 
 @Injectable()
 export class ElasticsearchService implements OnModuleInit {
@@ -17,6 +18,7 @@ export class ElasticsearchService implements OnModuleInit {
   private readonly indexPrefix: string;
   private readonly enabled: boolean;
   private masterIndexReady = false;
+  private engineMode: EngineMode = 'unknown';
 
   constructor(
     @Inject(ELASTICSEARCH_CLIENT) private readonly client: SearchClient | null,
@@ -33,6 +35,7 @@ export class ElasticsearchService implements OnModuleInit {
     if (!this.enabled) return;
     try {
       await this.ensureMasterDataIndex();
+      await this.detectEngineMode();
     } catch (err) {
       this.logger.warn(
         `Master search index init failed: ${err instanceof Error ? err.message : err}`,
@@ -42,6 +45,10 @@ export class ElasticsearchService implements OnModuleInit {
 
   get isEnabled(): boolean {
     return this.enabled;
+  }
+
+  get usesSqlEngine(): boolean {
+    return this.engineMode === 'sql';
   }
 
   indexName(resource: string): string {
@@ -59,12 +66,14 @@ export class ElasticsearchService implements OnModuleInit {
   ): Promise<void> {
     if (!this.enabled || !this.client) return;
     try {
-      await this.client.index({
+      // Optimized Engine forbids custom document IDs — omit id there.
+      const payload: { index: string; id?: string; body: T; refresh: false } = {
         index: this.indexName(resource),
-        id,
         body: document,
         refresh: false,
-      });
+      };
+      if (this.engineMode !== 'sql') payload.id = id;
+      await this.client.index(payload);
     } catch (error) {
       this.logger.error(`Failed to index ${resource}/${id}`, error);
     }
@@ -125,24 +134,22 @@ export class ElasticsearchService implements OnModuleInit {
               number_of_shards: 1,
               number_of_replicas: 1,
               refresh_interval: '5s',
-              analysis: {
-                normalizer: {
-                  lowercase_normalizer: {
-                    type: 'custom',
-                    filter: ['lowercase', 'trim'],
-                  },
-                },
-              },
             },
             mappings: {
               dynamic: true,
+              dynamic_templates: [
+                {
+                  flat_keywords: {
+                    match: 'f_*',
+                    mapping: { type: 'keyword' },
+                  },
+                },
+              ],
               properties: {
                 rowIndex: { type: 'integer' },
                 masterKey: { type: 'keyword' },
                 revision: { type: 'long' },
                 searchText: { type: 'text', analyzer: 'standard' },
-                cells: { type: 'object', dynamic: true },
-                cellsKeyword: { type: 'object', dynamic: true },
               },
             },
           },
@@ -152,7 +159,6 @@ export class ElasticsearchService implements OnModuleInit {
       this.masterIndexReady = true;
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      // API + worker may race on first boot
       if (msg.includes('resource_already_exists') || msg.includes('already_exists')) {
         this.masterIndexReady = true;
         return;
@@ -161,24 +167,54 @@ export class ElasticsearchService implements OnModuleInit {
     }
   }
 
+  /**
+   * Detect whether domain supports `_search` DSL or only SQL/PPL (Optimized Engine).
+   */
+  private async detectEngineMode(): Promise<void> {
+    if (!this.client) return;
+    const index = this.masterDataIndexName();
+    try {
+      await this.client.search({
+        index,
+        body: { size: 0, query: { match_all: {} } },
+      });
+      this.engineMode = 'dsl';
+      this.logger.log('OpenSearch engine mode: DSL (_search)');
+    } catch (err) {
+      const msg =
+        (err as { meta?: { body?: { message?: string } } })?.meta?.body?.message ||
+        (err instanceof Error ? err.message : String(err));
+      if (String(msg).includes('Optimized Engine') || String(msg).includes('not supported')) {
+        this.engineMode = 'sql';
+        this.logger.warn(
+          'OpenSearch Optimized Engine detected — using SQL plugin for master-data search',
+        );
+      } else {
+        // Index may be empty/missing; still try SQL as safer default for Amazon domains
+        this.engineMode = 'sql';
+        this.logger.warn(`OpenSearch DSL probe failed (${msg}) — defaulting to SQL mode`);
+      }
+    }
+  }
+
   async bulkIndexMasterRows(
-    docs: Array<{
-      rowIndex: number;
-      masterKey: string;
-      revision: number;
-      searchText: string;
-      cells: Record<string, string>;
-      cellsKeyword: Record<string, string>;
-    }>,
+    docs: Array<Record<string, string | number>>,
   ): Promise<{ indexed: number; errors: number }> {
     if (!this.enabled || !this.client || !docs.length) {
       return { indexed: 0, errors: 0 };
     }
     await this.ensureMasterDataIndex();
+    if (this.engineMode === 'unknown') await this.detectEngineMode();
+
     const index = this.masterDataIndexName();
     const body: Array<Record<string, unknown>> = [];
     for (const doc of docs) {
-      body.push({ index: { _index: index, _id: String(doc.rowIndex) } });
+      // Optimized Engine: no custom _id (append-only). General Purpose: use rowIndex.
+      if (this.engineMode === 'sql') {
+        body.push({ index: { _index: index } });
+      } else {
+        body.push({ index: { _index: index, _id: String(doc.rowIndex) } });
+      }
       body.push(doc);
     }
     try {
@@ -187,6 +223,14 @@ export class ElasticsearchService implements OnModuleInit {
         ? (result.body.items ?? []).filter((i: { index?: { error?: unknown } }) => i.index?.error)
             .length
         : 0;
+      if (errors > 0) {
+        const sample = (result.body.items ?? []).find(
+          (i: { index?: { error?: unknown } }) => i.index?.error,
+        );
+        this.logger.warn(
+          `Bulk index errors=${errors} sample=${JSON.stringify(sample?.index?.error).slice(0, 300)}`,
+        );
+      }
       return { indexed: docs.length - errors, errors };
     } catch (error) {
       this.logger.error('Master-data bulk index failed', error);
@@ -198,11 +242,18 @@ export class ElasticsearchService implements OnModuleInit {
     query: Record<string, unknown>,
     from: number,
     size: number,
+    sqlWhere?: string,
   ): Promise<MasterSearchPageResult> {
     if (!this.enabled || !this.client) {
       return { rowIndices: [], total: 0 };
     }
     await this.ensureMasterDataIndex();
+    if (this.engineMode === 'unknown') await this.detectEngineMode();
+
+    if (this.engineMode === 'sql') {
+      return this.searchMasterPageSql(sqlWhere ?? 'masterKey IS NOT NULL', from, size);
+    }
+
     try {
       const result = await this.client.search({
         index: this.masterDataIndexName(),
@@ -218,8 +269,12 @@ export class ElasticsearchService implements OnModuleInit {
       const hits = result.body?.hits;
       const totalRaw = hits?.total;
       const total =
-        typeof totalRaw === 'number' ? totalRaw : Number((totalRaw as { value?: number })?.value ?? 0);
-      const rowIndices = ((hits?.hits ?? []) as Array<{ _id?: string; _source?: { rowIndex?: number } }>)
+        typeof totalRaw === 'number'
+          ? totalRaw
+          : Number((totalRaw as { value?: number })?.value ?? 0);
+      const rowIndices = (
+        (hits?.hits ?? []) as Array<{ _id?: string; _source?: { rowIndex?: number } }>
+      )
         .map((h) => {
           const src = h._source?.rowIndex;
           if (typeof src === 'number') return src;
@@ -229,15 +284,75 @@ export class ElasticsearchService implements OnModuleInit {
         .filter((n) => n >= 0);
       return { rowIndices, total };
     } catch (error) {
+      const msg =
+        (error as { meta?: { body?: { message?: string } } })?.meta?.body?.message ||
+        (error instanceof Error ? error.message : String(error));
+      if (String(msg).includes('Optimized Engine') || String(msg).includes('not supported')) {
+        this.engineMode = 'sql';
+        this.logger.warn('Switching to SQL mode after DSL failure');
+        return this.searchMasterPageSql(sqlWhere ?? 'masterKey IS NOT NULL', from, size);
+      }
       this.logger.error('Master-data search failed', error);
       throw error;
     }
+  }
+
+  private async searchMasterPageSql(
+    whereSql: string,
+    from: number,
+    size: number,
+  ): Promise<MasterSearchPageResult> {
+    if (!this.client) return { rowIndices: [], total: 0 };
+    const index = this.masterDataIndexName();
+    const where = whereSql?.trim() || '1 = 1';
+    const limit = Math.max(1, Math.min(size, 5000));
+    const offset = Math.max(0, from);
+
+    const countQuery = `SELECT COUNT(*) as c FROM ${index} WHERE ${where}`;
+    const pageQuery = `SELECT rowIndex FROM ${index} WHERE ${where} ORDER BY rowIndex LIMIT ${limit} OFFSET ${offset}`;
+
+    const [countRes, pageRes] = await Promise.all([
+      this.client.transport.request({
+        method: 'POST',
+        path: '/_plugins/_sql',
+        body: { query: countQuery },
+      }),
+      this.client.transport.request({
+        method: 'POST',
+        path: '/_plugins/_sql',
+        body: { query: pageQuery },
+      }),
+    ]);
+
+    const countBody = (countRes as { body?: { datarows?: unknown[][] } }).body;
+    const pageBody = (pageRes as { body?: { datarows?: unknown[][] } }).body;
+    const total = Number(countBody?.datarows?.[0]?.[0] ?? 0);
+    const rowIndices = (pageBody?.datarows ?? [])
+      .map((row) => Number(row?.[0]))
+      .filter((n) => Number.isFinite(n) && n >= 0);
+
+    return { rowIndices, total };
   }
 
   async deleteAllMasterRows(masterKey: string): Promise<void> {
     if (!this.enabled || !this.client) return;
     try {
       await this.ensureMasterDataIndex();
+      if (this.engineMode === 'unknown') await this.detectEngineMode();
+
+      if (this.engineMode === 'sql') {
+        // Optimized Engine: deleteByQuery unsupported — drop + recreate index.
+        const index = this.masterDataIndexName();
+        try {
+          await this.client.indices.delete({ index });
+        } catch {
+          /* ignore */
+        }
+        this.masterIndexReady = false;
+        await this.ensureMasterDataIndex();
+        return;
+      }
+
       await this.client.deleteByQuery({
         index: this.masterDataIndexName(),
         refresh: true,
@@ -254,6 +369,18 @@ export class ElasticsearchService implements OnModuleInit {
     if (!this.enabled || !this.client) return 0;
     try {
       await this.ensureMasterDataIndex();
+      if (this.engineMode === 'unknown') await this.detectEngineMode();
+      if (this.engineMode === 'sql') {
+        const index = this.masterDataIndexName();
+        const r = await this.client.transport.request({
+          method: 'POST',
+          path: '/_plugins/_sql',
+          body: {
+            query: `SELECT COUNT(*) as c FROM ${index} WHERE masterKey = '${masterKey.replace(/'/g, "''")}'`,
+          },
+        });
+        return Number((r as { body?: { datarows?: unknown[][] } }).body?.datarows?.[0]?.[0] ?? 0);
+      }
       const result = await this.client.count({
         index: this.masterDataIndexName(),
         body: { query: { term: { masterKey } } },

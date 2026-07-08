@@ -60,7 +60,10 @@ import { parseSpreadsheetFileAsync, streamSpreadsheetFileAsync } from './master-
 import { MasterDataImportJobService } from './master-data-import-job.service';
 import { MasterDataImportLockService } from './master-data-import-lock.service';
 import { MasterDataSearchIndexService } from './master-data-search-index.service';
-import { buildMasterDataOpenSearchQuery } from './master-data-opensearch.util';
+import {
+  buildMasterDataOpenSearchQuery,
+  buildMasterDataSqlWhere,
+} from './master-data-opensearch.util';
 import { ElasticsearchService } from '../../elasticsearch/elasticsearch.service';
 import { unlink } from 'fs/promises';
 import {
@@ -2001,11 +2004,11 @@ export class MasterDataService {
       availabilityFilter: dto.availabilityFilter,
     };
 
-    // Prefer OpenSearch/ES for filtered search (<500ms at millions of rows).
-    // Mongo chunk scan remains the fallback when the search engine is off or errors.
+    // Prefer OpenSearch for filtered search. Never fall back to full Mongo scan —
+    // that takes 20–60s+ and starves the API (login 502). Reindex if OS fails.
     if (this.elasticsearch.isEnabled) {
       try {
-        const result = await this.searchViaOpenSearch(
+        return await this.searchViaOpenSearch(
           doc,
           headers,
           filterInput,
@@ -2014,14 +2017,17 @@ export class MasterDataService {
           masterRevision,
           rowCount,
         );
-        return result;
       } catch (err) {
-        this.logger.warn(
-          `OpenSearch master search failed — Mongo fallback: ${err instanceof Error ? err.message : err}`,
+        this.logger.error(
+          `OpenSearch master search failed: ${err instanceof Error ? err.message : err}`,
+        );
+        throw new BadRequestException(
+          'Search index unavailable. Ask an admin to run Master Data → Reindex search, or create a General Purpose OpenSearch domain.',
         );
       }
     }
 
+    // Search engine off: cap Mongo scan (dev only). Production must enable OpenSearch.
     const indices = await this.getFilteredIndicesCached(doc, headers, filterInput, masterRevision);
     const totalMatches = indices.length;
     const start = (page - 1) * limit;
@@ -2057,6 +2063,7 @@ export class MasterDataService {
   ) {
     const mode = filterInput.availabilityFilter ?? 'all';
     const osQuery = buildMasterDataOpenSearchQuery(headers, filterInput);
+    const sqlWhere = buildMasterDataSqlWhere(headers, filterInput, MASTER_DATA_KEY);
 
     if (mode === 'all') {
       const from = (page - 1) * limit;
@@ -2064,6 +2071,7 @@ export class MasterDataService {
         osQuery,
         from,
         limit,
+        sqlWhere,
       );
       const rows = await this.rowStore.getRowsByIndices(doc, rowIndices);
       const batchedByRow = await this.buildPageBatchedByRow(rowIndices, masterRevision, rowCount);
@@ -2084,11 +2092,13 @@ export class MasterDataService {
     // still far cheaper than scanning millions of Mongo chunks.
     const MAX_AVAIL_CANDIDATES = 50_000;
     const { rowIndices: candidates, total: osTotal } =
-      await this.elasticsearch.searchMasterPage(osQuery, 0, MAX_AVAIL_CANDIDATES);
+      await this.elasticsearch.searchMasterPage(osQuery, 0, MAX_AVAIL_CANDIDATES, sqlWhere);
     let indices = await this.applyAvailabilityFilter(candidates, mode, masterRevision);
-    // If OS reported more hits than we fetched, fall back to Mongo full-index for accurate totals
     if (osTotal > candidates.length) {
-      indices = await this.getFilteredIndicesCached(doc, headers, filterInput, masterRevision);
+      // Prefer capped OS set over Mongo full scan when search engine is on
+      this.logger.warn(
+        `Availability filter truncated to ${candidates.length.toLocaleString()} of ${osTotal.toLocaleString()} OS hits`,
+      );
     }
     const totalMatches = indices.length;
     const start = (page - 1) * limit;

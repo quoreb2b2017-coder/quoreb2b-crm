@@ -112,6 +112,11 @@ export function isPersonalNotesPath(pathname: string) {
   return /^\/(admin|db-admin|employee)\/personal-notes$/.test(pathname);
 }
 
+/** In-app chat — full viewport height, WhatsApp-style panels */
+export function isChatPath(pathname: string) {
+  return /^\/(admin|db-admin|employee)\/chat$/.test(pathname);
+}
+
 /** Master data list / upload workspace (employee my-data, db-admin master-data tabs) */
 export function isMasterDataWorkspacePath(pathname: string) {
   return (
@@ -133,6 +138,7 @@ export function isAdminEdgeToEdgePath(pathname: string) {
     isAttendancePath(pathname) ||
     isLeaveApplyPath(pathname) ||
     isPersonalNotesPath(pathname) ||
+    isChatPath(pathname) ||
     isBulkEmailVerificationPath(pathname) ||
     isMasterDataWorkspacePath(pathname)
   );
@@ -261,6 +267,11 @@ const Icons = {
       <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/>
     </svg>
   ),
+  chat: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/>
+    </svg>
+  ),
 };
 
 const iconMap: Record<string, React.ReactNode> = {
@@ -297,6 +308,7 @@ const iconMap: Record<string, React.ReactNode> = {
   'leave requests':     Icons.leave,
   'leave apply':        Icons.leave,
   'personal notes':     Icons.tasks,
+  'chat':               Icons.chat,
   'mark attendance':    Icons.attendance,
   'apply for leave':    Icons.leave,
 };
@@ -576,8 +588,9 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
   const batchExcelView = isBatchExcelViewPath(pathname);
   const attendancePage = isAttendancePath(pathname);
   const personalNotesPage = isPersonalNotesPath(pathname);
+  const chatPage = isChatPath(pathname);
   const edgeToEdge = isAdminEdgeToEdgePath(pathname) || attendancePage;
-  const contentLocked = isAdminContentLockedPath(pathname) || personalNotesPage;
+  const contentLocked = isAdminContentLockedPath(pathname) || personalNotesPage || chatPage;
   const { user, clearAuth } = useAuthStore();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);

@@ -5,11 +5,21 @@ import { Connection } from 'mongoose';
 import { isElasticsearchEnabled, isRedisConfigured } from '../config/env';
 import { pingRedis, MIN_REDIS_VERSION } from '../redis/redis.factory';
 
-async function pingElasticsearch(node: string): Promise<boolean> {
+async function pingElasticsearch(
+  node: string,
+  username?: string,
+  password?: string,
+): Promise<boolean> {
   try {
     const url = node.replace(/\/$/, '');
+    const headers: Record<string, string> = {};
+    if (username && password) {
+      headers.Authorization =
+        'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
+    }
     const res = await fetch(`${url}/_cluster/health`, {
-      signal: AbortSignal.timeout(2500),
+      headers,
+      signal: AbortSignal.timeout(3500),
     });
     return res.ok;
   } catch {
@@ -69,7 +79,9 @@ export class HealthService {
     let esStatus: 'up' | 'down' | 'disabled' = esConfigured ? 'down' : 'disabled';
     if (esConfigured) {
       const node = this.config.get<string>('ELASTICSEARCH_NODE', 'http://localhost:9200');
-      esStatus = (await pingElasticsearch(node)) ? 'up' : 'down';
+      const username = this.config.get<string>('ELASTICSEARCH_USERNAME') || undefined;
+      const password = this.config.get<string>('ELASTICSEARCH_PASSWORD') || undefined;
+      esStatus = (await pingElasticsearch(node, username, password)) ? 'up' : 'down';
     }
 
     const issues: string[] = [];

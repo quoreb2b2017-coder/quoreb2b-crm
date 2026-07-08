@@ -1,17 +1,15 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Client } from '@elastic/elasticsearch';
+import { Client as OpenSearchClient } from '@opensearch-project/opensearch';
 import { isElasticsearchEnabled } from '../config/env';
 import { ELASTICSEARCH_CLIENT } from './elasticsearch.constants';
-
-export interface MasterSearchHit {
-  rowIndex: number;
-}
 
 export interface MasterSearchPageResult {
   rowIndices: number[];
   total: number;
 }
+
+type SearchClient = OpenSearchClient;
 
 @Injectable()
 export class ElasticsearchService implements OnModuleInit {
@@ -21,7 +19,7 @@ export class ElasticsearchService implements OnModuleInit {
   private masterIndexReady = false;
 
   constructor(
-    @Inject(ELASTICSEARCH_CLIENT) private readonly client: Client | null,
+    @Inject(ELASTICSEARCH_CLIENT) private readonly client: SearchClient | null,
     private readonly config: ConfigService,
   ) {
     this.enabled = isElasticsearchEnabled() && !!this.client;
@@ -64,7 +62,7 @@ export class ElasticsearchService implements OnModuleInit {
       await this.client.index({
         index: this.indexName(resource),
         id,
-        document,
+        body: document,
         refresh: false,
       });
     } catch (error) {
@@ -75,30 +73,29 @@ export class ElasticsearchService implements OnModuleInit {
   async search<T>(resource: string, query: Record<string, unknown>): Promise<T[]> {
     if (!this.enabled || !this.client) return [];
     try {
-      const result = await this.client.search<T>({
+      const result = await this.client.search({
         index: this.indexName(resource),
-        ...query,
+        body: query,
       });
-      return result.hits.hits.map((hit) => hit._source as T);
+      const hits = (result.body?.hits?.hits ?? []) as Array<{ _source?: T }>;
+      return hits.map((hit) => hit._source as T);
     } catch (error) {
-      this.logger.error(`Elasticsearch search failed for ${resource}`, error);
+      this.logger.error(`OpenSearch search failed for ${resource}`, error);
       return [];
     }
   }
 
-  /** Returns document ids for cursor/filter hydration. */
   async searchIds(resource: string, query: Record<string, unknown>): Promise<string[]> {
     if (!this.enabled || !this.client) return [];
     try {
       const result = await this.client.search({
         index: this.indexName(resource),
-        ...query,
+        body: query,
       });
-      return result.hits.hits
-        .map((hit) => String(hit._id ?? ''))
-        .filter((id) => id.length > 0);
+      const hits = (result.body?.hits?.hits ?? []) as Array<{ _id?: string }>;
+      return hits.map((hit) => String(hit._id ?? '')).filter((id) => id.length > 0);
     } catch (error) {
-      this.logger.error(`Elasticsearch searchIds failed for ${resource}`, error);
+      this.logger.error(`OpenSearch searchIds failed for ${resource}`, error);
       return [];
     }
   }
@@ -109,7 +106,7 @@ export class ElasticsearchService implements OnModuleInit {
       await this.client.delete({ index: this.indexName(resource), id });
     } catch (error) {
       this.logger.debug(
-        `Elasticsearch delete ${resource}/${id}: ${error instanceof Error ? error.message : error}`,
+        `OpenSearch delete ${resource}/${id}: ${error instanceof Error ? error.message : error}`,
       );
     }
   }
@@ -118,32 +115,34 @@ export class ElasticsearchService implements OnModuleInit {
     if (!this.enabled || !this.client || this.masterIndexReady) return;
     const index = this.masterDataIndexName();
     const exists = await this.client.indices.exists({ index });
-    if (!exists) {
+    const existsBody = (exists as { body?: boolean }).body ?? exists;
+    if (!existsBody) {
       await this.client.indices.create({
         index,
-        settings: {
-          number_of_shards: 1,
-          number_of_replicas: 0,
-          refresh_interval: '5s',
-          analysis: {
-            normalizer: {
-              lowercase_normalizer: {
-                type: 'custom',
-                filter: ['lowercase', 'trim'],
+        body: {
+          settings: {
+            number_of_shards: 1,
+            number_of_replicas: 1,
+            refresh_interval: '5s',
+            analysis: {
+              normalizer: {
+                lowercase_normalizer: {
+                  type: 'custom',
+                  filter: ['lowercase', 'trim'],
+                },
               },
             },
           },
-        },
-        mappings: {
-          // Dynamic subfields under cells* — spreadsheet headers vary per import.
-          dynamic: true,
-          properties: {
-            rowIndex: { type: 'integer' },
-            masterKey: { type: 'keyword' },
-            revision: { type: 'long' },
-            searchText: { type: 'text', analyzer: 'standard' },
-            cells: { type: 'object', dynamic: true },
-            cellsKeyword: { type: 'object', dynamic: true },
+          mappings: {
+            dynamic: true,
+            properties: {
+              rowIndex: { type: 'integer' },
+              masterKey: { type: 'keyword' },
+              revision: { type: 'long' },
+              searchText: { type: 'text', analyzer: 'standard' },
+              cells: { type: 'object', dynamic: true },
+              cellsKeyword: { type: 'object', dynamic: true },
+            },
           },
         },
       });
@@ -152,10 +151,6 @@ export class ElasticsearchService implements OnModuleInit {
     this.masterIndexReady = true;
   }
 
-  /**
-   * Bulk-index master rows. Doc id = rowIndex string for stable upserts.
-   * `@elastic/elasticsearch` bulk body uses alternating action/doc lines.
-   */
   async bulkIndexMasterRows(
     docs: Array<{
       rowIndex: number;
@@ -178,8 +173,9 @@ export class ElasticsearchService implements OnModuleInit {
     }
     try {
       const result = await this.client.bulk({ refresh: false, body });
-      const errors = result.errors
-        ? (result.items ?? []).filter((i) => i.index?.error).length
+      const errors = result.body?.errors
+        ? (result.body.items ?? []).filter((i: { index?: { error?: unknown } }) => i.index?.error)
+            .length
         : 0;
       return { indexed: docs.length - errors, errors };
     } catch (error) {
@@ -198,19 +194,22 @@ export class ElasticsearchService implements OnModuleInit {
     }
     await this.ensureMasterDataIndex();
     try {
-      const result = await this.client.search<{ rowIndex?: number }>({
+      const result = await this.client.search({
         index: this.masterDataIndexName(),
-        from,
-        size,
-        track_total_hits: true,
-        _source: ['rowIndex'],
-        sort: [{ rowIndex: 'asc' }],
-        ...query,
+        body: {
+          from,
+          size,
+          track_total_hits: true,
+          _source: ['rowIndex'],
+          sort: [{ rowIndex: 'asc' }],
+          ...query,
+        },
       });
-      const totalRaw = result.hits.total;
+      const hits = result.body?.hits;
+      const totalRaw = hits?.total;
       const total =
-        typeof totalRaw === 'number' ? totalRaw : Number(totalRaw?.value ?? 0);
-      const rowIndices = result.hits.hits
+        typeof totalRaw === 'number' ? totalRaw : Number((totalRaw as { value?: number })?.value ?? 0);
+      const rowIndices = ((hits?.hits ?? []) as Array<{ _id?: string; _source?: { rowIndex?: number } }>)
         .map((h) => {
           const src = h._source?.rowIndex;
           if (typeof src === 'number') return src;
@@ -232,7 +231,7 @@ export class ElasticsearchService implements OnModuleInit {
       await this.client.deleteByQuery({
         index: this.masterDataIndexName(),
         refresh: true,
-        query: { term: { masterKey } },
+        body: { query: { term: { masterKey } } },
       });
     } catch (error) {
       this.logger.warn(
@@ -247,9 +246,9 @@ export class ElasticsearchService implements OnModuleInit {
       await this.ensureMasterDataIndex();
       const result = await this.client.count({
         index: this.masterDataIndexName(),
-        query: { term: { masterKey } },
+        body: { query: { term: { masterKey } } },
       });
-      return result.count ?? 0;
+      return Number(result.body?.count ?? 0);
     } catch {
       return 0;
     }

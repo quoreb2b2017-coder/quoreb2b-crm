@@ -11,6 +11,10 @@ interface CategoryRangeSliderProps {
   onCommit: () => void;
   /** When true, manual pick and dropdown use exact options only (no drag-range expansion). */
   exactOnly?: boolean;
+  /** Pre-filled exact employee count (Exact Employee Size column). */
+  exactNumericValue?: string;
+  /** When user enters a plain number in exact mode, route to Exact Employee Size filter. */
+  onExactNumeric?: (value: string) => void;
 }
 
 type FilterMode = 'manual' | 'range' | 'multi';
@@ -24,7 +28,7 @@ function indicesFromSelection(sorted: string[], selected: Set<string>, count: nu
 function parseNumericHint(raw: string): number | null {
   const s = raw.trim().replace(/,/g, '');
   if (!s) return null;
-  const m = s.match(/(\d+(?:\.\d+)?)/);
+  const m = s.match(/^\d+$/);
   return m ? Number(m[1]) : null;
 }
 
@@ -52,7 +56,7 @@ function optionNumericBounds(opt: string): { lo: number; hi: number } | null {
   return null;
 }
 
-function matchOption(sorted: string[], raw: string): string | null {
+function matchOption(sorted: string[], raw: string, exactOnly = false): string | null {
   const q = raw.trim();
   if (!q) return null;
 
@@ -63,12 +67,14 @@ function matchOption(sorted: string[], raw: string): string | null {
   const ci = sorted.find((o) => o.toLowerCase() === lower);
   if (ci) return ci;
 
-  const hint = parseNumericHint(q);
-  if (hint != null) {
-    for (const opt of sorted) {
-      const bounds = optionNumericBounds(opt);
-      if (!bounds) continue;
-      if (hint >= bounds.lo && hint <= bounds.hi) return opt;
+  if (!exactOnly) {
+    const hint = parseNumericHint(q);
+    if (hint != null) {
+      for (const opt of sorted) {
+        const bounds = optionNumericBounds(opt);
+        if (!bounds) continue;
+        if (hint >= bounds.lo && hint <= bounds.hi) return opt;
+      }
     }
   }
 
@@ -77,10 +83,9 @@ function matchOption(sorted: string[], raw: string): string | null {
 }
 
 /**
- * Employee / Revenue size — three ways to filter (manual takes priority when typing):
- * 1. Manual From → To text inputs
- * 2. Drag range on the track
- * 3. Multi-select dropdown
+ * Employee / Revenue size filters.
+ * Employee (exactOnly): single exact value or exact category — no range expansion.
+ * Revenue: optional from→to range + drag track.
  */
 export function CategoryRangeSlider({
   options,
@@ -88,6 +93,8 @@ export function CategoryRangeSlider({
   onChange,
   onCommit,
   exactOnly = false,
+  exactNumericValue = '',
+  onExactNumeric,
 }: CategoryRangeSliderProps) {
   const sorted = useMemo(() => sortCategoryOptions(options), [options]);
   const count = sorted.length;
@@ -103,11 +110,17 @@ export function CategoryRangeSlider({
   const [maxIdx, setMaxIdx] = useState(derived.max);
   const [fromText, setFromText] = useState('');
   const [toText, setToText] = useState('');
+  const [exactText, setExactText] = useState(exactNumericValue);
   const trackRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<'min' | 'max' | null>(null);
 
   useEffect(() => {
-    if (manualDirty) return;
+    if (!exactOnly) return;
+    if (!manualDirty) setExactText(exactNumericValue);
+  }, [exactNumericValue, exactOnly, manualDirty]);
+
+  useEffect(() => {
+    if (exactOnly || manualDirty) return;
     setMinIdx(derived.min);
     setMaxIdx(derived.max);
     if (derived.active && filterMode !== 'manual') {
@@ -117,7 +130,7 @@ export function CategoryRangeSlider({
       setFromText('');
       setToText('');
     }
-  }, [derived.min, derived.max, derived.active, filterMode, manualDirty, sorted]);
+  }, [derived.min, derived.max, derived.active, exactOnly, filterMode, manualDirty, sorted]);
 
   const applyRange = useCallback(
     (min: number, max: number, mode: FilterMode, commit: boolean) => {
@@ -137,6 +150,41 @@ export function CategoryRangeSlider({
     [onChange, onCommit, sorted],
   );
 
+  const applyExactManual = useCallback(() => {
+    const raw = exactText.trim();
+    if (!raw) {
+      setFilterMode('manual');
+      setManualDirty(false);
+      onChange([]);
+      onExactNumeric?.('');
+      onCommit();
+      return;
+    }
+
+    if (/^\d+$/.test(raw.replace(/,/g, ''))) {
+      setFilterMode('manual');
+      setManualDirty(false);
+      onChange([]);
+      onExactNumeric?.(raw.replace(/,/g, ''));
+      onCommit();
+      return;
+    }
+
+    const matched = matchOption(sorted, raw, true);
+    if (!matched) {
+      setFilterMode('manual');
+      setManualDirty(true);
+      onChange([]);
+      return;
+    }
+
+    setFilterMode('manual');
+    setManualDirty(false);
+    onExactNumeric?.('');
+    onChange([matched]);
+    onCommit();
+  }, [exactText, onChange, onCommit, onExactNumeric, sorted]);
+
   const applyManualRange = useCallback(() => {
     const fromRaw = fromText.trim();
     const toRaw = toText.trim();
@@ -149,8 +197,8 @@ export function CategoryRangeSlider({
       return;
     }
 
-    const fromOpt = fromRaw ? matchOption(sorted, fromRaw) : null;
-    const toOpt = toRaw ? matchOption(sorted, toRaw) : null;
+    const fromOpt = fromRaw ? matchOption(sorted, fromRaw, false) : null;
+    const toOpt = toRaw ? matchOption(sorted, toRaw, false) : null;
 
     if (!fromOpt && !toOpt) {
       setFilterMode('manual');
@@ -159,19 +207,10 @@ export function CategoryRangeSlider({
       return;
     }
 
-    if (exactOnly) {
-      const picks = [...new Set([fromOpt, toOpt].filter(Boolean))] as string[];
-      setFilterMode('manual');
-      setManualDirty(false);
-      onChange(picks);
-      onCommit();
-      return;
-    }
-
     const fromIdx = fromOpt ? sorted.indexOf(fromOpt) : toOpt ? sorted.indexOf(toOpt) : 0;
     const toIdx = toOpt ? sorted.indexOf(toOpt) : fromOpt ? sorted.indexOf(fromOpt) : 0;
     applyRange(fromIdx, toIdx, 'manual', true);
-  }, [applyRange, exactOnly, fromText, onChange, onCommit, sorted, toText]);
+  }, [applyRange, fromText, onChange, onCommit, sorted, toText]);
 
   const onManualFromChange = (value: string) => {
     setFilterMode('manual');
@@ -187,6 +226,13 @@ export function CategoryRangeSlider({
     onChange([]);
   };
 
+  const onExactTextChange = (value: string) => {
+    setFilterMode('manual');
+    setManualDirty(true);
+    setExactText(value);
+    onChange([]);
+  };
+
   const indexAtPointer = useCallback(
     (clientX: number) => {
       const track = trackRef.current;
@@ -199,6 +245,7 @@ export function CategoryRangeSlider({
   );
 
   useEffect(() => {
+    if (exactOnly) return;
     const onMove = (e: PointerEvent) => {
       const thumb = dragRef.current;
       if (!thumb) return;
@@ -221,7 +268,7 @@ export function CategoryRangeSlider({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [applyRange, indexAtPointer, maxIdx, minIdx, onCommit]);
+  }, [applyRange, exactOnly, indexAtPointer, maxIdx, minIdx, onCommit]);
 
   if (count < 1) return null;
 
@@ -231,10 +278,66 @@ export function CategoryRangeSlider({
   const widthPct = count > 1 ? ((hi - lo) / (count - 1)) * 100 : 100;
   const minPct = count > 1 ? (minIdx / (count - 1)) * 100 : 0;
   const maxPct = count > 1 ? (maxIdx / (count - 1)) * 100 : 100;
-  const span = derived.active ? hi - lo + 1 : 0;
+  const span = selected.size;
   const selectOptions = sorted.map((opt) => ({ value: opt, label: opt }));
   const multiValues =
     filterMode === 'manual' && manualDirty ? new Set<string>() : selected;
+
+  if (exactOnly) {
+    const activeLabel =
+      exactNumericValue.trim() ||
+      (selected.size === 1 ? [...selected][0] : selected.size > 1 ? `${selected.size} selected` : '');
+
+    return (
+      <div className="mdb-category-range">
+        <div className="mdb-category-range__head">
+          <span className="mdb-category-range__pill" title={activeLabel}>
+            {activeLabel || 'Exact value…'}
+          </span>
+          <span className="mdb-category-range__badge">Exact</span>
+        </div>
+
+        <div className="mdb-category-range__section">
+          <span className="mdb-category-range__section-label">Manual exact</span>
+          <div className="mdb-category-range__manual mdb-category-range__manual--single">
+            <input
+              type="text"
+              className="mdb-category-range__text mdb-category-range__text--wide"
+              value={exactText}
+              placeholder="Exact count (e.g. 150) or category (e.g. 51 to 200)"
+              onChange={(e) => onExactTextChange(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && applyExactManual()}
+            />
+            <button type="button" className="mdb-category-range__apply" onClick={applyExactManual}>
+              Apply
+            </button>
+          </div>
+        </div>
+
+        <div className="mdb-category-range__section">
+          <span className="mdb-category-range__section-label">Dropdown pick (exact)</span>
+          <XlToolbarMultiSelect
+            tone="light"
+            className="mdb-category-range__multiselect"
+            menuMinWidth={300}
+            values={multiValues}
+            placeholder="Select exact size categories…"
+            onChange={(next) => {
+              setFilterMode('multi');
+              setManualDirty(false);
+              setExactText('');
+              onExactNumeric?.('');
+              onChange([...next]);
+            }}
+            onApply={(next) => {
+              if (next.size > 0) onCommit();
+            }}
+            options={selectOptions}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mdb-category-range">
@@ -266,9 +369,7 @@ export function CategoryRangeSlider({
       </div>
 
       <div className="mdb-category-range__section">
-        <span className="mdb-category-range__section-label">
-          {exactOnly ? 'Manual exact' : 'Manual range'}
-        </span>
+        <span className="mdb-category-range__section-label">Manual range</span>
         <div className="mdb-category-range__manual">
           <input
             type="text"
@@ -289,17 +390,13 @@ export function CategoryRangeSlider({
             onChange={(e) => onManualToChange(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && applyManualRange()}
           />
-          <button
-            type="button"
-            className="mdb-category-range__apply"
-            onClick={applyManualRange}
-          >
+          <button type="button" className="mdb-category-range__apply" onClick={applyManualRange}>
             Apply
           </button>
         </div>
       </div>
 
-      {count >= 2 && !exactOnly && (
+      {count >= 2 && (
         <div className="mdb-category-range__section">
           <span className="mdb-category-range__section-label">Drag range</span>
           <div

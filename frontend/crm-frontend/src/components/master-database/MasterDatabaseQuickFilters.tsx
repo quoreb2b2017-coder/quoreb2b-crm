@@ -31,6 +31,8 @@ import {
   curatedFilterHeaders,
   filterAdvancedColumns,
   filterSidebarColumns,
+  findExactEmployeeSizeColumn,
+  isEmployeeSizeCategoryHeader,
   isExcludedDropdownColumn,
   isSizeCategoryHeader,
   pickQuickFilterColumns,
@@ -105,6 +107,23 @@ export function MasterDatabaseQuickFilters({
     else delete columnValues[header];
     onChange({ ...filters, columnValues });
   };
+
+  const setEmployeeExactNumeric = (categoryHeader: string, value: string) => {
+    const columnText = { ...filters.columnText };
+    const columnValues = { ...filters.columnValues };
+    if (value.trim()) {
+      delete columnValues[categoryHeader];
+      if (exactEmployeeCol) columnText[exactEmployeeCol.header] = value.trim();
+    } else if (exactEmployeeCol) {
+      delete columnText[exactEmployeeCol.header];
+    }
+    onChange({ ...filters, columnText, columnValues });
+  };
+
+  const exactEmployeeCol = useMemo(() => findExactEmployeeSizeColumn(columns), [columns]);
+  const employeeExactNumericValue = exactEmployeeCol
+    ? (filters.columnText[exactEmployeeCol.header] ?? '')
+    : '';
 
   const setColumnText = (header: string, value: string) => {
     const columnText = { ...filters.columnText, [header]: value };
@@ -364,9 +383,22 @@ export function MasterDatabaseQuickFilters({
                   <CategoryRangeSlider
                     options={column.options}
                     selected={selected}
-                    onChange={(values) => setColumnRangeValues(column.header, values)}
+                    onChange={(values) => {
+                      if (isEmployeeSizeCategoryHeader(column.header)) {
+                        setEmployeeExactNumeric(column.header, '');
+                      }
+                      setColumnRangeValues(column.header, values);
+                    }}
                     onCommit={onSearch}
-                    exactOnly={/employee size category/i.test(column.header)}
+                    exactOnly={isEmployeeSizeCategoryHeader(column.header)}
+                    exactNumericValue={
+                      isEmployeeSizeCategoryHeader(column.header) ? employeeExactNumericValue : ''
+                    }
+                    onExactNumeric={
+                      isEmployeeSizeCategoryHeader(column.header)
+                        ? (value) => setEmployeeExactNumeric(column.header, value)
+                        : undefined
+                    }
                   />
                 ) : isMultiSelect ? (
                   <div className="mdb-filter-block__select-wrap">
@@ -515,9 +547,22 @@ export function MasterDatabaseQuickFilters({
                         <CategoryRangeSlider
                           options={col.options}
                           selected={selected}
-                          onChange={(values) => setColumnRangeValues(col.header, values)}
+                          onChange={(values) => {
+                            if (isEmployeeSizeCategoryHeader(col.header)) {
+                              setEmployeeExactNumeric(col.header, '');
+                            }
+                            setColumnRangeValues(col.header, values);
+                          }}
                           onCommit={onSearch}
-                          exactOnly={/employee size category/i.test(col.header)}
+                          exactOnly={isEmployeeSizeCategoryHeader(col.header)}
+                          exactNumericValue={
+                            isEmployeeSizeCategoryHeader(col.header) ? employeeExactNumericValue : ''
+                          }
+                          onExactNumeric={
+                            isEmployeeSizeCategoryHeader(col.header)
+                              ? (value) => setEmployeeExactNumeric(col.header, value)
+                              : undefined
+                          }
                         />
                       ) : (
                         <div className="mdb-filter-block__select-wrap">

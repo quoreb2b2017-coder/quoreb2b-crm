@@ -1790,6 +1790,15 @@
   gap: 0.35rem;
 }
 
+.mdb-category-range__manual--single {
+  grid-template-columns: 1fr auto;
+}
+
+.mdb-category-range__text--wide {
+  min-width: 0;
+  width: 100%;
+}
+
 .mdb-category-range__pick {
   display: grid;
   grid-template-columns: 1fr 1fr;

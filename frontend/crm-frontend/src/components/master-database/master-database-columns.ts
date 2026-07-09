@@ -343,7 +343,12 @@ export function buildCuratedQuickFilters(
   }
 
   const exactEmployee = findFilterColumn(columns, /^exact employee size$/i);
-  if (exactEmployee && !used.has(exactEmployee.header)) {
+  const hasEmployeeCategoryField = fields.some(
+    (field) =>
+      field.type !== 'combinedIndustry' &&
+      isEmployeeSizeCategoryHeader(field.column.header),
+  );
+  if (exactEmployee && !used.has(exactEmployee.header) && !hasEmployeeCategoryField) {
     fields.push({
       type: 'text',
       column: exactEmployee,
@@ -388,6 +393,16 @@ export function categoryOptionSortKey(option: string): number {
 
 export function isSizeCategoryHeader(header: string): boolean {
   return /employee size category|revenue size category/i.test(header);
+}
+
+export function isEmployeeSizeCategoryHeader(header: string): boolean {
+  return /employee size category/i.test(header.trim());
+}
+
+export function findExactEmployeeSizeColumn(
+  columns: MasterDataColumnFilterSchema[],
+): MasterDataColumnFilterSchema | undefined {
+  return columns.find((c) => /^exact employee size$/i.test(c.header.trim()));
 }
 
 /** Text columns that must match exactly (not contains) for manual search. */

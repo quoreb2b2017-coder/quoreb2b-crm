@@ -267,7 +267,32 @@ export class SuppressionDataService {
     const isDbAdmin = roles.includes(SystemRole.DB_ADMIN);
     const isAdmin =
       roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
-    const hasInlineSource = Boolean(dto.sourceRows?.length && dto.sourceHeaders?.length);
+
+    let masterResolvedHeaders: string[] | undefined;
+    let masterResolvedRows: string[][] | undefined;
+    if (!(dto.sourceRows?.length && dto.sourceHeaders?.length)) {
+      if (dto.masterSearchFilter) {
+        const resolved = await this.masterDataService.resolveMasterBatchFromSearch(
+          dto.masterSearchFilter,
+          actor.id,
+          dto.masterSourceRowIndices,
+        );
+        masterResolvedHeaders = resolved.headers;
+        masterResolvedRows = resolved.rows;
+      } else if (dto.masterSourceRowIndices?.length) {
+        const resolved = await this.masterDataService.resolveMasterBatchCreate(
+          dto.masterSourceRowIndices,
+          actor.id,
+        );
+        masterResolvedHeaders = resolved.headers;
+        masterResolvedRows = resolved.rows;
+      }
+    }
+
+    const hasInlineSource = Boolean(
+      (dto.sourceRows?.length && dto.sourceHeaders?.length) ||
+        (masterResolvedRows?.length && masterResolvedHeaders?.length),
+    );
     if (!isEmployee && !isDbAdmin && !(isAdmin && hasInlineSource)) {
       throw new ForbiddenException('Only employees and DB admins can check suppression');
     }
@@ -275,7 +300,7 @@ export class SuppressionDataService {
       !dto.sourceRequestId &&
       !dto.sourceBatchId &&
       !dto.manualInput?.trim() &&
-      !(dto.sourceRows?.length && dto.sourceHeaders?.length)
+      !hasInlineSource
     ) {
       throw new BadRequestException(
         'Select My Data, your campaign, master rows, or enter domain/email values to check',
@@ -325,6 +350,10 @@ export class SuppressionDataService {
     } else if (dto.sourceHeaders?.length && dto.sourceRows?.length) {
       sourceHeaders = dto.sourceHeaders;
       sourceRows = dto.sourceRows;
+      duplicateSourceRole = isDbAdmin ? 'db_admin' : 'employee';
+    } else if (masterResolvedHeaders?.length && masterResolvedRows?.length) {
+      sourceHeaders = masterResolvedHeaders;
+      sourceRows = masterResolvedRows;
       duplicateSourceRole = isDbAdmin ? 'db_admin' : 'employee';
     }
 

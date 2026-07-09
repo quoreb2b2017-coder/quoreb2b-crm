@@ -167,13 +167,28 @@ export function DbAdminCampaignWizard({
 
   const runSuppressionCheck = async () => {
     if (!suppressionCampaignId) return;
+    const hasInlineRows = rows.length > 0 && headers.length > 0;
+    const hasMasterResolve =
+      Boolean(masterSearchFilter) || (sourceRowIndices?.length ?? 0) > 0;
+    if (!hasInlineRows && !hasMasterResolve) {
+      toast.error(
+        'No contacts to check',
+        'Your extract has no row data yet. Go back and select contacts from master data.',
+      );
+      return;
+    }
     setChecking(true);
     try {
       const result = await suppressionDataService.checkSuppression({
         suppressionCampaignId,
         checkMode,
-        sourceHeaders: headers,
-        sourceRows: rows,
+        ...(hasInlineRows
+          ? { sourceHeaders: headers, sourceRows: rows }
+          : {
+              sourceHeaders: headers.length ? headers : undefined,
+              masterSourceRowIndices: sourceRowIndices.length ? sourceRowIndices : undefined,
+              masterSearchFilter,
+            }),
         baseFileName: batchName || sourceFileName,
       });
       setDuplicateCount(result.duplicateCount);
@@ -492,7 +507,12 @@ export function DbAdminCampaignWizard({
 
                   <button
                     type="button"
-                    disabled={checking || !suppressionCampaignId || loadingCampaigns}
+                    disabled={
+                      checking ||
+                      !suppressionCampaignId ||
+                      loadingCampaigns ||
+                      (!rows.length && !masterSearchFilter && !sourceRowIndices.length)
+                    }
                     onClick={() => void runSuppressionCheck()}
                     className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#2568b8] to-[#2e7ad1] py-3 text-sm font-bold text-white shadow-md transition hover:from-[#154a2d] hover:to-[#2568b8] hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
                   >

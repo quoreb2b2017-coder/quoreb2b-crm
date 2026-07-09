@@ -2,11 +2,16 @@ import {
   ArrayMaxSize,
   IsArray,
   IsIn,
+  IsInt,
   IsMongoId,
   IsOptional,
   IsString,
   MaxLength,
+  Min,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+import { SearchMasterDataDto } from '../../master-data/dto/search-master-data.dto';
 
 export class CheckSuppressionDto {
   @IsMongoId()
@@ -35,6 +40,19 @@ export class CheckSuppressionDto {
   @IsArray()
   @ArrayMaxSize(50000)
   sourceRows?: string[][];
+
+  /** Resolve master rows server-side (DB admin extract with server search) */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50000)
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  masterSourceRowIndices?: number[];
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SearchMasterDataDto)
+  masterSearchFilter?: SearchMasterDataDto;
 
   /** Optional manual domain/email values (newline or comma separated) */
   @IsOptional()

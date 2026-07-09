@@ -134,7 +134,7 @@ export function CheckSuppressionModal({
   const canSubmit =
     suppressionCampaignId &&
     (inlineSource
-      ? inlineSource.rows.length > 0
+      ? inlineSource.rows.length > 0 && inlineSource.headers.length > 0
       : !(
           (sourceKind === 'batch' && !sourceBatchId && !defaultSourceId) ||
           (sourceKind === 'my_data' && !defaultSourceId)

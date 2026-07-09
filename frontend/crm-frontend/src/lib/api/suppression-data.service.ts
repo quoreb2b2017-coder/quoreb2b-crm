@@ -103,6 +103,8 @@ export const suppressionDataService = {
     sourceBatchId?: string;
     sourceHeaders?: string[];
     sourceRows?: string[][];
+    masterSourceRowIndices?: number[];
+    masterSearchFilter?: Record<string, unknown>;
     manualInput?: string;
     baseFileName?: string;
   }): Promise<CheckSuppressionResult> => {

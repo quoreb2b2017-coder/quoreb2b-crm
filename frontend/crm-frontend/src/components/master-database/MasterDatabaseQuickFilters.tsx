@@ -366,6 +366,7 @@ export function MasterDatabaseQuickFilters({
                     selected={selected}
                     onChange={(values) => setColumnRangeValues(column.header, values)}
                     onCommit={onSearch}
+                    exactOnly={/employee size category/i.test(column.header)}
                   />
                 ) : isMultiSelect ? (
                   <div className="mdb-filter-block__select-wrap">
@@ -516,6 +517,7 @@ export function MasterDatabaseQuickFilters({
                           selected={selected}
                           onChange={(values) => setColumnRangeValues(col.header, values)}
                           onCommit={onSearch}
+                          exactOnly={/employee size category/i.test(col.header)}
                         />
                       ) : (
                         <div className="mdb-filter-block__select-wrap">
@@ -534,7 +536,7 @@ export function MasterDatabaseQuickFilters({
       {typeof resultCount === 'number' && resultCount > 0 && (
         <div className="mdb-quick__results">
           <span className="mdb-quick__results-badge">{resultCount.toLocaleString('en-US')}</span>
-          <span>companies matched</span>
+          <span>exact matches</span>
         </div>
       )}
     </div>

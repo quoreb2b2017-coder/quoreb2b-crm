@@ -342,6 +342,16 @@ export function buildCuratedQuickFilters(
     used.add(company.header);
   }
 
+  const exactEmployee = findFilterColumn(columns, /^exact employee size$/i);
+  if (exactEmployee && !used.has(exactEmployee.header)) {
+    fields.push({
+      type: 'text',
+      column: exactEmployee,
+      placeholder: 'Exact employee count…',
+    });
+    used.add(exactEmployee.header);
+  }
+
   const client = findFilterColumn(columns, /^client name$/i);
   if (client && !used.has(client.header)) {
     fields.push({ type: 'text', column: client, placeholder: 'Client name…' });
@@ -378,6 +388,11 @@ export function categoryOptionSortKey(option: string): number {
 
 export function isSizeCategoryHeader(header: string): boolean {
   return /employee size category|revenue size category/i.test(header);
+}
+
+/** Text columns that must match exactly (not contains) for manual search. */
+export function isExactMatchColumn(header: string): boolean {
+  return /exact employee size|exact revenue/i.test(header.trim());
 }
 
 export function isMultiSelectHeader(header: string): boolean {
@@ -492,7 +507,10 @@ export function serializeDynamicSearchPayload(
   const columnFilters = headers
     .map((header) => ({ header, value: (filters.columnText[header] ?? '').trim() }))
     .filter((f) => f.value.length > 0)
-    .map((f) => ({ ...f, match: 'contains' as const }));
+    .map((f) => ({
+      ...f,
+      match: isExactMatchColumn(f.header) ? ('equals' as const) : ('contains' as const),
+    }));
 
   const combinedIndustryValues = [
     ...(filters.columnValues[COMBINED_INDUSTRY_FILTER_KEY] ?? []),
@@ -592,7 +610,13 @@ export function applyDynamicFiltersClient(
 
     for (const f of payload.columnValueFilters ?? []) {
       const cell = cellByHeader(row, headers, f.header).toLowerCase();
-      if (!f.values.some((v) => cell === v.toLowerCase() || cell.includes(v.toLowerCase()))) {
+      const exactOnly = isSizeCategoryHeader(f.header);
+      if (
+        !f.values.some((v) => {
+          const needle = v.toLowerCase();
+          return exactOnly ? cell === needle : cell === needle || cell.includes(needle);
+        })
+      ) {
         ok = false;
         break;
       }

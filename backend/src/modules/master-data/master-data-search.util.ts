@@ -81,6 +81,10 @@ function rowMatchesDateRangeFilter(
   return true;
 }
 
+function isSizeCategoryHeader(header: string): boolean {
+  return /employee size category|revenue size category/i.test(header.trim());
+}
+
 function rowMatchesValueFilter(
   row: string[],
   headers: string[],
@@ -90,9 +94,10 @@ function rowMatchesValueFilter(
   if (colIdx < 0) return false;
   const cell = String(row[colIdx] ?? '').trim().toLowerCase();
   if (!cell) return false;
+  const exactOnly = isSizeCategoryHeader(filter.header);
   return filter.values.some((v) => {
     const needle = v.trim().toLowerCase();
-    return cell === needle || cell.includes(needle);
+    return exactOnly ? cell === needle : cell === needle || cell.includes(needle);
   });
 }
 
@@ -329,9 +334,11 @@ export function rowMatchesCompiledFilter(
   for (const f of compiled.columnValues) {
     const cell = String(row[f.colIdx] ?? '').trim().toLowerCase();
     if (!cell) return false;
+    const header = compiled.headers[f.colIdx] ?? '';
+    const exactOnly = isSizeCategoryHeader(header);
     let matched = false;
     for (const v of f.valuesLower) {
-      if (cell === v || cell.includes(v)) {
+      if (exactOnly ? cell === v : cell === v || cell.includes(v)) {
         matched = true;
         break;
       }

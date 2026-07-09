@@ -9,6 +9,8 @@ interface CategoryRangeSliderProps {
   selected: Set<string>;
   onChange: (values: string[]) => void;
   onCommit: () => void;
+  /** When true, manual pick and dropdown use exact options only (no drag-range expansion). */
+  exactOnly?: boolean;
 }
 
 type FilterMode = 'manual' | 'range' | 'multi';
@@ -85,6 +87,7 @@ export function CategoryRangeSlider({
   selected,
   onChange,
   onCommit,
+  exactOnly = false,
 }: CategoryRangeSliderProps) {
   const sorted = useMemo(() => sortCategoryOptions(options), [options]);
   const count = sorted.length;
@@ -156,10 +159,19 @@ export function CategoryRangeSlider({
       return;
     }
 
+    if (exactOnly) {
+      const picks = [...new Set([fromOpt, toOpt].filter(Boolean))] as string[];
+      setFilterMode('manual');
+      setManualDirty(false);
+      onChange(picks);
+      onCommit();
+      return;
+    }
+
     const fromIdx = fromOpt ? sorted.indexOf(fromOpt) : toOpt ? sorted.indexOf(toOpt) : 0;
     const toIdx = toOpt ? sorted.indexOf(toOpt) : fromOpt ? sorted.indexOf(fromOpt) : 0;
     applyRange(fromIdx, toIdx, 'manual', true);
-  }, [applyRange, fromText, onChange, onCommit, sorted, toText]);
+  }, [applyRange, exactOnly, fromText, onChange, onCommit, sorted, toText]);
 
   const onManualFromChange = (value: string) => {
     setFilterMode('manual');
@@ -254,7 +266,9 @@ export function CategoryRangeSlider({
       </div>
 
       <div className="mdb-category-range__section">
-        <span className="mdb-category-range__section-label">Manual range</span>
+        <span className="mdb-category-range__section-label">
+          {exactOnly ? 'Manual exact' : 'Manual range'}
+        </span>
         <div className="mdb-category-range__manual">
           <input
             type="text"
@@ -285,7 +299,7 @@ export function CategoryRangeSlider({
         </div>
       </div>
 
-      {count >= 2 && (
+      {count >= 2 && !exactOnly && (
         <div className="mdb-category-range__section">
           <span className="mdb-category-range__section-label">Drag range</span>
           <div

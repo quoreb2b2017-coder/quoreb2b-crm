@@ -69,6 +69,7 @@ import {
 const ACCEPT = '.csv,.xlsx,.xls';
 const PAGE_SIZES = [20, 50, 100, 200, 500, 1000];
 const EMBEDDED_PAGE_SIZES = [100, 200, 500, 1000];
+const DB_ADMIN_PREVIEW_LIMIT = 100;
 const CAMPAIGN_MAX_ROWS = 50_000;
 const AUTO_SEARCH_MS = 500;
 
@@ -130,7 +131,7 @@ export function MasterDatabaseExplorer({
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [selectAllFiltered, setSelectAllFiltered] = useState(false);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(embedded ? 100 : 20);
+  const [pageSize, setPageSize] = useState(embedded || isDbAdmin ? DB_ADMIN_PREVIEW_LIMIT : 20);
   const [sortBy, setSortBy] = useState('recent');
   const [moreOpen, setMoreOpen] = useState(false);
   const [filterSidebarOpen, setFilterSidebarOpen] = useState(true);
@@ -242,22 +243,29 @@ export function MasterDatabaseExplorer({
       setFilterSchemaLoading(true);
 
       const large = bootstrap.totalRows > 5000;
-      const showPreview = bootstrap.rows.length > 0;
+      const previewRows = isDbAdmin
+        ? bootstrap.rows.slice(0, DB_ADMIN_PREVIEW_LIMIT)
+        : bootstrap.rows;
+      const previewIndices = isDbAdmin
+        ? bootstrap.sourceRowIndices.slice(0, DB_ADMIN_PREVIEW_LIMIT)
+        : bootstrap.sourceRowIndices;
+      const showPreview = previewRows.length > 0;
       setIsLargeMasterDataset(large);
       if (large) {
         setAllRows([]);
-        setDisplayRows(bootstrap.rows);
-        setSourceIndices(bootstrap.sourceRowIndices);
+        setDisplayRows(previewRows);
+        setSourceIndices(previewIndices);
       } else {
         setAllRows(bootstrap.rows);
-        setDisplayRows(bootstrap.rows);
-        setSourceIndices(bootstrap.sourceRowIndices);
+        setDisplayRows(previewRows);
+        setSourceIndices(previewIndices);
       }
 
       if (isDbAdmin) {
-        setFilteredTotal(0);
+        setFilteredTotal(previewRows.length);
         setHasSearched(showPreview);
         setIsFilteredView(false);
+        setPage(1);
       } else {
         setFilteredTotal(bootstrap.totalRows);
         setHasSearched(true);
@@ -320,6 +328,7 @@ export function MasterDatabaseExplorer({
 
   const useServerSearch = embedded || isDbAdmin || isLargeMasterDataset;
   const useFilterSidebar = embedded || isDbAdmin || isLargeMasterDataset;
+  const isDbAdminPreview = isDbAdmin && !isFilteredView;
   const pageSizeOptions = embedded ? EMBEDDED_PAGE_SIZES : PAGE_SIZES;
 
   const effectiveFilterColumns = useMemo(
@@ -416,7 +425,11 @@ export function MasterDatabaseExplorer({
     if (!canAutoSearchMasterData(filters)) {
       if (!hasAnyDynamicSearchCriteria(filters) && isFilteredView) {
         setPage(1);
-        void loadBrowsePage(1, pageSize, { resetSelection: true });
+        if (isDbAdmin) {
+          void loadData();
+        } else {
+          void loadBrowsePage(1, pageSize, { resetSelection: true });
+        }
       }
       return;
     }
@@ -525,10 +538,15 @@ export function MasterDatabaseExplorer({
     return sourceIndices.slice(start, start + pageSize);
   }, [page, pageSize, sourceIndices, useServerSearch]);
 
-  const totalPages = Math.max(
-    1,
-    Math.ceil((useServerSearch ? filteredTotal : displayRows.length) / pageSize),
-  );
+  const paginationTotal = isDbAdminPreview
+    ? displayRows.length
+    : useServerSearch
+      ? filteredTotal
+      : displayRows.length;
+
+  const totalPages = isDbAdminPreview
+    ? 1
+    : Math.max(1, Math.ceil(paginationTotal / pageSize));
 
   const stats = useMemo(() => {
     const verifiedEmails = displayRows.filter((r) => hasValidEmail(r, headers)).length;
@@ -596,14 +614,16 @@ export function MasterDatabaseExplorer({
     (hasSearched && filteredTotal > 0 && selected.size >= filteredTotal);
 
   const goToPage = (p: number) => {
+    if (isDbAdminPreview) return;
     setPage(p);
-    if (useServerSearch && hasSearched) void fetchFilteredPage(p, pageSize);
+    if (useServerSearch && hasSearched && isFilteredView) void fetchFilteredPage(p, pageSize);
   };
 
   const changePageSize = (size: number) => {
+    if (isDbAdminPreview) return;
     setPageSize(size);
     setPage(1);
-    if (useServerSearch && hasSearched) void fetchFilteredPage(1, size);
+    if (useServerSearch && hasSearched && isFilteredView) void fetchFilteredPage(1, size);
   };
 
   const toggleSelectAllPage = () => {
@@ -864,7 +884,10 @@ export function MasterDatabaseExplorer({
   }
 
   const resultCount = isFilteredView && hasSearched ? filteredTotal : undefined;
-  const paginationTotal = useServerSearch ? filteredTotal : displayRows.length;
+  const showFilteredPagination = hasSearched && !isDbAdminPreview && (isFilteredView || !isDbAdmin);
+  const paginationStart =
+    paginationTotal > 0 ? (page - 1) * pageSize + 1 : 0;
+  const paginationEnd = Math.min(page * pageSize, paginationTotal);
 
   const gridBlock = (
     <>
@@ -878,7 +901,7 @@ export function MasterDatabaseExplorer({
           </p>
           <p className="mdb-empty__sub">
             {isDbAdmin
-              ? 'Use the search bar above to load companies into the spreadsheet view.'
+              ? 'Sample contacts below — open Filters to search the full database.'
               : masterTotalRows
                 ? 'Use filters or click Search Companies to view the table.'
                 : 'Super Admin can import data using Import Data.'}
@@ -892,12 +915,14 @@ export function MasterDatabaseExplorer({
               Updating results…
             </div>
           )}
-          <div className={`mdb-xl-grid${embedded ? ' min-h-0 flex-1' : ''}`}>
+          <div
+            className={`mdb-xl-grid${embedded ? ' min-h-0 flex-1' : ''}${isDbAdminPreview ? ' mdb-xl-grid--preview' : ''}`}
+          >
             <ExcelPreviewGrid
               data={gridData}
               dataResetKey={gridResetKey}
               editable={false}
-              fillHeight
+              fillHeight={!isDbAdminPreview}
               batchedByRow={mergedBatchedByRow}
               campaignRowFilter={embedded ? campaignRowFilter : undefined}
               externalSourceIndices={pageSourceIndices}
@@ -911,50 +936,70 @@ export function MasterDatabaseExplorer({
             />
           </div>
 
-          <div className="mdb-pagination">
-            <p>
-              Showing {(page - 1) * pageSize + 1} to{' '}
-              {Math.min(page * pageSize, paginationTotal)} of{' '}
-              {paginationTotal.toLocaleString('en-US')}
-              {isFilteredView
-                ? ' matches'
-                : useServerSearch && masterTotalRows
-                  ? ` of ${masterTotalRows.toLocaleString('en-US')} total`
-                  : ' results'}
-            </p>
-            <div className="mdb-pagination__pages">
-              <button type="button" className="mdb-page-btn" disabled={page <= 1 || searching} onClick={() => goToPage(page - 1)}>‹</button>
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                const p = i + 1;
-                return (
-                  <button
-                    key={p}
-                    type="button"
-                    className={`mdb-page-btn${page === p ? ' is-active' : ''}`}
-                    onClick={() => goToPage(p)}
-                    disabled={searching}
-                  >
-                    {p}
-                  </button>
-                );
-              })}
-              {totalPages > 5 && <span>…</span>}
-              <button type="button" className="mdb-page-btn" disabled={page >= totalPages || searching} onClick={() => goToPage(page + 1)}>›</button>
+          {isDbAdminPreview ? (
+            <div className="mdb-pagination mdb-pagination--preview">
+              <p>
+                Showing <strong>{displayRows.length.toLocaleString('en-US')}</strong> sample
+                contacts of <strong>{masterTotalRows.toLocaleString('en-US')}</strong> total —
+                apply filters to search the full database and create campaigns.
+              </p>
             </div>
-            <label className="mdb-page-size">
-              <span className="mdb-page-size__label">Rows</span>
-              <XlToolbarSelect
-                tone="light"
-                className="mdb-page-size__select"
-                value={String(pageSize)}
-                onChange={(v) => changePageSize(Number(v))}
-                options={pageSizeOptions.map((s) => ({
-                  value: String(s),
-                  label: `${s} / page`,
-                }))}
-              />
-            </label>
-          </div>
+          ) : showFilteredPagination ? (
+            <div className="mdb-pagination">
+              <p>
+                {isFilteredView || isDbAdmin ? (
+                  <>
+                    <strong>{paginationTotal.toLocaleString('en-US')}</strong> exact matches
+                    {paginationTotal > 0 && (
+                      <>
+                        {' '}
+                        · page {paginationStart.toLocaleString('en-US')}–
+                        {paginationEnd.toLocaleString('en-US')}
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    Showing {paginationStart.toLocaleString('en-US')} to{' '}
+                    {paginationEnd.toLocaleString('en-US')} of{' '}
+                    {paginationTotal.toLocaleString('en-US')} results
+                  </>
+                )}
+              </p>
+              <div className="mdb-pagination__pages">
+                <button type="button" className="mdb-page-btn" disabled={page <= 1 || searching} onClick={() => goToPage(page - 1)}>‹</button>
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  const p = i + 1;
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      className={`mdb-page-btn${page === p ? ' is-active' : ''}`}
+                      onClick={() => goToPage(p)}
+                      disabled={searching}
+                    >
+                      {p}
+                    </button>
+                  );
+                })}
+                {totalPages > 5 && <span>…</span>}
+                <button type="button" className="mdb-page-btn" disabled={page >= totalPages || searching} onClick={() => goToPage(page + 1)}>›</button>
+              </div>
+              <label className="mdb-page-size">
+                <span className="mdb-page-size__label">Rows</span>
+                <XlToolbarSelect
+                  tone="light"
+                  className="mdb-page-size__select"
+                  value={String(pageSize)}
+                  onChange={(v) => changePageSize(Number(v))}
+                  options={pageSizeOptions.map((s) => ({
+                    value: String(s),
+                    label: `${s} / page`,
+                  }))}
+                />
+              </label>
+            </div>
+          ) : null}
         </>
       )}
     </>

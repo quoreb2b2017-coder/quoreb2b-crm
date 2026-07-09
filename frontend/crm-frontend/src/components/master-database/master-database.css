@@ -1180,6 +1180,9 @@
   padding-top: 0.85rem;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ── Left filter sidebar ── */
@@ -2257,6 +2260,13 @@
   min-height: 380px;
 }
 
+.mdb-page--db-admin .mdb-table-card--workbook {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .mdb-page--db-admin .mdb-table-toolbar {
   background: linear-gradient(180deg, #fafcff 0%, #f4f8fd 100%);
   border-bottom-color: #dce6f2;
@@ -2289,6 +2299,22 @@
   border-top: none;
   min-height: 460px;
   max-height: calc(100vh - 220px);
+}
+
+.mdb-page--db-admin .mdb-xl-grid--preview {
+  min-height: auto;
+  max-height: none;
+  flex: 0 0 auto;
+}
+
+.mdb-pagination--preview {
+  justify-content: center;
+}
+
+.mdb-pagination--preview p {
+  text-align: center;
+  color: #475569;
+  font-size: 12px;
 }
 
 .mdb-empty--workbook {

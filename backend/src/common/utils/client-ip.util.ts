@@ -9,6 +9,16 @@ export function normalizeClientIp(ip: string): string {
 
 /** Best-effort public client IP (respects X-Forwarded-For behind nginx). */
 export function extractClientIp(req: Request): string {
+  const cfConnectingIp = req.headers['cf-connecting-ip'];
+  if (typeof cfConnectingIp === 'string' && cfConnectingIp.trim()) {
+    return normalizeClientIp(cfConnectingIp);
+  }
+
+  const xRealIp = req.headers['x-real-ip'];
+  if (typeof xRealIp === 'string' && xRealIp.trim()) {
+    return normalizeClientIp(xRealIp);
+  }
+
   const forwarded = req.headers['x-forwarded-for'];
   if (typeof forwarded === 'string' && forwarded.trim()) {
     return normalizeClientIp(forwarded.split(',')[0]);

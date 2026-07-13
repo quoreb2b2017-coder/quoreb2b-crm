@@ -32,7 +32,7 @@ export interface MasterDataImportJobStatus {
   uploadPartTotal?: number;
 }
 
-const JOB_TTL_SECONDS = 3600;
+const JOB_TTL_SECONDS = 86_400;
 const PERSIST_THROTTLE_MS = 500;
 const jobs = new Map<string, MasterDataImportJobStatus>();
 const lastPersistAt = new Map<string, number>();

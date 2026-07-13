@@ -110,6 +110,7 @@ export function streamSpreadsheetFileAsync(
 
     const worker = new Worker(join(__dirname, 'master-data-stream-parse.worker.js'), {
       workerData: { filePath, fileName },
+      resourceLimits: { maxOldGenerationSizeMb: 4096 },
     });
 
     const fail = (err: unknown) => {

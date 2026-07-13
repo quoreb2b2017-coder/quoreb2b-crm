@@ -1328,7 +1328,9 @@ export class MasterDataService {
         message,
         error: message,
       });
-      await unlink(localPath).catch(() => undefined);
+    } finally {
+      const { rm } = await import('fs/promises');
+      await rm(dir, { recursive: true, force: true }).catch(() => undefined);
     }
   }
 

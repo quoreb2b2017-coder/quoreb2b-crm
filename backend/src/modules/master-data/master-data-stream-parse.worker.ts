@@ -1,6 +1,7 @@
 import { parentPort, workerData } from 'worker_threads';
 import { createReadStream, readFileSync } from 'fs';
 import { createInterface } from 'readline';
+import ExcelJS from 'exceljs';
 import * as XLSX from 'xlsx';
 
 const PARSE_BATCH_SIZE = 5_000;
@@ -13,6 +14,14 @@ interface WorkerInput {
 function cellToString(value: unknown): string {
   if (value == null || value === '') return '';
   if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'object' && value !== null) {
+    if ('text' in value && (value as { text?: unknown }).text != null) {
+      return cellToString((value as { text: unknown }).text);
+    }
+    if ('result' in value && (value as { result?: unknown }).result != null) {
+      return cellToString((value as { result: unknown }).result);
+    }
+  }
   return String(value).trim();
 }
 
@@ -58,7 +67,74 @@ function flushBatch(batch: string[][], processed: number) {
   }
 }
 
-function streamXlsxRows(filePath: string, fileName: string) {
+/** Stream-parse .xlsx from disk — avoids loading 10L+ rows into RAM (SheetJS buffer path OOMs). */
+async function streamXlsxRows(filePath: string, fileName: string) {
+  const workbookReader = new ExcelJS.stream.xlsx.WorkbookReader(filePath, {
+    sharedStrings: 'cache',
+    hyperlinks: 'ignore',
+    styles: 'ignore',
+    worksheets: 'emit',
+  });
+
+  let processed = 0;
+  let batch: string[][] = [];
+  let headers: string[] = [];
+  let sheetName = fileName.replace(/\.[^.]+$/, '') || 'Sheet1';
+  let metaSent = false;
+
+  for await (const worksheetReader of workbookReader) {
+    const wsName =
+      (worksheetReader as ExcelJS.stream.xlsx.WorksheetReader & { name?: string }).name ||
+      sheetName;
+    sheetName = wsName;
+    let rowIndex = 0;
+
+    for await (const row of worksheetReader) {
+      const values = row.values as unknown[] | undefined;
+      const cols = (values ?? []).slice(1).map((v) => cellToString(v));
+
+      if (rowIndex === 0) {
+        const hasHeader = cols.some((h) => h.length > 0);
+        headers = hasHeader
+          ? trimTrailingEmptyHeaders(cols)
+          : cols.map((_, i) => `Column ${i + 1}`);
+        parentPort?.postMessage({ type: 'meta', sheetName, headers });
+        metaSent = true;
+        if (hasHeader) {
+          rowIndex += 1;
+          continue;
+        }
+      }
+
+      const aligned = headers.map((_, i) => cellToString(cols[i]));
+      if (!aligned.some((c) => c.length > 0)) {
+        rowIndex += 1;
+        continue;
+      }
+      batch.push(aligned);
+      processed += 1;
+      rowIndex += 1;
+
+      if (batch.length >= PARSE_BATCH_SIZE) {
+        flushBatch(batch, processed);
+      }
+      if (processed % 50_000 === 0) {
+        parentPort?.postMessage({ type: 'progress', processed });
+      }
+    }
+    break;
+  }
+
+  if (!metaSent) {
+    throw new Error('Worksheet is empty — add a header row and data rows');
+  }
+
+  flushBatch(batch, processed);
+  parentPort?.postMessage({ type: 'done', totalRows: processed, sheetName, headers });
+}
+
+/** Legacy .xls only — small files; try every sheet until one has data. */
+function streamXlsRows(filePath: string, fileName: string) {
   const buffer = readFileSync(filePath);
   const workbook = XLSX.read(buffer, {
     type: 'buffer',
@@ -67,21 +143,22 @@ function streamXlsxRows(filePath: string, fileName: string) {
     cellStyles: false,
     sheetStubs: true,
   });
-  const sheetName = workbook.SheetNames[0];
-  if (!sheetName) {
-    throw new Error('No sheets found in the file');
+
+  let sheetName = '';
+  let sheet: XLSX.WorkSheet | undefined;
+  for (const name of workbook.SheetNames) {
+    const candidate = workbook.Sheets[name];
+    if (candidate?.['!ref']) {
+      sheetName = name;
+      sheet = candidate;
+      break;
+    }
+  }
+  if (!sheet || !sheetName) {
+    throw new Error('No worksheets with data found in the file');
   }
 
-  const sheet = workbook.Sheets[sheetName];
-  if (!sheet) {
-    throw new Error(`Could not read worksheet "${sheetName}"`);
-  }
-
-  const ref = sheet['!ref'];
-  if (!ref) {
-    throw new Error('Worksheet is empty — add a header row and data rows');
-  }
-
+  const ref = sheet['!ref']!;
   let processed = 0;
   let batch: string[][] = [];
 
@@ -102,7 +179,7 @@ function streamXlsxRows(filePath: string, fileName: string) {
     const row = headers.map((_, i) => {
       const C = range.s.c + i;
       if (C > range.e.c) return '';
-      const cell = sheet[XLSX.utils.encode_cell({ r: R, c: C })];
+      const cell = sheet![XLSX.utils.encode_cell({ r: R, c: C })];
       return cell ? cellToString(cell.w ?? cell.v) : '';
     });
     if (!row.some((c) => c.length > 0)) continue;
@@ -172,8 +249,22 @@ try {
         message: err instanceof Error ? err.message : String(err),
       });
     });
-  } else if (['xlsx', 'xls'].includes(ext)) {
-    streamXlsxRows(filePath, fileName);
+  } else if (ext === 'xlsx') {
+    void streamXlsxRows(filePath, fileName).catch((err) => {
+      parentPort?.postMessage({
+        type: 'error',
+        message: err instanceof Error ? err.message : String(err),
+      });
+    });
+  } else if (ext === 'xls') {
+    try {
+      streamXlsRows(filePath, fileName);
+    } catch (err) {
+      parentPort?.postMessage({
+        type: 'error',
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
   } else {
     throw new Error('Only .csv, .xlsx, and .xls files are supported');
   }

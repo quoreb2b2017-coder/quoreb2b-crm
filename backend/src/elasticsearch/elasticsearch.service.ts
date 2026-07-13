@@ -151,6 +151,8 @@ export class ElasticsearchService implements OnModuleInit {
                 revision: { type: 'long' },
                 searchText: { type: 'text', analyzer: 'standard' },
                 rowFingerprint: { type: 'keyword' },
+                suppEmail: { type: 'keyword' },
+                suppDomain: { type: 'keyword' },
               },
             },
           },
@@ -406,6 +408,130 @@ export class ElasticsearchService implements OnModuleInit {
       .filter((n) => Number.isFinite(n) && n >= 0);
 
     return { rowIndices, total };
+  }
+
+  /**
+   * Find master row indices whose normalized email/domain matches any suppression key.
+   */
+  async findMasterSuppressionDuplicateIndices(
+    field: 'suppEmail' | 'suppDomain',
+    keys: string[],
+    baseOsQuery: Record<string, unknown>,
+    sqlWhere: string,
+  ): Promise<number[]> {
+    if (!this.enabled || !this.client || !keys.length) {
+      return [];
+    }
+    await this.ensureMasterDataIndex();
+    if (this.engineMode === 'unknown') await this.detectEngineMode();
+
+    const uniqueKeys = [...new Set(keys.filter((k) => k.length > 0))];
+    const out: number[] = [];
+    const seen = new Set<number>();
+    const KEY_CHUNK = 2000;
+    const PAGE = 5000;
+
+    for (let k = 0; k < uniqueKeys.length; k += KEY_CHUNK) {
+      const keySlice = uniqueKeys.slice(k, k + KEY_CHUNK);
+      let from = 0;
+      while (true) {
+        const page = await this.searchMasterSuppressionPage(
+          field,
+          keySlice,
+          baseOsQuery,
+          sqlWhere,
+          from,
+          PAGE,
+        );
+        if (!page.rowIndices.length) break;
+        for (const idx of page.rowIndices) {
+          if (!seen.has(idx)) {
+            seen.add(idx);
+            out.push(idx);
+          }
+        }
+        if (page.rowIndices.length < PAGE) break;
+        from += PAGE;
+        if (from > 2_000_000) break;
+      }
+    }
+
+    return out;
+  }
+
+  private async searchMasterSuppressionPage(
+    field: 'suppEmail' | 'suppDomain',
+    keys: string[],
+    baseOsQuery: Record<string, unknown>,
+    sqlWhere: string,
+    from: number,
+    size: number,
+  ): Promise<MasterSearchPageResult> {
+    if (!this.client) return { rowIndices: [], total: 0 };
+
+    if (this.engineMode === 'sql') {
+      const index = this.masterDataIndexName();
+      const quotedKeys = keys.map((k) => `'${k.replace(/'/g, "''")}'`).join(', ');
+      const where = `${sqlWhere} AND ${field} IN (${quotedKeys})`;
+      const limit = Math.max(1, Math.min(size, 5000));
+      const offset = Math.max(0, from);
+      const pageQuery = `SELECT rowIndex FROM ${index} WHERE ${where} ORDER BY rowIndex LIMIT ${limit} OFFSET ${offset}`;
+      try {
+        const pageRes = await this.client.transport.request({
+          method: 'POST',
+          path: '/_plugins/_sql',
+          body: { query: pageQuery },
+        });
+        const pageBody = (pageRes as { body?: { datarows?: unknown[][] } }).body;
+        const rowIndices = (pageBody?.datarows ?? [])
+          .map((row) => Number(row?.[0]))
+          .filter((n) => Number.isFinite(n) && n >= 0);
+        return { rowIndices, total: rowIndices.length };
+      } catch (error) {
+        this.logger.error(
+          `Suppression SQL lookup failed: ${error instanceof Error ? error.message : error}`,
+        );
+        return { rowIndices: [], total: 0 };
+      }
+    }
+
+    try {
+      const baseBool = (baseOsQuery.query as { bool?: Record<string, unknown> })?.bool ?? {};
+      const baseFilter = (baseBool.filter as Record<string, unknown>[]) ?? [];
+      const result = await this.client.search({
+        index: this.masterDataIndexName(),
+        body: {
+          from,
+          size,
+          track_total_hits: false,
+          _source: ['rowIndex'],
+          sort: [{ rowIndex: 'asc' }],
+          query: {
+            bool: {
+              ...baseBool,
+              filter: [...baseFilter, { terms: { [field]: keys } }],
+            },
+          },
+        },
+      });
+      const hits = result.body?.hits;
+      const rowIndices = (
+        (hits?.hits ?? []) as Array<{ _id?: string; _source?: { rowIndex?: number } }>
+      )
+        .map((h) => {
+          const src = h._source?.rowIndex;
+          if (typeof src === 'number') return src;
+          const id = Number(h._id);
+          return Number.isFinite(id) ? id : -1;
+        })
+        .filter((n) => n >= 0);
+      return { rowIndices, total: rowIndices.length };
+    } catch (error) {
+      this.logger.error(
+        `Suppression DSL lookup failed: ${error instanceof Error ? error.message : error}`,
+      );
+      return { rowIndices: [], total: 0 };
+    }
   }
 
   async deleteAllMasterRows(masterKey: string): Promise<void> {

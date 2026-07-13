@@ -47,6 +47,8 @@ const STEPS: Array<{ id: WizardStep; label: string }> = [
   { id: 'distribute', label: 'Distribute' },
 ];
 
+const CAMPAIGN_MAX_ROWS = 50_000;
+
 export function DbAdminCampaignWizard({
   open,
   onClose,
@@ -216,6 +218,15 @@ export function DbAdminCampaignWizard({
 
   const handleCreateAndDistribute = async () => {
     if (!batchName.trim()) return;
+    const contactCount =
+      estimatedCount ?? (sourceRowIndices.length || rows.length);
+    if (contactCount > CAMPAIGN_MAX_ROWS) {
+      toast.error(
+        'Too many contacts for one campaign',
+        `Max ${CAMPAIGN_MAX_ROWS.toLocaleString('en-US')} per campaign. Narrow filters or select fewer rows — then run suppression on that extract.`,
+      );
+      return;
+    }
     setCreating(true);
     try {
       const batch = await batchesService.create({

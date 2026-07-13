@@ -359,9 +359,13 @@ export class SuppressionDataService {
       duplicateSourceRole = isDbAdmin ? 'db_admin' : 'employee';
       await this.masterDataService.scanMasterForSuppressionCheck(
         actor.id,
-        dto.masterSourceRowIndices?.length
-          ? { subsetIndices: dto.masterSourceRowIndices }
-          : { filter: dto.masterSearchFilter },
+        {
+          ...(dto.masterSourceRowIndices?.length
+            ? { subsetIndices: dto.masterSourceRowIndices }
+            : { filter: dto.masterSearchFilter }),
+          suppressionKeys,
+          checkMode: dto.checkMode,
+        },
         (chunk) => {
           collectMatches(chunk.headers, chunk.rows, (i) => chunk.sourceIndices[i] ?? i);
         },

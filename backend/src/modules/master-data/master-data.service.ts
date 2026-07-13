@@ -68,6 +68,7 @@ import {
   buildMasterDataSqlWhere,
 } from './master-data-opensearch.util';
 import { ElasticsearchService } from '../../elasticsearch/elasticsearch.service';
+import type { SuppressionCheckMode } from '../delivered-data/suppression-match.util';
 import { unlink } from 'fs/promises';
 import {
   formatMemoryUsage,
@@ -3177,7 +3178,7 @@ export class MasterDataService {
         );
         if (total > MASTER_BATCH_MAX_ROWS || indices.length > MASTER_BATCH_MAX_ROWS) {
           throw new BadRequestException(
-            `Too many contacts (${Math.max(total, indices.length).toLocaleString('en-US')}). Narrow filters — max ${MASTER_BATCH_MAX_ROWS.toLocaleString('en-US')} per campaign.`,
+            `Too many contacts (${Math.max(total, indices.length).toLocaleString('en-US')}) for one campaign. Max ${MASTER_BATCH_MAX_ROWS.toLocaleString('en-US')} — narrow filters or select a smaller batch. Suppression can run on your extract before creating the campaign.`,
           );
         }
       } catch (err) {
@@ -3196,7 +3197,7 @@ export class MasterDataService {
     }
     if (indices.length > MASTER_BATCH_MAX_ROWS) {
       throw new BadRequestException(
-        `Too many contacts (${indices.length.toLocaleString('en-US')}). Narrow filters — max ${MASTER_BATCH_MAX_ROWS.toLocaleString('en-US')} per campaign.`,
+        `Too many contacts (${indices.length.toLocaleString('en-US')}) for one campaign. Max ${MASTER_BATCH_MAX_ROWS.toLocaleString('en-US')} — narrow filters or select a smaller batch.`,
       );
     }
 
@@ -3279,14 +3280,15 @@ export class MasterDataService {
   }
 
   /**
-   * Scan master rows in chunks for suppression — compares campaign extract vs suppression list.
-   * Uses explicit row indices when provided; otherwise resolves filter indices without the 50k campaign cap.
+   * Scan master rows for suppression — OpenSearch finds duplicates first (fast), then loads only matches from Mongo.
    */
   async scanMasterForSuppressionCheck(
     actorId: string,
     opts: {
       filter?: Omit<SearchMasterDataDto, 'page' | 'limit'>;
       subsetIndices?: number[];
+      suppressionKeys?: Set<string>;
+      checkMode?: SuppressionCheckMode;
     },
     onChunk: (chunk: {
       headers: string[];
@@ -3303,11 +3305,24 @@ export class MasterDataService {
     const headers = [...(doc.headers as string[])];
     const rowCount = this.rowStore.getRowCount(doc);
     const masterRevision = (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? rowCount;
-    let indices: number[];
 
+    const filterInput: MasterDataFilterInput | undefined = opts.filter
+      ? {
+          query: opts.filter.query,
+          columnFilters: opts.filter.columnFilters,
+          columnValueFilters: opts.filter.columnValueFilters,
+          columnValueOrFilters: opts.filter.columnValueOrFilters,
+          columnDateRangeFilters: opts.filter.columnDateRangeFilters,
+          mustExistColumns: opts.filter.mustExistColumns,
+          filters: opts.filter.filters,
+          availabilityFilter: opts.filter.availabilityFilter,
+        }
+      : undefined;
+
+    let scopeIndices: number[] | null = null;
     if (opts.subsetIndices?.length) {
       const seen = new Set<number>();
-      indices = [];
+      scopeIndices = [];
       for (const raw of opts.subsetIndices) {
         const idx = Number(raw);
         if (!Number.isInteger(idx) || seen.has(idx)) continue;
@@ -3315,26 +3330,59 @@ export class MasterDataService {
           throw new BadRequestException(`Invalid master row selection (row ${idx + 1})`);
         }
         seen.add(idx);
-        indices.push(idx);
+        scopeIndices.push(idx);
       }
-    } else if (opts.filter) {
-      const filterInput: MasterDataFilterInput = {
-        query: opts.filter.query,
-        columnFilters: opts.filter.columnFilters,
-        columnValueFilters: opts.filter.columnValueFilters,
-        columnValueOrFilters: opts.filter.columnValueOrFilters,
-        columnDateRangeFilters: opts.filter.columnDateRangeFilters,
-        mustExistColumns: opts.filter.mustExistColumns,
-        filters: opts.filter.filters,
-        availabilityFilter: opts.filter.availabilityFilter,
-      };
-      indices = await this.getFilteredIndicesCached(doc, headers, filterInput, masterRevision);
-    } else {
-      throw new BadRequestException('No contacts selected for suppression check');
+    } else if (filterInput) {
+      scopeIndices = await this.getFilteredIndicesCached(
+        doc,
+        headers,
+        filterInput,
+        masterRevision,
+      );
     }
 
-    if (!indices.length) {
+    if (scopeIndices && !scopeIndices.length) {
       throw new BadRequestException('No contacts match the current filters');
+    }
+
+    const totalScanned = scopeIndices?.length ?? rowCount;
+
+    const keyList = opts.suppressionKeys ? [...opts.suppressionKeys].filter(Boolean) : [];
+    const canUseSearch =
+      this.elasticsearch.isEnabled &&
+      keyList.length > 0 &&
+      opts.checkMode &&
+      (filterInput || scopeIndices);
+
+    if (canUseSearch) {
+      const osQuery = buildMasterDataOpenSearchQuery(headers, filterInput ?? {});
+      const sqlWhere = buildMasterDataSqlWhere(headers, filterInput ?? {}, MASTER_DATA_KEY);
+      const field = opts.checkMode === 'email' ? 'suppEmail' : 'suppDomain';
+      let duplicateIndices = await this.elasticsearch.findMasterSuppressionDuplicateIndices(
+        field,
+        keyList,
+        osQuery,
+        sqlWhere,
+      );
+
+      if (scopeIndices) {
+        const allowed = new Set(scopeIndices);
+        duplicateIndices = duplicateIndices.filter((idx) => allowed.has(idx));
+      }
+
+      for (let offset = 0; offset < duplicateIndices.length; offset += SUPPRESSION_SCAN_CHUNK) {
+        const sourceIndices = duplicateIndices.slice(offset, offset + SUPPRESSION_SCAN_CHUNK);
+        const rows = await this.rowStore.getRowsByIndices(doc, sourceIndices);
+        await onChunk({ headers, rows, sourceIndices });
+      }
+
+      return { headers, totalScanned };
+    }
+
+    // Fallback: load scope rows from Mongo and compare in memory
+    let indices = scopeIndices;
+    if (!indices) {
+      throw new BadRequestException('No contacts selected for suppression check');
     }
 
     for (let offset = 0; offset < indices.length; offset += SUPPRESSION_SCAN_CHUNK) {

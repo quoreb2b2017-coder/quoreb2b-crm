@@ -5,6 +5,9 @@ import {
 } from './master-data-search.util';
 import { rowKey } from './master-data-merge.util';
 import { formatMasterDataCell } from './master-data-format.util';
+import {
+  extractRowCheckKey,
+} from '../delivered-data/suppression-match.util';
 
 /**
  * Normalize spreadsheet header into a safe field key
@@ -353,5 +356,9 @@ export function buildMasterRowSearchDocument(
 
   doc.searchText = parts.join(' ');
   doc.rowFingerprint = masterRowFingerprint(row);
+  const suppEmail = extractRowCheckKey(row, headers, 'email');
+  const suppDomain = extractRowCheckKey(row, headers, 'domain');
+  if (suppEmail) doc.suppEmail = suppEmail;
+  if (suppDomain) doc.suppDomain = suppDomain;
   return doc;
 }

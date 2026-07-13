@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ConfigService } from '@nestjs/config';
@@ -13,9 +13,10 @@ import { buildMasterRowSearchDocument } from './master-data-opensearch.util';
  * Syncs master-data rows from MongoDB (source of truth) → OpenSearch/ES (search only).
  */
 @Injectable()
-export class MasterDataSearchIndexService {
+export class MasterDataSearchIndexService implements OnApplicationBootstrap {
   private readonly logger = new Logger(MasterDataSearchIndexService.name);
   private reindexChain: Promise<void> = Promise.resolve();
+  private static readonly REINDEX_SHA_CACHE_KEY = 'master:search_reindex_sha';
 
   constructor(
     @InjectModel(MasterDataRecord.name)
@@ -28,6 +29,23 @@ export class MasterDataSearchIndexService {
     private config: ConfigService,
   ) {}
 
+  /** Reindex once per deploy so suppression fields (suppEmail/suppDomain) stay in sync. */
+  async onApplicationBootstrap(): Promise<void> {
+    if (!this.elasticsearch.isEnabled) return;
+    const buildSha = process.env.BUILD_SHA?.trim();
+    if (!buildSha) return;
+    try {
+      const lastSha = await this.cache.get(MasterDataSearchIndexService.REINDEX_SHA_CACHE_KEY);
+      if (lastSha === buildSha) return;
+      this.logger.log(`New build ${buildSha} — scheduling master search reindex…`);
+      this.enqueueFullReindex(MASTER_DATA_KEY, buildSha);
+    } catch (err) {
+      this.logger.warn(
+        `Could not schedule reindex: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+
   isSearchEngineEnabled(): boolean {
     return this.elasticsearch.isEnabled;
   }
@@ -36,11 +54,19 @@ export class MasterDataSearchIndexService {
    * Fire-and-forget full reindex after CSV import / master save.
    * Serialized so concurrent imports don't thrash OpenSearch.
    */
-  enqueueFullReindex(masterKey = MASTER_DATA_KEY): void {
+  enqueueFullReindex(masterKey = MASTER_DATA_KEY, buildSha?: string): void {
     if (!this.elasticsearch.isEnabled) return;
     this.reindexChain = this.reindexChain
       .then(async () => {
         await this.reindexAll(masterKey);
+        const sha = buildSha ?? process.env.BUILD_SHA?.trim();
+        if (sha) {
+          await this.cache.set(
+            MasterDataSearchIndexService.REINDEX_SHA_CACHE_KEY,
+            sha,
+            60 * 60 * 24 * 30,
+          );
+        }
       })
       .catch((err) => {
         this.logger.error(

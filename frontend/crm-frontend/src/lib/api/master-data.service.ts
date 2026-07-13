@@ -1,8 +1,8 @@
 import axios from 'axios';
 import apiClient from './client';
+import { directUploadClient } from './direct-upload-client';
 import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
 import { getApiBaseUrl, getDirectUploadApiBaseUrl } from '@/lib/constants/api-url';
-import { useAuthStore } from '@/store/auth.store';
 
 /** Upload timeout for large XLSX files (up to ~500MB). */
 const MASTER_DATA_UPLOAD_TIMEOUT_MS = 7_200_000;
@@ -36,11 +36,6 @@ function getImportApiBaseUrl(): string {
     return getDirectUploadApiBaseUrl();
   }
   return getApiBaseUrl();
-}
-
-function getAccessToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return useAuthStore.getState().accessToken ?? localStorage.getItem('accessToken');
 }
 
 export interface MasterDataImportProgress {
@@ -323,16 +318,13 @@ export const masterDataService = {
     form.append('file', file);
     form.append('mode', mode);
 
-    const token = getAccessToken();
     const importBase = getImportApiBaseUrl();
 
-    const { data } = await axios.post(`${importBase}/master-data/import-jobs`, form, {
+    const { data } = await directUploadClient.post(`${importBase}/master-data/import-jobs`, form, {
       timeout: MASTER_DATA_UPLOAD_TIMEOUT_MS,
       maxBodyLength: Infinity,
       maxContentLength: Infinity,
-      withCredentials: true,
       headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         'Content-Type': 'multipart/form-data',
       },
       onUploadProgress: (event) => {
@@ -360,7 +352,6 @@ export const masterDataService = {
     bucket: string;
     expiresIn: number;
   }> => {
-    const token = getAccessToken();
     const importBase = getImportApiBaseUrl();
     const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
     const contentType =
@@ -369,7 +360,7 @@ export const masterDataService = {
         : ext === 'xls'
           ? 'application/vnd.ms-excel'
           : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-    const { data } = await axios.post(
+    const { data } = await directUploadClient.post(
       `${importBase}/master-data/import-jobs/presign`,
       {
         fileName: file.name,
@@ -379,8 +370,6 @@ export const masterDataService = {
       },
       {
         timeout: 120_000,
-        withCredentials: true,
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
       },
     );
     return unwrap<{
@@ -418,26 +407,20 @@ export const masterDataService = {
     jobId: string,
     mode: MasterDataSaveMode = 'replace',
   ): Promise<void> => {
-    const token = getAccessToken();
     const importBase = getImportApiBaseUrl();
-    await axios.post(
+    await directUploadClient.post(
       `${importBase}/master-data/import-jobs/${jobId}/confirm-s3`,
       { mode },
       {
         timeout: 120_000,
-        withCredentials: true,
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
       },
     );
   },
 
   getImportJobStatus: async (jobId: string): Promise<MasterDataImportJobStatus> => {
-    const token = getAccessToken();
     const importBase = getImportApiBaseUrl();
-    const { data } = await axios.get(`${importBase}/master-data/import-jobs/${jobId}`, {
+    const { data } = await directUploadClient.get(`${importBase}/master-data/import-jobs/${jobId}`, {
       timeout: MASTER_IMPORT_POLL_TIMEOUT_MS,
-      withCredentials: true,
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     return unwrap<MasterDataImportJobStatus>({ data });
   },
@@ -649,14 +632,11 @@ export const masterDataService = {
   getEmployeeUploadImportJobStatus: async (
     jobId: string,
   ): Promise<EmployeeUploadImportJobStatus> => {
-    const token = getAccessToken();
     const importBase = getImportApiBaseUrl();
-    const { data } = await axios.get(
+    const { data } = await directUploadClient.get(
       `${importBase}/master-data/upload-requests/employee/import-jobs/${jobId}`,
       {
         timeout: MASTER_IMPORT_POLL_TIMEOUT_MS,
-        withCredentials: true,
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
       },
     );
     return unwrap<EmployeeUploadImportJobStatus>({ data });

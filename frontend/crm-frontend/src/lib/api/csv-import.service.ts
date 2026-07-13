@@ -1,7 +1,7 @@
 import axios from 'axios';
 import type { MasterDataImportProgress, MasterDataSaveMode } from '@/lib/api/master-data.service';
 import { getApiBaseUrl, getDirectUploadApiBaseUrl } from '@/lib/constants/api-url';
-import { useAuthStore } from '@/store/auth.store';
+import { directUploadClient } from '@/lib/api/direct-upload-client';
 
 const CSV_UPLOAD_TIMEOUT_MS = 7_200_000;
 const CSV_POLL_TIMEOUT_MS = 300_000;
@@ -18,16 +18,6 @@ function getCsvImportApiBaseUrl(): string {
     return getDirectUploadApiBaseUrl();
   }
   return getApiBaseUrl();
-}
-
-function getAccessToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return useAuthStore.getState().accessToken ?? localStorage.getItem('accessToken');
-}
-
-function authHeaders(): Record<string, string> {
-  const token = getAccessToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 function unwrap<T>(response: { data: unknown }): T {
@@ -104,7 +94,7 @@ async function presignUpload(
   mode: MasterDataSaveMode,
 ): Promise<PresignResult> {
   const base = getCsvImportApiBaseUrl();
-  const { data } = await axios.post(
+  const { data } = await directUploadClient.post(
     `${base}/csv-imports/presign`,
     {
       fileName: file.name,
@@ -114,8 +104,6 @@ async function presignUpload(
     },
     {
       timeout: CSV_API_TIMEOUT_MS,
-      withCredentials: true,
-      headers: authHeaders(),
     },
   );
   return unwrap<PresignResult>({ data });
@@ -145,13 +133,11 @@ async function uploadFileToS3(
 
 async function startImportJob(jobId: string): Promise<string> {
   const base = getCsvImportApiBaseUrl();
-  const { data } = await axios.post(
+  const { data } = await directUploadClient.post(
     `${base}/csv-imports/${jobId}/start`,
     {},
     {
       timeout: CSV_API_TIMEOUT_MS,
-      withCredentials: true,
-      headers: authHeaders(),
     },
   );
   const result = unwrap<{ jobId: string; status: string }>({ data });
@@ -168,13 +154,11 @@ async function uploadViaMultipartFallback(
   form.append('mode', mode);
   const base = getCsvImportApiBaseUrl();
 
-  const { data } = await axios.post(`${base}/csv-imports/upload`, form, {
+  const { data } = await directUploadClient.post(`${base}/csv-imports/upload`, form, {
     timeout: CSV_UPLOAD_TIMEOUT_MS,
     maxBodyLength: Infinity,
     maxContentLength: Infinity,
-    withCredentials: true,
     headers: {
-      ...authHeaders(),
       'Content-Type': 'multipart/form-data',
     },
     onUploadProgress: (event) => {
@@ -246,10 +230,8 @@ export const csvImportService = {
 
   getJobStatus: async (jobId: string): Promise<CsvImportJobStatus> => {
     const base = getCsvImportApiBaseUrl();
-    const { data } = await axios.get(`${base}/csv-imports/${jobId}`, {
+    const { data } = await directUploadClient.get(`${base}/csv-imports/${jobId}`, {
       timeout: CSV_POLL_TIMEOUT_MS,
-      withCredentials: true,
-      headers: authHeaders(),
     });
     return unwrap<CsvImportJobStatus>({ data });
   },
@@ -259,13 +241,11 @@ export const csvImportService = {
     action: 'pause' | 'resume' | 'cancel',
   ): Promise<CsvImportJobStatus> => {
     const base = getCsvImportApiBaseUrl();
-    const { data } = await axios.post(
+    const { data } = await directUploadClient.post(
       `${base}/csv-imports/${jobId}/control`,
       { action },
       {
         timeout: CSV_API_TIMEOUT_MS,
-        withCredentials: true,
-        headers: authHeaders(),
       },
     );
     return unwrap<CsvImportJobStatus>({ data });

@@ -10,6 +10,7 @@ import { useDebouncedAutoSave } from '@/hooks/useDebouncedAutoSave';
 import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
 import { CheckSuppressionModal } from '@/components/employee/CheckSuppressionModal';
+import { handleSuppressionCheckComplete } from '@/lib/master-data/handle-suppression-result';
 
 const STATUS_HINT: Partial<Record<MasterDataUploadRequestStatus, string>> = {
   approved: 'Merged into master file — view only',

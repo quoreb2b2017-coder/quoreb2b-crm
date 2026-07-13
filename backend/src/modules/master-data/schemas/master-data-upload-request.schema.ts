@@ -76,6 +76,10 @@ export class MasterDataUploadRequest extends Document {
   @Prop()
   reviewedAt?: Date;
 
+  /** Total rows in the uploaded spreadsheet (before duplicate split). */
+  @Prop()
+  submittedRowCount?: number;
+
   @Prop()
   mergedAddedRows?: number;
 

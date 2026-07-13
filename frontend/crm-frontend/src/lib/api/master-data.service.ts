@@ -189,6 +189,7 @@ export interface MasterDataUploadRequest {
   dbAdminReason?: string;
   forwardedByEmail?: string;
   forwardedAt?: string;
+  submittedRowCount?: number;
   mergedAddedRows?: number;
   mergedTotalRows?: number;
   createdAt?: string;
@@ -205,6 +206,22 @@ export interface MasterDataUploadRequestSubmitResult {
   mergedAddedRows?: number;
   duplicateFileId?: string | null;
   duplicateFileName?: string | null;
+}
+
+export interface EmployeeUploadTemplate {
+  headers: string[];
+}
+
+export interface EmployeeUploadImportJobStatus {
+  jobId: string;
+  phase: string;
+  percent: number;
+  message: string;
+  rowsProcessed?: number;
+  totalRows?: number;
+  fileName?: string;
+  error?: string;
+  result?: MasterDataUploadRequestSubmitResult;
 }
 
 function unwrap<T>(response: { data: unknown }): T {
@@ -505,6 +522,29 @@ export const masterDataService = {
       window.dispatchEvent(new CustomEvent('master-data-updated'));
     }
     return result;
+  },
+
+  getEmployeeUploadTemplate: async (): Promise<EmployeeUploadTemplate> => {
+    const { data } = await apiClient.get('/master-data/upload-requests/employee/template', {
+      timeout: MASTER_DATA_READ_TIMEOUT_MS,
+    });
+    return unwrap<EmployeeUploadTemplate>({ data });
+  },
+
+  getEmployeeUploadImportJobStatus: async (
+    jobId: string,
+  ): Promise<EmployeeUploadImportJobStatus> => {
+    const token = getAccessToken();
+    const importBase = getImportApiBaseUrl();
+    const { data } = await axios.get(
+      `${importBase}/master-data/upload-requests/employee/import-jobs/${jobId}`,
+      {
+        timeout: MASTER_IMPORT_POLL_TIMEOUT_MS,
+        withCredentials: true,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      },
+    );
+    return unwrap<EmployeeUploadImportJobStatus>({ data });
   },
 
   getUploadRequests: async (

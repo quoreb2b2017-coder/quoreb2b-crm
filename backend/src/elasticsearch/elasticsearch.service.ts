@@ -150,6 +150,7 @@ export class ElasticsearchService implements OnModuleInit {
                 masterKey: { type: 'keyword' },
                 revision: { type: 'long' },
                 searchText: { type: 'text', analyzer: 'standard' },
+                rowFingerprint: { type: 'keyword' },
               },
             },
           },
@@ -236,6 +237,79 @@ export class ElasticsearchService implements OnModuleInit {
       this.logger.error('Master-data bulk index failed', error);
       return { indexed: 0, errors: docs.length };
     }
+  }
+
+  /**
+   * Batch lookup — which row fingerprints already exist in master-data index.
+   * Used for fast employee-upload duplicate detection vs full Mongo scan.
+   */
+  async findMasterRowFingerprints(fingerprints: string[]): Promise<Set<string>> {
+    if (!this.enabled || !this.client || !fingerprints.length) {
+      return new Set();
+    }
+    await this.ensureMasterDataIndex();
+    if (this.engineMode === 'unknown') await this.detectEngineMode();
+
+    const unique = [...new Set(fingerprints.filter((fp) => fp.length > 0))];
+    const found = new Set<string>();
+    const CHUNK = 200;
+    const index = this.masterDataIndexName();
+
+    for (let offset = 0; offset < unique.length; offset += CHUNK) {
+      const slice = unique.slice(offset, offset + CHUNK);
+      if (this.engineMode === 'sql') {
+        const quoted = slice.map((fp) => `'${fp.replace(/'/g, "''")}'`).join(', ');
+        const query = `SELECT rowFingerprint FROM ${index} WHERE masterKey = 'master_upload' AND rowFingerprint IN (${quoted})`;
+        try {
+          const res = await this.client.transport.request({
+            method: 'POST',
+            path: '/_plugins/_sql',
+            body: { query },
+          });
+          const rows = (res as { body?: { datarows?: unknown[][] } }).body?.datarows ?? [];
+          for (const row of rows) {
+            const fp = String(row?.[0] ?? '');
+            if (fp) found.add(fp);
+          }
+        } catch (error) {
+          this.logger.error(
+            `OpenSearch fingerprint SQL lookup failed: ${error instanceof Error ? error.message : error}`,
+          );
+        }
+        continue;
+      }
+
+      try {
+        const result = await this.client.search({
+          index,
+          body: {
+            size: slice.length,
+            _source: ['rowFingerprint'],
+            query: {
+              bool: {
+                filter: [
+                  { term: { masterKey: 'master_upload' } },
+                  { terms: { rowFingerprint: slice } },
+                ],
+              },
+            },
+          },
+        });
+        const hits = (result.body?.hits?.hits ?? []) as Array<{
+          _source?: { rowFingerprint?: string };
+        }>;
+        for (const hit of hits) {
+          const fp = hit._source?.rowFingerprint;
+          if (fp) found.add(fp);
+        }
+      } catch (error) {
+        this.logger.error(
+          `OpenSearch fingerprint DSL lookup failed: ${error instanceof Error ? error.message : error}`,
+        );
+      }
+    }
+
+    return found;
   }
 
   async searchMasterPage(

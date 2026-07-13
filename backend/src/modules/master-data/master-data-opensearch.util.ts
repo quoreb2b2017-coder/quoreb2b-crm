@@ -3,6 +3,8 @@ import {
   hasAdvancedMasterFilters,
   hasMasterDataSearchCriteria,
 } from './master-data-search.util';
+import { rowKey } from './master-data-merge.util';
+import { formatMasterDataCell } from './master-data-format.util';
 
 /**
  * Normalize spreadsheet header into a safe field key
@@ -26,8 +28,13 @@ function escapeWildcard(value: string): string {
   return value.replace(/[\\*?]/g, '\\$&');
 }
 
-function sqlQuote(value: string): string {
+export function sqlQuote(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
+}
+
+/** Stable dedup key aligned to master-data row storage (same as Mongo rowKey). */
+export function masterRowFingerprint(row: string[]): string {
+  return rowKey(row.map((cell) => formatMasterDataCell(cell)));
 }
 
 function fuzzyHeaderNeedles(...needles: string[]): string[] {
@@ -345,5 +352,6 @@ export function buildMasterRowSearchDocument(
   }
 
   doc.searchText = parts.join(' ');
+  doc.rowFingerprint = masterRowFingerprint(row);
   return doc;
 }

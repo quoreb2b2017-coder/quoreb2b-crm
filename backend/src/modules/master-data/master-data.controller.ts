@@ -51,7 +51,7 @@ export class MasterDataController {
   constructor(private masterDataService: MasterDataService) {}
 
   @Post()
-  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
   save(
     @Body() dto: SaveMasterDataDto,
     @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
@@ -60,7 +60,7 @@ export class MasterDataController {
   }
 
   @Post('import-file')
-  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
   @UseInterceptors(FileInterceptor('file', masterDataImportMulterOptions()))
   importFile(
     @UploadedFile() file: Express.Multer.File,
@@ -89,7 +89,7 @@ export class MasterDataController {
   }
 
   @Post('import-jobs')
-  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
   @UseInterceptors(FileInterceptor('file', masterDataImportMulterOptions()))
   startImportJob(
     @UploadedFile() file: Express.Multer.File,
@@ -124,7 +124,7 @@ export class MasterDataController {
   }
 
   @Get('import-jobs/:jobId')
-  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
   getImportJob(@Param('jobId') jobId: string) {
     return this.masterDataService.getImportJobStatus(jobId);
   }
@@ -235,6 +235,63 @@ export class MasterDataController {
       actorFromJwt(user),
       user.roles ?? [],
     );
+  }
+
+  @Get('upload-requests/employee/template')
+  @Roles(SystemRole.EMPLOYEE)
+  getEmployeeUploadTemplate() {
+    return this.masterDataService.getEmployeeUploadTemplate();
+  }
+
+  @Post('upload-requests/employee/presign')
+  @Roles(SystemRole.EMPLOYEE)
+  presignEmployeeUpload(
+    @Body()
+    dto: { fileName: string; fileSizeBytes: number; contentType?: string },
+    @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
+  ) {
+    return this.masterDataService.initiateEmployeePresignedUpload(
+      dto,
+      actorFromJwt(user),
+      user.roles ?? [],
+    );
+  }
+
+  @Post('upload-requests/employee/import-jobs/:jobId/confirm')
+  @Roles(SystemRole.EMPLOYEE)
+  confirmEmployeePresignedUpload(
+    @Param('jobId') jobId: string,
+    @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
+  ) {
+    return this.masterDataService.confirmEmployeePresignedUpload(
+      jobId,
+      actorFromJwt(user),
+      user.roles ?? [],
+    );
+  }
+
+  @Post('upload-requests/employee/import-jobs')
+  @Roles(SystemRole.EMPLOYEE)
+  @UseInterceptors(FileInterceptor('file', masterDataImportMulterOptions()))
+  startEmployeeUploadImportJob(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
+  ) {
+    if (!file?.path) {
+      throw new BadRequestException('Spreadsheet file is required');
+    }
+    return this.masterDataService.queueEmployeeUploadFromFile(
+      file.path,
+      file.originalname || 'upload.xlsx',
+      actorFromJwt(user),
+      user.roles ?? [],
+    );
+  }
+
+  @Get('upload-requests/employee/import-jobs/:jobId')
+  @Roles(SystemRole.EMPLOYEE)
+  getEmployeeUploadImportJob(@Param('jobId') jobId: string) {
+    return this.masterDataService.getEmployeeUploadImportJobStatus(jobId);
   }
 
   @Get('upload-requests')

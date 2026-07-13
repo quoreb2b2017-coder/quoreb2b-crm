@@ -13,6 +13,7 @@ import { CsvImportProcessorService } from './services/csv-import-processor.servi
 import { CsvImportQueueService } from './services/csv-import-queue.service';
 import { CsvImportQueueServiceNoop } from './services/csv-import-queue.service.noop';
 import { CsvImportLockService } from './services/csv-import-lock.service';
+import { CsvImportLockServiceNoop } from './services/csv-import-lock.service.noop';
 import { CsvImportRecoveryService } from './services/csv-import-recovery.service';
 import {
   CsvImportOrchestratorWorker,
@@ -42,14 +43,13 @@ const mongooseFeatures = MongooseModule.forFeature([
   { name: MasterDataRecord.name, schema: MasterDataSchema },
 ]);
 
-const coreProviders = [
+const coreProvidersWithoutLock = [
   CsvImportService,
   CsvImportJobRepository,
   CsvImportS3Service,
   CsvImportStreamService,
   CsvImportBatchWriterService,
   CsvImportProcessorService,
-  CsvImportLockService,
   CsvImportRecoveryService,
 ];
 
@@ -74,7 +74,8 @@ export class CsvImportModule {
         ],
         controllers,
         providers: [
-          ...coreProviders,
+          ...coreProvidersWithoutLock,
+          CsvImportLockService,
           CsvImportQueueService,
           ...workers,
         ],
@@ -87,7 +88,8 @@ export class CsvImportModule {
       imports: [mongooseFeatures, MasterDataModule],
       controllers,
       providers: [
-        ...coreProviders,
+        ...coreProvidersWithoutLock,
+        { provide: CsvImportLockService, useClass: CsvImportLockServiceNoop },
         { provide: CsvImportQueueService, useClass: CsvImportQueueServiceNoop },
       ],
       exports: [CsvImportService],

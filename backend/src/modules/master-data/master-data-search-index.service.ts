@@ -136,4 +136,9 @@ export class MasterDataSearchIndexService {
       await this.elasticsearch.bulkIndexMasterRows(docs.slice(i, i + bulkSize));
     }
   }
+
+  /** Fast duplicate lookup against indexed master rows (OpenSearch). */
+  findExistingFingerprints(fingerprints: string[]): Promise<Set<string>> {
+    return this.elasticsearch.findMasterRowFingerprints(fingerprints);
+  }
 }

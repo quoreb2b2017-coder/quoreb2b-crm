@@ -3,7 +3,7 @@
 import { WORKSPACE_TIMEZONE } from '@/lib/constants/workspace-timezone';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { RefreshCw, Layers, FileSpreadsheet } from 'lucide-react';
+import { RefreshCw, Layers, FileSpreadsheet, Download } from 'lucide-react';
 import { WelcomeBanner } from '@/components/dashboard/WelcomeBanner';
 import { XlMetricCardSection } from '@/components/admin/XlMetricCards';
 import {
@@ -11,6 +11,8 @@ import {
   type EmployeeDashboardData,
 } from '@/lib/api/analytics.service';
 import { masterDataService, type MasterDataUploadRequest } from '@/lib/api/master-data.service';
+import { downloadMasterDataTemplate } from '@/lib/spreadsheet/master-data-template';
+import { getEmployeeUploadFileTypeLabel } from '@/lib/master-data/employee-upload-file.util';
 import { extractApiError } from '@/lib/api/errors';
 import { cn } from '@/lib/utils/cn';
 import { useWorkTimer } from '@/hooks/useWorkTimer';
@@ -192,6 +194,37 @@ export function EmployeeDashboard() {
 
           <div className={dashboardPanel}>
             <div className={dashboardPanelHeaderBlue}>
+              <h3>Data upload format</h3>
+            </div>
+            <div className={dashboardPanelBody}>
+              <p className="text-xs text-slate-600">
+                Download the Excel template to see which columns to fill. Upload your file from My
+                Data when ready.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      downloadMasterDataTemplate();
+                    } catch {
+                      /* noop */
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-[#2e7ad1]/30 bg-[#e8f1fb] px-2.5 py-1.5 text-[11px] font-semibold text-[#2568b8] hover:bg-[#dce9f8]"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Download Excel template
+                </button>
+                <Link href="/employee/my-data" className={dashboardLink}>
+                  Upload data →
+                </Link>
+              </div>
+            </div>
+          </div>
+
+          <div className={dashboardPanel}>
+            <div className={dashboardPanelHeaderBlue}>
               <h3>My data uploads</h3>
             </div>
             <div className={dashboardPanelBody}>
@@ -204,16 +237,13 @@ export function EmployeeDashboard() {
                 <div className="space-y-2">
                   <p className="text-xs text-slate-500">
                     {myUploads.length} file{myUploads.length === 1 ? '' : 's'} in My Data
-                    {myUploads.some((r) => r.status === 'approved')
-                      ? ' · merged rows also stay in master file'
-                      : ''}
                   </p>
                   <ul className="space-y-1 text-xs">
                     {myUploads.slice(0, 4).map((upload) => (
                       <li key={upload.id} className="flex items-center justify-between gap-2 rounded-md bg-slate-50 px-2 py-1.5">
                         <span className="truncate font-medium text-slate-800">{upload.fileName}</span>
-                        <span className="shrink-0 rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-600 ring-1 ring-slate-200">
-                          {upload.status.replace(/_/g, ' ')}
+                        <span className="shrink-0 rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 ring-1 ring-slate-200">
+                          {getEmployeeUploadFileTypeLabel(upload)}
                         </span>
                       </li>
                     ))}

@@ -55,7 +55,7 @@ export default function DbAdminMasterDataPage() {
               : 'text-slate-600 hover:bg-slate-100',
           )}
         >
-          My uploads
+          My Data
         </button>
         <button
           type="button"

@@ -28,7 +28,7 @@ export class CsvImportController {
   constructor(private readonly csvImport: CsvImportService) {}
 
   @Post('presign')
-  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
   presign(
     @Body() dto: InitiateCsvImportDto,
     @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
@@ -41,13 +41,13 @@ export class CsvImportController {
   }
 
   @Post(':jobId/start')
-  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
   start(@Param('jobId') jobId: string, @Body() dto: StartCsvImportDto) {
     return this.csvImport.confirmUploadAndStart(jobId, dto.contentHash);
   }
 
   @Post('upload')
-  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
@@ -86,19 +86,19 @@ export class CsvImportController {
   }
 
   @Get(':jobId')
-  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
   getStatus(@Param('jobId') jobId: string) {
     return this.csvImport.getJob(jobId);
   }
 
   @Post(':jobId/control')
-  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
   control(@Param('jobId') jobId: string, @Body() dto: CsvImportControlDto) {
     return this.csvImport.controlJob(jobId, dto.action);
   }
 
   @Get(':jobId/errors/download-url')
-  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
   errorCsvUrl(@Param('jobId') jobId: string) {
     return this.csvImport.getErrorCsvPresignedUrl(jobId);
   }

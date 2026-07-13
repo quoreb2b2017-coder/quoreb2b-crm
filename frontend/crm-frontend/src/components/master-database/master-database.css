@@ -2134,6 +2134,58 @@
   gap: 0.4rem;
 }
 
+.mdb-titlebar__right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.65rem;
+}
+
+.mdb-titlebar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.mdb-titlebar__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.42rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid rgb(255 255 255 / 28%);
+  background: rgb(255 255 255 / 12%);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  backdrop-filter: blur(6px);
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.mdb-titlebar__btn:hover:not(:disabled) {
+  background: rgb(255 255 255 / 20%);
+  border-color: rgb(255 255 255 / 38%);
+}
+
+.mdb-titlebar__btn--primary {
+  background: #fff;
+  color: #2568b8;
+  border-color: rgb(255 255 255 / 90%);
+  box-shadow: 0 2px 8px rgb(15 23 42 / 12%);
+}
+
+.mdb-titlebar__btn--primary:hover:not(:disabled) {
+  background: #e8f1fb;
+  color: #1d5a9e;
+}
+
+.mdb-titlebar__btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .mdb-metric {
   display: flex;
   flex-direction: column;

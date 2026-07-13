@@ -8,6 +8,11 @@ import {
   masterDataService,
   type MasterDataUploadRequest,
 } from '@/lib/api/master-data.service';
+import {
+  formatUploadPreviewNote,
+  formatUploadRequestContactSummary,
+  getUploadRequestTotalContacts,
+} from '@/lib/master-data/upload-request-row-count.util';
 import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
 
 interface UploadRequestSpreadsheetPageProps {
@@ -106,6 +111,7 @@ export function UploadRequestSpreadsheetPage({
     viewMode === 'duplicates'
       ? `${request.fileName} — duplicate preview`
       : request.fileName;
+  const previewNote = formatUploadPreviewNote(request, data.rows.length);
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-[#e6e6e6]">
@@ -122,11 +128,9 @@ export function UploadRequestSpreadsheetPage({
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold leading-tight">{title}</p>
             <p className="truncate text-[11px] text-white/75">
-              {data.rows.length} contacts · {data.headers.length} columns
+              {formatUploadRequestContactSummary(request)} · {data.headers.length} columns
               {request.submittedByEmail ? ` · ${request.submittedByEmail}` : ''}
-              {viewMode === 'duplicates' && request.duplicateCount > data.rows.length
-                ? ` · showing first ${data.rows.length} of ${request.duplicateCount}`
-                : ''}
+              {previewNote ? ` · ${previewNote}` : ''}
             </p>
           </div>
         </div>

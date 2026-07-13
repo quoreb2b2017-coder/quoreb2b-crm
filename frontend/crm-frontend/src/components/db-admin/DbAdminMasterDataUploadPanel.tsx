@@ -1,71 +1,58 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Download, Loader2, RefreshCw, Upload } from 'lucide-react';
 import { parseSpreadsheetFile } from '@/lib/spreadsheet/parse-spreadsheet';
 import { downloadMasterDataTemplate } from '@/lib/spreadsheet/master-data-template';
+import { prepareMasterDataSheet } from '@/lib/spreadsheet/master-data-format';
 import {
   masterDataService,
-  type MasterDataRecord,
   type MasterDataUploadRequest,
-  type MasterDataUploadRequestStatus,
 } from '@/lib/api/master-data.service';
 import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
-import { ExcelSheetShell } from '@/components/attendance/ExcelSheetShell';
-import {
-  DataPageShell,
-  dataFilterPill,
-  dataToolbarBadge,
-} from '@/components/master-data/DataPageShell';
-import { SpreadsheetPreviewModal } from '@/components/spreadsheet/SpreadsheetPreviewModal';
-import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
-import { MasterDataUploadRequestList } from '@/components/master-data/MasterDataUploadRequestList';
+import { DataPageShell, dataToolbarBadge } from '@/components/master-data/DataPageShell';
 import { MasterDataUploadMonthExplorer } from '@/components/master-data/MasterDataUploadMonthExplorer';
 import {
   resolveDuplicatesOpenPath,
   uploadRequestFilePath,
 } from '@/lib/master-data/upload-request-nav';
-import { useCanExportSpreadsheet } from '@/hooks/useSpreadsheetCopyGuard';
 import { useUploadRequestRefresh } from '@/hooks/useUploadRequestRefresh';
+import { enqueueMasterDataImport } from '@/lib/master-data/master-data-import-tracker';
+import { useMasterDataImportStore } from '@/store/master-data-import.store';
+import { emitMasterDataDuplicatePopup } from '@/lib/master-data/master-data-duplicate-popup';
 
 const ACCEPT = '.csv,.xlsx,.xls';
-const FILTERS: Array<MasterDataUploadRequestStatus | 'all'> = [
-  'pending',
-  'all',
-  'approved',
-  'rejected',
-];
+
+function safeCount(value: unknown): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
 
 export function DbAdminMasterDataUploadPanel() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
-  const canExport = useCanExportSpreadsheet();
-  const [template, setTemplate] = useState<MasterDataRecord | null>(null);
+  const formatHeadersRef = useRef<string[] | null>(null);
   const [requests, setRequests] = useState<MasterDataUploadRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [filter, setFilter] = useState<MasterDataUploadRequestStatus | 'all'>('all');
-  const [pendingUpload, setPendingUpload] = useState<SpreadsheetData | null>(null);
 
-  const filteredRequests = useMemo(
-    () => requests.filter((request) => (filter === 'all' ? true : request.status === filter)),
-    [filter, requests],
-  );
+  const importPhase = useMasterDataImportStore((s) => s.uiPhase);
+  const importBusy = importPhase === 'active' || uploading;
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const [current, myRequests] = await Promise.all([
-        masterDataService.getCurrent(),
+        masterDataService.getCurrent().catch(() => null),
         masterDataService.getMyUploadRequests('all'),
       ]);
-      setTemplate(current);
+      formatHeadersRef.current = current?.headers?.length ? current.headers : null;
       setRequests(myRequests);
     } catch (err) {
-      console.error('Failed to load DB admin master data panel:', err);
-      toast.error('Could not load master template', extractApiError(err, 'Load failed'));
+      console.error('Failed to load DB admin uploads:', err);
+      toast.error('Could not load your uploads', extractApiError(err, 'Load failed'));
     } finally {
       setLoading(false);
     }
@@ -79,46 +66,123 @@ export function DbAdminMasterDataUploadPanel() {
   const handleTemplateDownload = () => {
     try {
       downloadMasterDataTemplate();
-      toast.success('Template downloaded', 'Use this format for master data upload');
+      toast.success('Template downloaded', 'Fill this file and upload — new rows merge into master data');
     } catch {
       toast.error('Download failed', 'Could not download template');
     }
   };
 
-  const processFile = useCallback(async (parsed: SpreadsheetData) => {
-    setUploading(true);
-    try {
-      const result = await masterDataService.createUploadRequest(parsed);
-      await load();
+  const processFile = useCallback(
+    async (file: File) => {
+      setUploading(true);
+      const importStore = useMasterDataImportStore.getState();
+      try {
+        masterDataService.validateUploadFile(file);
+        const mode = 'append' as const;
+        const existing = await masterDataService.getCurrent();
+        const existingIsLarge =
+          Boolean(existing?.largeDataset) || safeCount(existing?.rowCount) > 5000;
 
-      if (result.duplicateCount > 0 && result.duplicateFileId) {
-        router.push(uploadRequestFilePath('db_admin', result.duplicateFileId));
-      }
+        if (existingIsLarge || masterDataService.shouldUseServerImport(file)) {
+          await enqueueMasterDataImport(file, mode);
+          await load();
+          return;
+        }
 
-      if (result.request) {
-        toast.success(
-          'Added to master file',
-          `${result.mergedAddedRows ?? result.pendingRows} contact(s) merged${result.duplicateFileName ? ` · duplicates in ${result.duplicateFileName}` : ''}`,
+        importStore.begin(file.name, mode);
+        importStore.setProgress({
+          percent: 5,
+          phase: 'parsing',
+          message: 'Reading your file…',
+        });
+
+        const parsed = await parseSpreadsheetFile(file);
+        const rowCount = parsed.rows.length;
+        importStore.setProgress({
+          percent: 35,
+          phase: 'parsing',
+          message: `Parsed ${rowCount.toLocaleString('en-US')} rows from your file`,
+          rowsProcessed: rowCount,
+          totalRows: rowCount,
+        });
+
+        const normalized = prepareMasterDataSheet(parsed.headers, parsed.rows, {
+          existingHeaders: formatHeadersRef.current,
+          replace: false,
+        });
+
+        importStore.setProgress({
+          percent: 55,
+          phase: 'saving',
+          message: 'Merging to master file…',
+          rowsProcessed: normalized.rows.length,
+          totalRows: normalized.rows.length,
+        });
+
+        const record = await masterDataService.save(
+          {
+            ...parsed,
+            headers: normalized.headers,
+            rows: normalized.rows,
+          },
+          mode,
         );
-      } else if (result.duplicateFileName) {
-        toast.info(
-          'Duplicates saved',
-          `${result.duplicateCount} duplicate contact(s) in ${result.duplicateFileName}`,
-        );
-      } else {
-        toast.info(
-          'No new contacts',
-          result.duplicateCount > 0
-            ? `${result.duplicateCount} duplicate contact(s) were found`
-            : 'All contacts were empty or already in master file',
-        );
+
+        importStore.setProgress({
+          percent: 100,
+          phase: 'done',
+          message: 'Upload complete',
+          rowsProcessed: record.rowCount,
+          totalRows: rowCount,
+        });
+        importStore.markDone();
+
+        await load();
+
+        const skipped = record.skippedDuplicates ?? 0;
+        if (record.addedRows != null && record.addedRows > 0) {
+          toast.success(
+            'Merged to master file',
+            `+${record.addedRows.toLocaleString('en-US')} of ${rowCount.toLocaleString('en-US')} in your file${skipped > 0 ? ` · ${skipped.toLocaleString('en-US')} duplicate(s) skipped` : ''}`,
+          );
+          if (skipped > 0) {
+            emitMasterDataDuplicatePopup({
+              fileName: parsed.fileName,
+              headers: normalized.headers,
+              duplicateRows: [],
+              addedRows: record.addedRows ?? 0,
+              duplicateCount: skipped,
+              totalRows: rowCount,
+            });
+          }
+        } else {
+          toast.info(
+            'No new contacts',
+            skipped > 0
+              ? `${skipped.toLocaleString('en-US')} duplicate contact(s) — already in master file`
+              : 'All rows were empty or already in master file',
+          );
+        }
+
+        window.dispatchEvent(new CustomEvent('master-data-updated'));
+        setTimeout(() => importStore.reset(), 6000);
+      } catch (err) {
+        importStore.markFailed();
+        toast.error('Upload failed', extractApiError(err, 'Could not process file'));
+      } finally {
+        setUploading(false);
       }
-    } catch (err) {
-      toast.error('Upload failed', extractApiError(err, 'Could not process file'));
-    } finally {
-      setUploading(false);
+    },
+    [load],
+  );
+
+  const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      await processFile(file);
     }
-  }, [load, router]);
+    e.target.value = '';
+  };
 
   const openRequestFile = (request: MasterDataUploadRequest) => {
     router.push(uploadRequestFilePath('db_admin', request.id));
@@ -128,33 +192,10 @@ export function DbAdminMasterDataUploadPanel() {
     router.push(resolveDuplicatesOpenPath('db_admin', request, requests));
   };
 
-  const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      try {
-        const parsed = await parseSpreadsheetFile(file);
-        if (!parsed.rows.length) {
-          throw new Error('The file has no contacts.');
-        }
-        setPendingUpload(parsed);
-      } catch (err) {
-        toast.error('Could not read file', extractApiError(err, 'Invalid file'));
-      }
-    }
-    e.target.value = '';
-  };
-
-  const confirmPendingUpload = async () => {
-    if (!pendingUpload) return;
-    const payload = pendingUpload;
-    setPendingUpload(null);
-    await processFile(payload);
-  };
-
   return (
     <DataPageShell
-      title="My uploads"
-      subtitle="Upload data for Super Admin approval. Columns align to the master template when available."
+      title="My Data"
+      subtitle="Download the template, upload your file — new contacts merge directly into master data."
       actions={
         <>
           <button
@@ -166,149 +207,68 @@ export function DbAdminMasterDataUploadPanel() {
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
-          {canExport && (
-            <button
-              type="button"
-              onClick={handleTemplateDownload}
-              disabled={false}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-white/30 bg-white/10 px-3 py-2 text-sm font-semibold text-white backdrop-blur-sm transition-all hover:bg-white/18 disabled:opacity-50"
-            >
-              <Download className="h-4 w-4" />
-              Template
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleTemplateDownload}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-white/30 bg-white/10 px-3 py-2 text-sm font-semibold text-white backdrop-blur-sm transition-all hover:bg-white/18"
+          >
+            <Download className="h-4 w-4" />
+            Download template
+          </button>
+          <input
+            ref={inputRef}
+            type="file"
+            accept={ACCEPT}
+            className="hidden"
+            onChange={onFileChange}
+          />
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            disabled={uploading || loading}
+            disabled={importBusy || loading}
             className="inline-flex items-center gap-1.5 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-[#2568b8] shadow-md transition-all hover:bg-[#e8f1fb] active:scale-[0.98] disabled:opacity-50"
           >
-            {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-            Upload file
+            {importBusy ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="h-4 w-4" />
+            )}
+            Upload & merge
           </button>
         </>
       }
     >
-      <ExcelSheetShell
-        title="Master template"
-        rowCount={template?.columnCount ?? 0}
-        countUnit="column"
-        loading={loading}
-        hint="Approval flow: DB Admin → Super Admin → merge"
-      >
-        <div className="grid gap-3 px-4 py-4 sm:grid-cols-2 lg:grid-cols-5">
-          {[
-            { label: 'Master sheet', value: template?.sheetName ?? 'No template' },
-            { label: 'Columns', value: template?.columnCount ?? 0 },
-            { label: 'Contacts in master', value: template?.rowCount ?? 0 },
-            { label: 'Missing fields', value: 'Auto-fill "-"' },
-            { label: 'Status', value: 'Awaiting Super Admin' },
-          ].map((item) => (
-            <div
-              key={item.label}
-              className="rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-3 transition-colors hover:border-[#2e7ad1]/20"
-            >
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{item.label}</p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">{item.value}</p>
-            </div>
-          ))}
-        </div>
-        {template ? (
-          <div className="border-t border-slate-100 bg-white px-4 py-3">
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Template columns
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {template.headers.map((header) => (
-                <span
-                  key={header}
-                  className="rounded-lg border border-[#2e7ad1]/20 bg-[#e8f1fb] px-2.5 py-1 text-[11px] font-medium text-[#2568b8]"
-                >
-                  {header}
-                </span>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="border-t border-slate-100 bg-white px-4 py-8 text-center text-sm text-slate-500">
-            No master template yet — you can still upload. Super Admin will review and approve.
-          </div>
-        )}
-      </ExcelSheetShell>
-
-      <input
-        ref={inputRef}
-        type="file"
-        accept={ACCEPT}
-        className="sr-only"
-        onChange={onFileChange}
-      />
-
       <MasterDataUploadMonthExplorer
-        title="Upload folders sent to Super Admin"
-        requests={filteredRequests}
+        title="My data folders"
+        requests={requests}
         loading={loading}
-        hint="Upload history · stays in your panel until Super Admin deletes the request"
-        statusColumnLabel="Super Admin status"
-        emptyFolderMessage="No uploads in this month yet."
+        hint="Your uploads by month · merged contacts go to master file"
+        statusColumnLabel="Status"
+        emptyFolderMessage="No files in this month yet. Upload a file and it will appear here."
         onOpenRequest={openRequestFile}
         renderDetails={(monthRequests, meta) => (
-          <MasterDataUploadRequestList
-            title={`${meta.monthLabel} ${meta.year} upload requests`}
-            requests={monthRequests}
-            loading={loading}
-            emptyMessage={`No upload requests in ${meta.monthLabel} ${meta.year}`}
-            toolbar={
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={dataToolbarBadge()}>{meta.monthLabel} {meta.year}</span>
-                <span className="font-medium text-slate-600">Filter:</span>
-                {FILTERS.map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => setFilter(item)}
-                    className={dataFilterPill(filter === item)}
-                  >
-                    {item === 'all' ? 'All' : item[0].toUpperCase() + item.slice(1)}
-                  </button>
-                ))}
-              </div>
-            }
-            onViewDuplicates={openDuplicates}
-            onViewFile={openRequestFile}
-          />
+          <div className="border-t border-slate-100 bg-slate-50/40 px-4 py-3 text-xs text-slate-600">
+            <span className={dataToolbarBadge()}>
+              {meta.monthLabel} {meta.year}
+            </span>
+            <span className="ml-2">
+              {monthRequests.length} file{monthRequests.length === 1 ? '' : 's'}
+            </span>
+            {monthRequests.some((r) => r.duplicateCount > 0) && (
+              <button
+                type="button"
+                className="ml-3 font-semibold text-[#2568b8] hover:underline"
+                onClick={() => {
+                  const withDupes = monthRequests.find((r) => r.duplicateCount > 0);
+                  if (withDupes) openDuplicates(withDupes);
+                }}
+              >
+                View duplicates
+              </button>
+            )}
+          </div>
         )}
       />
-
-      <SpreadsheetPreviewModal
-        isOpen={Boolean(pendingUpload)}
-        onClose={() => !uploading && setPendingUpload(null)}
-        title={pendingUpload ? `${pendingUpload.fileName} — review before upload` : 'Preview'}
-        headers={pendingUpload?.headers ?? []}
-        rows={pendingUpload?.rows ?? []}
-        totalRows={pendingUpload?.rows.length}
-        note="Missing fields will be filled with “-” when sent to Super Admin."
-        actions={
-          pendingUpload
-            ? [
-                {
-                  label: 'Cancel',
-                  onClick: () => setPendingUpload(null),
-                  disabled: uploading,
-                  variant: 'secondary',
-                },
-                {
-                  label: `Send ${pendingUpload.rows.length} contact(s) for approval`,
-                  onClick: confirmPendingUpload,
-                  loading: uploading,
-                  disabled: uploading,
-                  variant: 'primary',
-                },
-              ]
-            : undefined
-        }
-      />
-
     </DataPageShell>
   );
 }

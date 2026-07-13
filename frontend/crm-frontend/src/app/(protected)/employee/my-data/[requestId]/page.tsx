@@ -7,6 +7,7 @@ import {
   type MasterDataUploadRequest,
 } from '@/lib/api/master-data.service';
 import { EmployeeMyDataExcelView } from '@/components/employee/EmployeeMyDataExcelView';
+import { getUploadRequestTotalContacts } from '@/lib/master-data/upload-request-row-count.util';
 import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
 
 export default function EmployeeMyDataRequestPage() {
@@ -101,6 +102,7 @@ export default function EmployeeMyDataRequestPage() {
       fileName={request.fileName}
       sheetName={request.sheetName}
       status={request.status}
+      totalContacts={getUploadRequestTotalContacts(request)}
       data={data}
       editable={editable}
       onDataChange={editable ? setData : undefined}

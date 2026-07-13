@@ -35,6 +35,7 @@ import {
   type MasterBatchCoverage,
 } from '@/lib/api/master-data.service';
 import { enqueueMasterDataImport } from '@/lib/master-data/master-data-import-tracker';
+import { useMasterDataImportStore } from '@/store/master-data-import.store';
 import { batchesService } from '@/lib/api/batches.service';
 import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
@@ -108,7 +109,7 @@ export function MasterDatabaseExplorer({
   const isDbAdmin = variant === 'db_admin';
   const canExport = useCanExportSpreadsheet();
   const inputRef = useRef<HTMLInputElement>(null);
-
+  const importPhase = useMasterDataImportStore((s) => s.uiPhase);
   const [headers, setHeaders] = useState<string[]>([]);
   const [allRows, setAllRows] = useState<string[][]>([]);
   const [sourceIndices, setSourceIndices] = useState<number[]>([]);
@@ -137,6 +138,7 @@ export function MasterDatabaseExplorer({
   const [filterSidebarOpen, setFilterSidebarOpen] = useState(true);
 
   const [parsing, setParsing] = useState(false);
+  const importBusy = importPhase === 'active' || parsing;
   const [clearModalOpen, setClearModalOpen] = useState(false);
   const [batchModal, setBatchModal] = useState<{
     rows: string[][];
@@ -317,14 +319,17 @@ export function MasterDatabaseExplorer({
 
   useEffect(() => {
     if (!embedded && !isDbAdmin) return;
-    const onRefresh = () => void loadCoverage();
+    const onRefresh = () => {
+      void loadCoverage();
+      if (isDbAdmin && !embedded) void loadData();
+    };
     window.addEventListener('batch-created', onRefresh);
     window.addEventListener('master-data-updated', onRefresh);
     return () => {
       window.removeEventListener('batch-created', onRefresh);
       window.removeEventListener('master-data-updated', onRefresh);
     };
-  }, [embedded, isDbAdmin, loadCoverage]);
+  }, [embedded, isDbAdmin, loadCoverage, loadData]);
 
   const useServerSearch = embedded || isDbAdmin || isLargeMasterDataset;
   const useFilterSidebar = embedded || isDbAdmin || isLargeMasterDataset;
@@ -844,14 +849,20 @@ export function MasterDatabaseExplorer({
     if (!file) return;
     setParsing(true);
     try {
-      if (masterDataService.shouldUseServerImport(file)) {
+      masterDataService.validateUploadFile(file);
+      const existing = await masterDataService.getCurrent();
+      const existingIsLarge =
+        Boolean(existing?.largeDataset) || safeCount(existing?.rowCount) > 5000;
+
+      if (existingIsLarge || masterDataService.shouldUseServerImport(file)) {
         await enqueueMasterDataImport(file, 'append');
         toast.success(
           'Import started',
-          'Large file import runs in the background — switch pages or tabs freely.',
+          'Uploading to server — CSV uses S3 for fast merge into master database.',
         );
         return;
       }
+
       const parsed = await parseSpreadsheetFile(file);
       const record = await masterDataService.save(parsed, 'append');
       setHeaders(record.headers);
@@ -901,7 +912,9 @@ export function MasterDatabaseExplorer({
           </p>
           <p className="mdb-empty__sub">
             {isDbAdmin
-              ? 'Sample contacts below — open Filters to search the full database.'
+              ? masterTotalRows
+                ? 'Sample contacts below — use Import data to merge uploads, or open Filters to search.'
+                : 'Import master data using Import data above, or open Filters after upload.'
               : masterTotalRows
                 ? 'Use filters or click Search Companies to view the table.'
                 : 'Super Admin can import data using Import Data.'}
@@ -1073,11 +1086,13 @@ export function MasterDatabaseExplorer({
             </button>
             {moreOpen && (
               <div className="mdb-dropdown mdb-dropdown--animated">
-                {!isDbAdmin && (
-                  <button type="button" onClick={() => { inputRef.current?.click(); setMoreOpen(false); }}>
-                    <Upload className="h-3.5 w-3.5" /> Import data
-                  </button>
-                )}
+                <button
+                  type="button"
+                  disabled={importBusy}
+                  onClick={() => { inputRef.current?.click(); setMoreOpen(false); }}
+                >
+                  <Upload className="h-3.5 w-3.5" /> Import data
+                </button>
                 <button type="button" onClick={() => { clearFilters(); setMoreOpen(false); }}>Clear filters</button>
               </div>
             )}
@@ -1224,22 +1239,49 @@ export function MasterDatabaseExplorer({
                 <p className="mdb-titlebar__sub">Search · filter · create & share campaigns</p>
               </div>
             </div>
-            <div className="mdb-titlebar__metrics">
-              <div className="mdb-metric">
-                <span className="mdb-metric__label">Total</span>
-                <span className="mdb-metric__value">{stats.total.toLocaleString('en-US')}</span>
-              </div>
-              <div className="mdb-metric mdb-metric--campaign">
-                <span className="mdb-metric__label">In Campaign</span>
-                <span className="mdb-metric__value">{stats.inCampaign.toLocaleString('en-US')}</span>
-              </div>
-              <div className="mdb-metric">
-                <span className="mdb-metric__label">Matched</span>
-                <span className="mdb-metric__value">{stats.filtered.toLocaleString('en-US')}</span>
-              </div>
-              <div className="mdb-metric mdb-metric--accent">
-                <span className="mdb-metric__label">Selected</span>
-                <span className="mdb-metric__value">{stats.selected.toLocaleString('en-US')}</span>
+            <div className="mdb-titlebar__right">
+              {isDbAdmin && (
+                <div className="mdb-titlebar__actions">
+                  <button
+                    type="button"
+                    className="mdb-titlebar__btn"
+                    onClick={() => downloadMasterDataTemplate()}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Template
+                  </button>
+                  <button
+                    type="button"
+                    className="mdb-titlebar__btn mdb-titlebar__btn--primary"
+                    onClick={() => inputRef.current?.click()}
+                    disabled={importBusy}
+                  >
+                    {importBusy ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Upload className="h-3.5 w-3.5" />
+                    )}
+                    {importBusy ? 'Importing…' : 'Import data'}
+                  </button>
+                </div>
+              )}
+              <div className="mdb-titlebar__metrics">
+                <div className="mdb-metric">
+                  <span className="mdb-metric__label">Total</span>
+                  <span className="mdb-metric__value">{stats.total.toLocaleString('en-US')}</span>
+                </div>
+                <div className="mdb-metric mdb-metric--campaign">
+                  <span className="mdb-metric__label">In Campaign</span>
+                  <span className="mdb-metric__value">{stats.inCampaign.toLocaleString('en-US')}</span>
+                </div>
+                <div className="mdb-metric">
+                  <span className="mdb-metric__label">Matched</span>
+                  <span className="mdb-metric__value">{stats.filtered.toLocaleString('en-US')}</span>
+                </div>
+                <div className="mdb-metric mdb-metric--accent">
+                  <span className="mdb-metric__label">Selected</span>
+                  <span className="mdb-metric__value">{stats.selected.toLocaleString('en-US')}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -1256,9 +1298,9 @@ export function MasterDatabaseExplorer({
               <p className="mdb-head__sub">Full master data — upload, filter, and assign to sales</p>
             </div>
             <div className="mdb-head__actions">
-              <button type="button" className="mdb-btn" onClick={() => inputRef.current?.click()} disabled={parsing}>
+              <button type="button" className="mdb-btn" onClick={() => inputRef.current?.click()} disabled={importBusy}>
                 <Upload className="h-3.5 w-3.5" />
-                {parsing ? 'Importing…' : 'Import Data'}
+                {importBusy ? 'Importing…' : 'Import Data'}
               </button>
               {canExport && (
                 <button

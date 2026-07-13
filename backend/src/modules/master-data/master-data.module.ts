@@ -16,6 +16,8 @@ import {
 } from './schemas/master-data-chunk.schema';
 import { MasterDataRowStore } from './master-data-row.store';
 import { MasterDataImportJobService } from './master-data-import-job.service';
+import { EmployeeUploadImportJobService } from './employee-upload-import-job.service';
+import { EmployeeUploadS3Service } from './employee-upload-s3.service';
 import { MasterDataImportLockService } from './master-data-import-lock.service';
 import { MasterDataSearchIndexService } from './master-data-search-index.service';
 import { ActivityLogsModule } from '../activity-logs/activity-logs.module';
@@ -38,6 +40,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
     MasterDataService,
     MasterDataRowStore,
     MasterDataImportJobService,
+    EmployeeUploadImportJobService,
+    EmployeeUploadS3Service,
     MasterDataImportLockService,
     MasterDataSearchIndexService,
   ],

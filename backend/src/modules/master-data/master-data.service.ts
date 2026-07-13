@@ -58,6 +58,9 @@ import { cacheTtlSeconds } from '../../redis/cache.util';
 import { MasterDataRowStore, MASTER_DATA_LARGE_UI_ROW_LIMIT } from './master-data-row.store';
 import { parseSpreadsheetFileAsync, streamSpreadsheetFileAsync } from './master-data-import.util';
 import { MasterDataImportJobService } from './master-data-import-job.service';
+import { EmployeeUploadImportJobService } from './employee-upload-import-job.service';
+import { EmployeeUploadS3Service } from './employee-upload-s3.service';
+import { MASTER_DATA_TEMPLATE_HEADERS } from './master-data-template.constants';
 import { MasterDataImportLockService } from './master-data-import-lock.service';
 import { MasterDataSearchIndexService } from './master-data-search-index.service';
 import {
@@ -158,6 +161,8 @@ export class MasterDataService {
   private readonly logger = new Logger(MasterDataService.name);
   /** Serialize large imports so only one heavy job runs at a time. */
   private importChain: Promise<void> = Promise.resolve();
+  /** In-process cache — avoids re-scanning 500k+ master rows on every employee upload. */
+  private masterDedupKeysCache: { revision: number; keys: Set<string> } | null = null;
 
   constructor(
     @InjectModel(MasterDataRecord.name)
@@ -172,6 +177,8 @@ export class MasterDataService {
     private config: ConfigService,
     private rowStore: MasterDataRowStore,
     private importJobs: MasterDataImportJobService,
+    private employeeImportJobs: EmployeeUploadImportJobService,
+    private employeeUploadS3: EmployeeUploadS3Service,
     private importLock: MasterDataImportLockService,
     private searchIndex: MasterDataSearchIndexService,
     private elasticsearch: ElasticsearchService,
@@ -338,6 +345,38 @@ export class MasterDataService {
     return row.join('\u001f');
   }
 
+  /** OpenSearch fingerprint batch lookup (falls back to empty when search engine off). */
+  private async lookupMasterRowFingerprints(fingerprints: string[]): Promise<Set<string>> {
+    if (!fingerprints.length || !this.shouldUseOpenSearchDedup()) {
+      return new Set();
+    }
+    return this.searchIndex.findExistingFingerprints(fingerprints);
+  }
+
+  private shouldUseOpenSearchDedup(): boolean {
+    return this.searchIndex.isSearchEngineEnabled();
+  }
+
+  /** Load master row keys for employee duplicate check (cached per master revision). */
+  private async loadMasterDedupKeysForEmployee(
+    doc: MasterDataRecord,
+    targetHeaders: string[],
+    onProgress?: (loaded: number) => void,
+  ): Promise<Set<string>> {
+    const revision =
+      (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ??
+      this.rowStore.getRowCount(doc);
+    if (this.masterDedupKeysCache?.revision === revision) {
+      return this.masterDedupKeysCache.keys;
+    }
+    const keys = await this.rowStore.loadExistingRowKeys(doc, targetHeaders, {
+      formatCell: formatMasterDataCell,
+      onProgress,
+    });
+    this.masterDedupKeysCache = { revision, keys };
+    return keys;
+  }
+
   private normalizeRowToHeaders(
     row: string[],
     sourceHeaders: string[],
@@ -347,39 +386,63 @@ export class MasterDataService {
     return alignRowWithIndex(row, sourceIdx, targetHeaders, formatMasterDataCell);
   }
 
-  private async prepareUploadRows(dto: CreateMasterDataUploadRequestDto, alignToMaster: boolean) {
+  private async prepareUploadRows(
+    dto: CreateMasterDataUploadRequestDto,
+    alignToMaster: boolean,
+    options?: { employeeUpload?: boolean },
+  ) {
     const masterDoc = alignToMaster
       ? await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec()
       : null;
-    const headers = masterDoc
+    const headers = masterDoc?.headers?.length
       ? masterDoc.headers
-      : dto.headers.map((h) => h.trim()).filter(Boolean);
+      : resolveMasterDataHeaders(null, dto.headers);
     if (!headers.length) {
       throw new BadRequestException('At least one column header is required');
     }
 
-    const existingKeys = masterDoc
-      ? await this.rowStore.loadExistingRowKeys(masterDoc, headers, {
-          formatCell: (value) => value || '-',
-        })
-      : new Set<string>();
+    const skipExistingDedup =
+      !options?.employeeUpload &&
+      (dto.rows.length > SKIP_EXISTING_DEDUP_ABOVE ||
+        (masterDoc ? this.rowStore.getRowCount(masterDoc) > SKIP_EXISTING_DEDUP_ABOVE : false));
+
+    const useOpenSearchDedup =
+      Boolean(options?.employeeUpload) && this.shouldUseOpenSearchDedup();
+
+    const mongoExistingKeys =
+      masterDoc && !skipExistingDedup && !useOpenSearchDedup
+        ? await this.loadMasterDedupKeysForEmployee(masterDoc, headers)
+        : null;
+
     const incomingSeen = new Set<string>();
     const rows: string[][] = [];
     const duplicateRows: string[][] = [];
     let duplicateCount = 0;
     let missingValueCount = 0;
 
-    for (const rawRow of dto.rows) {
-      const normalized = this.normalizeRowToHeaders(rawRow, dto.headers, headers);
-      missingValueCount += normalized.filter((cell) => cell === '-').length;
-      const key = this.rowKey(normalized);
-      if (existingKeys.has(key) || incomingSeen.has(key)) {
-        duplicateCount += 1;
-        duplicateRows.push(normalized);
-        continue;
+    const DEDUP_BATCH = 500;
+    for (let batchStart = 0; batchStart < dto.rows.length; batchStart += DEDUP_BATCH) {
+      const slice = dto.rows.slice(batchStart, batchStart + DEDUP_BATCH);
+      const normalizedBatch: Array<{ key: string; row: string[] }> = [];
+      for (const rawRow of slice) {
+        const normalized = this.normalizeRowToHeaders(rawRow, dto.headers, headers);
+        missingValueCount += normalized.filter((cell) => cell === '-').length;
+        normalizedBatch.push({ key: this.rowKey(normalized), row: normalized });
       }
-      incomingSeen.add(key);
-      rows.push(normalized);
+
+      const existingInMaster = useOpenSearchDedup
+        ? await this.lookupMasterRowFingerprints(normalizedBatch.map((item) => item.key))
+        : mongoExistingKeys;
+
+      for (const { key, row } of normalizedBatch) {
+        if (existingInMaster?.has(key) || incomingSeen.has(key)) {
+          duplicateCount += 1;
+          duplicateRows.push(row);
+          continue;
+        }
+        incomingSeen.add(key);
+        rows.push(row);
+      }
     }
 
     const duplicatePreviewRows = duplicateRows.slice(0, DUPLICATE_PREVIEW_LIMIT);
@@ -392,14 +455,17 @@ export class MasterDataService {
     headers: string[],
     duplicateRows: string[][],
     sourceRole: 'employee' | 'db_admin',
+    duplicateCount?: number,
   ) {
-    if (!duplicateRows.length) return null;
+    const totalDuplicates = duplicateCount ?? duplicateRows.length;
+    if (totalDuplicates <= 0) return null;
     const stem = baseFileName.replace(/\.(xlsx|xls|csv)$/i, '');
     return this.createSuppressionDuplicateFile(actor, {
       fileName: `${stem}-duplicates.xlsx`,
       sheetName: 'Duplicates',
       headers,
       rows: duplicateRows,
+      rowCount: totalDuplicates,
       sourceRole,
     });
   }
@@ -1354,7 +1420,7 @@ export class MasterDataService {
       duplicatePreviewRows,
       duplicateRows,
       missingValueCount,
-    } = await this.prepareUploadRows(dto, true);
+    } = await this.prepareUploadRows(dto, true, { employeeUpload: true });
 
     let request: MasterDataUploadRequest | null = null;
     let mergedAddedRows = 0;
@@ -1367,6 +1433,7 @@ export class MasterDataService {
         rows,
         workRows: rows.map((row) => [...row]),
         rowCount: rows.length,
+        submittedRowCount: dto.rows.length,
         duplicateCount,
         duplicatePreviewRows,
         missingValueCount,
@@ -1386,6 +1453,7 @@ export class MasterDataService {
       headers,
       duplicateRows,
       'employee',
+      duplicateCount,
     );
 
     try {
@@ -1423,6 +1491,656 @@ export class MasterDataService {
     };
   }
 
+  async getEmployeeUploadTemplate() {
+    const masterDoc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+    const headers =
+      masterDoc?.headers?.length && masterDoc.headers.length > 0
+        ? masterDoc.headers
+        : [...MASTER_DATA_TEMPLATE_HEADERS];
+    return { headers };
+  }
+
+  async initiateEmployeePresignedUpload(
+    dto: { fileName: string; fileSizeBytes: number; contentType?: string },
+    actor: ActivityActor,
+    roles: string[],
+  ) {
+    if (!roles.includes(SystemRole.EMPLOYEE)) {
+      throw new ForbiddenException('Only employees can upload data');
+    }
+    const ext = dto.fileName.split('.').pop()?.toLowerCase() ?? '';
+    if (ext !== 'csv') {
+      throw new BadRequestException('Presigned S3 upload supports .csv only');
+    }
+    if (!this.employeeUploadS3.isEnabled()) {
+      throw new BadRequestException(
+        'S3 presigned upload is not configured — use file upload instead',
+      );
+    }
+
+    const jobId = this.employeeUploadS3.generateJobId();
+    const s3Key = this.employeeUploadS3.buildKey(jobId, dto.fileName);
+    const { uploadUrl, expiresIn } = await this.employeeUploadS3.createPresignedUploadUrl(
+      s3Key,
+      dto.contentType || 'text/csv',
+      dto.fileSizeBytes,
+    );
+
+    this.employeeImportJobs.createJob(
+      dto.fileName,
+      {
+        phase: 'pending_upload',
+        percent: 2,
+        message: 'Waiting for S3 upload…',
+        s3Key,
+        s3Bucket: this.employeeUploadS3.getBucket(),
+      },
+      jobId,
+    );
+
+    return {
+      jobId,
+      uploadUrl,
+      s3Key,
+      bucket: this.employeeUploadS3.getBucket(),
+      expiresIn,
+      uploadedBy: actor.email,
+    };
+  }
+
+  async confirmEmployeePresignedUpload(
+    jobId: string,
+    actor: ActivityActor,
+    roles: string[],
+  ) {
+    if (!roles.includes(SystemRole.EMPLOYEE)) {
+      throw new ForbiddenException('Only employees can upload data');
+    }
+    const job = await this.employeeImportJobs.getJob(jobId);
+    if (!job) {
+      throw new NotFoundException('Upload job not found');
+    }
+    if (job.phase !== 'pending_upload' || !job.s3Key) {
+      throw new BadRequestException('Job is not awaiting S3 upload confirmation');
+    }
+
+    await this.employeeUploadS3.headObject(job.s3Key);
+    await this.employeeImportJobs.updateJob(jobId, {
+      phase: 'queued',
+      percent: 35,
+      message: 'S3 upload complete — queued for processing',
+    });
+
+    void this.runEmployeeUploadImportFromS3(jobId, job.s3Key, job.fileName ?? 'upload.csv', actor, roles);
+    return { jobId, status: 'queued' };
+  }
+
+  queueEmployeeUploadFromFile(
+    filePath: string,
+    fileName: string,
+    actor: ActivityActor,
+    roles: string[],
+  ) {
+    const jobId = this.employeeImportJobs.createJob(fileName, {
+      phase: 'queued',
+      percent: 10,
+      message: 'File received — queued for processing…',
+    });
+
+    const run = this.runEmployeeUploadImportWithLock(jobId, filePath, fileName, actor, roles);
+    void run.catch(() => undefined);
+    return { jobId };
+  }
+
+  async getEmployeeUploadImportJobStatus(jobId: string) {
+    const job = await this.employeeImportJobs.getJob(jobId);
+    if (!job) {
+      throw new NotFoundException('Upload job not found');
+    }
+    return job;
+  }
+
+  private async runEmployeeUploadImportWithLock(
+    jobId: string,
+    filePath: string,
+    fileName: string,
+    actor: ActivityActor,
+    roles: string[],
+    options?: { s3Key?: string; skipS3Upload?: boolean },
+  ) {
+    const acquired = await this.importLock.acquire(jobId);
+    if (!acquired) {
+      await this.employeeImportJobs.updateJob(jobId, {
+        phase: 'failed',
+        percent: 100,
+        message: 'Another import is already running — try again shortly',
+        error: 'Import queue busy',
+      });
+      await unlink(filePath).catch(() => undefined);
+      return;
+    }
+    try {
+      await this.importEmployeeUploadFromDiskStreaming(
+        jobId,
+        filePath,
+        fileName,
+        actor,
+        roles,
+        options,
+      );
+    } finally {
+      await this.importLock.release(jobId);
+      await unlink(filePath).catch(() => undefined);
+    }
+  }
+
+  private async importEmployeeUploadFromDiskStreaming(
+    jobId: string,
+    filePath: string,
+    fileName: string,
+    actor: ActivityActor,
+    roles: string[],
+    options?: { s3Key?: string; skipS3Upload?: boolean },
+  ) {
+    if (!roles.includes(SystemRole.EMPLOYEE)) {
+      throw new ForbiddenException('Only employees can submit data upload requests');
+    }
+
+    const EMPLOYEE_UPLOAD_PREVIEW_ROWS = 500;
+    const DUPLICATE_FLUSH_BATCH = 3_000;
+    const DEDUP_LOOKUP_BATCH = 500;
+
+    let existing = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+    let targetHeaders: string[] = [];
+    let sourceHeaders: string[] = [];
+    let sourceIdx = new Map<string, number>();
+    let sheetName = existing?.sheetName || 'Master Data';
+    let baseRowCount = 0;
+    let streamReady = false;
+    let totalIncoming = 0;
+    let processed = 0;
+    let addedRows = 0;
+    let duplicateCount = 0;
+    let missingValueCount = 0;
+    let pendingMaster: string[][] = [];
+    let pendingDuplicateBatch: string[][] = [];
+    let duplicateRequestId: Types.ObjectId | null = null;
+    const storedNewRows: string[][] = [];
+    const storedDuplicateRows: string[][] = [];
+    let flushCount = 0;
+    let incomingSeen = new Set<string>();
+    let masterSeen: Set<string> | null = null;
+    let useOpenSearchDedup = false;
+    let masterRevision = Date.now();
+    let masterKeysPromise: Promise<Set<string>> | null = null;
+
+    const partProgress = (rowCount: number, total: number) => ({
+      partIndex: Math.max(1, Math.ceil(rowCount / IMPORT_PART_ROWS)),
+      totalParts: total > 0 ? Math.ceil(total / IMPORT_PART_ROWS) : undefined,
+    });
+
+    const updateJob = (patch: Parameters<EmployeeUploadImportJobService['updateJob']>[1]) =>
+      this.employeeImportJobs.updateJob(jobId, patch);
+
+    const onProgress = (phase: 'parsing' | 'merging' | 'saving', saved: number, total: number, message: string) => {
+      const base =
+        phase === 'parsing' ? 35 : phase === 'merging' ? 45 : 55;
+      const span = phase === 'parsing' ? 10 : 40;
+      const pct = total > 0 ? base + Math.round((saved / total) * span) : base;
+      const parts = partProgress(saved, total);
+      void updateJob({
+        phase,
+        percent: Math.min(pct, 99),
+        message:
+          parts.totalParts && parts.totalParts > 1
+            ? `Part ${parts.partIndex}/${parts.totalParts} — ${message}`
+            : message,
+        rowsProcessed: saved,
+        totalRows: total,
+        partIndex: parts.partIndex,
+        totalParts: parts.totalParts,
+      });
+    };
+
+    const flushMasterBatch = async (forceMeta = false) => {
+      if (!pendingMaster.length) return;
+      const batch = pendingMaster;
+      const batchStartIndex = baseRowCount + addedRows;
+      pendingMaster = [];
+      await this.rowStore.appendRows(batch, MASTER_DATA_KEY, undefined);
+      addedRows += batch.length;
+      if (this.searchIndex.isSearchEngineEnabled() && targetHeaders.length) {
+        void this.searchIndex
+          .indexRowBatch(targetHeaders, batch, batchStartIndex, MASTER_DATA_KEY, masterRevision)
+          .catch((err) => {
+            this.logger.warn(
+              `OpenSearch incremental index during employee upload failed: ${err instanceof Error ? err.message : err}`,
+            );
+          });
+      }
+      if (storedNewRows.length < EMPLOYEE_UPLOAD_PREVIEW_ROWS) {
+        const room = EMPLOYEE_UPLOAD_PREVIEW_ROWS - storedNewRows.length;
+        storedNewRows.push(...batch.slice(0, room));
+      }
+      flushCount += 1;
+      const totalRows = baseRowCount + addedRows;
+      const shouldUpdateMeta =
+        forceMeta || flushCount % META_UPDATE_EVERY_FLUSHES === 0;
+      if (shouldUpdateMeta && targetHeaders.length) {
+        await this.patchChunkedMasterMeta({
+          headers: targetHeaders,
+          rowCount: totalRows,
+          fileName: existing?.fileName?.includes('+')
+            ? existing!.fileName.replace(/\(\d+ rows\)$/, `(${totalRows.toLocaleString()} rows)`)
+            : `${fileName} (${totalRows.toLocaleString()} rows)`,
+          sheetName,
+          actor,
+        });
+      }
+      onProgress(
+        'saving',
+        processed,
+        totalIncoming || processed,
+        `Merged ${totalRows.toLocaleString()} contacts (${addedRows.toLocaleString()} new)…`,
+      );
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    };
+
+    const flushDuplicateBatch = async () => {
+      if (!pendingDuplicateBatch.length || !targetHeaders.length) return;
+      const batch = pendingDuplicateBatch;
+      pendingDuplicateBatch = [];
+      const stem = fileName.replace(/\.(xlsx|xls|csv)$/i, '');
+
+      if (!duplicateRequestId) {
+        const created = await this.uploadRequestModel.create({
+          fileName: `${stem}-duplicates.xlsx`,
+          sheetName: 'Duplicates',
+          headers: targetHeaders,
+          rows: batch,
+          workRows: batch.map((row) => [...row]),
+          rowCount: duplicateCount,
+          duplicateCount: 0,
+          duplicatePreviewRows: storedDuplicateRows.slice(0, DUPLICATE_PREVIEW_LIMIT),
+          missingValueCount: 0,
+          submittedBy: new Types.ObjectId(actor.id),
+          submittedByEmail: actor.email,
+          sourceRole: 'employee',
+          status: 'active',
+        });
+        duplicateRequestId = created._id;
+        return;
+      }
+
+      await this.uploadRequestModel.updateOne(
+        { _id: duplicateRequestId },
+        {
+          $push: {
+            rows: { $each: batch },
+            workRows: { $each: batch.map((row) => [...row]) },
+          },
+          $set: { rowCount: duplicateCount },
+        },
+      );
+    };
+
+    const stashDuplicate = async (row: string[]) => {
+      duplicateCount += 1;
+      pendingDuplicateBatch.push(row);
+      if (storedDuplicateRows.length < DUPLICATE_PREVIEW_LIMIT) {
+        storedDuplicateRows.push(row);
+      }
+      if (pendingDuplicateBatch.length >= DUPLICATE_FLUSH_BATCH) {
+        await flushDuplicateBatch();
+      }
+    };
+
+    const ingestBatch = async (rows: string[][]) => {
+      const pendingLookup: Array<{ key: string; row: string[] }> = [];
+
+      const resolvePendingLookup = async () => {
+        if (!pendingLookup.length) return;
+        let existingInMaster = new Set<string>();
+        if (useOpenSearchDedup) {
+          existingInMaster = await this.lookupMasterRowFingerprints(
+            pendingLookup.map((item) => item.key),
+          );
+        } else if (masterKeysPromise) {
+          if (!masterSeen) {
+            masterSeen = await masterKeysPromise;
+            masterKeysPromise = null;
+          }
+        }
+        for (const { key, row } of pendingLookup) {
+          if (masterSeen?.has(key) || existingInMaster.has(key) || incomingSeen.has(key)) {
+            await stashDuplicate(row);
+            continue;
+          }
+          incomingSeen.add(key);
+          pendingMaster.push(row);
+          if (pendingMaster.length >= INCOMING_FLUSH_BATCH) {
+            await flushMasterBatch();
+          }
+        }
+        pendingLookup.length = 0;
+      };
+
+      for (const rawRow of rows) {
+        processed += 1;
+        if (!rowHasSourceData(rawRow, sourceHeaders)) continue;
+        const normalized = alignRowWithIndex(
+          rawRow,
+          sourceIdx,
+          targetHeaders,
+          formatMasterDataCell,
+        );
+        missingValueCount += normalized.filter((cell) => cell === '-').length;
+        const key = this.rowKey(normalized);
+        pendingLookup.push({ key, row: normalized });
+        if (pendingLookup.length >= DEDUP_LOOKUP_BATCH) {
+          await resolvePendingLookup();
+        }
+      }
+      await resolvePendingLookup();
+    };
+
+    try {
+      const parseStart = Date.now();
+      const streamResult = await streamSpreadsheetFileAsync(filePath, fileName, {
+        onMeta: async ({ sheetName: sn, headers }) => {
+          streamReady = true;
+          sheetName = sn || sheetName;
+          sourceHeaders = headers.map((h) => h.trim());
+          sourceIdx = buildHeaderIndexMap(sourceHeaders);
+          targetHeaders = resolveMasterDataHeaders(
+            existing?.headers?.length ? existing.headers : null,
+            sourceHeaders,
+          );
+
+          if (!existing) {
+            await this.patchChunkedMasterMeta({
+              headers: targetHeaders,
+              rowCount: 0,
+              fileName,
+              sheetName,
+              actor,
+            });
+            existing = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+          } else if (!this.rowStore.isChunked(existing)) {
+            const existingRows = await this.loadExistingRows(existing);
+            baseRowCount = existingRows.length;
+            await this.rowStore.deleteChunks();
+            if (existingRows.length) {
+              await this.rowStore.appendRows(existingRows);
+            }
+            await this.patchChunkedMasterMeta({
+              headers: existing.headers,
+              rowCount: baseRowCount,
+              fileName: existing.fileName,
+              sheetName: existing.sheetName || sheetName,
+              actor,
+            });
+          } else {
+            baseRowCount = this.rowStore.getRowCount(existing);
+          }
+
+          if (existing) {
+            masterRevision =
+              (existing as { updatedAt?: Date }).updatedAt?.getTime?.() ?? Date.now();
+            useOpenSearchDedup = this.shouldUseOpenSearchDedup();
+            if (useOpenSearchDedup) {
+              void updateJob({
+                phase: 'merging',
+                percent: 38,
+                message: 'Fast duplicate check via search index…',
+              });
+              masterSeen = null;
+            } else if (this.masterDedupKeysCache?.revision === masterRevision) {
+              masterSeen = this.masterDedupKeysCache.keys;
+              void updateJob({
+                phase: 'merging',
+                percent: 38,
+                message: 'Duplicate index ready — processing your file…',
+              });
+            } else {
+              void updateJob({
+                phase: 'merging',
+                percent: 38,
+                message:
+                  'Reading your file while preparing duplicate check (master database scan)…',
+              });
+              masterKeysPromise = this.loadMasterDedupKeysForEmployee(
+                existing,
+                targetHeaders,
+                (loaded) => {
+                  void updateJob({
+                    phase: 'merging',
+                    percent: 38 + Math.min(5, Math.round(loaded / 120_000)),
+                    message: `Preparing duplicate check… ${loaded.toLocaleString()} master rows indexed`,
+                    rowsProcessed: totalIncoming,
+                    totalRows: totalIncoming || undefined,
+                  });
+                },
+              );
+            }
+          } else {
+            masterSeen = new Set<string>();
+          }
+        },
+        onParseProgress: async (parsed) => {
+          totalIncoming = Math.max(totalIncoming, parsed);
+          void updateJob({
+            phase: 'parsing',
+            percent: 35 + Math.min(8, Math.round((parsed / Math.max(parsed, 1)) * 8)),
+            message: `Reading your file… ${parsed.toLocaleString()} contact(s) found`,
+            rowsProcessed: parsed,
+            totalRows: parsed,
+          });
+          onProgress('parsing', parsed, totalIncoming || parsed, `Reading your file… ${parsed.toLocaleString()} rows`);
+        },
+        onBatch: async (rows, parsed) => {
+          if (!streamReady) {
+            throw new BadRequestException('Spreadsheet parse failed: missing headers');
+          }
+          totalIncoming = Math.max(totalIncoming, parsed);
+          await ingestBatch(rows);
+        },
+      });
+
+      totalIncoming = streamResult.totalRows;
+      this.logger.log(
+        `Employee upload job ${jobId}: stream-parsed ${totalIncoming.toLocaleString()} rows in ${Date.now() - parseStart}ms ${formatMemoryUsage()}`,
+      );
+
+      await updateJob({
+        phase: 'merging',
+        percent: 45,
+        message:
+          totalIncoming > IMPORT_PART_ROWS
+            ? `Found ${totalIncoming.toLocaleString()} rows — merging in ${Math.ceil(totalIncoming / IMPORT_PART_ROWS)} parts…`
+            : `Found ${totalIncoming.toLocaleString()} rows — merging to master…`,
+        totalRows: totalIncoming,
+        rowsProcessed: processed,
+        totalParts:
+          totalIncoming > IMPORT_PART_ROWS
+            ? Math.ceil(totalIncoming / IMPORT_PART_ROWS)
+            : undefined,
+      });
+
+      await flushMasterBatch(true);
+      await flushDuplicateBatch();
+
+      let request: MasterDataUploadRequest | null = null;
+      if (addedRows > 0) {
+        request = await this.uploadRequestModel.create({
+          fileName,
+          sheetName,
+          headers: targetHeaders,
+          rows: storedNewRows,
+          workRows: storedNewRows.map((row) => [...row]),
+          rowCount: addedRows,
+          submittedRowCount: totalIncoming,
+          duplicateCount,
+          duplicatePreviewRows: storedDuplicateRows.slice(0, DUPLICATE_PREVIEW_LIMIT),
+          missingValueCount,
+          submittedBy: new Types.ObjectId(actor.id),
+          submittedByEmail: actor.email,
+          sourceRole: 'employee',
+          status: 'approved',
+          mergedAddedRows: addedRows,
+          mergedTotalRows: baseRowCount + addedRows,
+          reviewedBy: new Types.ObjectId(actor.id),
+          reviewedByEmail: actor.email,
+          reviewedAt: new Date(),
+        });
+      }
+
+      let duplicateFile: Awaited<ReturnType<MasterDataService['createUploadDuplicateFile']>> | null =
+        null;
+      if (duplicateRequestId) {
+        await this.uploadRequestModel.updateOne(
+          { _id: duplicateRequestId },
+          { $set: { rowCount: duplicateCount } },
+        );
+        const freshDuplicateDoc = await this.uploadRequestModel.findById(duplicateRequestId).exec();
+        if (freshDuplicateDoc) {
+          duplicateFile = this.toUploadRequestResponse(freshDuplicateDoc);
+        }
+      } else if (duplicateCount > 0) {
+        duplicateFile = await this.createUploadDuplicateFile(
+          actor,
+          fileName,
+          targetHeaders,
+          storedDuplicateRows,
+          'employee',
+          duplicateCount,
+        );
+      }
+
+      if (addedRows > 0 || duplicateCount > 0) {
+        await this.patchChunkedMasterMeta({
+          headers: targetHeaders,
+          rowCount: baseRowCount + addedRows,
+          fileName:
+            existing?.fileName && existing.fileName.includes('+')
+              ? existing.fileName.replace(
+                  /\(\d+ rows\)$/,
+                  `(${ (baseRowCount + addedRows).toLocaleString()} rows)`,
+                )
+              : fileName,
+          sheetName,
+          actor,
+        });
+      }
+
+      try {
+        await this.activityLogs.logWithActor(actor, {
+          action: 'EMPLOYEE_DATA_UPLOAD_REQUEST',
+          resource: 'master-data',
+          path: '/employee/my-data',
+          metadata: {
+            fileName,
+            submittedRows: totalIncoming,
+            pendingRows: addedRows,
+            duplicateCount,
+            requestCreated: Boolean(request),
+            duplicateFileId: duplicateFile?.id ?? null,
+            mergedAddedRows: addedRows,
+            streaming: true,
+          },
+        });
+      } catch (err) {
+        this.logger.error(
+          `Failed to log employee upload: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+
+      this.bustMasterCaches();
+
+      const result = {
+        request: request ? this.toUploadRequestResponse(request) : null,
+        duplicateCount,
+        duplicatePreviewRows: storedDuplicateRows.slice(0, DUPLICATE_PREVIEW_LIMIT),
+        pendingRows: addedRows,
+        missingValueCount,
+        templateHeaders: targetHeaders,
+        mergedAddedRows: addedRows,
+        duplicateFileId: duplicateFile?.id ?? null,
+        duplicateFileName: duplicateFile?.fileName ?? null,
+      };
+
+      await updateJob({
+        phase: 'done',
+        percent: 100,
+        message: `Complete — ${addedRows.toLocaleString()} merged · ${duplicateCount.toLocaleString()} duplicate(s)`,
+        rowsProcessed: totalIncoming,
+        totalRows: totalIncoming,
+        result,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Upload failed';
+      this.logger.error(`Employee upload job ${jobId} failed: ${message}`);
+      await updateJob({
+        phase: 'failed',
+        percent: 100,
+        message,
+        error: message,
+      });
+      throw err;
+    }
+  }
+
+  private async runEmployeeUploadImportFromS3(
+    jobId: string,
+    s3Key: string,
+    fileName: string,
+    actor: ActivityActor,
+    roles: string[],
+  ) {
+    const { mkdtemp } = await import('fs/promises');
+    const { createWriteStream } = await import('fs');
+    const { pipeline } = await import('stream/promises');
+    const { join } = await import('path');
+    const { tmpdir } = await import('os');
+    const dir = await mkdtemp(join(tmpdir(), 'emp-upload-'));
+    const localPath = join(dir, fileName.replace(/[^a-zA-Z0-9._-]/g, '_'));
+    try {
+      await this.employeeImportJobs.updateJob(jobId, {
+        phase: 'parsing',
+        percent: 32,
+        message: 'Downloading from S3…',
+      });
+      const { GetObjectCommand, S3Client } = await import('@aws-sdk/client-s3');
+      const accessKey = this.config.get<string>('AWS_ACCESS_KEY_ID', '');
+      const secretKey = this.config.get<string>('AWS_SECRET_ACCESS_KEY', '');
+      const client = new S3Client({
+        region: this.config.get<string>('AWS_REGION', 'ap-south-1'),
+        credentials: { accessKeyId: accessKey, secretAccessKey: secretKey },
+      });
+      const res = await client.send(
+        new GetObjectCommand({
+          Bucket: this.employeeUploadS3.getBucket(),
+          Key: s3Key,
+        }),
+      );
+      const body = res.Body as NodeJS.ReadableStream;
+      await pipeline(body, createWriteStream(localPath));
+      await this.runEmployeeUploadImportWithLock(jobId, localPath, fileName, actor, roles, {
+        s3Key,
+        skipS3Upload: true,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'S3 import failed';
+      await this.employeeImportJobs.updateJob(jobId, {
+        phase: 'failed',
+        percent: 100,
+        message,
+        error: message,
+      });
+      await unlink(localPath).catch(() => undefined);
+    }
+  }
+
   /** Suppression check — save duplicate rows under My Data (employee) or DB Admin Data */
   async createSuppressionDuplicateFile(
     actor: ActivityActor,
@@ -1432,12 +2150,14 @@ export class MasterDataService {
       headers: string[];
       rows: string[][];
       sourceRole: 'employee' | 'db_admin';
+      rowCount?: number;
     },
   ) {
     if (!params.headers.length) {
       throw new BadRequestException('At least one column header is required');
     }
-    if (!params.rows.length) {
+    const rowCount = params.rowCount ?? params.rows.length;
+    if (rowCount <= 0 || !params.rows.length) {
       throw new BadRequestException('No duplicate rows to save');
     }
 
@@ -1447,7 +2167,7 @@ export class MasterDataService {
       headers: params.headers,
       rows: params.rows,
       workRows: params.rows.map((row) => [...row]),
-      rowCount: params.rows.length,
+      rowCount,
       duplicateCount: 0,
       duplicatePreviewRows: [],
       missingValueCount: 0,
@@ -2740,6 +3460,7 @@ export class MasterDataService {
       forwardedAt: doc.forwardedAt,
       mergedAddedRows: doc.mergedAddedRows,
       mergedTotalRows: doc.mergedTotalRows,
+      submittedRowCount: doc.submittedRowCount,
       createdAt: (doc as MasterDataUploadRequest & { createdAt?: Date }).createdAt,
       updatedAt: (doc as MasterDataUploadRequest & { updatedAt?: Date }).updatedAt,
     };
@@ -2755,6 +3476,7 @@ export class MasterDataService {
   }
 
   private bustMasterCaches(): void {
+    this.masterDedupKeysCache = null;
     void this.cache.delByPrefix('master:');
     void this.cache.delByPrefix('analytics:');
     void this.cache.delByPrefix('dashboard:');

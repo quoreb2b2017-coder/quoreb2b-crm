@@ -145,6 +145,7 @@ export class MasterDataRowStore {
     options?: {
       sourceHeaders?: string[];
       formatCell?: (value: string) => string;
+      onProgress?: (loaded: number) => void;
     },
   ): Promise<Set<string>> {
     const sourceHeaders = options?.sourceHeaders ?? doc.headers;
@@ -157,6 +158,9 @@ export class MasterDataRowStore {
       const aligned = alignRowWithIndex(row, sourceIdx, targetHeaders, formatCell);
       seen.add(rowKey(aligned));
       processed += 1;
+      if (options?.onProgress && processed % YIELD_EVERY_ROWS === 0) {
+        options.onProgress(processed);
+      }
     };
 
     if (!this.isChunked(doc)) {

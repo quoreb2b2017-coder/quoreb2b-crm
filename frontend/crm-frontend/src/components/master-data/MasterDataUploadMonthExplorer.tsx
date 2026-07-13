@@ -2,7 +2,7 @@
 
 import { WORKSPACE_TIMEZONE } from '@/lib/constants/workspace-timezone';
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronRight, Folder, FolderOpen } from 'lucide-react';
+import { ChevronRight, Folder, FolderOpen, Copy } from 'lucide-react';
 import type { MasterDataUploadRequest } from '@/lib/api/master-data.service';
 import { ExcelSheetShell } from '@/components/attendance/ExcelSheetShell';
 import {
@@ -18,6 +18,15 @@ import {
 } from '@/lib/master-data/upload-month-structure';
 import { CALENDAR_MONTHS, currentCalendarPeriod } from '@/lib/batches/month-structure';
 import { cn } from '@/lib/utils/cn';
+import {
+  EMPLOYEE_UPLOAD_FILE_TYPE_STYLES,
+  getEmployeeUploadFileType,
+  getEmployeeUploadFileTypeLabel,
+  isEmployeeDuplicateFile,
+} from '@/lib/master-data/employee-upload-file.util';
+import {
+  formatUploadRequestContactSummary,
+} from '@/lib/master-data/upload-request-row-count.util';
 
 function formatRequestDate(value?: string) {
   if (!value) return '—';
@@ -47,6 +56,7 @@ export interface MasterDataUploadMonthExplorerProps {
   emptyFolderMessage?: string;
   statusColumnLabel?: string;
   showSubmittedBy?: boolean;
+  variant?: 'default' | 'employee';
   onOpenRequest?: (request: MasterDataUploadRequest) => void;
   renderDetails?: (
     monthRequests: MasterDataUploadRequest[],
@@ -62,6 +72,7 @@ export function MasterDataUploadMonthExplorer({
   emptyFolderMessage,
   statusColumnLabel = 'Status',
   showSubmittedBy = false,
+  variant = 'default',
   onOpenRequest,
   renderDetails,
 }: MasterDataUploadMonthExplorerProps) {
@@ -98,6 +109,96 @@ export function MasterDataUploadMonthExplorer({
   );
 
   const selectedMonthLabel = monthLabel(selectedMonth);
+  const isEmployeeView = variant === 'employee';
+  const resolvedStatusLabel = isEmployeeView ? 'Type' : statusColumnLabel;
+
+  const { employeeUploadFiles, employeeDuplicateFiles } = useMemo(() => {
+    if (!isEmployeeView) {
+      return { employeeUploadFiles: selectedMonthRequests, employeeDuplicateFiles: [] as MasterDataUploadRequest[] };
+    }
+    const uploads: MasterDataUploadRequest[] = [];
+    const duplicates: MasterDataUploadRequest[] = [];
+    for (const request of selectedMonthRequests) {
+      if (isEmployeeDuplicateFile(request)) {
+        duplicates.push(request);
+      } else {
+        uploads.push(request);
+      }
+    }
+    return { employeeUploadFiles: uploads, employeeDuplicateFiles: duplicates };
+  }, [isEmployeeView, selectedMonthRequests]);
+
+  const tableColumns = [
+    'File',
+    ...(showSubmittedBy ? ['Employee'] : []),
+    'Uploaded',
+    'Contacts',
+    resolvedStatusLabel,
+    '',
+  ] as const;
+
+  const renderRequestTable = (monthRequests: MasterDataUploadRequest[]) => (
+    <table className="w-full min-w-[640px] text-sm">
+      <thead>
+        <tr className="border-b border-slate-100 bg-slate-50/80 text-left text-[10px] font-bold uppercase tracking-wide text-slate-500">
+          {tableColumns.map((label) => (
+            <th key={label || 'action'} className="px-4 py-2.5 font-semibold">
+              {label}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">
+        {monthRequests.map((request) => (
+          <tr
+            key={request.id}
+            className="transition-colors duration-150 hover:bg-[#e8f1fb]/25"
+          >
+            <td className="px-4 py-3">
+              <div className="font-medium text-slate-900">{request.fileName}</div>
+              <div className="text-xs text-slate-500">{request.sheetName}</div>
+            </td>
+            {showSubmittedBy && (
+              <td className="px-4 py-3 text-slate-700">{request.submittedByEmail ?? '—'}</td>
+            )}
+            <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+              {formatRequestDate(request.createdAt)}
+            </td>
+            <td className="px-4 py-3 font-mono tabular-nums text-slate-800">
+              {isEmployeeView
+                ? formatUploadRequestContactSummary(request)
+                : request.rowCount}
+            </td>
+            <td className="px-4 py-3">
+              <span
+                className={cn(
+                  'inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset',
+                  isEmployeeView
+                    ? EMPLOYEE_UPLOAD_FILE_TYPE_STYLES[getEmployeeUploadFileType(request)]
+                    : cn('capitalize', statusBadgeClass(request.status)),
+                )}
+              >
+                {isEmployeeView
+                  ? getEmployeeUploadFileTypeLabel(request)
+                  : request.status.replace(/_/g, ' ')}
+              </span>
+            </td>
+            <td className="px-4 py-3 text-right">
+              {onOpenRequest && (
+                <button
+                  type="button"
+                  onClick={() => onOpenRequest(request)}
+                  className="rounded-lg bg-[#2e7ad1] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-[#2568b8] active:scale-[0.98]"
+                >
+                  Open
+                </button>
+              )}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
 
   return (
     <>
@@ -185,68 +286,47 @@ export function MasterDataUploadMonthExplorer({
                 <div className="px-4 py-12 text-center text-sm text-slate-500">
                   {emptyFolderMessage ?? `No files in ${selectedMonthLabel} ${selectedYear} yet.`}
                 </div>
+              ) : isEmployeeView ? (
+                <div className="divide-y divide-slate-100">
+                  <div>
+                    <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-4 py-2.5">
+                      <FolderOpen className="h-4 w-4 text-[#2e7ad1]" />
+                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+                        Your uploads
+                      </span>
+                      <span className="rounded-full bg-slate-200/80 px-2 py-0.5 font-mono text-[10px] tabular-nums text-slate-600">
+                        {employeeUploadFiles.length}
+                      </span>
+                    </div>
+                    {employeeUploadFiles.length === 0 ? (
+                      <div className="px-4 py-8 text-center text-sm text-slate-500">
+                        No merged uploads this month.
+                      </div>
+                    ) : (
+                      renderRequestTable(employeeUploadFiles)
+                    )}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 border-b border-amber-100 bg-amber-50/70 px-4 py-2.5">
+                      <Copy className="h-4 w-4 text-amber-700" />
+                      <span className="text-xs font-semibold uppercase tracking-wide text-amber-900">
+                        Duplicates folder
+                      </span>
+                      <span className="rounded-full bg-amber-200/80 px-2 py-0.5 font-mono text-[10px] tabular-nums text-amber-900">
+                        {employeeDuplicateFiles.length}
+                      </span>
+                    </div>
+                    {employeeDuplicateFiles.length === 0 ? (
+                      <div className="px-4 py-8 text-center text-sm text-slate-500">
+                        No duplicate files this month. Rows already in master are saved here after upload.
+                      </div>
+                    ) : (
+                      renderRequestTable(employeeDuplicateFiles)
+                    )}
+                  </div>
+                </div>
               ) : (
-                <table className="w-full min-w-[640px] text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-100 bg-slate-50/80 text-left text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                      {[
-                        'File',
-                        ...(showSubmittedBy ? ['Employee'] : []),
-                        'Uploaded',
-                        'Contacts',
-                        statusColumnLabel,
-                        '',
-                      ].map((label) => (
-                        <th key={label || 'action'} className="px-4 py-2.5 font-semibold">
-                          {label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {selectedMonthRequests.map((request) => (
-                      <tr
-                        key={request.id}
-                        className="transition-colors duration-150 hover:bg-[#e8f1fb]/25"
-                      >
-                        <td className="px-4 py-3">
-                          <div className="font-medium text-slate-900">{request.fileName}</div>
-                          <div className="text-xs text-slate-500">{request.sheetName}</div>
-                        </td>
-                        {showSubmittedBy && (
-                          <td className="px-4 py-3 text-slate-700">{request.submittedByEmail ?? '—'}</td>
-                        )}
-                        <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                          {formatRequestDate(request.createdAt)}
-                        </td>
-                        <td className="px-4 py-3 font-mono tabular-nums text-slate-800">
-                          {request.rowCount}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={cn(
-                              'inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ring-1 ring-inset',
-                              statusBadgeClass(request.status),
-                            )}
-                          >
-                            {request.status.replace(/_/g, ' ')}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          {onOpenRequest && (
-                            <button
-                              type="button"
-                              onClick={() => onOpenRequest(request)}
-                              className="rounded-lg bg-[#2e7ad1] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-[#2568b8] active:scale-[0.98]"
-                            >
-                              Open
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                renderRequestTable(selectedMonthRequests)
               )}
             </div>
           </section>

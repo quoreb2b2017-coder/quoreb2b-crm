@@ -10,14 +10,11 @@ import { useDebouncedAutoSave } from '@/hooks/useDebouncedAutoSave';
 import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
 import { CheckSuppressionModal } from '@/components/employee/CheckSuppressionModal';
-import { handleSuppressionCheckComplete } from '@/lib/master-data/handle-suppression-result';
 
 const STATUS_HINT: Partial<Record<MasterDataUploadRequestStatus, string>> = {
-  pending_db_admin: 'Waiting for DB Admin approval — view only',
-  active: 'Click cells to edit · changes auto-save',
-  pending_admin: 'Sent to Super Admin — view only',
   approved: 'Merged into master file — view only',
-  rejected: 'Rejected — view only',
+  active: 'Your upload file — view only',
+  pending: 'Processing upload — view only',
 };
 
 export interface EmployeeMyDataExcelViewProps {
@@ -25,6 +22,7 @@ export interface EmployeeMyDataExcelViewProps {
   fileName: string;
   sheetName: string;
   status: MasterDataUploadRequestStatus;
+  totalContacts?: number;
   data: SpreadsheetData;
   editable?: boolean;
   onDataChange?: (data: SpreadsheetData) => void;
@@ -37,6 +35,7 @@ export function EmployeeMyDataExcelView({
   fileName,
   sheetName,
   status,
+  totalContacts,
   data,
   editable = false,
   onDataChange,
@@ -89,7 +88,7 @@ export function EmployeeMyDataExcelView({
     setSaving(true);
     try {
       await persistWork();
-      toast.success('Work saved', 'DB Admin can review when you are done');
+      toast.success('Work saved', 'Your changes were saved');
     } catch (err) {
       toast.error('Save failed', extractApiError(err, 'Could not save work'));
     } finally {
@@ -98,6 +97,11 @@ export function EmployeeMyDataExcelView({
   };
 
   const statusHint = STATUS_HINT[status] ?? 'View only';
+  const resolvedTotal = totalContacts ?? data.rows.length;
+  const previewNote =
+    data.rows.length < resolvedTotal
+      ? `Showing first ${data.rows.length.toLocaleString('en-US')} of ${resolvedTotal.toLocaleString('en-US')} contacts`
+      : null;
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-[#e6e6e6]">
@@ -110,7 +114,8 @@ export function EmployeeMyDataExcelView({
             <p className="truncate text-sm font-semibold leading-tight">{fileName}</p>
             <p className="truncate text-[11px] text-white/70">
               {sheetName}
-              {` · ${data.rows.length} contacts · ${data.headers.length} columns`}
+              {` · ${resolvedTotal.toLocaleString('en-US')} contacts · ${data.headers.length} columns`}
+              {previewNote ? ` · ${previewNote}` : ''}
               {editable && autoSaveStatus === 'pending' && ' · Editing…'}
               {editable && autoSaveStatus === 'saving' && ' · Auto-saving…'}
               {editable && autoSaveStatus === 'saved' && ' · Saved'}

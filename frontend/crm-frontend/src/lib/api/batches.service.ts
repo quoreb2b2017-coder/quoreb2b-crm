@@ -1,8 +1,5 @@
 import apiClient from './client';
 
-/** Server resolves masterSearchFilter → rows (up to 50K) before saving batch. */
-const MASTER_BATCH_CREATE_TIMEOUT_MS = 600_000;
-
 export interface BatchRecord {
   id: string;
   name: string;
@@ -27,6 +24,17 @@ export interface BatchRecord {
   campaignChannel?: 'voip' | 'gps' | 'email' | 'other' | string;
   batchKind?: string;
 }
+
+/** Server may split large masterSearchFilter extracts into multiple ≤50K campaigns. */
+export interface BatchCreateResult extends BatchRecord {
+  split?: boolean;
+  parts?: number;
+  totalContacts?: number;
+  batches?: BatchRecord[];
+}
+
+/** Server resolves masterSearchFilter → rows (up to 50K per campaign; may auto-split). */
+const MASTER_BATCH_CREATE_TIMEOUT_MS = 900_000;
 
 export interface BatchHierarchyUser {
   id: string;
@@ -194,7 +202,7 @@ export const batchesService = {
           : undefined,
       })
       .then((r) => {
-        const result = unwrap<BatchRecord>(r);
+        const result = unwrap<BatchCreateResult>(r);
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('master-data-updated'));
         }

@@ -220,7 +220,11 @@ export function DbAdminCampaignWizard({
     if (!batchName.trim()) return;
     const contactCount =
       estimatedCount ?? (sourceRowIndices.length || rows.length);
-    if (contactCount > CAMPAIGN_MAX_ROWS) {
+    const willAutoSplit =
+      Boolean(masterSearchFilter) &&
+      !sourceRowIndices.length &&
+      contactCount > CAMPAIGN_MAX_ROWS;
+    if (contactCount > CAMPAIGN_MAX_ROWS && !willAutoSplit) {
       toast.error(
         'Too many contacts for one campaign',
         `Max ${CAMPAIGN_MAX_ROWS.toLocaleString('en-US')} per campaign. Narrow filters or select fewer rows — then run suppression on that extract.`,
@@ -229,33 +233,55 @@ export function DbAdminCampaignWizard({
     }
     setCreating(true);
     try {
-      const batch = await batchesService.create({
+      const result = await batchesService.create({
         name: batchName.trim(),
         description: batchDesc.trim() || undefined,
         headers,
         rows,
         sourceFileName,
         masterSourceRowIndices: sourceRowIndices.length ? sourceRowIndices : undefined,
-        masterSearchFilter,
+        masterSearchFilter: sourceRowIndices.length ? undefined : masterSearchFilter,
       });
 
       const employeeIds = Array.from(selectedUserIds);
+      const createdBatches =
+        result.split && result.batches?.length ? result.batches : [result];
+
       if (employeeIds.length > 0) {
-        const shareResult = await batchesService.share(batch.id, employeeIds);
-        toastBatchShareResult(shareResult);
+        for (const batch of createdBatches) {
+          const shareResult = await batchesService.share(batch.id, employeeIds);
+          if (createdBatches.length === 1) {
+            toastBatchShareResult(shareResult);
+          }
+        }
+        if (result.split) {
+          toast.success(
+            'Campaigns created and shared',
+            `${result.parts} campaigns (${result.totalContacts?.toLocaleString('en-US')} contacts) shared with ${employeeIds.length} user(s)`,
+          );
+        }
+      } else if (result.split) {
+        toast.success(
+          'Campaigns created',
+          `Created ${result.parts} campaigns — ${result.totalContacts?.toLocaleString('en-US')} contacts total`,
+        );
       } else {
-        toast.success('Campaign created', `"${batch.name}" — ${batch.rowCount} contacts`);
+        toast.success('Campaign created', `"${result.name}" — ${result.rowCount} contacts`);
       }
 
-      window.dispatchEvent(
-        new CustomEvent('batch-created', {
-          detail: { id: batch.id, batchMonth: batch.batchMonth, batchYear: batch.batchYear },
-        }),
-      );
+      for (const batch of createdBatches) {
+        window.dispatchEvent(
+          new CustomEvent('batch-created', {
+            detail: { id: batch.id, batchMonth: batch.batchMonth, batchYear: batch.batchYear },
+          }),
+        );
+      }
       window.dispatchEvent(new CustomEvent('master-data-updated'));
       onCreated?.();
       onClose();
-      router.push(`/db-admin/batches/${batch.id}`);
+      router.push(
+        result.split ? '/db-admin/batches' : `/db-admin/batches/${result.id}`,
+      );
     } catch (e) {
       toast.error('Could not create campaign', extractApiError(e));
     } finally {

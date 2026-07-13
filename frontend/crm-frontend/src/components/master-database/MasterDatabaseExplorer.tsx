@@ -72,6 +72,10 @@ const PAGE_SIZES = [20, 50, 100, 200, 500, 1000];
 const EMBEDDED_PAGE_SIZES = [100, 200, 500, 1000];
 const DB_ADMIN_PREVIEW_LIMIT = 100;
 const CAMPAIGN_MAX_ROWS = 50_000;
+
+function campaignPartCount(contactCount: number): number {
+  return Math.ceil(contactCount / CAMPAIGN_MAX_ROWS);
+}
 const AUTO_SEARCH_MS = 500;
 
 export type MasterDatabaseVariant = 'admin' | 'db_admin';
@@ -689,13 +693,6 @@ export function MasterDatabaseExplorer({
           isFilteredView && (selectAllFiltered || selected.size === 0);
 
         if (useAllFiltered) {
-          if (filteredTotal > CAMPAIGN_MAX_ROWS) {
-            toast.error(
-              'Too many results',
-              `Narrow filters — max ${CAMPAIGN_MAX_ROWS.toLocaleString('en-US')} per campaign`,
-            );
-            return;
-          }
           payload = {
             headers,
             // Use the exact payload that produced current grid/count to avoid race with in-progress edits.
@@ -786,13 +783,6 @@ export function MasterDatabaseExplorer({
       setSelected(new Set(sourceIndices));
       return;
     }
-    if (filteredTotal > CAMPAIGN_MAX_ROWS) {
-      toast.error(
-        'Too many results',
-        `Narrow filters — max ${CAMPAIGN_MAX_ROWS.toLocaleString('en-US')} per campaign`,
-      );
-      return;
-    }
     setSelectAllFiltered(true);
     setSelected(new Set());
   };
@@ -801,7 +791,7 @@ export function MasterDatabaseExplorer({
     if (!batchModal || !batchName.trim()) return;
     setSavingBatch(true);
     try {
-      const batch = await batchesService.create({
+      const result = await batchesService.create({
         name: batchName.trim(),
         description: batchDesc.trim() || undefined,
         headers: batchModal.headers,
@@ -812,7 +802,14 @@ export function MasterDatabaseExplorer({
           : undefined,
         masterSearchFilter: batchModal.masterSearchFilter,
       });
-      toast.success('Campaign created', `"${batch.name}" — ${batch.rowCount} contacts`);
+      if (result.split) {
+        toast.success(
+          'Campaigns created',
+          `Created ${result.parts} campaigns — ${result.totalContacts?.toLocaleString('en-US')} contacts total`,
+        );
+      } else {
+        toast.success('Campaign created', `"${result.name}" — ${result.rowCount} contacts`);
+      }
       setBatchModal(null);
       setSelected(new Set());
       await loadCoverage();
@@ -1041,7 +1038,9 @@ export function MasterDatabaseExplorer({
           >
             {allFilteredSelected
               ? 'Clear all'
-              : `Select all ${Math.min(filteredTotal, CAMPAIGN_MAX_ROWS).toLocaleString('en-US')}`}
+              : selectAllFiltered
+                ? `All ${filteredTotal.toLocaleString('en-US')} filtered`
+                : `Select all ${filteredTotal.toLocaleString('en-US')}`}
           </button>
         )}
         {(selected.size > 0 || selectAllFiltered) && (
@@ -1159,7 +1158,10 @@ export function MasterDatabaseExplorer({
                       : ''}
                   . Grid shows page {page} —{' '}
                   <strong>Create campaign</strong> includes all {filteredTotal.toLocaleString('en-US')} matches
-                  (server loads them; max {CAMPAIGN_MAX_ROWS.toLocaleString('en-US')} per campaign).
+                  {filteredTotal > CAMPAIGN_MAX_ROWS
+                    ? ` (auto-split into ${campaignPartCount(filteredTotal)} campaigns of up to ${CAMPAIGN_MAX_ROWS.toLocaleString('en-US')} each)`
+                    : ''}
+                  .
                 </>
               ) : hasSearched ? (
                 <>

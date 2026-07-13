@@ -3137,11 +3137,12 @@ export class MasterDataService {
     }
   }
 
-  async resolveMasterBatchFromSearch(
+  /** Resolve filter → master row indices only (no row load, no per-campaign size cap). */
+  async resolveMasterBatchIndicesFromSearch(
     filter: Omit<SearchMasterDataDto, 'page' | 'limit'>,
     actorId: string,
     subsetIndices?: number[],
-  ): Promise<{ headers: string[]; rows: string[][]; masterSourceRowIndices: number[] }> {
+  ): Promise<{ headers: string[]; indices: number[] }> {
     await this.assertBatchCreatorAccess(actorId);
     const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
     if (!doc) {
@@ -3162,32 +3163,7 @@ export class MasterDataService {
       availabilityFilter: filter.availabilityFilter,
     };
 
-    let indices: number[];
-    if (this.elasticsearch.isEnabled && !subsetIndices?.length) {
-      try {
-        const osQuery = buildMasterDataOpenSearchQuery(headers, filterInput);
-        const { rowIndices, total } = await this.elasticsearch.searchMasterPage(
-          osQuery,
-          0,
-          MASTER_BATCH_MAX_ROWS + 1,
-        );
-        indices = await this.applyAvailabilityFilter(
-          rowIndices,
-          filterInput.availabilityFilter,
-          masterRevision,
-        );
-        if (total > MASTER_BATCH_MAX_ROWS || indices.length > MASTER_BATCH_MAX_ROWS) {
-          throw new BadRequestException(
-            `Too many contacts (${Math.max(total, indices.length).toLocaleString('en-US')}) for one campaign. Max ${MASTER_BATCH_MAX_ROWS.toLocaleString('en-US')} — narrow filters or select a smaller batch. Suppression can run on your extract before creating the campaign.`,
-          );
-        }
-      } catch (err) {
-        if (err instanceof BadRequestException) throw err;
-        indices = await this.getFilteredIndicesCached(doc, headers, filterInput, masterRevision);
-      }
-    } else {
-      indices = await this.getFilteredIndicesCached(doc, headers, filterInput, masterRevision);
-    }
+    let indices = await this.getFilteredIndicesCached(doc, headers, filterInput, masterRevision);
     if (subsetIndices?.length) {
       const pick = new Set(subsetIndices);
       indices = indices.filter((idx) => pick.has(idx));
@@ -3195,15 +3171,32 @@ export class MasterDataService {
     if (!indices.length) {
       throw new BadRequestException('No contacts match the current filters');
     }
+    return { headers: [...headers], indices };
+  }
+
+  async resolveMasterBatchFromSearch(
+    filter: Omit<SearchMasterDataDto, 'page' | 'limit'>,
+    actorId: string,
+    subsetIndices?: number[],
+  ): Promise<{ headers: string[]; rows: string[][]; masterSourceRowIndices: number[] }> {
+    const { headers, indices } = await this.resolveMasterBatchIndicesFromSearch(
+      filter,
+      actorId,
+      subsetIndices,
+    );
     if (indices.length > MASTER_BATCH_MAX_ROWS) {
       throw new BadRequestException(
-        `Too many contacts (${indices.length.toLocaleString('en-US')}) for one campaign. Max ${MASTER_BATCH_MAX_ROWS.toLocaleString('en-US')} — narrow filters or select a smaller batch.`,
+        `Too many contacts (${indices.length.toLocaleString('en-US')}) for one campaign. Max ${MASTER_BATCH_MAX_ROWS.toLocaleString('en-US')} — narrow filters or select a smaller batch. Suppression can run on your extract before creating the campaign.`,
       );
     }
 
+    const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+    if (!doc) {
+      throw new NotFoundException('No master data uploaded yet');
+    }
     const rows = await this.rowStore.getRowsByIndices(doc, indices);
     return {
-      headers: [...headers],
+      headers,
       rows,
       masterSourceRowIndices: indices,
     };

@@ -5,6 +5,8 @@ import { Model, Types } from 'mongoose';
 import { Batch } from './schemas/batch.schema';
 import { CreateBatchDto, ShareBatchDto, UpdateBatchDto } from './dto/batch.dto';
 import { SystemRole } from '../../common/constants/roles.constant';
+
+const MASTER_CAMPAIGN_MAX_ROWS = 50_000;
 import { UsersRepository } from '../users/users.repository';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { ActivityActor } from '../activity-logs/activity-user.util';
@@ -92,20 +94,25 @@ export class BatchesService {
       !roles.includes(SystemRole.ADMIN) &&
       !roles.includes(SystemRole.SUPER_ADMIN);
 
-    if (isAdmin && dto.masterSearchFilter) {
-      const resolved = await this.masterDataService.resolveMasterBatchFromSearch(
-        dto.masterSearchFilter,
+    if ((isAdmin || isDbAdminOnly) && dto.masterSearchFilter) {
+      const { indices } =
+        await this.masterDataService.resolveMasterBatchIndicesFromSearch(
+          dto.masterSearchFilter,
+          actor.id,
+          dto.masterSourceRowIndices,
+        );
+      if (indices.length > MASTER_CAMPAIGN_MAX_ROWS) {
+        return this.createSplitFromMasterIndices(
+          dto,
+          indices,
+          actor,
+          roles,
+          isAdmin,
+        );
+      }
+      const resolved = await this.masterDataService.resolveMasterBatchCreate(
+        indices,
         actor.id,
-        dto.masterSourceRowIndices,
-      );
-      dto.headers = resolved.headers;
-      dto.rows = resolved.rows;
-      dto.masterSourceRowIndices = resolved.masterSourceRowIndices;
-    } else if (isDbAdminOnly && dto.masterSearchFilter) {
-      const resolved = await this.masterDataService.resolveMasterBatchFromSearch(
-        dto.masterSearchFilter,
-        actor.id,
-        dto.masterSourceRowIndices,
       );
       dto.headers = resolved.headers;
       dto.rows = resolved.rows;
@@ -137,6 +144,58 @@ export class BatchesService {
       dto.rows = resolved.rows;
       dto.masterSourceRowIndices = resolved.masterSourceRowIndices;
     }
+    const batch = await this.persistNewBatch(dto, actor, roles, isAdmin);
+    return this.toResponse(batch);
+  }
+
+  private async createSplitFromMasterIndices(
+    dto: CreateBatchDto,
+    indices: number[],
+    actor: { id: string; email?: string; name?: string },
+    roles: string[],
+    isAdmin: boolean,
+  ) {
+    const parts = Math.ceil(indices.length / MASTER_CAMPAIGN_MAX_ROWS);
+    const baseName = dto.name.trim();
+    const created: Batch[] = [];
+
+    for (let part = 0; part < parts; part++) {
+      const slice = indices.slice(
+        part * MASTER_CAMPAIGN_MAX_ROWS,
+        (part + 1) * MASTER_CAMPAIGN_MAX_ROWS,
+      );
+      const resolved = await this.masterDataService.resolveMasterBatchCreate(
+        slice,
+        actor.id,
+      );
+      const partDto: CreateBatchDto = {
+        ...dto,
+        name: parts > 1 ? `${baseName} (${part + 1}/${parts})` : baseName,
+        headers: resolved.headers,
+        rows: resolved.rows,
+        masterSourceRowIndices: resolved.masterSourceRowIndices,
+        masterSearchFilter: undefined,
+      };
+      created.push(await this.persistNewBatch(partDto, actor, roles, isAdmin));
+    }
+
+    const responses = created.map((b) => this.toResponse(b));
+    const primary = responses[0]!;
+    return {
+      ...primary,
+      split: true,
+      parts,
+      totalContacts: indices.length,
+      batches: responses,
+    };
+  }
+
+  private async persistNewBatch(
+    dto: CreateBatchDto,
+    actor: { id: string; email?: string; name?: string },
+    roles: string[],
+    isAdmin: boolean,
+  ): Promise<Batch> {
     const period = currentPeriod();
     const sourceId =
       dto.sourceBatchId && Types.ObjectId.isValid(dto.sourceBatchId)
@@ -241,7 +300,7 @@ export class BatchesService {
       }
     }
 
-    return this.toResponse(batch);
+    return batch;
   }
 
   private async assertDbAdminCreateFromSharedBatch(

@@ -357,28 +357,15 @@ export class SuppressionDataService {
     } else if (hasMasterResolve) {
       baseFileName = dto.baseFileName ?? baseFileName;
       duplicateSourceRole = isDbAdmin ? 'db_admin' : 'employee';
-
-      if (dto.masterSourceRowIndices?.length) {
-        // Campaign row pick — only scan selected master indices (not full filter).
-        await this.masterDataService.scanMasterForSuppressionCheck(
-          actor.id,
-          { subsetIndices: dto.masterSourceRowIndices },
-          (chunk) => {
-            collectMatches(chunk.headers, chunk.rows, (i) => chunk.sourceIndices[i] ?? i);
-          },
-        );
-      } else if (dto.masterSearchFilter) {
-        // Select-all-filtered extract — same scope & 50k cap as campaign create.
-        const resolved = await this.masterDataService.resolveMasterBatchFromSearch(
-          dto.masterSearchFilter,
-          actor.id,
-        );
-        collectMatches(
-          resolved.headers,
-          resolved.rows,
-          (i) => resolved.masterSourceRowIndices[i] ?? i,
-        );
-      }
+      await this.masterDataService.scanMasterForSuppressionCheck(
+        actor.id,
+        dto.masterSourceRowIndices?.length
+          ? { subsetIndices: dto.masterSourceRowIndices }
+          : { filter: dto.masterSearchFilter },
+        (chunk) => {
+          collectMatches(chunk.headers, chunk.rows, (i) => chunk.sourceIndices[i] ?? i);
+        },
+      );
     }
 
     const manualValues = dto.manualInput?.trim()

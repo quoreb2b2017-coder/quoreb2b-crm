@@ -3279,13 +3279,14 @@ export class MasterDataService {
   }
 
   /**
-   * Load only the master row indices selected for a campaign and scan in chunks.
-   * Does not re-run master filters — suppression compares campaign extract vs suppression list.
+   * Scan master rows in chunks for suppression — compares campaign extract vs suppression list.
+   * Uses explicit row indices when provided; otherwise resolves filter indices without the 50k campaign cap.
    */
   async scanMasterForSuppressionCheck(
     actorId: string,
     opts: {
-      subsetIndices: number[];
+      filter?: Omit<SearchMasterDataDto, 'page' | 'limit'>;
+      subsetIndices?: number[];
     },
     onChunk: (chunk: {
       headers: string[];
@@ -3301,20 +3302,39 @@ export class MasterDataService {
 
     const headers = [...(doc.headers as string[])];
     const rowCount = this.rowStore.getRowCount(doc);
-    const seen = new Set<number>();
-    const indices: number[] = [];
-    for (const raw of opts.subsetIndices) {
-      const idx = Number(raw);
-      if (!Number.isInteger(idx) || seen.has(idx)) continue;
-      if (idx < 0 || idx >= rowCount) {
-        throw new BadRequestException(`Invalid master row selection (row ${idx + 1})`);
+    const masterRevision = (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? rowCount;
+    let indices: number[];
+
+    if (opts.subsetIndices?.length) {
+      const seen = new Set<number>();
+      indices = [];
+      for (const raw of opts.subsetIndices) {
+        const idx = Number(raw);
+        if (!Number.isInteger(idx) || seen.has(idx)) continue;
+        if (idx < 0 || idx >= rowCount) {
+          throw new BadRequestException(`Invalid master row selection (row ${idx + 1})`);
+        }
+        seen.add(idx);
+        indices.push(idx);
       }
-      seen.add(idx);
-      indices.push(idx);
+    } else if (opts.filter) {
+      const filterInput: MasterDataFilterInput = {
+        query: opts.filter.query,
+        columnFilters: opts.filter.columnFilters,
+        columnValueFilters: opts.filter.columnValueFilters,
+        columnValueOrFilters: opts.filter.columnValueOrFilters,
+        columnDateRangeFilters: opts.filter.columnDateRangeFilters,
+        mustExistColumns: opts.filter.mustExistColumns,
+        filters: opts.filter.filters,
+        availabilityFilter: opts.filter.availabilityFilter,
+      };
+      indices = await this.getFilteredIndicesCached(doc, headers, filterInput, masterRevision);
+    } else {
+      throw new BadRequestException('No contacts selected for suppression check');
     }
 
     if (!indices.length) {
-      throw new BadRequestException('No contacts selected for suppression check');
+      throw new BadRequestException('No contacts match the current filters');
     }
 
     for (let offset = 0; offset < indices.length; offset += SUPPRESSION_SCAN_CHUNK) {

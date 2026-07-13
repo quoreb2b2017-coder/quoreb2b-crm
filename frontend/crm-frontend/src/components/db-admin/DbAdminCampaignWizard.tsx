@@ -182,10 +182,10 @@ export function DbAdminCampaignWizard({
       const result = await suppressionDataService.checkSuppression({
         suppressionCampaignId,
         checkMode,
-        ...(hasInlineRows
-          ? { sourceHeaders: headers, sourceRows: rows }
-          : hasSelectedIndices
-            ? { masterSourceRowIndices: sourceRowIndices }
+        ...(hasSelectedIndices
+          ? { masterSourceRowIndices: sourceRowIndices }
+          : hasInlineRows
+            ? { sourceHeaders: headers, sourceRows: rows }
             : { masterSearchFilter }),
         baseFileName: batchName || sourceFileName,
       });

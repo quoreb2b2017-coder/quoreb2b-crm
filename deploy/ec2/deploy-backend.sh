@@ -63,6 +63,10 @@ sudo systemctl reload nginx
 echo "==> Ensuring HTTPS (Let's Encrypt for sslip.io)..."
 bash "$APP_DIR/deploy/ec2/ensure-ssl.sh" || echo "WARNING: SSL setup skipped — API works on http://${EC2_PUBLIC_IP:-65.2.186.189}"
 
+echo "==> Cleaning stale upload staging files (>24h)..."
+sudo find /var/lib/quoreb2b/uploads -type f -mtime +0 -delete 2>/dev/null || true
+sudo du -sh /var/lib/quoreb2b/uploads 2>/dev/null || true
+
 echo "==> Preparing disk for Docker build..."
 df -h / | tail -1
 # Swap file uses root disk — remove before build on small volumes to reclaim ~1GB

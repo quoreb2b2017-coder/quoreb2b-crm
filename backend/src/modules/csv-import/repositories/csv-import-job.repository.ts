@@ -169,11 +169,11 @@ export class CsvImportJobRepository {
       .exec();
   }
 
-  /** Stream finished but finalize never ran (orchestrator lock expired). */
+  /** Stream finished but finalize never ran (orchestrator lock expired / deploy). */
   findJobsAwaitingFinalize(): Promise<CsvImportJob[]> {
     return this.jobModel
       .find({
-        status: { $in: ['processing', 'failed'] },
+        status: { $in: ['processing', 'queued', 'failed'] },
         totalBatches: { $gt: 0 },
         $expr: { $gte: ['$completedBatches', '$totalBatches'] },
         cancelRequested: { $ne: true },

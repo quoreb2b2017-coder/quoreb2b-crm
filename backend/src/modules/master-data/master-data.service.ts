@@ -3001,7 +3001,7 @@ export class MasterDataService {
     }
 
     const headers = doc.headers as string[];
-    const rowCount = this.rowStore.getRowCount(doc);
+    const rowCount = await this.getCachedMasterCount(doc);
     const page = dto.page ?? 1;
     const limit = Math.min(dto.limit ?? 100, 2000);
 
@@ -3653,7 +3653,15 @@ export class MasterDataService {
   }
 
   private async toResponse(doc: MasterDataRecord) {
-    const rowCount = this.rowStore.getRowCount(doc);
+    const rowCount = await this.rowStore.countStoredRows(doc);
+    if (this.rowStore.isChunked(doc) && this.rowStore.getRowCount(doc) !== rowCount) {
+      await this.masterDataModel
+        .updateOne({ key: doc.key }, { $set: { rowCount } })
+        .exec()
+        .catch(() => undefined);
+      void this.cacheMasterCount(rowCount);
+      (doc as { rowCount: number }).rowCount = rowCount;
+    }
     const largeDataset =
       this.rowStore.isChunked(doc) || rowCount > MASTER_DATA_LARGE_UI_ROW_LIMIT;
     const previewLimit = 100;

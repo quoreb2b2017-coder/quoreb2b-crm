@@ -22,6 +22,9 @@ import {
   MASTER_DATA_KEY,
   MasterDataRecord,
 } from '../../master-data/schemas/master-data.schema';
+import {
+  MasterDataChunk,
+} from '../../master-data/schemas/master-data-chunk.schema';
 import { MasterDataSearchIndexService } from '../../master-data/master-data-search-index.service';
 import {
   formatMasterDataCell,
@@ -52,6 +55,8 @@ export class CsvImportProcessorService {
     private readonly config: ConfigService,
     @InjectModel(MasterDataRecord.name)
     private readonly masterDataModel: Model<MasterDataRecord>,
+    @InjectModel(MasterDataChunk.name)
+    private readonly chunkModel: Model<MasterDataChunk>,
     private readonly searchIndex: MasterDataSearchIndexService,
   ) {}
 
@@ -106,7 +111,15 @@ export class CsvImportProcessorService {
 
     const acquired = await this.lock.acquire(job.masterKey, jobId);
     if (!acquired) {
-      this.logger.warn(`Finalize skipped for ${jobId} — lock held by another job`);
+      this.logger.warn(`Finalize delayed for ${jobId} — lock held; will retry`);
+      // Re-queue so a stuck lock (or overlapping job) does not leave the import at 99% forever.
+      setTimeout(() => {
+        void this.queue.enqueueFinalize(jobId).catch((err) => {
+          this.logger.error(
+            `Failed to re-queue finalize for ${jobId}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
+      }, 15_000);
       return;
     }
 
@@ -236,7 +249,8 @@ export class CsvImportProcessorService {
 
       if (batchNumber % 5 === 0) {
         job = (await this.jobs.findByJobId(job.jobId))!;
-        await this.patchMasterMeta(job, targetHeaders, job.checkpoint.successRows, job.fileName);
+        const liveTotal = await this.countChunkRows(job.masterKey || MASTER_DATA_KEY);
+        await this.patchMasterMeta(job, targetHeaders, liveTotal, job.fileName);
       }
     }
 
@@ -326,7 +340,10 @@ export class CsvImportProcessorService {
     }
 
     const successRows = job.checkpoint.successRows;
-    await this.patchMasterMeta(job, job.headers, successRows, job.fileName);
+    // Always sync metadata to the real chunk total (not just this job's inserted rows),
+    // otherwise append imports leave dashboards showing a stale/wrong TOTAL DATA count.
+    const totalRows = await this.countChunkRows(job.masterKey || MASTER_DATA_KEY);
+    await this.patchMasterMeta(job, job.headers, totalRows, job.fileName);
 
     await this.jobs.updateStatus(job.jobId, 'completed', {
       completedAt: new Date(),
@@ -337,14 +354,29 @@ export class CsvImportProcessorService {
       failed: failedCount,
       percent: 100,
       message:
-        `Import complete — ${successRows.toLocaleString()} rows saved` +
+        `Import complete — ${totalRows.toLocaleString()} contacts in master` +
+        (successRows ? ` (+${successRows.toLocaleString()} from this file)` : '') +
         (failedCount ? `, ${failedCount.toLocaleString()} failed` : ''),
     });
 
-    this.logger.log(`Import ${job.jobId} done: ${successRows} ok, ${failedCount} failed`);
+    this.logger.log(
+      `Import ${job.jobId} done: +${successRows} from file, ${totalRows} total in master, ${failedCount} failed`,
+    );
     void this.cache.delByPrefix('master:');
+    void this.cache.delByPrefix('dashboard:');
     // Mongo is source of truth; rebuild OpenSearch asynchronously for <500ms filters.
     this.searchIndex.enqueueFullReindex(job.masterKey || MASTER_DATA_KEY);
+  }
+
+  private async countChunkRows(masterKey: string): Promise<number> {
+    const agg = await this.chunkModel
+      .aggregate<{ total: number }>([
+        { $match: { masterKey } },
+        { $project: { rowLen: { $size: { $ifNull: ['$rows', []] } } } },
+        { $group: { _id: null, total: { $sum: '$rowLen' } } },
+      ])
+      .exec();
+    return agg[0]?.total ?? 0;
   }
 
   private async buildErrorCsv(jobId: string, headers: string[]): Promise<string> {

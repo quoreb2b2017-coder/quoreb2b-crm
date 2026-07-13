@@ -130,6 +130,13 @@ export class CsvImportJob extends Document {
   @Prop({ default: '' })
   duplicateOfJobId: string;
 
+  /** Temp duplicates folder (upload_request id) for append imports. */
+  @Prop({ default: '' })
+  duplicateHoldRequestId: string;
+
+  @Prop({ default: 0 })
+  duplicateRowsHeld: number;
+
   @Prop({ default: 1000 })
   batchSize: number;
 

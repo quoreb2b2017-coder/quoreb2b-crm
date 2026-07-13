@@ -33,14 +33,20 @@ import {
   MasterDataRecord,
   MasterDataSchema,
 } from '../master-data/schemas/master-data.schema';
+import {
+  MasterDataUploadRequest,
+  MasterDataUploadRequestSchema,
+} from '../master-data/schemas/master-data-upload-request.schema';
 import { RedisModule } from '../../redis/redis.module';
 import { MasterDataModule } from '../master-data/master-data.module';
+import { CsvImportDuplicateHoldService } from './services/csv-import-duplicate-hold.service';
 
 const mongooseFeatures = MongooseModule.forFeature([
   { name: CsvImportJob.name, schema: CsvImportJobSchema },
   { name: CsvImportFailedRow.name, schema: CsvImportFailedRowSchema },
   { name: MasterDataChunk.name, schema: MasterDataChunkSchema },
   { name: MasterDataRecord.name, schema: MasterDataSchema },
+  { name: MasterDataUploadRequest.name, schema: MasterDataUploadRequestSchema },
 ]);
 
 const coreProvidersWithoutLock = [
@@ -51,6 +57,7 @@ const coreProvidersWithoutLock = [
   CsvImportBatchWriterService,
   CsvImportProcessorService,
   CsvImportRecoveryService,
+  CsvImportDuplicateHoldService,
 ];
 
 @Module({})

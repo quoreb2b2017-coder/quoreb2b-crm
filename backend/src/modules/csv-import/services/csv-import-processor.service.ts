@@ -15,6 +15,7 @@ import { CsvImportStreamService } from './csv-import-stream.service';
 import { CsvImportBatchWriterService } from './csv-import-batch-writer.service';
 import { CsvImportQueueService } from './csv-import-queue.service';
 import { CsvImportLockService } from './csv-import-lock.service';
+import { CsvImportDuplicateHoldService } from './csv-import-duplicate-hold.service';
 import { AppCacheService } from '../../../redis/app-cache.service';
 import { CsvImportBatchJobData } from '../csv-import.types';
 import { CsvImportJob } from '../schemas/csv-import-job.schema';
@@ -25,6 +26,10 @@ import {
 import {
   MasterDataChunk,
 } from '../../master-data/schemas/master-data-chunk.schema';
+import {
+  MASTER_DATA_CHUNK_SIZE,
+  MasterDataRowStore,
+} from '../../master-data/master-data-row.store';
 import { MasterDataSearchIndexService } from '../../master-data/master-data-search-index.service';
 import {
   formatMasterDataCell,
@@ -34,6 +39,7 @@ import {
   alignRowWithIndex,
   buildHeaderIndexMap,
   mergeHeaders,
+  rowKey,
 } from '../../master-data/master-data-merge.util';
 
 function sleep(ms: number): Promise<void> {
@@ -53,6 +59,8 @@ export class CsvImportProcessorService {
     private readonly lock: CsvImportLockService,
     private readonly cache: AppCacheService,
     private readonly config: ConfigService,
+    private readonly rowStore: MasterDataRowStore,
+    private readonly duplicateHold: CsvImportDuplicateHoldService,
     @InjectModel(MasterDataRecord.name)
     private readonly masterDataModel: Model<MasterDataRecord>,
     @InjectModel(MasterDataChunk.name)
@@ -79,7 +87,11 @@ export class CsvImportProcessorService {
 
     try {
       await this.jobs.updateStatus(jobId, 'processing', { startedAt: new Date() });
-      const useBatchQueue = this.config.get<number>('CSV_IMPORT_WRITE_CONCURRENCY', 2) > 1;
+      // Append must use rowStore.appendRows (serialized). Parallel chunk-index writes
+      // previously started at 0 and overwrote existing master data.
+      const useBatchQueue =
+        job.mode !== 'append' &&
+        this.config.get<number>('CSV_IMPORT_WRITE_CONCURRENCY', 2) > 1;
       await this.processStream(job, useBatchQueue);
       const latest = await this.jobs.findByJobId(jobId);
       if (latest && !['paused', 'cancelled', 'failed'].includes(latest.status)) {
@@ -155,10 +167,57 @@ export class CsvImportProcessorService {
   private async processStream(initialJob: CsvImportJob, useBatchQueue: boolean): Promise<void> {
     let job = initialJob;
     const batchSize = job.batchSize || this.config.get<number>('CSV_IMPORT_BATCH_SIZE', 1000);
+    const masterKey = job.masterKey || MASTER_DATA_KEY;
 
     if (job.mode === 'replace' && job.checkpoint.lastRowNumber === 0) {
-      await this.writer.deleteAllChunks(job.masterKey);
+      await this.writer.deleteAllChunks(masterKey);
     }
+
+    // Append must never start writing at chunk 0 — that overwrites existing master data.
+    const existingMaster = await this.masterDataModel.findOne({ key: masterKey }).exec();
+    if (job.mode === 'append' && existingMaster?.headers?.length && !job.headers.length) {
+      await this.jobs.updateStatus(job.jobId, job.status, {
+        headers: existingMaster.headers as string[],
+      });
+      job = (await this.jobs.findByJobId(job.jobId))!;
+    }
+
+    let seen: Set<string> | null = null;
+    let holdKey = '';
+    let holdRequestId = job.duplicateHoldRequestId || '';
+    let duplicateRowsHeld = job.duplicateRowsHeld || 0;
+    let dupBuffer: string[][] = [];
+
+    if (job.mode === 'append' && existingMaster) {
+      await this.jobs.updateProgress(job.jobId, {
+        message: 'Indexing existing master rows for duplicate detection…',
+        percent: Math.max(job.progress.percent || 0, 8),
+      });
+      seen = await this.rowStore.loadExistingRowKeys(existingMaster, existingMaster.headers as string[], {
+        formatCell: formatMasterDataCell,
+      });
+      this.logger.log(
+        `Append dedup index ready: ${seen.size.toLocaleString()} existing row fingerprints`,
+      );
+    }
+
+    const flushDupBuffer = async (headers: string[]) => {
+      if (!dupBuffer.length || !seen) return;
+      if (!holdRequestId) {
+        const hold = await this.duplicateHold.ensureHold(job, headers);
+        holdKey = hold.holdKey;
+        holdRequestId = hold.requestId;
+      } else if (!holdKey) {
+        holdKey = this.duplicateHold.holdKeyForJob(job.jobId);
+      }
+      const n = await this.duplicateHold.appendDuplicates(holdKey, dupBuffer);
+      duplicateRowsHeld += n;
+      dupBuffer = [];
+      await this.jobs.updateStatus(job.jobId, job.status, {
+        duplicateHoldRequestId: holdRequestId,
+        duplicateRowsHeld,
+      } as Partial<CsvImportJob>);
+    };
 
     const source = await this.openReadStream(job);
     let headers = job.headers;
@@ -198,9 +257,16 @@ export class CsvImportProcessorService {
         const rowNumber = batch.rowNumbers[i];
         try {
           if (!rowHasSourceData(raw, sourceHeaders)) continue;
-          validRows.push(
-            alignRowWithIndex(raw, sourceIdx, targetHeaders, formatMasterDataCell),
-          );
+          const aligned = alignRowWithIndex(raw, sourceIdx, targetHeaders, formatMasterDataCell);
+          if (seen) {
+            const key = rowKey(aligned);
+            if (seen.has(key)) {
+              dupBuffer.push(aligned);
+              continue;
+            }
+            seen.add(key);
+          }
+          validRows.push(aligned);
         } catch (err) {
           failedBuffer.push({
             rowNumber,
@@ -210,10 +276,33 @@ export class CsvImportProcessorService {
         }
       }
 
+      if (dupBuffer.length >= 500) {
+        await flushDupBuffer(targetHeaders);
+      }
       if (failedBuffer.length >= 200) {
         await this.jobs.recordFailedRows(job.jobId, failedBuffer.splice(0));
       }
-      if (!validRows.length) continue;
+      if (!validRows.length) {
+        const totalEstimate = Math.max(job.progress.totalEstimate, batch.processed);
+        await this.jobs.updateProgress(
+          job.jobId,
+          {
+            processed: batch.processed,
+            totalEstimate,
+            message:
+              `Processing row ${batch.processed.toLocaleString()}…` +
+              (duplicateRowsHeld || dupBuffer.length
+                ? ` (${(duplicateRowsHeld + dupBuffer.length).toLocaleString()} duplicates held)`
+                : ''),
+            percent:
+              totalEstimate > 0
+                ? Math.min(95, Math.round((batch.processed / totalEstimate) * 95))
+                : 10,
+          },
+          { lastRowNumber: batch.processed },
+        );
+        continue;
+      }
 
       batchNumber += 1;
       const batchData: CsvImportBatchJobData = {
@@ -222,7 +311,7 @@ export class CsvImportProcessorService {
         chunkIndices: [job.checkpoint.nextChunkIndex],
         rows: validRows,
         headers: targetHeaders,
-        masterKey: job.masterKey,
+        masterKey,
         isLastBatch: false,
       };
 
@@ -238,7 +327,11 @@ export class CsvImportProcessorService {
         {
           processed: batch.processed,
           totalEstimate,
-          message: `Processing row ${batch.processed.toLocaleString()}…`,
+          message:
+            `Processing row ${batch.processed.toLocaleString()}…` +
+            (duplicateRowsHeld || dupBuffer.length
+              ? ` (${(duplicateRowsHeld + dupBuffer.length).toLocaleString()} duplicates held)`
+              : ''),
           percent:
             totalEstimate > 0
               ? Math.min(95, Math.round((batch.processed / totalEstimate) * 95))
@@ -249,13 +342,26 @@ export class CsvImportProcessorService {
 
       if (batchNumber % 5 === 0) {
         job = (await this.jobs.findByJobId(job.jobId))!;
-        const liveTotal = await this.countChunkRows(job.masterKey || MASTER_DATA_KEY);
+        const liveTotal = await this.countChunkRows(masterKey);
         await this.patchMasterMeta(job, targetHeaders, liveTotal, job.fileName);
       }
     }
 
     if (failedBuffer.length) {
-      await this.jobs.recordFailedRows(job.jobId, failedBuffer);
+      await this.jobs.recordFailedRows(job.jobId, failedBuffer.splice(0));
+    }
+    const finalHeaders =
+      (await this.jobs.findByJobId(job.jobId))?.headers?.length
+        ? ((await this.jobs.findByJobId(job.jobId))!.headers as string[])
+        : headers;
+    await flushDupBuffer(finalHeaders);
+    if (holdRequestId) {
+      await this.duplicateHold.finalizeHold(
+        holdRequestId,
+        holdKey || this.duplicateHold.holdKeyForJob(job.jobId),
+        finalHeaders,
+        duplicateRowsHeld,
+      );
     }
 
     await this.jobs.setTotalBatches(job.jobId, batchNumber);
@@ -266,16 +372,19 @@ export class CsvImportProcessorService {
     rows: string[][],
     batchNumber: number,
   ): Promise<void> {
-    const chunkSize = job.batchSize || this.config.get<number>('CSV_IMPORT_BATCH_SIZE', 1000);
-    const chunkSlots = Math.ceil(rows.length / chunkSize);
-    const startChunkIndex = await this.jobs.allocateChunkStart(job.jobId, chunkSlots);
+    const masterKey = job.masterKey || MASTER_DATA_KEY;
+    let writtenRows = 0;
 
-    const { writtenRows } = await this.writer.bulkWriteRows(
-      job.masterKey,
-      rows,
-      startChunkIndex,
-      chunkSize,
-    );
+    if (job.mode === 'append') {
+      // True append — fills partial last chunk, never overwrites lower indices.
+      writtenRows = await this.rowStore.appendRows(rows, masterKey, MASTER_DATA_CHUNK_SIZE);
+    } else {
+      const chunkSize = MASTER_DATA_CHUNK_SIZE;
+      const chunkSlots = Math.ceil(rows.length / chunkSize);
+      const startChunkIndex = await this.jobs.allocateChunkStart(job.jobId, chunkSlots);
+      const result = await this.writer.bulkWriteRows(masterKey, rows, startChunkIndex, chunkSize);
+      writtenRows = result.writtenRows;
+    }
 
     const fresh = (await this.jobs.findByJobId(job.jobId))!;
     const processed = Math.max(fresh.progress.processed, fresh.checkpoint.lastRowNumber);
@@ -288,7 +397,10 @@ export class CsvImportProcessorService {
         processed,
         success,
         failed,
-        message: `Batch ${batchNumber}: saved ${success.toLocaleString()} rows`,
+        message: `Batch ${batchNumber}: saved ${success.toLocaleString()} new rows` +
+          (fresh.duplicateRowsHeld
+            ? ` · ${fresh.duplicateRowsHeld.toLocaleString()} duplicates held`
+            : ''),
         percent:
           fresh.progress.totalEstimate > 0
             ? Math.min(99, Math.round((processed / fresh.progress.totalEstimate) * 100))
@@ -340,6 +452,7 @@ export class CsvImportProcessorService {
     }
 
     const successRows = job.checkpoint.successRows;
+    const duplicateRowsHeld = job.duplicateRowsHeld || 0;
     // Always sync metadata to the real chunk total (not just this job's inserted rows),
     // otherwise append imports leave dashboards showing a stale/wrong TOTAL DATA count.
     const totalRows = await this.countChunkRows(job.masterKey || MASTER_DATA_KEY);
@@ -355,12 +468,15 @@ export class CsvImportProcessorService {
       percent: 100,
       message:
         `Import complete — ${totalRows.toLocaleString()} contacts in master` +
-        (successRows ? ` (+${successRows.toLocaleString()} from this file)` : '') +
+        (successRows ? ` (+${successRows.toLocaleString()} new from this file)` : '') +
+        (duplicateRowsHeld
+          ? `, ${duplicateRowsHeld.toLocaleString()} duplicates in temp folder`
+          : '') +
         (failedCount ? `, ${failedCount.toLocaleString()} failed` : ''),
     });
 
     this.logger.log(
-      `Import ${job.jobId} done: +${successRows} from file, ${totalRows} total in master, ${failedCount} failed`,
+      `Import ${job.jobId} done: +${successRows} new, ${duplicateRowsHeld} dups held, ${totalRows} total in master, ${failedCount} failed`,
     );
     void this.cache.delByPrefix('master:');
     void this.cache.delByPrefix('dashboard:');

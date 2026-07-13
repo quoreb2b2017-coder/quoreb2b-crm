@@ -45,6 +45,6 @@ import { NotificationsModule } from '../notifications/notifications.module';
     MasterDataImportLockService,
     MasterDataSearchIndexService,
   ],
-  exports: [MasterDataService, MasterDataSearchIndexService],
+  exports: [MasterDataService, MasterDataSearchIndexService, MasterDataRowStore],
 })
 export class MasterDataModule {}

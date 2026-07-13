@@ -227,6 +227,52 @@ export class CsvImportService {
     return { jobId, status: 'queued' };
   }
 
+  /**
+   * Re-import an existing S3 CSV with true append + duplicate hold
+   * (used to recover after the overwrite bug).
+   */
+  async requeueAppendFromExistingS3(params: {
+    s3Key: string;
+    fileName: string;
+    actor: CsvImportActor;
+    contentHash?: string;
+  }): Promise<{ jobId: string; status: string }> {
+    this.assertEnabled();
+    if (!this.s3.isEnabled()) {
+      throw new ServiceUnavailableException('S3 is required for recovery import');
+    }
+
+    const head = await this.s3.headObject(params.s3Key);
+    const jobId = this.jobs.generateJobId();
+    await this.jobs.create({
+      jobId,
+      target: 'master-data',
+      masterKey: MASTER_DATA_KEY,
+      mode: 'append',
+      status: 'queued',
+      fileName: params.fileName,
+      fileSizeBytes: head.size,
+      s3Bucket: this.s3.getBucket(),
+      s3Key: params.s3Key,
+      batchSize: this.normalizeBatchSize(),
+      contentHash: params.contentHash || `recovery-${jobId}`,
+      uploadedBy: new Types.ObjectId(params.actor.userId),
+      uploadedByEmail: params.actor.email,
+    });
+
+    const bullId = await this.queue.enqueueOrchestrator(jobId);
+    await this.jobs.updateStatus(jobId, 'queued', { bullJobId: bullId });
+    await this.jobs.updateProgress(jobId, {
+      percent: 12,
+      message: 'Recovery append queued — unique rows will add, duplicates go to temp folder',
+    });
+
+    this.logger.warn(
+      `Recovery append queued ${jobId} from s3://${this.s3.getBucket()}/${params.s3Key}`,
+    );
+    return { jobId, status: 'queued' };
+  }
+
   async getJob(jobId: string): Promise<Record<string, unknown>> {
     const job = await this.jobs.findByJobId(jobId);
     if (!job) throw new NotFoundException('Import job not found');

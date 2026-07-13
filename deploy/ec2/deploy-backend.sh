@@ -44,6 +44,13 @@ git fetch origin main
 git clean -fd
 git reset --hard origin/main
 
+echo "==> Ensuring root filesystem uses full EBS volume..."
+if [ -b /dev/nvme0n1 ]; then
+  sudo growpart /dev/nvme0n1 1 2>/dev/null || true
+  sudo resize2fs /dev/nvme0n1p1 2>/dev/null || true
+fi
+df -h / | tail -1
+
 echo "==> Ensuring Redis is running..."
 bash "$APP_DIR/deploy/ec2/ensure-redis.sh"
 
@@ -114,6 +121,9 @@ for i in $(seq 1 30); do
     curl -sf http://127.0.0.1:4000/api/v1/health | python3 -m json.tool 2>/dev/null || curl -sf http://127.0.0.1:4000/api/v1/health
     echo ""
     echo "Deploy done. Logs: docker logs -f $CONTAINER_NAME"
+    echo ""
+    echo "==> Starting BullMQ worker (CSV import / bulk email)..."
+    bash "$APP_DIR/deploy/ec2/deploy-worker.sh"
     exit 0
   fi
   sleep 2

@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -168,7 +167,13 @@ export class CsvImportService {
       });
       await this.s3.uploadLocalFile(localPath, job.s3Key, 'text/csv');
       const head = await this.s3.headObject(job.s3Key);
-      await this.assertNoDuplicate(head.etag, job.masterKey, jobId);
+      const reuse = await this.resolveDuplicateImport(head.etag, job.masterKey, jobId);
+      if (reuse) {
+        await this.jobs.updateStatus(jobId, 'cancelled', {
+          errorMessage: `Duplicate upload — import already running as ${reuse}`,
+        });
+        return;
+      }
 
       const bullId = await this.queue.enqueueOrchestrator(jobId);
       await this.jobs.updateStatus(jobId, 'queued', {
@@ -207,7 +212,10 @@ export class CsvImportService {
 
     const head = await this.s3.headObject(job.s3Key);
     const hash = contentHash || head.etag;
-    await this.assertNoDuplicate(hash, job.masterKey, jobId);
+    const reuse = await this.resolveDuplicateImport(hash, job.masterKey, jobId);
+    if (reuse) {
+      return { jobId: reuse, status: 'processing' };
+    }
 
     const bullId = await this.queue.enqueueOrchestrator(jobId);
     await this.jobs.updateStatus(jobId, 'queued', {
@@ -276,24 +284,38 @@ export class CsvImportService {
     return { downloadUrl };
   }
 
-  private async assertNoDuplicate(
+  /**
+   * Same CSV re-uploaded while an older job is still queued/paused blocks /start with 409.
+   * Cancel stale jobs; if already processing, return that job id for idempotent polling.
+   */
+  private async resolveDuplicateImport(
     contentHash: string,
     masterKey: string,
-    excludeJobId?: string,
-  ): Promise<void> {
-    if (!contentHash) return;
+    newJobId: string,
+  ): Promise<string | null> {
+    if (!contentHash) return null;
     const active = await this.jobs.findActiveByContentHash(contentHash, masterKey);
-    if (active && active.jobId !== excludeJobId) {
-      throw new ConflictException(
-        `An import with the same file is already ${active.status} (job ${active.jobId})`,
+    if (!active || active.jobId === newJobId) return null;
+
+    if (active.status === 'processing') {
+      this.logger.log(
+        `Duplicate CSV hash — reusing in-flight job ${active.jobId} (new upload ${newJobId})`,
       );
+      await this.jobs.updateStatus(newJobId, 'cancelled', {
+        errorMessage: `Duplicate upload — import already running as ${active.jobId}`,
+        cancelRequested: true,
+      });
+      return active.jobId;
     }
-    const done = await this.jobs.findCompletedByContentHash(contentHash, masterKey);
-    if (done && done.jobId !== excludeJobId) {
-      this.logger.warn(
-        `Duplicate file hash ${contentHash} — previous job ${done.jobId} completed`,
-      );
-    }
+
+    this.logger.warn(
+      `Superseding stale CSV import ${active.jobId} (${active.status}) → ${newJobId}`,
+    );
+    await this.jobs.updateStatus(active.jobId, 'cancelled', {
+      errorMessage: `Superseded by new upload (${newJobId})`,
+      cancelRequested: true,
+    });
+    return null;
   }
 
   private normalizeBatchSize(size?: number): number {

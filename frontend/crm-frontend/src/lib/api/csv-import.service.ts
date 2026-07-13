@@ -143,9 +143,9 @@ async function uploadFileToS3(
   });
 }
 
-async function startImportJob(jobId: string): Promise<void> {
+async function startImportJob(jobId: string): Promise<string> {
   const base = getCsvImportApiBaseUrl();
-  await axios.post(
+  const { data } = await axios.post(
     `${base}/csv-imports/${jobId}/start`,
     {},
     {
@@ -154,6 +154,8 @@ async function startImportJob(jobId: string): Promise<void> {
       headers: authHeaders(),
     },
   );
+  const result = unwrap<{ jobId: string; status: string }>({ data });
+  return result.jobId || jobId;
 }
 
 async function uploadViaMultipartFallback(
@@ -221,7 +223,7 @@ export const csvImportService = {
         message: 'S3 upload complete — starting background import…',
       });
 
-      await startImportJob(presign.jobId);
+      const activeJobId = await startImportJob(presign.jobId);
 
       onUploadProgress?.({
         percent: 12,
@@ -229,7 +231,7 @@ export const csvImportService = {
         message: 'Import queued — processing on server',
       });
 
-      return presign.jobId;
+      return activeJobId;
     } catch (presignErr) {
       const reason =
         presignErr instanceof Error ? presignErr.message : 'Presigned S3 upload failed';

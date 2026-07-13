@@ -40,10 +40,19 @@ export interface DispositionTreeNode {
   entries?: DispositionEntry[];
 }
 
+function unwrap<T>(response: { data: unknown }): T {
+  const body = response.data as Record<string, unknown>;
+  if (body && typeof body === 'object' && 'data' in body) {
+    return body.data as T;
+  }
+  return body as T;
+}
+
 export const dispositionService = {
   async getAllTree(): Promise<DispositionTreeNode[]> {
-    const { data } = await apiClient.get<DispositionTreeNode[]>('/disposition/all/tree');
-    return data;
+    const res = await apiClient.get('/disposition/all/tree');
+    const tree = unwrap<DispositionTreeNode[]>(res);
+    return Array.isArray(tree) ? tree : [];
   },
 
   async getAll(params?: {
@@ -53,7 +62,8 @@ export const dispositionService = {
     employeeId?: string;
     rootBatchId?: string;
   }): Promise<DispositionEntry[]> {
-    const { data } = await apiClient.get<DispositionEntry[]>('/disposition/all', { params });
-    return data;
+    const res = await apiClient.get('/disposition/all', { params });
+    const entries = unwrap<DispositionEntry[]>(res);
+    return Array.isArray(entries) ? entries : [];
   },
 };

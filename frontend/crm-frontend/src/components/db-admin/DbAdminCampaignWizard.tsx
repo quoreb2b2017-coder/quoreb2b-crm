@@ -168,9 +168,9 @@ export function DbAdminCampaignWizard({
   const runSuppressionCheck = async () => {
     if (!suppressionCampaignId) return;
     const hasInlineRows = rows.length > 0 && headers.length > 0;
-    const hasMasterResolve =
-      Boolean(masterSearchFilter) || (sourceRowIndices?.length ?? 0) > 0;
-    if (!hasInlineRows && !hasMasterResolve) {
+    const hasSelectedIndices = (sourceRowIndices?.length ?? 0) > 0;
+    const hasFilterSelection = Boolean(masterSearchFilter) && !hasSelectedIndices;
+    if (!hasInlineRows && !hasSelectedIndices && !hasFilterSelection) {
       toast.error(
         'No contacts to check',
         'Your extract has no row data yet. Go back and select contacts from master data.',
@@ -184,11 +184,9 @@ export function DbAdminCampaignWizard({
         checkMode,
         ...(hasInlineRows
           ? { sourceHeaders: headers, sourceRows: rows }
-          : {
-              sourceHeaders: headers.length ? headers : undefined,
-              masterSourceRowIndices: sourceRowIndices.length ? sourceRowIndices : undefined,
-              masterSearchFilter,
-            }),
+          : hasSelectedIndices
+            ? { masterSourceRowIndices: sourceRowIndices }
+            : { masterSearchFilter }),
         baseFileName: batchName || sourceFileName,
       });
       setDuplicateCount(result.duplicateCount);
@@ -387,9 +385,9 @@ export function DbAdminCampaignWizard({
                     <div>
                       <p className="text-sm font-semibold text-slate-900">Suppression check</p>
                       <p className="mt-1 text-xs leading-relaxed text-slate-600">
-                        Compare {rows.length.toLocaleString()} extracted contacts against admin
-                        suppression lists. Duplicates are saved separately — your extract stays
-                        unchanged.
+                        Compare {(estimatedCount ?? rows.length).toLocaleString()} extracted
+                        contacts against admin suppression lists. Duplicates are saved separately —
+                        your extract stays unchanged.
                       </p>
                     </div>
                   </div>
@@ -511,7 +509,9 @@ export function DbAdminCampaignWizard({
                       checking ||
                       !suppressionCampaignId ||
                       loadingCampaigns ||
-                      (!rows.length && !masterSearchFilter && !sourceRowIndices.length)
+                      (!(estimatedCount ?? rows.length) &&
+                        !sourceRowIndices.length &&
+                        !masterSearchFilter)
                     }
                     onClick={() => void runSuppressionCheck()}
                     className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#2568b8] to-[#2e7ad1] py-3 text-sm font-bold text-white shadow-md transition hover:from-[#154a2d] hover:to-[#2568b8] hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"

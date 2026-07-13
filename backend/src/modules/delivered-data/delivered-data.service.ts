@@ -268,31 +268,11 @@ export class SuppressionDataService {
     const isAdmin =
       roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
 
-    let masterResolvedHeaders: string[] | undefined;
-    let masterResolvedRows: string[][] | undefined;
-    if (!(dto.sourceRows?.length && dto.sourceHeaders?.length)) {
-      if (dto.masterSearchFilter) {
-        const resolved = await this.masterDataService.resolveMasterBatchFromSearch(
-          dto.masterSearchFilter,
-          actor.id,
-          dto.masterSourceRowIndices,
-        );
-        masterResolvedHeaders = resolved.headers;
-        masterResolvedRows = resolved.rows;
-      } else if (dto.masterSourceRowIndices?.length) {
-        const resolved = await this.masterDataService.resolveMasterBatchCreate(
-          dto.masterSourceRowIndices,
-          actor.id,
-        );
-        masterResolvedHeaders = resolved.headers;
-        masterResolvedRows = resolved.rows;
-      }
-    }
-
-    const hasInlineSource = Boolean(
-      (dto.sourceRows?.length && dto.sourceHeaders?.length) ||
-        (masterResolvedRows?.length && masterResolvedHeaders?.length),
+    const hasInlineRows = Boolean(dto.sourceRows?.length && dto.sourceHeaders?.length);
+    const hasMasterResolve = Boolean(
+      dto.masterSearchFilter || dto.masterSourceRowIndices?.length,
     );
+    const hasInlineSource = hasInlineRows || hasMasterResolve;
     if (!isEmployee && !isDbAdmin && !(isAdmin && hasInlineSource)) {
       throw new ForbiddenException('Only employees and DB admins can check suppression');
     }
@@ -330,6 +310,25 @@ export class SuppressionDataService {
     let baseFileName = dto.baseFileName ?? 'data';
     let duplicateSourceRole: 'employee' | 'db_admin' = 'employee';
 
+    const matchingRows: string[][] = [];
+    const duplicateSourceIndices: number[] = [];
+
+    const collectMatches = (
+      headers: string[],
+      rows: string[][],
+      indexForRow: (rowOffset: number) => number,
+    ) => {
+      sourceHeaders = headers;
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const key = extractRowCheckKey(row, headers, dto.checkMode);
+        if (key && suppressionKeys.has(key)) {
+          matchingRows.push(row);
+          duplicateSourceIndices.push(indexForRow(i));
+        }
+      }
+    };
+
     if (dto.sourceRequestId) {
       const request = await this.masterDataService.getUploadRequest(
         dto.sourceRequestId,
@@ -341,30 +340,44 @@ export class SuppressionDataService {
       baseFileName = request.fileName ?? baseFileName;
       duplicateSourceRole =
         request.sourceRole === 'db_admin' ? 'db_admin' : 'employee';
+      collectMatches(sourceHeaders, sourceRows, (i) => i);
     } else if (dto.sourceBatchId) {
       const batch = await this.batchesService.findOne(dto.sourceBatchId, actor.id);
       sourceHeaders = (batch.headers as string[]) ?? [];
       sourceRows = (batch.rows as string[][]) ?? [];
       baseFileName = String(batch.sourceFileName ?? batch.name ?? baseFileName);
       duplicateSourceRole = isDbAdmin ? 'db_admin' : 'employee';
-    } else if (dto.sourceHeaders?.length && dto.sourceRows?.length) {
-      sourceHeaders = dto.sourceHeaders;
-      sourceRows = dto.sourceRows;
+      collectMatches(sourceHeaders, sourceRows, (i) => i);
+    } else if (hasInlineRows) {
+      sourceHeaders = dto.sourceHeaders!;
+      sourceRows = dto.sourceRows!;
+      baseFileName = dto.baseFileName ?? baseFileName;
       duplicateSourceRole = isDbAdmin ? 'db_admin' : 'employee';
-    } else if (masterResolvedHeaders?.length && masterResolvedRows?.length) {
-      sourceHeaders = masterResolvedHeaders;
-      sourceRows = masterResolvedRows;
+      collectMatches(sourceHeaders, sourceRows, (i) => i);
+    } else if (hasMasterResolve) {
+      baseFileName = dto.baseFileName ?? baseFileName;
       duplicateSourceRole = isDbAdmin ? 'db_admin' : 'employee';
-    }
 
-    const matchingRows: string[][] = [];
-    const duplicateSourceIndices: number[] = [];
-    for (let i = 0; i < sourceRows.length; i++) {
-      const row = sourceRows[i];
-      const key = extractRowCheckKey(row, sourceHeaders, dto.checkMode);
-      if (key && suppressionKeys.has(key)) {
-        matchingRows.push(row);
-        duplicateSourceIndices.push(i);
+      if (dto.masterSourceRowIndices?.length) {
+        // Campaign row pick — only scan selected master indices (not full filter).
+        await this.masterDataService.scanMasterForSuppressionCheck(
+          actor.id,
+          { subsetIndices: dto.masterSourceRowIndices },
+          (chunk) => {
+            collectMatches(chunk.headers, chunk.rows, (i) => chunk.sourceIndices[i] ?? i);
+          },
+        );
+      } else if (dto.masterSearchFilter) {
+        // Select-all-filtered extract — same scope & 50k cap as campaign create.
+        const resolved = await this.masterDataService.resolveMasterBatchFromSearch(
+          dto.masterSearchFilter,
+          actor.id,
+        );
+        collectMatches(
+          resolved.headers,
+          resolved.rows,
+          (i) => resolved.masterSourceRowIndices[i] ?? i,
+        );
       }
     }
 

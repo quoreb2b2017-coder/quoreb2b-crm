@@ -113,6 +113,8 @@ const CRM_OPERATIONAL_COLLECTIONS = [
 ] as const;
 
 const MASTER_BATCH_MAX_ROWS = 50_000;
+/** Chunk size when scanning master rows for suppression (no campaign row cap). */
+const SUPPRESSION_SCAN_CHUNK = 10_000;
 /** Filter-index cache TTL (Mongo fallback path). Overridable via env. */
 const MASTER_FILTER_INDEX_CACHE_TTL_SEC = Math.max(
   60,
@@ -3274,6 +3276,54 @@ export class MasterDataService {
       rows,
       masterSourceRowIndices: indices,
     };
+  }
+
+  /**
+   * Load only the master row indices selected for a campaign and scan in chunks.
+   * Does not re-run master filters — suppression compares campaign extract vs suppression list.
+   */
+  async scanMasterForSuppressionCheck(
+    actorId: string,
+    opts: {
+      subsetIndices: number[];
+    },
+    onChunk: (chunk: {
+      headers: string[];
+      rows: string[][];
+      sourceIndices: number[];
+    }) => void | Promise<void>,
+  ): Promise<{ headers: string[]; totalScanned: number }> {
+    await this.assertBatchCreatorAccess(actorId);
+    const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+    if (!doc) {
+      throw new NotFoundException('No master data uploaded yet');
+    }
+
+    const headers = [...(doc.headers as string[])];
+    const rowCount = this.rowStore.getRowCount(doc);
+    const seen = new Set<number>();
+    const indices: number[] = [];
+    for (const raw of opts.subsetIndices) {
+      const idx = Number(raw);
+      if (!Number.isInteger(idx) || seen.has(idx)) continue;
+      if (idx < 0 || idx >= rowCount) {
+        throw new BadRequestException(`Invalid master row selection (row ${idx + 1})`);
+      }
+      seen.add(idx);
+      indices.push(idx);
+    }
+
+    if (!indices.length) {
+      throw new BadRequestException('No contacts selected for suppression check');
+    }
+
+    for (let offset = 0; offset < indices.length; offset += SUPPRESSION_SCAN_CHUNK) {
+      const sourceIndices = indices.slice(offset, offset + SUPPRESSION_SCAN_CHUNK);
+      const rows = await this.rowStore.getRowsByIndices(doc, sourceIndices);
+      await onChunk({ headers, rows, sourceIndices });
+    }
+
+    return { headers, totalScanned: indices.length };
   }
 
   /** @deprecated use resolveMasterBatchCreate — kept for tests/callers */

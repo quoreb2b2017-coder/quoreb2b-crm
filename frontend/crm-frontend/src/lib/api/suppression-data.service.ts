@@ -108,7 +108,9 @@ export const suppressionDataService = {
     manualInput?: string;
     baseFileName?: string;
   }): Promise<CheckSuppressionResult> => {
-    const { data } = await apiClient.post('/suppression-data/check', payload);
+    const { data } = await apiClient.post('/suppression-data/check', payload, {
+      timeout: 600_000,
+    });
     const result = unwrap<CheckSuppressionResult>({ data });
     if (result.duplicateFileId) {
       dispatchUpdated();

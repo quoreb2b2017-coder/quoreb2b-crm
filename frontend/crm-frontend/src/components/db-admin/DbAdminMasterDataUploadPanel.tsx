@@ -33,10 +33,8 @@ export function DbAdminMasterDataUploadPanel() {
   const formatHeadersRef = useRef<string[] | null>(null);
   const [requests, setRequests] = useState<MasterDataUploadRequest[]>([]);
   const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
-
   const importPhase = useMasterDataImportStore((s) => s.uiPhase);
-  const importBusy = importPhase === 'active' || uploading;
+  const importBusy = importPhase === 'active';
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -70,16 +68,16 @@ export function DbAdminMasterDataUploadPanel() {
   };
 
   const processFile = useCallback(
-    async (file: File) => {
-      setUploading(true);
+    (file: File) => {
       try {
         masterDataService.validateUploadFile(file);
-        await enqueueMasterDataImport(file, 'append');
-        await load();
+        void enqueueMasterDataImport(file, 'append')
+          .then(() => load())
+          .catch((err) => {
+            toast.error('Upload failed', extractApiError(err, 'Could not process file'));
+          });
       } catch (err) {
         toast.error('Upload failed', extractApiError(err, 'Could not process file'));
-      } finally {
-        setUploading(false);
       }
     },
     [load],

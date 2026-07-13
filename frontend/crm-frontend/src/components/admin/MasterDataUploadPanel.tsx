@@ -467,19 +467,20 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
     };
   }, [loadFromDb]);
 
-  const processFile = useCallback(async (file: File) => {
-    setParsing(true);
+  const processFile = useCallback((file: File) => {
     setError('');
     try {
       masterDataService.validateUploadFile(file);
       const mode = replaceOnUpload ? 'replace' : 'append';
-      await enqueueMasterDataImport(file, mode);
+      void enqueueMasterDataImport(file, mode).catch((e) => {
+        const msg = e instanceof Error ? e.message : 'Failed to read file';
+        setError(msg);
+        toast.error('Upload failed', extractApiError(e, msg));
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to read file';
       setError(msg);
       toast.error('Upload failed', extractApiError(e, msg));
-    } finally {
-      setParsing(false);
     }
   }, [replaceOnUpload]);
 

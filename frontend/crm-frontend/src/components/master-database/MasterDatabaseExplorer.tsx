@@ -138,8 +138,7 @@ export function MasterDatabaseExplorer({
   const [moreOpen, setMoreOpen] = useState(false);
   const [filterSidebarOpen, setFilterSidebarOpen] = useState(true);
 
-  const [parsing, setParsing] = useState(false);
-  const importBusy = importPhase === 'active' || parsing;
+  const importBusy = importPhase === 'active';
   const [clearModalOpen, setClearModalOpen] = useState(false);
   const [batchModal, setBatchModal] = useState<{
     rows: string[][];
@@ -841,18 +840,17 @@ export function MasterDatabaseExplorer({
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    setParsing(true);
     try {
       masterDataService.validateUploadFile(file);
-      await enqueueMasterDataImport(file, 'append');
-      toast.success(
+      void enqueueMasterDataImport(file, 'append').catch((err) => {
+        toast.error('Upload failed', extractApiError(err));
+      });
+      toast.info(
         'Import started',
-        'Uploading to S3 — import continues on the server even if you switch tabs.',
+        'Upload running in background — use sidebar to open other pages.',
       );
     } catch (err) {
       toast.error('Upload failed', extractApiError(err));
-    } finally {
-      setParsing(false);
     }
   };
 

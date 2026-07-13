@@ -21,6 +21,8 @@ export interface MasterDataImportJobStatus {
   fileName?: string;
   error?: string;
   result?: Record<string, unknown>;
+  s3Key?: string;
+  mode?: 'append' | 'replace';
   updatedAt: string;
   /** Server processing part (50k rows each). */
   partIndex?: number;
@@ -39,7 +41,10 @@ const lastPersistAt = new Map<string, number>();
 export class MasterDataImportJobService {
   constructor(private cache: AppCacheService) {}
 
-  createJob(fileName: string): string {
+  createJob(
+    fileName: string,
+    patch?: Partial<Omit<MasterDataImportJobStatus, 'jobId'>>,
+  ): string {
     const jobId = randomBytes(12).toString('hex');
     const status: MasterDataImportJobStatus = {
       jobId,
@@ -48,6 +53,7 @@ export class MasterDataImportJobService {
       message: 'File saved — queued for background import…',
       fileName,
       updatedAt: new Date().toISOString(),
+      ...patch,
     };
     jobs.set(jobId, status);
     void this.persist(jobId, status);

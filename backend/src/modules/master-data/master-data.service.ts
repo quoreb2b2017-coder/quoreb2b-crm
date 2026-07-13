@@ -1195,6 +1195,143 @@ export class MasterDataService {
     return { jobId };
   }
 
+  async initiateImportPresignedUpload(
+    dto: {
+      fileName: string;
+      fileSizeBytes: number;
+      contentType?: string;
+      mode?: 'append' | 'replace';
+    },
+    actor: ActivityActor,
+  ) {
+    const ext = dto.fileName.split('.').pop()?.toLowerCase() ?? '';
+    if (!['csv', 'xlsx', 'xls'].includes(ext)) {
+      throw new BadRequestException('Presigned upload supports .csv, .xlsx, and .xls only');
+    }
+    if (!this.employeeUploadS3.isEnabled()) {
+      throw new BadRequestException(
+        'S3 presigned upload is not configured — use file upload instead',
+      );
+    }
+
+    const mode = dto.mode ?? 'append';
+    const jobId = this.importJobs.createJob(dto.fileName, {
+      phase: 'uploading',
+      percent: 2,
+      message: 'Waiting for S3 upload…',
+      mode,
+    });
+    const s3Key = this.employeeUploadS3.buildMasterImportKey(jobId, dto.fileName);
+    const contentType =
+      dto.contentType ||
+      (ext === 'csv'
+        ? 'text/csv'
+        : ext === 'xls'
+          ? 'application/vnd.ms-excel'
+          : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    const { uploadUrl, expiresIn } = await this.employeeUploadS3.createPresignedUploadUrl(
+      s3Key,
+      contentType,
+      dto.fileSizeBytes,
+    );
+    await this.importJobs.updateJob(jobId, { s3Key });
+
+    this.logger.log(
+      `[master-data import-presign] jobId=${jobId} file="${dto.fileName}" size=${dto.fileSizeBytes} actor=${actor.email}`,
+    );
+
+    return {
+      jobId,
+      uploadUrl,
+      s3Key,
+      bucket: this.employeeUploadS3.getBucket(),
+      expiresIn,
+    };
+  }
+
+  async confirmImportPresignedUpload(
+    jobId: string,
+    mode: 'append' | 'replace' | undefined,
+    actor: ActivityActor,
+  ) {
+    const job = await this.importJobs.getJob(jobId);
+    if (!job) {
+      throw new NotFoundException('Import job not found');
+    }
+    if (!job.s3Key) {
+      throw new BadRequestException('Job is not awaiting S3 upload confirmation');
+    }
+    if (job.phase !== 'uploading') {
+      throw new BadRequestException('Import job is not awaiting S3 upload');
+    }
+
+    await this.employeeUploadS3.headObject(job.s3Key);
+    const importMode = mode ?? job.mode ?? 'append';
+    await this.importJobs.updateJob(jobId, {
+      phase: 'queued',
+      percent: 35,
+      message: 'S3 upload complete — queued for processing…',
+      mode: importMode,
+    });
+
+    void this.runMasterImportFromS3(
+      jobId,
+      job.s3Key,
+      job.fileName ?? 'upload.xlsx',
+      importMode,
+      actor,
+    );
+    return { jobId, status: 'queued' };
+  }
+
+  private async runMasterImportFromS3(
+    jobId: string,
+    s3Key: string,
+    fileName: string,
+    mode: 'append' | 'replace',
+    actor: ActivityActor,
+  ) {
+    const { mkdtemp } = await import('fs/promises');
+    const { createWriteStream } = await import('fs');
+    const { pipeline } = await import('stream/promises');
+    const { join } = await import('path');
+    const { tmpdir } = await import('os');
+    const dir = await mkdtemp(join(tmpdir(), 'master-import-'));
+    const localPath = join(dir, fileName.replace(/[^a-zA-Z0-9._-]/g, '_'));
+    try {
+      await this.importJobs.updateJob(jobId, {
+        phase: 'parsing',
+        percent: 38,
+        message: 'Downloading from S3…',
+      });
+      const { GetObjectCommand, S3Client } = await import('@aws-sdk/client-s3');
+      const accessKey = this.config.get<string>('AWS_ACCESS_KEY_ID', '');
+      const secretKey = this.config.get<string>('AWS_SECRET_ACCESS_KEY', '');
+      const client = new S3Client({
+        region: this.config.get<string>('AWS_REGION', 'ap-south-1'),
+        credentials: { accessKeyId: accessKey, secretAccessKey: secretKey },
+      });
+      const res = await client.send(
+        new GetObjectCommand({
+          Bucket: this.employeeUploadS3.getBucket(),
+          Key: s3Key,
+        }),
+      );
+      const body = res.Body as NodeJS.ReadableStream;
+      await pipeline(body, createWriteStream(localPath));
+      await this.runImportJobWithLock(jobId, localPath, fileName, mode, actor);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'S3 import failed';
+      await this.importJobs.updateJob(jobId, {
+        phase: 'failed',
+        percent: 100,
+        message,
+        error: message,
+      });
+      await unlink(localPath).catch(() => undefined);
+    }
+  }
+
   async getImportJobStatus(jobId: string) {
     const job = await this.importJobs.getJob(jobId);
     if (!job) {

@@ -25,9 +25,6 @@ import { ExcelPreviewGrid } from '@/components/admin/ExcelPreviewGrid';
 import { XlToolbarSelect } from '@/components/admin/XlToolbarSelect';
 import { WORKSPACE_TIMEZONE } from '@/lib/constants/workspace-timezone';
 import { downloadMasterDataTemplate } from '@/lib/spreadsheet/master-data-template';
-import {
-  parseSpreadsheetFile,
-} from '@/lib/spreadsheet/parse-spreadsheet';
 import { downloadSpreadsheetXlsx } from '@/lib/spreadsheet/export-spreadsheet';
 import {
   masterDataService,
@@ -847,32 +844,11 @@ export function MasterDatabaseExplorer({
     setParsing(true);
     try {
       masterDataService.validateUploadFile(file);
-      const existing = await masterDataService.getCurrent();
-      const existingIsLarge =
-        Boolean(existing?.largeDataset) || safeCount(existing?.rowCount) > 5000;
-
-      if (existingIsLarge || masterDataService.shouldUseServerImport(file)) {
-        await enqueueMasterDataImport(file, 'append');
-        toast.success(
-          'Import started',
-          'Uploading to server — CSV uses S3 for fast merge into master database.',
-        );
-        return;
-      }
-
-      const parsed = await parseSpreadsheetFile(file);
-      const record = await masterDataService.save(parsed, 'append');
-      setHeaders(record.headers);
-      setAllRows(record.rows ?? []);
-      setDisplayRows(record.largeDataset ? [] : record.rows ?? []);
-      setSourceIndices((record.rows ?? []).map((_, i) => i));
-      setMasterTotalRows(record.rowCount);
-      setFilteredTotal(record.rowCount);
-      setHasSearched(record.largeDataset ? false : true);
-      setFileName(record.fileName);
-      await loadCoverage();
-      toast.success('Data imported', `${record.rowCount.toLocaleString()} contacts in master database`);
-      window.dispatchEvent(new CustomEvent('master-data-updated'));
+      await enqueueMasterDataImport(file, 'append');
+      toast.success(
+        'Import started',
+        'Uploading to S3 — import continues on the server even if you switch tabs.',
+      );
     } catch (err) {
       toast.error('Upload failed', extractApiError(err));
     } finally {

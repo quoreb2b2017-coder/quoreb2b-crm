@@ -3,9 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Download, Loader2, RefreshCw, Upload } from 'lucide-react';
-import { parseSpreadsheetFile } from '@/lib/spreadsheet/parse-spreadsheet';
 import { downloadMasterDataTemplate } from '@/lib/spreadsheet/master-data-template';
-import { prepareMasterDataSheet } from '@/lib/spreadsheet/master-data-format';
 import {
   masterDataService,
   type MasterDataUploadRequest,
@@ -21,7 +19,6 @@ import {
 import { useUploadRequestRefresh } from '@/hooks/useUploadRequestRefresh';
 import { enqueueMasterDataImport } from '@/lib/master-data/master-data-import-tracker';
 import { useMasterDataImportStore } from '@/store/master-data-import.store';
-import { emitMasterDataDuplicatePopup } from '@/lib/master-data/master-data-duplicate-popup';
 
 const ACCEPT = '.csv,.xlsx,.xls';
 
@@ -75,99 +72,11 @@ export function DbAdminMasterDataUploadPanel() {
   const processFile = useCallback(
     async (file: File) => {
       setUploading(true);
-      const importStore = useMasterDataImportStore.getState();
       try {
         masterDataService.validateUploadFile(file);
-        const mode = 'append' as const;
-        const existing = await masterDataService.getCurrent();
-        const existingIsLarge =
-          Boolean(existing?.largeDataset) || safeCount(existing?.rowCount) > 5000;
-
-        if (existingIsLarge || masterDataService.shouldUseServerImport(file)) {
-          await enqueueMasterDataImport(file, mode);
-          await load();
-          return;
-        }
-
-        importStore.begin(file.name, mode);
-        importStore.setProgress({
-          percent: 5,
-          phase: 'parsing',
-          message: 'Reading your file…',
-        });
-
-        const parsed = await parseSpreadsheetFile(file);
-        const rowCount = parsed.rows.length;
-        importStore.setProgress({
-          percent: 35,
-          phase: 'parsing',
-          message: `Parsed ${rowCount.toLocaleString('en-US')} rows from your file`,
-          rowsProcessed: rowCount,
-          totalRows: rowCount,
-        });
-
-        const normalized = prepareMasterDataSheet(parsed.headers, parsed.rows, {
-          existingHeaders: formatHeadersRef.current,
-          replace: false,
-        });
-
-        importStore.setProgress({
-          percent: 55,
-          phase: 'saving',
-          message: 'Merging to master file…',
-          rowsProcessed: normalized.rows.length,
-          totalRows: normalized.rows.length,
-        });
-
-        const record = await masterDataService.save(
-          {
-            ...parsed,
-            headers: normalized.headers,
-            rows: normalized.rows,
-          },
-          mode,
-        );
-
-        importStore.setProgress({
-          percent: 100,
-          phase: 'done',
-          message: 'Upload complete',
-          rowsProcessed: record.rowCount,
-          totalRows: rowCount,
-        });
-        importStore.markDone();
-
+        await enqueueMasterDataImport(file, 'append');
         await load();
-
-        const skipped = record.skippedDuplicates ?? 0;
-        if (record.addedRows != null && record.addedRows > 0) {
-          toast.success(
-            'Merged to master file',
-            `+${record.addedRows.toLocaleString('en-US')} of ${rowCount.toLocaleString('en-US')} in your file${skipped > 0 ? ` · ${skipped.toLocaleString('en-US')} duplicate(s) skipped` : ''}`,
-          );
-          if (skipped > 0) {
-            emitMasterDataDuplicatePopup({
-              fileName: parsed.fileName,
-              headers: normalized.headers,
-              duplicateRows: [],
-              addedRows: record.addedRows ?? 0,
-              duplicateCount: skipped,
-              totalRows: rowCount,
-            });
-          }
-        } else {
-          toast.info(
-            'No new contacts',
-            skipped > 0
-              ? `${skipped.toLocaleString('en-US')} duplicate contact(s) — already in master file`
-              : 'All rows were empty or already in master file',
-          );
-        }
-
-        window.dispatchEvent(new CustomEvent('master-data-updated'));
-        setTimeout(() => importStore.reset(), 6000);
       } catch (err) {
-        importStore.markFailed();
         toast.error('Upload failed', extractApiError(err, 'Could not process file'));
       } finally {
         setUploading(false);

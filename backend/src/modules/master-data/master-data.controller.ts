@@ -34,6 +34,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { SystemRole } from '../../common/constants/roles.constant';
 import { actorFromJwt } from '../activity-logs/activity-user.util';
 import { ImportMasterDataFileDto } from './dto/import-master-data-file.dto';
+import { InitiateMasterImportPresignDto } from './dto/initiate-master-import-presign.dto';
 import {
   masterDataImportMulterOptions,
   type MasterDataUploadRequest,
@@ -84,6 +85,29 @@ export class MasterDataController {
       file.path,
       file.originalname || 'upload.xlsx',
       dto.mode ?? 'replace',
+      actorFromJwt(user),
+    );
+  }
+
+  @Post('import-jobs/presign')
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
+  presignImportJob(
+    @Body() dto: InitiateMasterImportPresignDto,
+    @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
+  ) {
+    return this.masterDataService.initiateImportPresignedUpload(dto, actorFromJwt(user));
+  }
+
+  @Post('import-jobs/:jobId/confirm-s3')
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
+  confirmImportJobS3(
+    @Param('jobId') jobId: string,
+    @Body() dto: ImportMasterDataFileDto,
+    @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
+  ) {
+    return this.masterDataService.confirmImportPresignedUpload(
+      jobId,
+      dto.mode,
       actorFromJwt(user),
     );
   }

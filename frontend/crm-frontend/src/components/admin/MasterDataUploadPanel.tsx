@@ -470,112 +470,18 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   const processFile = useCallback(async (file: File) => {
     setParsing(true);
     setError('');
-    const importStore = useMasterDataImportStore.getState();
     try {
       masterDataService.validateUploadFile(file);
       const mode = replaceOnUpload ? 'replace' : 'append';
-      const existing = await masterDataService.getCurrent();
-      const existingIsLarge =
-        Boolean(existing?.largeDataset) ||
-        safeCount(existing?.rowCount) > 5000;
-      if (existingIsLarge || masterDataService.shouldUseServerImport(file)) {
-        await enqueueMasterDataImport(file, mode);
-        return;
-      }
-
-      importStore.begin(file.name, mode);
-      importStore.setProgress({
-        percent: 5,
-        phase: 'parsing',
-        message: 'Reading file…',
-      });
-
-      const parsed = await parseSpreadsheetFile(file);
-      const rowCount = parsed.rows.length;
-      importStore.setProgress({
-        percent: 35,
-        phase: 'parsing',
-        message: `Parsed ${rowCount.toLocaleString('en-US')} rows`,
-        rowsProcessed: rowCount,
-        totalRows: rowCount,
-      });
-
-      const normalized = prepareMasterDataSheet(parsed.headers, parsed.rows, {
-        existingHeaders: dataRef.current?.headers,
-        replace: mode === 'replace',
-      });
-
-      importStore.setProgress({
-        percent: 55,
-        phase: 'saving',
-        message: 'Saving to database…',
-        rowsProcessed: normalized.rows.length,
-        totalRows: normalized.rows.length,
-      });
-
-      const duplicatePreview =
-        mode === 'append'
-          ? collectDuplicateRows(dataRef.current, {
-              ...parsed,
-              headers: normalized.headers,
-              rows: normalized.rows,
-            })
-          : null;
-      const record = await masterDataService.save(
-        {
-          ...parsed,
-          headers: normalized.headers,
-          rows: normalized.rows,
-        },
-        mode,
-      );
-
-      importStore.setProgress({
-        percent: 100,
-        phase: 'done',
-        message: 'Upload complete',
-        rowsProcessed: record.rowCount,
-        totalRows: record.rowCount,
-      });
-      importStore.markDone();
-
-      applyRecord(record);
-      await logUploadActivity(mode, record, parsed.fileName);
-      if (mode === 'append' && record.addedRows != null) {
-        const skipped =
-          record.skippedDuplicates && record.skippedDuplicates > 0
-            ? ` · ${record.skippedDuplicates} duplicate(s) skipped`
-            : '';
-        toast.success(
-          'Added to master database',
-          `+${record.addedRows} contacts · ${record.rowCount} total${skipped}`,
-        );
-        window.dispatchEvent(new CustomEvent('master-data-updated'));
-        if ((record.skippedDuplicates ?? 0) > 0) {
-          emitMasterDataDuplicatePopup({
-            fileName: parsed.fileName,
-            headers: duplicatePreview?.headers ?? normalized.headers,
-            duplicateRows: duplicatePreview?.duplicateRows ?? [],
-            addedRows: record.addedRows ?? 0,
-            duplicateCount:
-              record.skippedDuplicates ?? duplicatePreview?.duplicateRows.length ?? 0,
-            totalRows: record.rowCount,
-          });
-        }
-      } else {
-        toast.success('Saved to database', `${record.rowCount} contacts in master data`);
-        window.dispatchEvent(new CustomEvent('master-data-updated'));
-      }
+      await enqueueMasterDataImport(file, mode);
     } catch (e) {
-      importStore.markFailed();
       const msg = e instanceof Error ? e.message : 'Failed to read file';
       setError(msg);
-      if (!(e as { response?: unknown })?.response) setData(null);
       toast.error('Upload failed', extractApiError(e, msg));
     } finally {
       setParsing(false);
     }
-  }, [applyRecord, logUploadActivity, replaceOnUpload]);
+  }, [replaceOnUpload]);
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

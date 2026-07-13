@@ -284,6 +284,41 @@ export const masterDataService = {
     mode: MasterDataSaveMode = 'replace',
     onUploadProgress?: (progress: MasterDataImportProgress) => void,
   ): Promise<string> => {
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+    const spreadsheet = ext === 'xlsx' || ext === 'xls';
+
+    if (spreadsheet) {
+      try {
+        onUploadProgress?.({
+          percent: 2,
+          phase: 'uploading',
+          message: 'Preparing S3 upload…',
+        });
+        const presign = await masterDataService.presignImportJob(file, mode);
+        await masterDataService.uploadFileToS3(presign.uploadUrl, file, onUploadProgress);
+        onUploadProgress?.({
+          percent: 88,
+          phase: 'uploading',
+          message: 'S3 upload complete — starting background import…',
+        });
+        await masterDataService.confirmImportJobS3(presign.jobId, mode);
+        onUploadProgress?.({
+          percent: 12,
+          phase: 'queued',
+          message: 'Import queued — processing on server',
+        });
+        return presign.jobId;
+      } catch (presignErr) {
+        const reason =
+          presignErr instanceof Error ? presignErr.message : 'S3 upload unavailable';
+        onUploadProgress?.({
+          percent: 5,
+          phase: 'uploading',
+          message: `S3 direct upload unavailable (${reason}) — using server upload…`,
+        });
+      }
+    }
+
     const form = new FormData();
     form.append('file', file);
     form.append('mode', mode);
@@ -313,6 +348,87 @@ export const masterDataService = {
 
     const { jobId } = unwrap<{ jobId: string }>({ data });
     return jobId;
+  },
+
+  presignImportJob: async (
+    file: File,
+    mode: MasterDataSaveMode = 'replace',
+  ): Promise<{
+    jobId: string;
+    uploadUrl: string;
+    s3Key: string;
+    bucket: string;
+    expiresIn: number;
+  }> => {
+    const token = getAccessToken();
+    const importBase = getImportApiBaseUrl();
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+    const contentType =
+      ext === 'csv'
+        ? 'text/csv'
+        : ext === 'xls'
+          ? 'application/vnd.ms-excel'
+          : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    const { data } = await axios.post(
+      `${importBase}/master-data/import-jobs/presign`,
+      {
+        fileName: file.name,
+        fileSizeBytes: file.size,
+        contentType: file.type || contentType,
+        mode,
+      },
+      {
+        timeout: 120_000,
+        withCredentials: true,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      },
+    );
+    return unwrap<{
+      jobId: string;
+      uploadUrl: string;
+      s3Key: string;
+      bucket: string;
+      expiresIn: number;
+    }>({ data });
+  },
+
+  uploadFileToS3: async (
+    uploadUrl: string,
+    file: File,
+    onUploadProgress?: (progress: MasterDataImportProgress) => void,
+  ): Promise<void> => {
+    await axios.put(uploadUrl, file, {
+      timeout: MASTER_DATA_UPLOAD_TIMEOUT_MS,
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      onUploadProgress: (event) => {
+        if (!onUploadProgress || !event.total) return;
+        const uploadPct = Math.min(85, Math.round((event.loaded / event.total) * 85));
+        onUploadProgress({
+          percent: uploadPct,
+          phase: 'uploading',
+          message: `Uploading directly to S3… ${uploadPct}%`,
+        });
+      },
+    });
+  },
+
+  confirmImportJobS3: async (
+    jobId: string,
+    mode: MasterDataSaveMode = 'replace',
+  ): Promise<void> => {
+    const token = getAccessToken();
+    const importBase = getImportApiBaseUrl();
+    await axios.post(
+      `${importBase}/master-data/import-jobs/${jobId}/confirm-s3`,
+      { mode },
+      {
+        timeout: 120_000,
+        withCredentials: true,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      },
+    );
   },
 
   getImportJobStatus: async (jobId: string): Promise<MasterDataImportJobStatus> => {
@@ -349,9 +465,8 @@ export const masterDataService = {
     throw new Error('Import timed out — try again or use a smaller file.');
   },
 
-  shouldUseServerImport(file: File): boolean {
-    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-    return file.size >= MASTER_IMPORT_THRESHOLD_BYTES || ext === 'xlsx' || ext === 'xls';
+  shouldUseServerImport(_file: File): boolean {
+    return true;
   },
 
   validateUploadFile(file: File): void {

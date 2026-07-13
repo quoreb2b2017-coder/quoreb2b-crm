@@ -54,6 +54,12 @@ export class EmployeeUploadS3Service {
     return `${this.prefix}/${jobId}/${safeName}`;
   }
 
+  buildMasterImportKey(jobId: string, fileName: string): string {
+    const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const prefix = this.config.get<string>('MASTER_IMPORT_S3_PREFIX', 'master-imports');
+    return `${prefix}/${jobId}/${safeName}`;
+  }
+
   async createPresignedUploadUrl(
     s3Key: string,
     contentType: string,

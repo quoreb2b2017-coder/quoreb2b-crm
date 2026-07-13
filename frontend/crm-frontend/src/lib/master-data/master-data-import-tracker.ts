@@ -5,7 +5,6 @@ import {
 } from '@/lib/api/csv-import.service';
 import { useMasterDataImportStore } from '@/store/master-data-import.store';
 import { toast } from '@/stores/toast.store';
-import { estimatePartsFromFileSize } from '@/lib/master-data/split-upload-parts';
 import { emitMasterDataDuplicatePopup } from '@/lib/master-data/master-data-duplicate-popup';
 
 const STORAGE_KEY = 'quoreb2b-master-import-job';
@@ -302,15 +301,11 @@ export async function enqueueMasterDataImport(
 
   try {
     if (!useEnterpriseCsv) {
-      const estParts = estimatePartsFromFileSize(file);
-      if (estParts > 1) {
-        applyProgress({
-          percent: 5,
-          phase: 'uploading',
-          message: `Uploading full file — server will save in ~${estParts} batches of 50k rows…`,
-          totalParts: estParts,
-        });
-      }
+      applyProgress({
+        percent: 2,
+        phase: 'uploading',
+        message: 'Uploading spreadsheet to S3 — processing continues on the server…',
+      });
     } else {
       applyProgress({
         percent: 2,

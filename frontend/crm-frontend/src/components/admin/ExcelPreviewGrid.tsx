@@ -683,16 +683,33 @@ export function ExcelPreviewGrid({
         onMouseDownCapture={(e) => {
           if (!editable) return;
           const target = e.target as HTMLElement;
-          if (target.closest('button') || target.closest('input[type="checkbox"]')) return;
+          if (
+            target.closest('button') ||
+            target.closest('input[type="checkbox"]') ||
+            target.closest('select')
+          ) {
+            return;
+          }
           if (editTargetRef.current) commitEdit();
         }}
         onMouseDown={(e) => {
-          const cell = (e.target as HTMLElement).closest('[data-grid-row]');
+          const target = e.target as HTMLElement;
+          if (target.closest('button')) return;
+
+          const cell = target.closest('[data-grid-row]');
           if (!cell) return;
-          if ((e.target as HTMLElement).closest('button')) return;
           const row = Number(cell.getAttribute('data-grid-row'));
           const col = Number(cell.getAttribute('data-grid-col'));
           if (Number.isNaN(row) || Number.isNaN(col)) return;
+
+          // Select / inputs: mark active cell but never steal focus (lets dropdown open)
+          if (target.closest('select') || target.closest('input') || target.closest('textarea')) {
+            if (row === -1) return;
+            const sourceRow = sourceIndices[row];
+            if (sourceRow == null) return;
+            setCell({ row, col });
+            return;
+          }
 
           if (row === -1) {
             setCell({ row: 0, col });
@@ -925,7 +942,7 @@ export function ExcelPreviewGrid({
                             startEdit({ kind: 'cell', sourceRow, col: colIndex })
                           }
                           className={cn(
-                            'border border-[#e0e0e0] p-0 text-slate-900',
+                            'border border-[#e0e0e0] p-0 text-slate-900 outline-none focus:outline-none focus-visible:outline-none',
                             active && !editingCell && 'ring-2 ring-[#2e7ad1] ring-inset bg-[#e7f3ff]',
                             editable && 'cursor-cell',
                           )}
@@ -935,11 +952,13 @@ export function ExcelPreviewGrid({
                             <select
                               value={value}
                               disabled={!editable}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onClick={(e) => e.stopPropagation()}
                               onChange={(e) => {
                                 sheet.updateCell(sourceRow, colIndex, e.target.value);
                                 onLeadCellFocus?.(sourceRow, colIndex);
                               }}
-                              className="w-full min-w-[140px] border-0 bg-white px-2 py-1 text-[13px] outline-none disabled:bg-transparent"
+                              className="w-full min-w-[140px] cursor-pointer border-0 bg-transparent px-2 py-1 text-[13px] outline-none focus:outline-none focus-visible:outline-none disabled:cursor-default disabled:bg-transparent"
                             >
                               {dispositionSelectOptions!.map((opt) => (
                                 <option key={opt || '__empty'} value={opt}>
@@ -956,7 +975,7 @@ export function ExcelPreviewGrid({
                               onKeyDown={(e) =>
                                 handleCellKeyDown(e, displayRowIndex, colIndex, sourceRow)
                               }
-                              className="w-full min-w-[120px] border-0 bg-white px-2 py-1 text-[13px] outline-none"
+                              className="w-full min-w-[120px] border-0 bg-white px-2 py-1 text-[13px] outline-none focus:outline-none focus-visible:outline-none"
                             />
                           ) : (
                             <div

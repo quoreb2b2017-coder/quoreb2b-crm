@@ -91,9 +91,19 @@ export function useExcelTableNavigation({
     setActiveCell((prev) => clamp(prev));
   }, [rowCount, colCount, enabled, clamp]);
 
-  // Only focus cell when NOT editing (don't steal focus from input)
+  // Only focus cell when NOT editing (don't steal focus from input/select)
   useEffect(() => {
     if (!enabled || rowCount === 0 || isEditing) return;
+    const active = document.activeElement as HTMLElement | null;
+    if (
+      active &&
+      (active.tagName === 'SELECT' ||
+        active.tagName === 'INPUT' ||
+        active.tagName === 'TEXTAREA' ||
+        active.isContentEditable)
+    ) {
+      return;
+    }
     focusCell(activeCell);
   }, [activeCell, enabled, rowCount, isEditing, focusCell]);
 
@@ -108,7 +118,10 @@ export function useExcelTableNavigation({
         target.tagName === 'SELECT' ||
         target.isContentEditable;
 
-      if (isEditing && inInput) return;
+      // Native select / open editors own keyboard navigation
+      if (inInput && (isEditing || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA')) {
+        return;
+      }
 
       const root = containerRef.current;
       const inTable = root?.contains(document.activeElement) ?? false;

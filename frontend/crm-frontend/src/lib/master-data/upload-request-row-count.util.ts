@@ -20,8 +20,19 @@ export function formatUploadRequestContactSummary(request: MasterDataUploadReque
   if (isEmployeeDuplicateFile(request)) {
     return `${total.toLocaleString('en-US')} duplicate${total === 1 ? '' : 's'}`;
   }
-  if ((request.duplicateCount ?? 0) > 0 && request.rowCount > 0) {
-    return `${request.rowCount.toLocaleString('en-US')} merged · ${request.duplicateCount.toLocaleString('en-US')} dup`;
+  const uploaded =
+    typeof request.mergedAddedRows === 'number'
+      ? request.mergedAddedRows
+      : request.rowCount;
+  const dups = request.duplicateCount ?? 0;
+  if (uploaded > 0 && dups > 0) {
+    return `${uploaded.toLocaleString('en-US')} uploaded · ${dups.toLocaleString('en-US')} dup`;
+  }
+  if (uploaded > 0) {
+    return `${uploaded.toLocaleString('en-US')} uploaded`;
+  }
+  if (dups > 0) {
+    return `0 uploaded · ${dups.toLocaleString('en-US')} dup`;
   }
   return `${total.toLocaleString('en-US')} contact${total === 1 ? '' : 's'}`;
 }

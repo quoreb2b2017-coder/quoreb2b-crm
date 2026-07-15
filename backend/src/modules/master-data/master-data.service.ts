@@ -53,6 +53,7 @@ import {
 } from './schemas/master-data.schema';
 import { MasterDataUploadRequest } from './schemas/master-data-upload-request.schema';
 import { BatchesService } from '../batches/batches.service';
+import { ensureDispositionAfterAssetTitle } from '../batches/disposition-column-order.util';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
 import { ActivityActor, displayName } from '../activity-logs/activity-user.util';
 import { NotificationTriggerService } from '../notifications/notification-trigger.service';
@@ -78,7 +79,8 @@ import {
   formatMemoryUsage,
 } from './master-data-upload.metrics';
 
-const DEFAULT_MAX_TOTAL_ROWS = 1_500_000;
+/** Soft cap for a single master file / cumulative DB — raise via MASTER_DATA_MAX_ROWS. */
+const DEFAULT_MAX_TOTAL_ROWS = 5_000_000;
 const DUPLICATE_PREVIEW_LIMIT = 100;
 /** Stream large imports in batches — rows hit MongoDB as each batch completes. */
 const LARGE_IMPORT_STREAM_THRESHOLD = 10_000;
@@ -401,9 +403,15 @@ export class MasterDataService {
     const masterDoc = alignToMaster
       ? await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec()
       : null;
-    const headers = masterDoc?.headers?.length
-      ? masterDoc.headers
-      : resolveMasterDataHeaders(null, dto.headers);
+    // Employee uploads / duplicates always follow official template column order + all cells filled.
+    const headers = options?.employeeUpload
+      ? resolveMasterDataHeaders(
+          [...MASTER_DATA_TEMPLATE_HEADERS],
+          [...(masterDoc?.headers ?? []), ...dto.headers],
+        )
+      : masterDoc?.headers?.length
+        ? resolveMasterDataHeaders(masterDoc.headers, dto.headers)
+        : resolveMasterDataHeaders(null, dto.headers);
     if (!headers.length) {
       throw new BadRequestException('At least one column header is required');
     }
@@ -763,6 +771,8 @@ export class MasterDataService {
     let flushCount = 0;
     let totalIncoming = 0;
     let streamReady = false;
+    let hitRowCap = false;
+    const maxRows = this.maxTotalRows();
 
     const partProgress = (rowCount: number, total: number) => ({
       partIndex: Math.max(1, Math.ceil(rowCount / IMPORT_PART_ROWS)),
@@ -819,7 +829,9 @@ export class MasterDataService {
     };
 
     const ingestBatch = async (rows: string[][]) => {
+      if (hitRowCap) return;
       for (const rawRow of rows) {
+        if (hitRowCap) break;
         processed += 1;
         if (!rowHasSourceData(rawRow, sourceHeaders)) {
           skippedDuplicates += 1;
@@ -835,6 +847,15 @@ export class MasterDataService {
         if (seen.has(key) || incomingSeen.has(key)) {
           skippedDuplicates += 1;
           continue;
+        }
+        // Stop before writing past the configured master cap (keep already-saved rows).
+        if (baseRowCount + addedRows + pendingBatch.length >= maxRows) {
+          hitRowCap = true;
+          this.logger.warn(
+            `Import job ${jobId}: reached MASTER_DATA_MAX_ROWS=${maxRows.toLocaleString()} — ` +
+              `stopping save with ${baseRowCount + addedRows + pendingBatch.length} rows in DB`,
+          );
+          break;
         }
         seen.add(key);
         incomingSeen.add(key);
@@ -921,14 +942,9 @@ export class MasterDataService {
     totalIncoming = streamResult.totalRows;
     const parseMs = Date.now() - parseStart;
     this.logger.log(
-      `Import job ${jobId}: stream-parsed ${totalIncoming.toLocaleString()} rows in ${parseMs}ms ${formatMemoryUsage()}`,
+      `Import job ${jobId}: stream-parsed ${totalIncoming.toLocaleString()} rows in ${parseMs}ms ` +
+        `(hitRowCap=${hitRowCap}) ${formatMemoryUsage()}`,
     );
-
-    if (totalIncoming > this.maxTotalRows()) {
-      throw new BadRequestException(
-        `Master data limit is ${this.maxTotalRows()} rows. File has ${totalIncoming}.`,
-      );
-    }
 
     await this.importJobs.updateJob(jobId, {
       phase: 'merging',
@@ -949,6 +965,14 @@ export class MasterDataService {
     await flushBatch(true);
 
     const finalRowCount = baseRowCount + addedRows;
+    if (finalRowCount <= 0 && totalIncoming > 0) {
+      throw new BadRequestException(
+        hitRowCap
+          ? `Master data already at the ${maxRows.toLocaleString()} row limit. Remove rows or raise MASTER_DATA_MAX_ROWS.`
+          : 'No data rows to add',
+      );
+    }
+
     const doc = await this.patchChunkedMasterMeta({
       headers: targetHeaders,
       rowCount: finalRowCount,
@@ -978,6 +1002,8 @@ export class MasterDataService {
           detailAction: mode === 'replace' ? 'MASTER_DATA_REPLACE' : 'MASTER_DATA_APPEND',
           streaming: true,
           streamParse: true,
+          hitRowCap,
+          fileRowCount: totalIncoming,
         },
       });
     } catch (err) {
@@ -994,6 +1020,9 @@ export class MasterDataService {
         addedRows,
         skippedDuplicates,
         mode,
+        hitRowCap,
+        fileRowCount: totalIncoming,
+        maxRows,
       },
       parseMs,
       saveMs,
@@ -1438,10 +1467,15 @@ export class MasterDataService {
           `(parseMs=${parseMs} saveMs=${saveMs} totalMs=${Date.now() - jobStart} ${formatMemoryUsage()})`,
       );
 
+      const hitCap = Boolean((result as { hitRowCap?: boolean }).hitRowCap);
+      const doneMessage = hitCap
+        ? `Import complete — ${result.rowCount.toLocaleString()} rows saved (file was larger than limit; remainder can be uploaded later in append mode).`
+        : `Import complete — ${result.rowCount.toLocaleString()} rows in master database`;
+
       await this.importJobs.updateJob(jobId, {
         phase: 'done',
         percent: 100,
-        message: `Import complete — ${result.rowCount.toLocaleString()} rows in master database`,
+        message: doneMessage,
         rowsProcessed: result.rowCount,
         totalRows: result.rowCount,
         result: result as unknown as Record<string, unknown>,
@@ -1450,10 +1484,40 @@ export class MasterDataService {
       const message = err instanceof Error ? err.message : 'Import failed';
       const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
       const savedRows = doc ? this.rowStore.getRowCount(doc) : 0;
-      const userMessage =
-        savedRows > 0
-          ? `Import stopped — ${savedRows.toLocaleString()} rows were already saved. Upload again in append mode to continue.`
-          : message;
+
+      // Rows were already flushed to Mongo — treat as soft success so UI does not look like a total failure.
+      if (savedRows > 0) {
+        this.logger.warn(
+          `Master import job ${jobId}: marking done after partial save ` +
+            `(savedRows=${savedRows}): ${message} ${formatMemoryUsage()}`,
+        );
+        try {
+          const result = await this.toResponse(doc!);
+          await this.importJobs.updateJob(jobId, {
+            phase: 'done',
+            percent: 100,
+            message: `Import saved ${savedRows.toLocaleString()} rows. ${message}`,
+            rowsProcessed: savedRows,
+            totalRows: savedRows,
+            result: {
+              ...result,
+              addedRows: savedRows,
+              skippedDuplicates: 0,
+              mode,
+              partial: true,
+              continueHint: 'Upload remaining rows in append mode if needed.',
+            } as unknown as Record<string, unknown>,
+          });
+          return;
+        } catch (finalizeErr) {
+          this.logger.error(
+            `Failed to finalize partial import ${jobId}: ${
+              finalizeErr instanceof Error ? finalizeErr.message : finalizeErr
+            }`,
+          );
+        }
+      }
+
       this.logger.error(
         `Master import job ${jobId} failed after ${Date.now() - jobStart}ms ` +
           `(parseMs=${parseMs} saveMs=${saveMs} savedRows=${savedRows}): ${message} ${formatMemoryUsage()}`,
@@ -1461,8 +1525,8 @@ export class MasterDataService {
       await this.importJobs.updateJob(jobId, {
         phase: 'failed',
         percent: 100,
-        message: userMessage,
-        error: userMessage,
+        message,
+        error: message,
         rowsProcessed: savedRows,
       });
     } finally {
@@ -1618,12 +1682,39 @@ export class MasterDataService {
         missingValueCount,
         submittedBy: new Types.ObjectId(actor.id),
         submittedByEmail: actor.email,
+        submittedByName: displayName(actor),
         sourceRole: 'employee',
         status: 'pending',
+        isDuplicateFile: false,
       });
 
       const merged = await this.mergeUploadRequestToMaster(request, actor);
       mergedAddedRows = merged.addedRows ?? rows.length;
+    } else if (duplicateCount > 0 || dto.rows.length > 0) {
+      // Always keep an "Your uploads" receipt so My Data shows both folders.
+      request = await this.uploadRequestModel.create({
+        fileName: dto.fileName,
+        sheetName: dto.sheetName || 'Uploaded',
+        headers,
+        rows: [],
+        workRows: [],
+        rowCount: 0,
+        submittedRowCount: dto.rows.length,
+        duplicateCount,
+        duplicatePreviewRows,
+        missingValueCount,
+        submittedBy: new Types.ObjectId(actor.id),
+        submittedByEmail: actor.email,
+        submittedByName: displayName(actor),
+        sourceRole: 'employee',
+        status: 'approved',
+        mergedAddedRows: 0,
+        mergedTotalRows: undefined,
+        reviewedBy: new Types.ObjectId(actor.id),
+        reviewedByEmail: actor.email,
+        reviewedAt: new Date(),
+        isDuplicateFile: false,
+      });
     }
 
     const duplicateFile = await this.createUploadDuplicateFile(
@@ -1825,9 +1916,9 @@ export class MasterDataService {
       throw new ForbiddenException('Only employees can submit data upload requests');
     }
 
-    const EMPLOYEE_UPLOAD_PREVIEW_ROWS = 500;
     const DUPLICATE_FLUSH_BATCH = 3_000;
     const DEDUP_LOOKUP_BATCH = 500;
+    const NEW_ROW_FLUSH_BATCH = 3_000;
 
     let existing = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
     let targetHeaders: string[] = [];
@@ -1843,10 +1934,13 @@ export class MasterDataService {
     let missingValueCount = 0;
     let pendingMaster: string[][] = [];
     let pendingDuplicateBatch: string[][] = [];
+    let pendingUploadBatch: string[][] = [];
     let duplicateRequestId: Types.ObjectId | null = null;
-    const storedNewRows: string[][] = [];
+    let uploadRequestId: Types.ObjectId | null = null;
     const storedDuplicateRows: string[][] = [];
     let flushCount = 0;
+    const actorDisplayName = displayName(actor);
+    const duplicateMetaPromise = this.resolveDuplicateFileMeta(actor);
     let incomingSeen = new Set<string>();
     let masterSeen: Set<string> | null = null;
     let useOpenSearchDedup = false;
@@ -1881,6 +1975,54 @@ export class MasterDataService {
       });
     };
 
+    const flushUploadReceiptBatch = async () => {
+      if (!pendingUploadBatch.length || !targetHeaders.length) return;
+      const batch = pendingUploadBatch;
+      pendingUploadBatch = [];
+
+      if (!uploadRequestId) {
+        const created = await this.uploadRequestModel.create({
+          fileName,
+          sheetName,
+          headers: targetHeaders,
+          rows: batch,
+          workRows: batch.map((row) => [...row]),
+          rowCount: batch.length,
+          submittedRowCount: totalIncoming || batch.length,
+          duplicateCount: 0,
+          duplicatePreviewRows: [],
+          missingValueCount: 0,
+          submittedBy: new Types.ObjectId(actor.id),
+          submittedByEmail: actor.email,
+          submittedByName: actorDisplayName,
+          sourceRole: 'employee',
+          status: 'approved',
+          mergedAddedRows: batch.length,
+          reviewedBy: new Types.ObjectId(actor.id),
+          reviewedByEmail: actor.email,
+          reviewedAt: new Date(),
+          isDuplicateFile: false,
+        });
+        uploadRequestId = created._id;
+        return;
+      }
+
+      await this.uploadRequestModel.updateOne(
+        { _id: uploadRequestId },
+        {
+          $push: {
+            rows: { $each: batch },
+            workRows: { $each: batch.map((row) => [...row]) },
+          },
+          $set: {
+            rowCount: addedRows,
+            mergedAddedRows: addedRows,
+            submittedRowCount: totalIncoming || addedRows,
+          },
+        },
+      );
+    };
+
     const flushMasterBatch = async (forceMeta = false) => {
       if (!pendingMaster.length) return;
       const batch = pendingMaster;
@@ -1888,6 +2030,10 @@ export class MasterDataService {
       pendingMaster = [];
       await this.rowStore.appendRows(batch, MASTER_DATA_KEY, undefined);
       addedRows += batch.length;
+      pendingUploadBatch.push(...batch);
+      if (pendingUploadBatch.length >= NEW_ROW_FLUSH_BATCH) {
+        await flushUploadReceiptBatch();
+      }
       if (this.searchIndex.isSearchEngineEnabled() && targetHeaders.length) {
         void this.searchIndex
           .indexRowBatch(targetHeaders, batch, batchStartIndex, MASTER_DATA_KEY, masterRevision)
@@ -1896,10 +2042,6 @@ export class MasterDataService {
               `OpenSearch incremental index during employee upload failed: ${err instanceof Error ? err.message : err}`,
             );
           });
-      }
-      if (storedNewRows.length < EMPLOYEE_UPLOAD_PREVIEW_ROWS) {
-        const room = EMPLOYEE_UPLOAD_PREVIEW_ROWS - storedNewRows.length;
-        storedNewRows.push(...batch.slice(0, room));
       }
       flushCount += 1;
       const totalRows = baseRowCount + addedRows;
@@ -1932,6 +2074,7 @@ export class MasterDataService {
       const stem = fileName.replace(/\.(xlsx|xls|csv)$/i, '');
 
       if (!duplicateRequestId) {
+        const duplicateMeta = await duplicateMetaPromise;
         const created = await this.uploadRequestModel.create({
           fileName: `${stem}-duplicates.xlsx`,
           sheetName: 'Duplicates',
@@ -1944,6 +2087,11 @@ export class MasterDataService {
           missingValueCount: 0,
           submittedBy: new Types.ObjectId(actor.id),
           submittedByEmail: actor.email,
+          submittedByName: actorDisplayName,
+          campaignName: stem,
+          dbName: duplicateMeta.dbName,
+          adminName: duplicateMeta.adminName,
+          isDuplicateFile: true,
           sourceRole: 'employee',
           status: 'active',
         });
@@ -1958,7 +2106,7 @@ export class MasterDataService {
             rows: { $each: batch },
             workRows: { $each: batch.map((row) => [...row]) },
           },
-          $set: { rowCount: duplicateCount },
+          $set: { rowCount: duplicateCount, isDuplicateFile: true },
         },
       );
     };
@@ -2031,9 +2179,10 @@ export class MasterDataService {
           sheetName = sn || sheetName;
           sourceHeaders = headers.map((h) => h.trim());
           sourceIdx = buildHeaderIndexMap(sourceHeaders);
+          // Template column order first so upload + duplicate files show every template column.
           targetHeaders = resolveMasterDataHeaders(
-            existing?.headers?.length ? existing.headers : null,
-            sourceHeaders,
+            [...MASTER_DATA_TEMPLATE_HEADERS],
+            [...(existing?.headers ?? []), ...sourceHeaders],
           );
 
           if (!existing) {
@@ -2147,31 +2296,58 @@ export class MasterDataService {
       });
 
       await flushMasterBatch(true);
+      await flushUploadReceiptBatch();
       await flushDuplicateBatch();
 
-      let request: MasterDataUploadRequest | null = null;
-      if (addedRows > 0) {
-        request = await this.uploadRequestModel.create({
+      // Ensure "Your uploads" always appears when anything was processed.
+      if (!uploadRequestId && (addedRows > 0 || duplicateCount > 0 || totalIncoming > 0)) {
+        const created = await this.uploadRequestModel.create({
           fileName,
           sheetName,
           headers: targetHeaders,
-          rows: storedNewRows,
-          workRows: storedNewRows.map((row) => [...row]),
-          rowCount: addedRows,
+          rows: [],
+          workRows: [],
+          rowCount: 0,
           submittedRowCount: totalIncoming,
           duplicateCount,
           duplicatePreviewRows: storedDuplicateRows.slice(0, DUPLICATE_PREVIEW_LIMIT),
           missingValueCount,
           submittedBy: new Types.ObjectId(actor.id),
           submittedByEmail: actor.email,
+          submittedByName: actorDisplayName,
           sourceRole: 'employee',
           status: 'approved',
-          mergedAddedRows: addedRows,
-          mergedTotalRows: baseRowCount + addedRows,
+          mergedAddedRows: 0,
+          mergedTotalRows: baseRowCount,
           reviewedBy: new Types.ObjectId(actor.id),
           reviewedByEmail: actor.email,
           reviewedAt: new Date(),
+          isDuplicateFile: false,
         });
+        uploadRequestId = created._id;
+      } else if (uploadRequestId) {
+        await this.uploadRequestModel.updateOne(
+          { _id: uploadRequestId },
+          {
+            $set: {
+              rowCount: addedRows,
+              submittedRowCount: totalIncoming,
+              duplicateCount,
+              duplicatePreviewRows: storedDuplicateRows.slice(0, DUPLICATE_PREVIEW_LIMIT),
+              missingValueCount,
+              mergedAddedRows: addedRows,
+              mergedTotalRows: baseRowCount + addedRows,
+              status: 'approved',
+              isDuplicateFile: false,
+              submittedByName: actorDisplayName,
+            },
+          },
+        );
+      }
+
+      let request: MasterDataUploadRequest | null = null;
+      if (uploadRequestId) {
+        request = await this.uploadRequestModel.findById(uploadRequestId).exec();
       }
 
       let duplicateFile: Awaited<ReturnType<MasterDataService['createUploadDuplicateFile']>> | null =
@@ -2179,20 +2355,20 @@ export class MasterDataService {
       if (duplicateRequestId) {
         await this.uploadRequestModel.updateOne(
           { _id: duplicateRequestId },
-          { $set: { rowCount: duplicateCount } },
+          { $set: { rowCount: duplicateCount, isDuplicateFile: true } },
         );
         const freshDuplicateDoc = await this.uploadRequestModel.findById(duplicateRequestId).exec();
         if (freshDuplicateDoc) {
           duplicateFile = this.toUploadRequestResponse(freshDuplicateDoc);
         }
-      } else if (duplicateCount > 0) {
+      } else if (duplicateCount > 0 && storedDuplicateRows.length > 0) {
         duplicateFile = await this.createUploadDuplicateFile(
           actor,
           fileName,
           targetHeaders,
           storedDuplicateRows,
           'employee',
-          duplicateCount,
+          storedDuplicateRows.length,
         );
       }
 
@@ -3447,9 +3623,10 @@ export class MasterDataService {
       throw new NotFoundException('No master data uploaded yet');
     }
     const rows = await this.rowStore.getRowsByIndices(doc, indices);
+    const ordered = ensureDispositionAfterAssetTitle(headers, rows);
     return {
-      headers,
-      rows,
+      headers: ordered.headers,
+      rows: ordered.rows,
       masterSourceRowIndices: indices,
     };
   }
@@ -3517,9 +3694,10 @@ export class MasterDataService {
     }
 
     const rows = await this.rowStore.getRowsByIndices(doc, indices);
+    const ordered = ensureDispositionAfterAssetTitle([...doc.headers], rows);
     return {
-      headers: [...doc.headers],
-      rows,
+      headers: ordered.headers,
+      rows: ordered.rows,
       masterSourceRowIndices: indices,
     };
   }
@@ -3858,11 +4036,31 @@ export class MasterDataService {
     };
   }
 
-  private toUploadRequestDetailResponse(doc: MasterDataUploadRequest) {
-    const workRows = doc.workRows?.length ? doc.workRows : doc.rows ?? [];
+  private async toUploadRequestDetailResponse(doc: MasterDataUploadRequest) {
+    let rows = doc.rows ?? [];
+    let workRows = doc.workRows?.length ? doc.workRows : rows;
+
+    // CSV append duplicate hold: full rows live in chunks — don't show misaligned preview only.
+    const holdKey = (doc as MasterDataUploadRequest & { rowsHoldKey?: string }).rowsHoldKey;
+    if (holdKey && (doc.isDuplicateFile || /duplicates/i.test(doc.fileName))) {
+      try {
+        const held = await this.rowStore.loadRowsByHoldKey(holdKey, 5_000);
+        if (held.length) {
+          rows = held;
+          workRows = held;
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Failed to load duplicate hold rows for ${holdKey}: ${
+            err instanceof Error ? err.message : err
+          }`,
+        );
+      }
+    }
+
     return {
       ...this.toUploadRequestResponse(doc),
-      rows: doc.rows ?? [],
+      rows,
       workRows,
     };
   }

@@ -5,6 +5,7 @@ export const MASTER_DATA_TEMPLATE_HEADERS: readonly string[] = [
   'Client Name',
   'Campaign Code',
   'Asset Title',
+  'Disposition',
   'Salutation',
   'First Name',
   'Last Name',
@@ -36,5 +37,4 @@ export const MASTER_DATA_TEMPLATE_HEADERS: readonly string[] = [
   'Employee Size Link',
   'Revenue Size Link',
   'Website',
-  'Disposition',
 ] as const;

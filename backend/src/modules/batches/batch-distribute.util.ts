@@ -1,4 +1,5 @@
 import { fingerprintLeadRow } from '../activity-logs/lead-identify.util';
+import { ensureDispositionAfterAssetTitle } from './disposition-column-order.util';
 
 export type BatchRowSlice = {
   headers: string[];
@@ -79,9 +80,16 @@ export function buildRowSlice(
   parentRows: string[][],
   indices: number[],
 ): BatchRowSlice {
-  const headers = [...parentHeaders];
-  const rows = indices.map((i) => [...parentRows[i]]);
-  return { headers, rows, parentSourceRowIndices: [...indices] };
+  const sliced = {
+    headers: [...parentHeaders],
+    rows: indices.map((i) => [...(parentRows[i] ?? [])]),
+  };
+  const ordered = ensureDispositionAfterAssetTitle(sliced.headers, sliced.rows);
+  return {
+    headers: ordered.headers,
+    rows: ordered.rows,
+    parentSourceRowIndices: [...indices],
+  };
 }
 
 export function employeeDisplayName(user: {

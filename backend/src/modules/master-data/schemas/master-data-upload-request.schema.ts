@@ -84,6 +84,13 @@ export class MasterDataUploadRequest extends Document {
   @Prop({ default: false })
   isDuplicateFile?: boolean;
 
+  /**
+   * When set, full rows live in master_data_chunks under this key
+   * (CSV append duplicate hold). Preview may still be in rows/workRows.
+   */
+  @Prop()
+  rowsHoldKey?: string;
+
   @Prop()
   reason?: string;
 

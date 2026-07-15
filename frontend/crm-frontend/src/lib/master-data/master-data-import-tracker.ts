@@ -243,11 +243,18 @@ async function pollImportUntilDone(
               `${skipped.toLocaleString('en-US')} duplicate contact(s) were not added`,
             );
           }
+          const partial =
+            Boolean(status.result.partial) || Boolean(status.result.hitRowCap);
           toast.success(
-            mode === 'append' ? 'Master data import complete' : 'Master data replaced',
-            rowCount != null
-              ? `${rowCount.toLocaleString()} rows in database`
-              : 'Import finished successfully',
+            partial
+              ? 'Master data saved'
+              : mode === 'append'
+                ? 'Master data import complete'
+                : 'Master data replaced',
+            status.message ||
+              (rowCount != null
+                ? `${rowCount.toLocaleString()} rows in database`
+                : 'Import finished successfully'),
           );
           window.dispatchEvent(new CustomEvent('master-data-updated'));
           setTimeout(() => useMasterDataImportStore.getState().reset(), 8000);

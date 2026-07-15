@@ -14,9 +14,14 @@ export const DISPOSITION_KIND_LABELS: Record<DispositionKind, string> = {
   direct_voicemail: 'Direct Voicemail',
 };
 
+/** @deprecated Status is email-only — use isDispositionColumn for the call dropdown. */
 export function isStatusDispositionColumn(header: string): boolean {
-  const lower = header.trim().toLowerCase();
-  return lower === 'status' || lower === 'disposition';
+  return isDispositionColumn(header);
+}
+
+/** Call-outcome column only — never treat Email "Status" as disposition. */
+export function isDispositionColumn(header: string): boolean {
+  return header.trim().toLowerCase() === 'disposition';
 }
 
 export function isCallbackDisposition(raw: string): boolean {

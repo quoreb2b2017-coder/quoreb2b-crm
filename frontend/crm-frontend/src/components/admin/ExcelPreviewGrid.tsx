@@ -20,7 +20,7 @@ import { GridScrollRails } from '@/components/spreadsheet/GridScrollRails';
 import { useDragToScroll } from '@/hooks/useDragToScroll';
 import type { MasterBatchCreatePayload } from '@/components/master-database/MasterDatabaseExplorer';
 import {
-  isStatusDispositionColumn,
+  isDispositionColumn,
   classifyDispositionRowTone,
   dispositionRowToneClass,
   readDispositionDisplayValue,
@@ -969,7 +969,7 @@ export function ExcelPreviewGrid({
                       const value = row[colIndex] ?? '';
                       const isDispositionCol =
                         Boolean(dispositionSelectOptions?.length) &&
-                        isStatusDispositionColumn(headers[colIndex] ?? '');
+                        isDispositionColumn(headers[colIndex] ?? '');
 
                       return (
                         <td
@@ -998,21 +998,8 @@ export function ExcelPreviewGrid({
                               onChange={(e) => {
                                 const next = e.target.value;
                                 const apply = (value: string) => {
-                                  const updates = headers
-                                    .map((h, i) =>
-                                      isStatusDispositionColumn(h)
-                                        ? { colIndex: i, value }
-                                        : null,
-                                    )
-                                    .filter(
-                                      (u): u is { colIndex: number; value: string } =>
-                                        u != null,
-                                    );
-                                  if (updates.length) {
-                                    sheet.updateRowCells(sourceRow, updates);
-                                  } else {
-                                    sheet.updateCell(sourceRow, colIndex, value);
-                                  }
+                                  // Only Disposition — Email "Status" must stay untouched.
+                                  sheet.updateCell(sourceRow, colIndex, value);
                                   onLeadCellFocus?.(sourceRow, colIndex);
                                 };
                                 if (onDispositionSelect) {

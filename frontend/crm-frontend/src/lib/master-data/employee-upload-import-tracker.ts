@@ -264,28 +264,20 @@ export async function enqueueEmployeeUploadImport(
 
     const result = await pollUntilDone(jobId);
 
-    if (result.request) {
-      const totalInFile =
-        (result.request.submittedRowCount ?? 0) > 0
-          ? result.request.submittedRowCount!
-          : (result.mergedAddedRows ?? result.pendingRows) + (result.duplicateCount ?? 0);
-      const merged = result.mergedAddedRows ?? result.pendingRows;
+    const uploaded = result.mergedAddedRows ?? result.pendingRows ?? 0;
+    const dups = result.duplicateCount ?? 0;
+    const totalInFile =
+      (result.request?.submittedRowCount ?? 0) > 0
+        ? result.request!.submittedRowCount!
+        : uploaded + dups;
+
+    if (uploaded > 0 || dups > 0) {
       toast.success(
-        'Merged to master file',
-        `${merged.toLocaleString('en-US')} new of ${totalInFile.toLocaleString('en-US')} in your file${result.duplicateCount > 0 ? ` · ${result.duplicateCount.toLocaleString('en-US')} duplicate(s)` : ''}${result.duplicateFileName ? ` · saved as ${result.duplicateFileName}` : ''}`,
-      );
-    } else if (result.duplicateFileName) {
-      toast.info(
-        'Duplicates saved',
-        `${result.duplicateCount.toLocaleString('en-US')} duplicate contact(s) in ${result.duplicateFileName}`,
+        uploaded > 0 ? 'Upload complete' : 'Duplicates saved',
+        `${uploaded.toLocaleString('en-US')} uploaded · ${dups.toLocaleString('en-US')} duplicate(s) · ${totalInFile.toLocaleString('en-US')} in your file${result.duplicateFileName ? ` · ${result.duplicateFileName}` : ''}`,
       );
     } else {
-      toast.info(
-        'No new contacts',
-        result.duplicateCount > 0
-          ? `${result.duplicateCount.toLocaleString('en-US')} duplicate contact(s) were found`
-          : 'All contacts were empty or duplicates',
-      );
+      toast.info('No new contacts', 'All contacts were empty or could not be processed');
     }
 
     window.dispatchEvent(new CustomEvent('master-data-updated'));

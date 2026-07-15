@@ -53,7 +53,7 @@ export function useEditableSpreadsheet(
     [headers, emit],
   );
 
-  /** Update multiple cells on one row in a single emit (Status + Disposition sync). */
+  /** Update multiple cells on one row in a single emit. */
   const updateRowCells = useCallback(
     (sourceRowIndex: number, updates: Array<{ colIndex: number; value: string }>) => {
       if (!updates.length) return;

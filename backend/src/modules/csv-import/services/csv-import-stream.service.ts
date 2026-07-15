@@ -45,7 +45,9 @@ export class CsvImportStreamService {
       last -= 1;
     }
     return headerRow.slice(0, last + 1).map((h, i) => {
-      const trimmed = (h ?? '').trim();
+      const trimmed = String(h ?? '')
+        .replace(/^\uFEFF/, '')
+        .trim();
       return trimmed || `Column ${i + 1}`;
     });
   }

@@ -5,6 +5,7 @@ export const MASTER_DATA_TEMPLATE_HEADERS: readonly string[] = [
   'Client Name',
   'Campaign Code',
   'Asset Title',
+  'Disposition',
   'Salutation',
   'First Name',
   'Last Name',
@@ -36,7 +37,6 @@ export const MASTER_DATA_TEMPLATE_HEADERS: readonly string[] = [
   'Employee Size Link',
   'Revenue Size Link',
   'Website',
-  'Disposition',
 ] as const;
 
 export function formatMasterDataCell(value: string): string {
@@ -72,10 +72,17 @@ export function resolveMasterDataHeaders(
   return mergeMasterDataHeaders(base, incoming);
 }
 
+function normalizeHeaderKey(header: string): string {
+  return String(header ?? '')
+    .replace(/^\uFEFF/, '')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
 function buildHeaderIndexMap(headers: string[]): Map<string, number> {
   const map = new Map<string, number>();
   headers.forEach((header, index) => {
-    const key = header.trim();
+    const key = normalizeHeaderKey(header);
     if (key && !map.has(key)) map.set(key, index);
   });
   return map;
@@ -88,7 +95,7 @@ export function alignRowToMasterHeaders(
 ): string[] {
   const sourceIdx = buildHeaderIndexMap(sourceHeaders);
   return targetHeaders.map((header) => {
-    const idx = sourceIdx.get(header.trim());
+    const idx = sourceIdx.get(normalizeHeaderKey(header));
     return formatMasterDataCell(idx !== undefined ? String(row[idx] ?? '') : '');
   });
 }

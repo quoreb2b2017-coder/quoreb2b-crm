@@ -95,19 +95,28 @@ export function AdminEmployeeDataPanel({
     [filter, scopedRequests],
   );
 
-  const stats = useMemo(
-    () => ({
+  const stats = useMemo(() => {
+    const uploadedContacts = uploadFiles.reduce(
+      (sum, r) => sum + (r.mergedAddedRows ?? r.rowCount ?? 0),
+      0,
+    );
+    const duplicateContacts = duplicateFiles.reduce(
+      (sum, r) => sum + (r.rowCount ?? 0),
+      0,
+    );
+    return {
       uploads: uploadFiles.length,
       duplicates: duplicateFiles.length,
+      uploadedContacts,
+      duplicateContacts,
       total: requests.length,
       pending: requests.filter(
         (r) =>
           !isEmployeeDuplicateFile(r) &&
           (r.status === 'pending_db_admin' || r.status === 'pending_admin'),
       ).length,
-    }),
-    [requests, uploadFiles, duplicateFiles],
-  );
+    };
+  }, [requests, uploadFiles, duplicateFiles]);
 
   const approve = async (request: MasterDataUploadRequest) => {
     setActionLoadingId(request.id);
@@ -201,19 +210,29 @@ export function AdminEmployeeDataPanel({
               ? [
                   {
                     label: 'Duplicate files',
-                    value: stats.duplicates,
+                    value: stats.duplicates.toLocaleString('en-US'),
                     color: 'bg-amber-100 text-amber-800',
+                  },
+                  {
+                    label: 'Duplicate contacts',
+                    value: stats.duplicateContacts.toLocaleString('en-US'),
+                    color: 'bg-amber-50 text-amber-900',
                   },
                 ]
               : [
                   {
-                    label: 'Employee uploads',
-                    value: stats.uploads,
+                    label: 'Upload files',
+                    value: stats.uploads.toLocaleString('en-US'),
                     color: 'bg-sky-100 text-sky-800',
                   },
                   {
+                    label: 'Uploaded contacts',
+                    value: stats.uploadedContacts.toLocaleString('en-US'),
+                    color: 'bg-emerald-100 text-emerald-800',
+                  },
+                  {
                     label: 'Pending review',
-                    value: stats.pending,
+                    value: stats.pending.toLocaleString('en-US'),
                     color: 'bg-violet-100 text-violet-800',
                   },
                 ]

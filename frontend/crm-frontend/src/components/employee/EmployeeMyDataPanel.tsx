@@ -62,19 +62,16 @@ export function EmployeeMyDataPanel() {
     async (file: File) => {
       setUploading(true);
       try {
-        const result = await enqueueEmployeeUploadImport(file);
+        await enqueueEmployeeUploadImport(file);
+        // Stay on My Data so both "Your uploads" and "Duplicates" folders are visible.
         await load();
-
-        if (result.duplicateCount > 0 && result.duplicateFileId) {
-          router.push(uploadRequestFilePath('employee', result.duplicateFileId));
-        }
       } catch (err) {
         toast.error('Upload failed', extractApiError(err, 'Could not process file'));
       } finally {
         setUploading(false);
       }
     },
-    [load, router],
+    [load],
   );
 
   const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -212,7 +209,7 @@ export function EmployeeMyDataPanel() {
         title="My data folders"
         requests={requests}
         loading={loading}
-        hint="All your uploads by month · merged contacts go to master file · duplicates saved as a separate file"
+        hint="Each upload shows in Your uploads (how many new) and Duplicates folder (full duplicate rows)."
         emptyFolderMessage="No files in this month yet. Upload a file and it will appear here."
         onOpenRequest={openRequestInExcel}
       />

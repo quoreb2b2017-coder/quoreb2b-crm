@@ -48,6 +48,10 @@ export function LoadingProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+function pathOnly(href: string): string {
+  return href.split('?')[0]?.split('#')[0] ?? href;
+}
+
 function LoadingProviderInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? '';
   const searchParams = useSearchParams();
@@ -56,7 +60,9 @@ function LoadingProviderInner({ children }: { children: React.ReactNode }) {
 
   const startNavigation = useCallback(
     (href: string) => {
-      if (href === pathname) return;
+      const next = pathOnly(href);
+      // Already on this exact page — let Link no-op without spinning forever
+      if (next === pathname) return;
       setPendingHref(href);
       setIsNavigating(true);
     },
@@ -67,6 +73,16 @@ function LoadingProviderInner({ children }: { children: React.ReactNode }) {
     setPendingHref(null);
     setIsNavigating(false);
   }, [pathname, searchParams]);
+
+  // Soft-nav can hang (chunk/error). Clear spinner so sidebar stays clickable.
+  useEffect(() => {
+    if (!isNavigating || !pendingHref) return;
+    const timer = window.setTimeout(() => {
+      setPendingHref(null);
+      setIsNavigating(false);
+    }, 6000);
+    return () => window.clearTimeout(timer);
+  }, [isNavigating, pendingHref]);
 
   const value = useMemo(
     () => ({ pendingHref, isNavigating, startNavigation }),

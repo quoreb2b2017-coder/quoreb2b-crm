@@ -32,27 +32,15 @@ export function readEffectiveStatusValue(headers: string[], row: string[]): stri
   return dispVal || statusVal || '';
 }
 
-/** Keep Status and Disposition cells in sync so QC / archive both see the mark. */
+/**
+ * Previously copied Disposition ↔ Status. Status is email-only now — never overwrite it.
+ * Kept as identity so existing call sites stay stable.
+ */
 export function syncStatusDispositionColumns(
-  headers: string[],
+  _headers: string[],
   rows: string[][],
 ): string[][] {
-  const statusIdx = headers.findIndex((h) => h.trim().toLowerCase() === 'status');
-  const dispIdx = headers.findIndex((h) => h.trim().toLowerCase() === 'disposition');
-  if (statusIdx < 0 || dispIdx < 0 || statusIdx === dispIdx) return rows;
-
-  return rows.map((row) => {
-    const next = [...row];
-    while (next.length < headers.length) next.push('');
-    const statusVal = (next[statusIdx] ?? '').trim();
-    const dispVal = (next[dispIdx] ?? '').trim();
-    if (dispVal && dispVal !== statusVal) {
-      next[statusIdx] = next[dispIdx];
-    } else if (statusVal && !dispVal) {
-      next[dispIdx] = next[statusIdx];
-    }
-    return next;
-  });
+  return rows;
 }
 
 export function classifyRowStatus(

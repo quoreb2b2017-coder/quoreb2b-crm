@@ -34,11 +34,33 @@ export class CsvImportDuplicateHoldService {
     headers: string[],
   ): Promise<{ requestId: string; holdKey: string }> {
     const holdKey = this.holdKeyForJob(job.jobId);
-    const existing = await this.uploadRequestModel
-      .findOne({ fileName: this.fileNameFor(job), sheetName: 'Duplicates (temp)' })
+
+    if (job.duplicateHoldRequestId) {
+      const byId = await this.uploadRequestModel
+        .findById(job.duplicateHoldRequestId)
+        .exec();
+      if (byId) {
+        // Keep headers in lockstep with how rows are aligned/appended.
+        if (headers.length) {
+          byId.headers = headers;
+          byId.rowsHoldKey = holdKey;
+          byId.isDuplicateFile = true;
+          await byId.save();
+        }
+        return { requestId: byId._id.toString(), holdKey };
+      }
+    }
+
+    const existingByHold = await this.uploadRequestModel
+      .findOne({ rowsHoldKey: holdKey })
       .exec();
-    if (existing) {
-      return { requestId: existing._id.toString(), holdKey };
+    if (existingByHold) {
+      if (headers.length) {
+        existingByHold.headers = headers;
+        existingByHold.isDuplicateFile = true;
+        await existingByHold.save();
+      }
+      return { requestId: existingByHold._id.toString(), holdKey };
     }
 
     const request = await this.uploadRequestModel.create({
@@ -58,6 +80,7 @@ export class CsvImportDuplicateHoldService {
       dbName: 'Master Data',
       adminName: job.uploadedByEmail || 'Super Admin',
       isDuplicateFile: true,
+      rowsHoldKey: holdKey,
       sourceRole: 'db_admin',
       status: 'active',
     });
@@ -158,6 +181,8 @@ export class CsvImportDuplicateHoldService {
             rowCount: totalDuplicates,
             duplicateCount: totalDuplicates,
             duplicatePreviewRows: preview,
+            rowsHoldKey: holdKey,
+            isDuplicateFile: true,
             status: 'active',
           },
         },
@@ -167,6 +192,28 @@ export class CsvImportDuplicateHoldService {
     this.logger.log(
       `Duplicates folder ready: ${totalDuplicates.toLocaleString()} rows (hold ${holdKey})`,
     );
+  }
+
+  /** Load all (or first `limit`) duplicate rows from chunk storage. */
+  async loadHeldRows(
+    holdKey: string,
+    limit = 5_000,
+  ): Promise<string[][]> {
+    if (!holdKey) return [];
+    const chunks = await this.chunkModel
+      .find({ masterKey: holdKey })
+      .sort({ chunkIndex: 1 })
+      .select('rows')
+      .lean()
+      .exec();
+    const out: string[][] = [];
+    for (const chunk of chunks) {
+      for (const row of (chunk.rows as string[][]) ?? []) {
+        out.push(row);
+        if (out.length >= limit) return out;
+      }
+    }
+    return out;
   }
 
   private fileNameFor(job: CsvImportJob): string {

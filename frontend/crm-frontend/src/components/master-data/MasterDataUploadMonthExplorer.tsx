@@ -389,7 +389,7 @@ export function MasterDataUploadMonthExplorer({
                       <div className="px-4 py-8 text-center text-sm text-slate-500">
                         {isAdminView
                           ? 'No employee uploads this month — when an employee uploads from My Data, the file appears here.'
-                          : 'No merged uploads this month.'}
+                          : 'No uploads this month yet. After you upload, the file and how many contacts were added appear here.'}
                       </div>
                     ) : (
                       renderRequestTable(employeeUploadFiles)

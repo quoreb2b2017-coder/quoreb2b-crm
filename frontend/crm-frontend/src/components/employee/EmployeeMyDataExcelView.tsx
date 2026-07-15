@@ -13,8 +13,8 @@ import { CheckSuppressionModal } from '@/components/employee/CheckSuppressionMod
 import { handleSuppressionCheckComplete } from '@/lib/master-data/handle-suppression-result';
 
 const STATUS_HINT: Partial<Record<MasterDataUploadRequestStatus, string>> = {
-  approved: 'Merged into master file — view only',
-  active: 'Your upload file — view only',
+  approved: 'Uploaded contacts for this file — view only',
+  active: 'Full duplicate rows saved from your upload — view only',
   pending: 'Processing upload — view only',
 };
 

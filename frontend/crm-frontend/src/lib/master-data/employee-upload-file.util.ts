@@ -15,7 +15,7 @@ export function getEmployeeUploadFileType(
   request: MasterDataUploadRequest,
 ): EmployeeUploadFileType {
   if (isEmployeeDuplicateFile(request)) return 'duplicates';
-  if (request.status === 'approved' || (request.mergedAddedRows ?? 0) > 0) return 'merged';
+  if ((request.mergedAddedRows ?? 0) > 0 || request.rowCount > 0) return 'merged';
   return 'upload';
 }
 
@@ -24,7 +24,7 @@ export function getEmployeeUploadFileTypeLabel(request: MasterDataUploadRequest)
     case 'duplicates':
       return 'Duplicates file';
     case 'merged':
-      return 'Merged to master';
+      return 'Uploaded to master';
     default:
       return 'Your upload';
   }

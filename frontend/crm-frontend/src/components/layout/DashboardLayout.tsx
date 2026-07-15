@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useState, useCallback, useEffect, memo } from 'react';
 import { cn } from '@/lib/utils/cn';
 import { useAuthStore } from '@/store/auth.store';
@@ -404,7 +404,7 @@ function NavFolderItem({
   pendingHref: string | null;
   isCollapsed: boolean;
   theme: (typeof themes)[DashboardVariant];
-  onNavigate: (href: string) => void;
+  onNavigate: (href: string, event?: React.MouseEvent) => void;
 }) {
   const childActive = item.children?.some((c) => pathname === c.href || pendingHref === c.href) ?? false;
 
@@ -475,7 +475,7 @@ function NavFolderItem({
               <Link
                 key={child.href}
                 href={child.href}
-                onClick={() => onNavigate(child.href)}
+                onClick={(e) => onNavigate(child.href, e)}
                 className={cn(
                   'tap-smooth flex items-center gap-2 px-2.5 py-2 rounded-md text-[13px] font-medium transition-all duration-200',
                   cActive
@@ -735,6 +735,7 @@ function SidebarInner({
 export function DashboardLayout({ children, title, variant, navItems }: DashboardLayoutProps) {
   useGlobalSpreadsheetCopyGuard();
   const pathname = usePathname() ?? '';
+  const router = useRouter();
   const { pendingHref, isNavigating, startNavigation } = useNavigation();
   const batchExcelView = isBatchExcelViewPath(pathname);
   const attendancePage = isAttendancePath(pathname);
@@ -782,11 +783,14 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
     'Overview';
 
   const handleNavClick = useCallback(
-    (href: string) => {
+    (href: string, event?: React.MouseEvent) => {
+      // Force client navigation — Link alone sometimes no-ops when nested under Tip/memo.
+      event?.preventDefault();
       startNavigation(href);
       setMobileOpen(false);
+      router.push(href);
     },
-    [startNavigation],
+    [startNavigation, router],
   );
 
   // ── Sidebar content ──────────────────────────────────────────────────────
@@ -875,7 +879,7 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
                     <Link
                       href={item.href}
                       prefetch={true}
-                      onClick={() => handleNavClick(item.href)}
+                      onClick={(e) => handleNavClick(item.href, e)}
                       aria-current={active ? 'page' : undefined}
                       aria-busy={pending || undefined}
                       className={cn(

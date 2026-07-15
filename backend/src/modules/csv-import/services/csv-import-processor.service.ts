@@ -33,12 +33,13 @@ import {
 import { MasterDataSearchIndexService } from '../../master-data/master-data-search-index.service';
 import {
   formatMasterDataCell,
+  resolveMasterDataHeaders,
   rowHasSourceData,
 } from '../../master-data/master-data-format.util';
 import {
   alignRowWithIndex,
   buildHeaderIndexMap,
-  mergeHeaders,
+  normalizeHeaderKey,
   rowKey,
 } from '../../master-data/master-data-merge.util';
 
@@ -175,18 +176,18 @@ export class CsvImportProcessorService {
 
     // Append must never start writing at chunk 0 — that overwrites existing master data.
     const existingMaster = await this.masterDataModel.findOne({ key: masterKey }).exec();
-    if (job.mode === 'append' && existingMaster?.headers?.length && !job.headers.length) {
-      await this.jobs.updateStatus(job.jobId, job.status, {
-        headers: existingMaster.headers as string[],
-      });
-      job = (await this.jobs.findByJobId(job.jobId))!;
-    }
+    const masterHeaders = ((existingMaster?.headers as string[]) ?? []).map((h) =>
+      normalizeHeaderKey(h),
+    );
 
     let seen: Set<string> | null = null;
     let holdKey = '';
     let holdRequestId = job.duplicateHoldRequestId || '';
     let duplicateRowsHeld = job.duplicateRowsHeld || 0;
     let dupBuffer: string[][] = [];
+    /** Locked after first CSV header row — same schema used for master + duplicate hold. */
+    let targetHeaders: string[] = [];
+    let fileHeaders: string[] = [];
 
     if (job.mode === 'append' && existingMaster) {
       await this.jobs.updateProgress(job.jobId, {
@@ -201,14 +202,15 @@ export class CsvImportProcessorService {
       );
     }
 
-    const flushDupBuffer = async (headers: string[]) => {
-      if (!dupBuffer.length || !seen) return;
+    const flushDupBuffer = async () => {
+      if (!dupBuffer.length || !seen || !targetHeaders.length) return;
       if (!holdRequestId) {
-        const hold = await this.duplicateHold.ensureHold(job, headers);
+        const hold = await this.duplicateHold.ensureHold(job, targetHeaders);
         holdKey = hold.holdKey;
         holdRequestId = hold.requestId;
       } else if (!holdKey) {
         holdKey = this.duplicateHold.holdKeyForJob(job.jobId);
+        await this.duplicateHold.ensureHold(job, targetHeaders);
       }
       const n = await this.duplicateHold.appendDuplicates(holdKey, dupBuffer);
       duplicateRowsHeld += n;
@@ -216,11 +218,11 @@ export class CsvImportProcessorService {
       await this.jobs.updateStatus(job.jobId, job.status, {
         duplicateHoldRequestId: holdRequestId,
         duplicateRowsHeld,
+        headers: targetHeaders,
       } as Partial<CsvImportJob>);
     };
 
     const source = await this.openReadStream(job);
-    let headers = job.headers;
     let batchNumber = 0;
     const failedBuffer: Array<{ rowNumber: number; row: string[]; error: string }> = [];
 
@@ -228,8 +230,12 @@ export class CsvImportProcessorService {
       batchSize,
       startAfterRowNumber: job.checkpoint.lastRowNumber,
       onMeta: (meta) => {
-        headers = meta.headers;
-        void this.jobs.updateStatus(job.jobId, job.status, { headers: meta.headers });
+        fileHeaders = meta.headers.map((h) => normalizeHeaderKey(h));
+        targetHeaders =
+          job.mode === 'append' && masterHeaders.length
+            ? resolveMasterDataHeaders(masterHeaders, fileHeaders)
+            : resolveMasterDataHeaders(null, fileHeaders);
+        void this.jobs.updateStatus(job.jobId, job.status, { headers: targetHeaders });
       },
     })) {
       job = (await this.jobs.findByJobId(job.jobId))!;
@@ -244,12 +250,12 @@ export class CsvImportProcessorService {
         return;
       }
 
-      const sourceHeaders = headers;
+      if (!fileHeaders.length || !targetHeaders.length) {
+        throw new BadRequestException('CSV headers missing — cannot import');
+      }
+
+      const sourceHeaders = fileHeaders;
       const sourceIdx = buildHeaderIndexMap(sourceHeaders);
-      const targetHeaders =
-        job.mode === 'replace' || !job.headers.length
-          ? sourceHeaders
-          : mergeHeaders(job.headers, sourceHeaders);
 
       const validRows: string[][] = [];
       for (let i = 0; i < batch.rows.length; i += 1) {
@@ -277,7 +283,7 @@ export class CsvImportProcessorService {
       }
 
       if (dupBuffer.length >= 500) {
-        await flushDupBuffer(targetHeaders);
+        await flushDupBuffer();
       }
       if (failedBuffer.length >= 200) {
         await this.jobs.recordFailedRows(job.jobId, failedBuffer.splice(0));
@@ -350,16 +356,12 @@ export class CsvImportProcessorService {
     if (failedBuffer.length) {
       await this.jobs.recordFailedRows(job.jobId, failedBuffer.splice(0));
     }
-    const finalHeaders =
-      (await this.jobs.findByJobId(job.jobId))?.headers?.length
-        ? ((await this.jobs.findByJobId(job.jobId))!.headers as string[])
-        : headers;
-    await flushDupBuffer(finalHeaders);
-    if (holdRequestId) {
+    await flushDupBuffer();
+    if (holdRequestId && targetHeaders.length) {
       await this.duplicateHold.finalizeHold(
         holdRequestId,
         holdKey || this.duplicateHold.holdKeyForJob(job.jobId),
-        finalHeaders,
+        targetHeaders,
         duplicateRowsHeld,
       );
     }

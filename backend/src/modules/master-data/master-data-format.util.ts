@@ -12,7 +12,14 @@ export function formatMasterDataCell(value: string): string {
 }
 
 export function normalizeMasterDataHeaders(headers: string[]): string[] {
-  return headers.map((h) => h.trim()).filter((h) => h.length > 0);
+  return headers
+    .map((h) =>
+      String(h ?? '')
+        .replace(/^\uFEFF/, '')
+        .trim()
+        .replace(/\s+/g, ' '),
+    )
+    .filter((h) => h.length > 0);
 }
 
 /** Template order first; extra columns from upload are appended at the end. */

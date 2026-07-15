@@ -90,6 +90,13 @@ export interface MasterDataRecord {
   addedRows?: number;
   skippedDuplicates?: number;
   mode?: MasterDataSaveMode;
+  /** Import hit MASTER_DATA_MAX_ROWS before finishing the file */
+  hitRowCap?: boolean;
+  /** Job finished with rows already saved after a mid-import error */
+  partial?: boolean;
+  fileRowCount?: number;
+  maxRows?: number;
+  continueHint?: string;
   /** DB Admin: rows hidden until filter search */
   filterRequired?: boolean;
   /** Large dataset — full rows omitted; first page may be in `rows` */

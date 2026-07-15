@@ -27,11 +27,19 @@ function normalizeHeaderList(headers: string[]): string[] {
   return headers.map((h) => h.trim()).filter((h) => h.length > 0);
 }
 
+/** Strip BOM / normalize header keys so "Date" matches "\uFEFFDate". */
+export function normalizeHeaderKey(header: string): string {
+  return String(header ?? '')
+    .replace(/^\uFEFF/, '')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
 /** O(1) header lookups instead of repeated indexOf per cell. */
 export function buildHeaderIndexMap(headers: string[]): Map<string, number> {
   const map = new Map<string, number>();
   headers.forEach((header, index) => {
-    const key = header.trim();
+    const key = normalizeHeaderKey(header);
     if (key && !map.has(key)) map.set(key, index);
   });
   return map;
@@ -53,7 +61,7 @@ export function alignRowWithIndex(
   formatCell: (value: string) => string = (value) => value,
 ): string[] {
   return targetHeaders.map((header) => {
-    const idx = sourceIdx.get(header);
+    const idx = sourceIdx.get(normalizeHeaderKey(header));
     const raw = idx !== undefined ? String(row[idx] ?? '').trim() : '';
     return formatCell(raw);
   });

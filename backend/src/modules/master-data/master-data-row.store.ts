@@ -453,6 +453,25 @@ export class MasterDataRowStore {
     return chunks.flatMap((c) => (c.rows as string[][]) ?? []);
   }
 
+  /** Load rows from a temp duplicate-hold key (CSV append duplicates). */
+  async loadRowsByHoldKey(holdKey: string, limit = 5_000): Promise<string[][]> {
+    if (!holdKey) return [];
+    const chunks = await this.chunkModel
+      .find({ masterKey: holdKey })
+      .sort({ chunkIndex: 1 })
+      .select('rows')
+      .lean()
+      .exec();
+    const out: string[][] = [];
+    for (const chunk of chunks) {
+      for (const row of (chunk.rows as string[][]) ?? []) {
+        out.push(row.map((cell) => String(cell ?? '')));
+        if (out.length >= limit) return out;
+      }
+    }
+    return out;
+  }
+
   async getRowsByIndices(
     doc: Pick<MasterDataRecord, 'key' | 'rows' | 'storage'>,
     indices: number[],

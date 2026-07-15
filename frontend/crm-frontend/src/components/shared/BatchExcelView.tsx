@@ -44,7 +44,7 @@ export interface BatchExcelViewProps {
   /** Employee: check rows against admin suppression campaigns */
   enableCheckSuppression?: boolean;
   checkSuppressionBatchId?: string;
-  /** Employee: Status/Disposition dropdown instead of free text */
+  /** Employee: Disposition dropdown only (Email Status stays separate / untouched) */
   enableDispositionDropdown?: boolean;
 }
 

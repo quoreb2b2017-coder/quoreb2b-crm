@@ -561,7 +561,8 @@ export function distinctColumnValues(
     if (!v) continue;
     if (needle && !v.toLowerCase().includes(needle)) continue;
     set.add(v);
-    if (set.size >= limit) break;
   }
-  return [...set].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  return [...set]
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+    .slice(0, Math.max(1, limit));
 }

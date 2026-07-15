@@ -7,7 +7,7 @@ export interface AttendanceRecord {
   _id: string;
   userId: string;
   date: string;
-  status: 'present' | 'absent' | 'leave' | 'half-day' | 'weekend';
+  status: 'present' | 'absent' | 'leave' | 'half-day' | 'weekend' | 'holiday';
   checkInTime?: string;
   checkOutTime?: string;
   hoursWorked: number;

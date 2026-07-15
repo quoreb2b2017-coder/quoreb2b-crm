@@ -299,7 +299,7 @@ export function useWorkTimer(enabled = true) {
     const gross = isTodayLive ? todayLiveGrossMinutes : (data.todayGrossMinutes ?? 0);
     const net = isTodayLive ? todayLiveMinutes : (data.todayMinutes ?? 0);
     const formatted = isTodayLive
-      ? todayLiveFormatted
+      ? formatDurationFromMinutes(net)
       : (data.todayFormatted ?? formatDurationFromMinutes(net));
     return rows.map((day) =>
       day.isToday
@@ -317,7 +317,6 @@ export function useWorkTimer(enabled = true) {
     data,
     onBreak,
     isLiveDuty,
-    todayLiveFormatted,
     todayLiveMinutes,
     todayLiveGrossMinutes,
     breakMinutesForTarget,

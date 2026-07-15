@@ -26,3 +26,4 @@ export class Conversation extends Document {
 
 export const ConversationSchema = SchemaFactory.createForClass(Conversation);
 ConversationSchema.index({ participantIds: 1, lastMessageAt: -1 });
+ConversationSchema.index({ lastMessageAt: -1 });

@@ -221,7 +221,7 @@ html {
   }
 
   .crm-nav-section {
-    @apply px-2.5 pb-0.5 pt-2 text-[9px] font-semibold uppercase tracking-wider text-slate-400 first:pt-1;
+    @apply px-2.5 pb-1.5 pt-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500 first:pt-1.5;
   }
 
   .crm-page-enter {

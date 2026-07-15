@@ -9,6 +9,7 @@ export interface MasterDataColumnFilterSchema {
 }
 
 const MAX_OPTIONS = 40;
+const MAX_LEAD_TYPE_OPTIONS = 500;
 const MAX_OPTION_LEN = 80;
 
 const SIZE_CATEGORY_DEFAULTS: Record<string, string[]> = {
@@ -32,6 +33,10 @@ const SIZE_CATEGORY_DEFAULTS: Record<string, string[]> = {
   ],
 };
 
+export function isLeadTypeHeader(header: string): boolean {
+  return /^lead type$/i.test(header.trim());
+}
+
 export function enrichFilterSchemaColumns(
   columns: MasterDataColumnFilterSchema[],
 ): MasterDataColumnFilterSchema[] {
@@ -39,13 +44,17 @@ export function enrichFilterSchemaColumns(
     const key = col.header.trim().toLowerCase();
     const defaults = SIZE_CATEGORY_DEFAULTS[key];
     const merged = new Set<string>([...col.options, ...(defaults ?? [])]);
-    const options = [...merged].filter(Boolean).slice(0, MAX_OPTIONS);
-    if (options.length >= 2) {
+    const cap = isLeadTypeHeader(col.header) ? MAX_LEAD_TYPE_OPTIONS : MAX_OPTIONS;
+    const options = [...merged]
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+      .slice(0, cap);
+    if (isLeadTypeHeader(col.header) || options.length >= 2) {
       return {
         ...col,
         kind: col.kind === 'email' || col.kind === 'phone' ? col.kind : 'select',
         options,
-        filledCount: Math.max(col.filledCount, 1),
+        filledCount: Math.max(col.filledCount, options.length > 0 ? 1 : 0, 1),
       };
     }
     return { ...col, filledCount: Math.max(col.filledCount, 1) };
@@ -57,6 +66,7 @@ function headerKind(header: string): MasterDataColumnKind {
   if (h.includes('email')) return 'email';
   if (h.includes('phone') || h.includes('mobile') || h.includes('tel')) return 'phone';
   if (h.includes('status')) return 'status';
+  if (isLeadTypeHeader(header)) return 'select';
   return 'text';
 }
 
@@ -64,40 +74,48 @@ export function buildMasterDataFilterSchema(
   headers: string[],
   rows: string[][],
 ): MasterDataColumnFilterSchema[] {
-  return headers.map((header, colIdx) => {
-    const values = rows
-      .map((row) => String(row[colIdx] ?? '').trim())
-      .filter((v) => v.length > 0);
-    const freq = new Map<string, number>();
-    for (const v of values) {
-      freq.set(v, (freq.get(v) ?? 0) + 1);
-    }
-    const unique = [...freq.entries()]
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }))
-      .map(([value]) => value);
-
-    let kind = headerKind(header);
-    let options: string[] = [];
-
-    if (kind === 'status') {
-      options = unique.slice(0, MAX_OPTIONS);
-    } else if (kind === 'text' && unique.length >= 2) {
-      const top = unique.slice(0, MAX_OPTIONS);
-      const allFit = top.every((v) => v.length <= MAX_OPTION_LEN);
-      if (allFit) {
-        kind = 'select';
-        options = top;
+  return headers
+    .map((header, colIdx) => {
+      const values = rows
+        .map((row) => String(row[colIdx] ?? '').trim())
+        .filter((v) => v.length > 0);
+      const freq = new Map<string, number>();
+      for (const v of values) {
+        freq.set(v, (freq.get(v) ?? 0) + 1);
       }
-    }
+      const unique = [...freq.entries()]
+        .sort(
+          (a, b) =>
+            b[1] - a[1] || a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }),
+        )
+        .map(([value]) => value);
 
-    return {
-      header,
-      kind,
-      options,
-      filledCount: values.length,
-    };
-  }).filter((col) => {
-    if (/^column\s+\d+$/i.test(col.header.trim())) return false;
-    return col.filledCount > 0 || col.kind === 'email' || col.kind === 'phone';
-  });
+      let kind = headerKind(header);
+      let options: string[] = [];
+      const isLeadType = isLeadTypeHeader(header);
+      const cap = isLeadType ? MAX_LEAD_TYPE_OPTIONS : MAX_OPTIONS;
+
+      if (kind === 'status' || isLeadType) {
+        options = unique.slice(0, cap);
+        kind = isLeadType ? 'select' : kind;
+      } else if (kind === 'text' && unique.length >= 2) {
+        const top = unique.slice(0, cap);
+        const allFit = top.every((v) => v.length <= MAX_OPTION_LEN);
+        if (allFit) {
+          kind = 'select';
+          options = top;
+        }
+      }
+
+      return {
+        header,
+        kind,
+        options,
+        filledCount: values.length,
+      };
+    })
+    .filter((col) => {
+      if (/^column\s+\d+$/i.test(col.header.trim())) return false;
+      return col.filledCount > 0 || col.kind === 'email' || col.kind === 'phone';
+    });
 }

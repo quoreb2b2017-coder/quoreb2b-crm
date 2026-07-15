@@ -46,6 +46,7 @@ import { QcModule } from './modules/qc/qc.module';
 import { DispositionModule } from './modules/disposition/disposition.module';
 import { CsvImportModule } from './modules/csv-import/csv-import.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { PayrollModule } from './modules/payroll/payroll.module';
 
 @Module({})
 export class AppModule {
@@ -113,6 +114,7 @@ export class AppModule {
         LeaveModule,
         PersonalNotesModule,
         ChatModule,
+        PayrollModule,
         BreakPunchesModule,
         QcModule,
         DispositionModule,

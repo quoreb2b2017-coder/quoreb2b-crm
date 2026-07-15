@@ -5,10 +5,16 @@ import {
   ArrowLeft,
   Check,
   CheckCheck,
+  Download,
+  Eye,
+  FileText,
   MessageCircle,
+  Paperclip,
   Search,
   Send,
+  Smile,
   Users,
+  X,
 } from 'lucide-react';
 import { chatService } from '@/lib/api/chat.service';
 import { extractApiError } from '@/lib/api/errors';
@@ -18,6 +24,44 @@ import type { ChatContact, ChatConversation, ChatMessage } from '@/types/chat';
 import './chat.css';
 
 type SideTab = 'chats' | 'contacts';
+
+const CHAT_EMOJI_GROUPS: { label: string; emojis: string[] }[] = [
+  {
+    label: 'Smileys',
+    emojis: [
+      '😀', '😁', '😂', '🤣', '😅', '😊', '😇', '🙂', '😉', '😍', '🥰', '😘',
+      '😋', '😜', '🤗', '🤔', '🤨', '😐', '🙄', '😏', '😴', '😷', '🤒', '🤯',
+      '😎', '🥳', '😭', '😤', '😡', '🥺', '😳', '🤭', '🤫', '🤐', '🫡', '🫶',
+    ],
+  },
+  {
+    label: 'Gestures',
+    emojis: [
+      '👍', '👎', '👏', '🙌', '👋', '🤝', '🙏', '💪', '✌️', '🤞', '🤟', '👌',
+      '👆', '👇', '👈', '👉', '🫵', '👀', '🧠', '💬', '✅', '❌', '⭐', '🔥',
+    ],
+  },
+  {
+    label: 'Work',
+    emojis: [
+      '📎', '📁', '📂', '📄', '📝', '📌', '📍', '📅', '⏰', '💼', '💻', '🖥️',
+      '📧', '📞', '📱', '🔔', '✅', '☑️', '❗', '❓', '💡', '🎯', '📊', '🚀',
+    ],
+  },
+  {
+    label: 'More',
+    emojis: [
+      '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '💔', '❣️', '💯', '✨',
+      '🎉', '🎊', '🎁', '☕', '🍕', '🍔', '🍻', '🏠', '🚗', '✈️', '☀️', '🌧️',
+    ],
+  },
+];
+
+function formatBytes(n: number) {
+  if (!n || n < 1024) return `${n || 0} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 function roleLabel(roles: string[] = []) {
   if (roles.includes('super_admin')) return 'Super admin';
@@ -102,10 +146,11 @@ function avatarColor(seed: string) {
   return palette[hash % palette.length];
 }
 
-export function ChatApp() {
+export function ChatApp({ mode = 'mine' }: { mode?: 'mine' | 'oversight' }) {
   const user = useAuthStore((s) => s.user);
   const accessToken = useAuthStore((s) => s.accessToken);
   const myId = user?.id ?? '';
+  const isOversightMode = mode === 'oversight';
 
   const [contacts, setContacts] = useState<ChatContact[]>([]);
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
@@ -113,6 +158,8 @@ export function ChatApp() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [query, setQuery] = useState('');
   const [draft, setDraft] = useState('');
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [emojiOpen, setEmojiOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -122,31 +169,41 @@ export function ChatApp() {
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const emojiPanelRef = useRef<HTMLDivElement>(null);
   const activeIdRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    activeIdRef.current = activeId;
-  }, [activeId]);
+  const activeObserverRef = useRef(false);
 
   const activeConversation = useMemo(
     () => conversations.find((c) => c.id === activeId) ?? null,
     [activeId, conversations],
   );
+  const isViewOnly = isOversightMode || Boolean(activeConversation?.isObserver);
+
+  useEffect(() => {
+    activeIdRef.current = activeId;
+  }, [activeId]);
+
+  useEffect(() => {
+    activeObserverRef.current = isViewOnly;
+  }, [isViewOnly]);
 
   const refreshConversations = useCallback(async () => {
-    const rows = await chatService.listConversations();
+    const { conversations: rows } = await chatService.listConversations(mode);
     setConversations(rows);
-  }, []);
+  }, [mode]);
 
-  const loadMessages = useCallback(async (conversationId: string) => {
+  const loadMessages = useCallback(async (conversationId: string, observe = false) => {
     setMessagesLoading(true);
     try {
       const rows = await chatService.getMessages(conversationId, { limit: 100 });
       setMessages(rows);
-      await chatService.markRead(conversationId);
-      setConversations((prev) =>
-        prev.map((c) => (c.id === conversationId ? { ...c, unread: 0 } : c)),
-      );
+      if (!observe) {
+        await chatService.markRead(conversationId);
+        setConversations((prev) =>
+          prev.map((c) => (c.id === conversationId ? { ...c, unread: 0 } : c)),
+        );
+      }
     } finally {
       setMessagesLoading(false);
     }
@@ -157,14 +214,27 @@ export function ChatApp() {
     (async () => {
       try {
         setLoading(true);
-        const [contactRows, convoRows] = await Promise.all([
-          chatService.listContacts(),
-          chatService.listConversations(),
-        ]);
+        setActiveId(null);
+        setMessages([]);
+        setPendingFiles([]);
+        const jobs: Promise<unknown>[] = [chatService.listConversations(mode)];
+        if (!isOversightMode) {
+          jobs.unshift(chatService.listContacts());
+        }
+        const results = await Promise.all(jobs);
         if (cancelled) return;
-        setContacts(contactRows);
-        setConversations(convoRows);
-        if (convoRows.length === 0) setSideTab('contacts');
+        if (isOversightMode) {
+          const convoResult = results[0] as Awaited<ReturnType<typeof chatService.listConversations>>;
+          setContacts([]);
+          setConversations(convoResult.conversations);
+          setSideTab('chats');
+        } else {
+          const contactRows = results[0] as ChatContact[];
+          const convoResult = results[1] as Awaited<ReturnType<typeof chatService.listConversations>>;
+          setContacts(contactRows);
+          setConversations(convoResult.conversations);
+          if (convoResult.conversations.length === 0) setSideTab('contacts');
+        }
         setError(null);
       } catch (e) {
         if (!cancelled) setError(extractApiError(e, 'Failed to load chat'));
@@ -175,7 +245,7 @@ export function ChatApp() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [mode, isOversightMode]);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -188,7 +258,9 @@ export function ChatApp() {
           if (prev.some((m) => m.id === payload.message.id)) return prev;
           return [...prev, payload.message];
         });
-        void chatService.markRead(payload.conversationId);
+        if (!activeObserverRef.current) {
+          void chatService.markRead(payload.conversationId);
+        }
       }
       void refreshConversations();
     };
@@ -206,21 +278,58 @@ export function ChatApp() {
   }, [accessToken, refreshConversations]);
 
   useEffect(() => {
+    if (!emojiOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (emojiPanelRef.current?.contains(t)) return;
+      if ((t as HTMLElement)?.closest?.('.wa-chat__emoji-btn')) return;
+      setEmojiOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [emojiOpen]);
+
+  useEffect(() => {
+    setEmojiOpen(false);
+  }, [activeId, isViewOnly]);
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, activeId]);
 
   useEffect(() => {
-    if (!activeId) return;
+    if (!activeId || isViewOnly) return;
     const t = window.setTimeout(() => composerRef.current?.focus(), 80);
     return () => window.clearTimeout(t);
-  }, [activeId]);
+  }, [activeId, isViewOnly]);
+
+  const insertEmoji = (emoji: string) => {
+    const el = composerRef.current;
+    const start = el?.selectionStart ?? draft.length;
+    const end = el?.selectionEnd ?? draft.length;
+    const next = `${draft.slice(0, start)}${emoji}${draft.slice(end)}`;
+    if (next.length > 4000) return;
+    setDraft(next);
+    requestAnimationFrame(() => {
+      const box = composerRef.current;
+      if (!box) return;
+      box.focus();
+      const pos = start + emoji.length;
+      box.setSelectionRange(pos, pos);
+      box.style.height = 'auto';
+      box.style.height = `${Math.min(box.scrollHeight, 140)}px`;
+    });
+  };
 
   const openConversation = async (conversationId: string) => {
+    const target = conversations.find((c) => c.id === conversationId);
+    const observe = isOversightMode || Boolean(target?.isObserver);
     setActiveId(conversationId);
     setMobileShowThread(true);
     setSideTab('chats');
+    setPendingFiles([]);
     try {
-      await loadMessages(conversationId);
+      await loadMessages(conversationId, observe);
       setError(null);
     } catch (e) {
       setError(extractApiError(e, 'Failed to load messages'));
@@ -246,9 +355,15 @@ export function ChatApp() {
 
   const onSend = async (e?: FormEvent) => {
     e?.preventDefault();
-    if (!activeId || !draft.trim() || sending) return;
+    if (!activeId || sending) return;
+    if (isViewOnly) return;
     const text = draft.trim();
+    const files = [...pendingFiles];
+    if (!text && !files.length) return;
+
     setDraft('');
+    setPendingFiles([]);
+    setEmojiOpen(false);
     if (composerRef.current) composerRef.current.style.height = 'auto';
     setSending(true);
 
@@ -258,13 +373,51 @@ export function ChatApp() {
       conversationId: activeId,
       senderId: myId,
       text,
+      attachments: files.map((f) => ({
+        fileName: f.name,
+        mimeType: f.type || 'application/octet-stream',
+        sizeBytes: f.size,
+      })),
       readBy: [myId],
       createdAt: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, optimistic]);
 
     try {
-      const msg = await chatService.sendMessage(activeId, text);
+      const attachments = [];
+      for (const file of files) {
+        const presign = await chatService.presignAttachment(activeId, {
+          fileName: file.name,
+          contentType: file.type || 'application/octet-stream',
+          fileSizeBytes: file.size,
+        });
+        if (presign.storage === 's3' && presign.uploadUrl) {
+          const put = await fetch(presign.uploadUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': file.type || 'application/octet-stream' },
+            body: file,
+          });
+          if (!put.ok) throw new Error(`Upload failed for ${file.name}`);
+          attachments.push({
+            key: presign.key,
+            fileName: file.name,
+            mimeType: file.type || 'application/octet-stream',
+            sizeBytes: file.size,
+          });
+        } else {
+          const uploaded = await chatService.uploadLocalAttachment(
+            activeId,
+            presign.key,
+            file,
+          );
+          attachments.push(uploaded);
+        }
+      }
+
+      const msg = await chatService.sendMessage(activeId, {
+        text: text || undefined,
+        attachments: attachments.length ? attachments : undefined,
+      });
       setMessages((prev) => {
         const withoutTmp = prev.filter((m) => m.id !== optimisticId);
         if (withoutTmp.some((m) => m.id === msg.id)) return withoutTmp;
@@ -275,6 +428,7 @@ export function ChatApp() {
     } catch (err) {
       setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
       setDraft(text);
+      setPendingFiles(files);
       setError(extractApiError(err, 'Send failed'));
     } finally {
       setSending(false);
@@ -311,7 +465,8 @@ export function ChatApp() {
   const filteredConversations = useMemo(() => {
     if (!q) return conversations;
     return conversations.filter((c) => {
-      const hay = `${c.peerName} ${c.peerEmail} ${c.lastMessageText}`.toLowerCase();
+      const names = (c.participants ?? []).map((p) => p.name).join(' ');
+      const hay = `${c.peerName} ${c.peerEmail} ${c.lastMessageText} ${names}`.toLowerCase();
       return hay.includes(q);
     });
   }, [conversations, q]);
@@ -358,10 +513,12 @@ export function ChatApp() {
               <MessageCircle className="h-5 w-5" />
             </span>
             <div>
-              <strong>Messages</strong>
+              <strong>{isOversightMode ? 'Team chats' : 'Messages'}</strong>
               <span>
-                {contacts.length} people · anyone can chat
-                {totalUnread > 0 ? ` · ${totalUnread} unread` : ''}
+                {isOversightMode
+                  ? 'View-only · all conversations'
+                  : `${contacts.length} people`}
+                {!isOversightMode && totalUnread > 0 ? ` · ${totalUnread} unread` : ''}
               </span>
             </div>
           </div>
@@ -376,6 +533,7 @@ export function ChatApp() {
           />
         </label>
 
+        {!isOversightMode && (
         <div className="wa-chat__tabs" role="tablist">
           <button
             type="button"
@@ -400,6 +558,7 @@ export function ChatApp() {
             <span className="wa-chat__tab-count">{contacts.length}</span>
           </button>
         </div>
+        )}
 
         {error && (
           <p className="wa-chat__error" role="alert">
@@ -408,7 +567,7 @@ export function ChatApp() {
         )}
 
         <div className="wa-chat__lists">
-          {sideTab === 'chats' ? (
+          {sideTab === 'chats' || isOversightMode ? (
             <section>
               {loading && (
                 <div className="wa-chat__skeleton-list" aria-hidden>
@@ -420,10 +579,12 @@ export function ChatApp() {
               {!loading && filteredConversations.length === 0 && (
                 <div className="wa-chat__empty-side">
                   <MessageCircle className="h-8 w-8" />
-                  <p>No chats yet</p>
-                  <button type="button" onClick={() => setSideTab('contacts')}>
-                    Pick someone to message
-                  </button>
+                  <p>{isOversightMode ? 'No team chats yet' : 'No chats yet'}</p>
+                  {!isOversightMode && (
+                    <button type="button" onClick={() => setSideTab('contacts')}>
+                      Pick someone to message
+                    </button>
+                  )}
                 </div>
               )}
               <ul>
@@ -442,7 +603,12 @@ export function ChatApp() {
                       </span>
                       <span className="wa-chat__row-body">
                         <span className="wa-chat__row-top">
-                          <strong>{c.peerName}</strong>
+                          <strong>
+                            {(isOversightMode || c.isObserver) && (
+                              <Eye className="wa-chat__observe-icon" aria-hidden />
+                            )}
+                            {c.peerName}
+                          </strong>
                           <time>{formatListTime(c.lastMessageAt)}</time>
                         </span>
                         <span className="wa-chat__row-bottom">
@@ -544,9 +710,15 @@ export function ChatApp() {
               <div className="wa-chat__header-meta">
                 <strong>{activeConversation.peerName}</strong>
                 <span>
-                  <span className={`wa-chat__role-chip is-${roleTone(peerRoles)}`}>
-                    {roleLabel(peerRoles)}
-                  </span>
+                  {isViewOnly ? (
+                    <span className="wa-chat__role-chip is-admin">
+                      <Eye className="h-3 w-3" /> Observing
+                    </span>
+                  ) : (
+                    <span className={`wa-chat__role-chip is-${roleTone(peerRoles)}`}>
+                      {roleLabel(peerRoles)}
+                    </span>
+                  )}
                   {activeConversation.peerEmail ? (
                     <span className="wa-chat__header-email">{activeConversation.peerEmail}</span>
                   ) : null}
@@ -560,8 +732,11 @@ export function ChatApp() {
               )}
               {!messagesLoading && messages.length === 0 && (
                 <div className="wa-chat__thread-empty">
-                  <p>Say hello to {activeConversation.peerName.split(' ')[0]}</p>
-                  <span>Messages are delivered instantly</span>
+                  <p>
+                    {isViewOnly
+                      ? 'No messages in this conversation yet'
+                      : `Say hello to ${activeConversation.peerName.split(' ')[0]}`}
+                  </p>
                 </div>
               )}
               {threadItems.map((item) => {
@@ -581,7 +756,33 @@ export function ChatApp() {
                     key={m.id}
                     className={`wa-chat__bubble${mine ? ' is-mine' : ' is-theirs'}${pending ? ' is-pending' : ''}`}
                   >
-                    <p>{m.text}</p>
+                    {m.text ? <p>{m.text}</p> : null}
+                    {(m.attachments?.length ?? 0) > 0 && (
+                      <div className="wa-chat__files">
+                        {m.attachments!.map((att, idx) => (
+                          <button
+                            key={`${m.id}-att-${idx}`}
+                            type="button"
+                            className="wa-chat__file"
+                            disabled={pending}
+                            onClick={() =>
+                              void chatService
+                                .downloadAttachment(m.conversationId, m.id, idx)
+                                .catch((err) =>
+                                  setError(extractApiError(err, 'Download failed')),
+                                )
+                            }
+                          >
+                            <FileText className="h-4 w-4" />
+                            <span>
+                              <strong>{att.fileName}</strong>
+                              <em>{formatBytes(att.sizeBytes)}</em>
+                            </span>
+                            <Download className="h-3.5 w-3.5" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <span className="wa-chat__meta">
                       <time>{formatBubbleTime(m.createdAt)}</time>
                       {mine &&
@@ -597,22 +798,124 @@ export function ChatApp() {
               <div ref={bottomRef} />
             </div>
 
-            <form className="wa-chat__composer" onSubmit={(e) => void onSend(e)}>
-              <textarea
-                ref={composerRef}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={onComposerKeyDown}
-                onInput={onComposerInput}
-                placeholder="Type a message"
-                maxLength={4000}
-                rows={1}
-                autoComplete="off"
-              />
-              <button type="submit" disabled={!draft.trim() || sending} aria-label="Send">
-                <Send className="h-4 w-4" />
-              </button>
-            </form>
+            {isViewOnly ? (
+              <div className="wa-chat__observer-bar">
+                <Eye className="h-4 w-4" />
+                Team chats view — read &amp; download only
+              </div>
+            ) : (
+              <form className="wa-chat__composer" onSubmit={(e) => void onSend(e)}>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="sr-only"
+                  multiple
+                  accept="*/*"
+                  onChange={(e) => {
+                    const picked = Array.from(e.target.files ?? []);
+                    if (!picked.length) return;
+                    const oversize = picked.find((f) => f.size > 25 * 1024 * 1024);
+                    if (oversize) {
+                      setError(`"${oversize.name}" is over 25 MB`);
+                      e.target.value = '';
+                      return;
+                    }
+                    setPendingFiles((prev) => [...prev, ...picked].slice(0, 5));
+                    e.target.value = '';
+                  }}
+                />
+                <button
+                  type="button"
+                  className="wa-chat__attach"
+                  aria-label="Attach file"
+                  title="Attach file (any type, max 25 MB, up to 5)"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={sending}
+                >
+                  <Paperclip className="h-4 w-4" />
+                </button>
+                <div className="wa-chat__composer-wrap">
+                  {emojiOpen && (
+                    <div
+                      ref={emojiPanelRef}
+                      className="wa-chat__emoji-panel"
+                      role="dialog"
+                      aria-label="Emoji picker"
+                    >
+                      {CHAT_EMOJI_GROUPS.map((group) => (
+                        <div key={group.label} className="wa-chat__emoji-group">
+                          <p>{group.label}</p>
+                          <div className="wa-chat__emoji-grid">
+                            {group.emojis.map((emoji) => (
+                              <button
+                                key={`${group.label}-${emoji}`}
+                                type="button"
+                                className="wa-chat__emoji-item"
+                                onClick={() => insertEmoji(emoji)}
+                              >
+                                {emoji}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="wa-chat__composer-main">
+                    {pendingFiles.length > 0 && (
+                      <div className="wa-chat__pending-files">
+                        {pendingFiles.map((f, i) => (
+                          <span key={`${f.name}-${i}`} className="wa-chat__pending-chip">
+                            <FileText className="h-3 w-3" />
+                            {f.name}
+                            <button
+                              type="button"
+                              aria-label={`Remove ${f.name}`}
+                              onClick={() =>
+                                setPendingFiles((prev) => prev.filter((_, idx) => idx !== i))
+                              }
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="wa-chat__composer-row">
+                      <button
+                        type="button"
+                        className={`wa-chat__emoji-btn${emojiOpen ? ' is-open' : ''}`}
+                        aria-label="Emoji"
+                        aria-expanded={emojiOpen}
+                        title="Emoji"
+                        onClick={() => setEmojiOpen((v) => !v)}
+                        disabled={sending}
+                      >
+                        <Smile className="h-4 w-4" />
+                      </button>
+                      <textarea
+                        ref={composerRef}
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        onKeyDown={onComposerKeyDown}
+                        onInput={onComposerInput}
+                        placeholder="Type a message, emoji, or attach a file"
+                        maxLength={4000}
+                        rows={1}
+                        autoComplete="off"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  disabled={(!draft.trim() && !pendingFiles.length) || sending}
+                  aria-label="Send"
+                >
+                  <Send className="h-4 w-4" />
+                </button>
+              </form>
+            )}
           </>
         )}
       </main>

@@ -19,7 +19,12 @@ import { spreadsheetGuardProps } from '@/lib/spreadsheet/spreadsheet-access';
 import { GridScrollRails } from '@/components/spreadsheet/GridScrollRails';
 import { useDragToScroll } from '@/hooks/useDragToScroll';
 import type { MasterBatchCreatePayload } from '@/components/master-database/MasterDatabaseExplorer';
-import { isStatusDispositionColumn } from '@/lib/disposition/disposition-values';
+import {
+  isStatusDispositionColumn,
+  classifyDispositionRowTone,
+  dispositionRowToneClass,
+  readDispositionDisplayValue,
+} from '@/lib/disposition/disposition-values';
 
 function colLetter(index: number): string {
   let n = index;
@@ -90,6 +95,15 @@ interface ExcelPreviewGridProps {
   focusDisplayRow?: number;
   /** Status/Disposition column dropdown options (employee campaign edit) */
   dispositionSelectOptions?: readonly string[];
+  /**
+   * Intercept disposition dropdown changes (e.g. Callback reminder setup).
+   * Call `apply(value)` to commit the cell update.
+   */
+  onDispositionSelect?: (args: {
+    sourceRow: number;
+    nextValue: string;
+    apply: (value: string) => void;
+  }) => void;
 }
 
 export function ExcelPreviewGrid({
@@ -122,6 +136,7 @@ export function ExcelPreviewGrid({
   onDatasetRowSeek,
   focusDisplayRow,
   dispositionSelectOptions,
+  onDispositionSelect,
 }: ExcelPreviewGridProps) {
   const editable = editableProp ?? Boolean(onDataChange);
   const canExport = useCanExportSpreadsheet();
@@ -853,24 +868,50 @@ export function ExcelPreviewGrid({
                 const inBatch = Boolean(batchRefs?.length);
                 const isDuplicate = sourceRow != null && duplicateSet.has(sourceRow);
                 const isMarked = sourceRow != null && markedSet.has(sourceRow);
+                const dispositionTone = classifyDispositionRowTone(
+                  readDispositionDisplayValue(headers, row),
+                );
+                const dispositionColor = dispositionRowToneClass(dispositionTone);
                 return (
                   <tr
                     key={`${sourceRow}-${displayRowIndex}`}
                     className={cn(
                       onDisplayRowClick && !editable && 'cursor-pointer',
                       isDuplicate && 'bg-red-100 hover:bg-red-50',
-                      !isDuplicate && isMarked && 'bg-[#e2efda] hover:bg-[#d4e8cc]',
-                      !isDuplicate && !isMarked && inBatch && 'bg-[#fff8e6] hover:bg-[#fff3d6]',
-                      !isDuplicate && !isMarked && !inBatch && 'hover:bg-[#e7f3ff]/60',
+                      !isDuplicate && dispositionColor,
+                      !isDuplicate && !dispositionColor && isMarked && 'bg-[#e2efda] hover:bg-[#d4e8cc]',
+                      !isDuplicate &&
+                        !dispositionColor &&
+                        !isMarked &&
+                        inBatch &&
+                        'bg-[#fff8e6] hover:bg-[#fff3d6]',
+                      !isDuplicate &&
+                        !dispositionColor &&
+                        !isMarked &&
+                        !inBatch &&
+                        'hover:bg-[#e7f3ff]/60',
                     )}
                     title={
                       isDuplicate
                         ? 'Suppression duplicate — highlighted'
-                        : isMarked
-                          ? 'Lead marked'
-                          : inBatch
-                            ? `Already in campaign: ${batchRefs!.map((b) => b.name).join(', ')}`
-                            : undefined
+                          : dispositionTone === 'do_not_call'
+                            ? 'Do Not Call — moved to DNC database'
+                            : dispositionTone === 'voicemail' ||
+                                dispositionTone === 'direct_voicemail'
+                              ? 'Voicemail — stays on campaign (update only)'
+                              : dispositionTone === 'callback'
+                                ? 'Callback — reminder setup'
+                                : dispositionTone === 'not_interested'
+                                  ? 'Not Interested — stays on campaign (update only)'
+                                  : dispositionTone === 'lead' || dispositionTone === 'won'
+                                    ? 'Lead — goes to QC'
+                                    : dispositionTone === 'active'
+                                      ? 'Active — goes to QC'
+                                      : isMarked
+                                        ? 'Lead marked'
+                                        : inBatch
+                                          ? `Already in campaign: ${batchRefs!.map((b) => b.name).join(', ')}`
+                                          : undefined
                     }
                     onClick={
                       onDisplayRowClick && !editable
@@ -955,8 +996,34 @@ export function ExcelPreviewGrid({
                               onMouseDown={(e) => e.stopPropagation()}
                               onClick={(e) => e.stopPropagation()}
                               onChange={(e) => {
-                                sheet.updateCell(sourceRow, colIndex, e.target.value);
-                                onLeadCellFocus?.(sourceRow, colIndex);
+                                const next = e.target.value;
+                                const apply = (value: string) => {
+                                  const updates = headers
+                                    .map((h, i) =>
+                                      isStatusDispositionColumn(h)
+                                        ? { colIndex: i, value }
+                                        : null,
+                                    )
+                                    .filter(
+                                      (u): u is { colIndex: number; value: string } =>
+                                        u != null,
+                                    );
+                                  if (updates.length) {
+                                    sheet.updateRowCells(sourceRow, updates);
+                                  } else {
+                                    sheet.updateCell(sourceRow, colIndex, value);
+                                  }
+                                  onLeadCellFocus?.(sourceRow, colIndex);
+                                };
+                                if (onDispositionSelect) {
+                                  onDispositionSelect({
+                                    sourceRow,
+                                    nextValue: next,
+                                    apply,
+                                  });
+                                } else {
+                                  apply(next);
+                                }
                               }}
                               className="w-full min-w-[140px] cursor-pointer border-0 bg-transparent px-2 py-1 text-[13px] outline-none focus:outline-none focus-visible:outline-none disabled:cursor-default disabled:bg-transparent"
                             >

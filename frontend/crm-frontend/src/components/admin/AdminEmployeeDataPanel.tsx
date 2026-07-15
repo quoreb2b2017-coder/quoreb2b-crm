@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { RefreshCw, Users, X } from 'lucide-react';
+import { Copy, RefreshCw, Users, X } from 'lucide-react';
 import {
   masterDataService,
   type MasterDataUploadRequest,
@@ -16,6 +16,7 @@ import {
   resolveDuplicatesOpenPath,
   uploadRequestFilePath,
 } from '@/lib/master-data/upload-request-nav';
+import { isEmployeeDuplicateFile } from '@/lib/master-data/employee-upload-file.util';
 import { cn } from '@/lib/utils/cn';
 import { useUploadRequestRefresh } from '@/hooks/useUploadRequestRefresh';
 
@@ -28,14 +29,27 @@ const FILTERS: Array<MasterDataUploadRequestStatus | 'all'> = [
   'rejected',
 ];
 
-export function AdminEmployeeDataPanel() {
+type DataScope = 'uploads' | 'duplicates' | 'all';
+
+export function AdminEmployeeDataPanel({
+  mode = 'uploads',
+}: {
+  /** uploads = Employee Data page; duplicates = sidebar Duplicates page */
+  mode?: 'uploads' | 'duplicates';
+}) {
   const router = useRouter();
   const [requests, setRequests] = useState<MasterDataUploadRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<MasterDataUploadRequestStatus | 'all'>('all');
+  const [scope, setScope] = useState<DataScope>(mode);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [rejectTarget, setRejectTarget] = useState<MasterDataUploadRequest | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const isDuplicatesPage = mode === 'duplicates';
+
+  useEffect(() => {
+    setScope(mode);
+  }, [mode]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -43,32 +57,56 @@ export function AdminEmployeeDataPanel() {
       const data = await masterDataService.getEmployeeUploadRequestsInbox('all');
       setRequests(data);
     } catch (err) {
-      toast.error('Could not load employee data', extractApiError(err, 'Load failed'));
+      toast.error(
+        isDuplicatesPage ? 'Could not load duplicates' : 'Could not load employee data',
+        extractApiError(err, 'Load failed'),
+      );
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isDuplicatesPage]);
 
   useEffect(() => {
     load();
   }, [load]);
   useUploadRequestRefresh(load);
 
+  const { uploadFiles, duplicateFiles } = useMemo(() => {
+    const uploads: MasterDataUploadRequest[] = [];
+    const duplicates: MasterDataUploadRequest[] = [];
+    for (const request of requests) {
+      if (isEmployeeDuplicateFile(request)) duplicates.push(request);
+      else uploads.push(request);
+    }
+    return { uploadFiles: uploads, duplicateFiles: duplicates };
+  }, [requests]);
+
+  const scopedRequests = useMemo(() => {
+    if (scope === 'uploads') return uploadFiles;
+    if (scope === 'duplicates') return duplicateFiles;
+    return requests;
+  }, [scope, uploadFiles, duplicateFiles, requests]);
+
   const filteredRequests = useMemo(
-    () => requests.filter((request) => (filter === 'all' ? true : request.status === filter)),
-    [filter, requests],
+    () =>
+      scopedRequests.filter((request) =>
+        filter === 'all' ? true : request.status === filter,
+      ),
+    [filter, scopedRequests],
   );
 
   const stats = useMemo(
     () => ({
+      uploads: uploadFiles.length,
+      duplicates: duplicateFiles.length,
       total: requests.length,
-      active: requests.filter((r) => r.status === 'active').length,
-      approved: requests.filter((r) => r.status === 'approved').length,
       pending: requests.filter(
-        (r) => r.status === 'pending_db_admin' || r.status === 'pending_admin',
+        (r) =>
+          !isEmployeeDuplicateFile(r) &&
+          (r.status === 'pending_db_admin' || r.status === 'pending_admin'),
       ).length,
     }),
-    [requests],
+    [requests, uploadFiles, duplicateFiles],
   );
 
   const approve = async (request: MasterDataUploadRequest) => {
@@ -138,55 +176,109 @@ export function AdminEmployeeDataPanel() {
     <div className="flex h-full min-h-0 flex-col gap-4 p-4">
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700">
-            <Users className="h-5 w-5" />
+          <div
+            className={cn(
+              'flex h-10 w-10 items-center justify-center rounded-xl',
+              isDuplicatesPage
+                ? 'bg-amber-100 text-amber-800'
+                : 'bg-indigo-100 text-indigo-700',
+            )}
+          >
+            {isDuplicatesPage ? <Copy className="h-5 w-5" /> : <Users className="h-5 w-5" />}
           </div>
           <div className="min-w-0 flex-1">
-            <h1 className="text-lg font-semibold text-slate-900">Employee Data</h1>
+            <h1 className="text-lg font-semibold text-slate-900">
+              {isDuplicatesPage ? 'Duplicates' : 'Employee Data'}
+            </h1>
             <p className="text-xs text-slate-500">
-              All employee My Data uploads · forwarded data auto-merges into master file
+              {isDuplicatesPage
+                ? 'Everyone’s duplicate files · Jan–Dec · file, employee, campaign, DB, super admin · Super Admin can delete'
+                : 'Files employees upload from My Data (new data only — duplicates live under Duplicates in the sidebar)'}
             </p>
           </div>
           <div className="flex flex-wrap gap-2 text-center">
-            {[
-              { label: 'Total', value: stats.total, color: 'bg-slate-100 text-slate-800' },
-              { label: 'In progress', value: stats.active, color: 'bg-sky-100 text-sky-800' },
-              { label: 'In master', value: stats.approved, color: 'bg-emerald-100 text-[#2568b8]' },
-              { label: 'Pending', value: stats.pending, color: 'bg-amber-100 text-amber-800' },
-            ].map((s) => (
+            {(isDuplicatesPage
+              ? [
+                  {
+                    label: 'Duplicate files',
+                    value: stats.duplicates,
+                    color: 'bg-amber-100 text-amber-800',
+                  },
+                ]
+              : [
+                  {
+                    label: 'Employee uploads',
+                    value: stats.uploads,
+                    color: 'bg-sky-100 text-sky-800',
+                  },
+                  {
+                    label: 'Pending review',
+                    value: stats.pending,
+                    color: 'bg-violet-100 text-violet-800',
+                  },
+                ]
+            ).map((s) => (
               <div key={s.label} className={`rounded-xl px-3 py-2 ${s.color}`}>
                 <p className="text-lg font-bold leading-none">{s.value}</p>
                 <p className="mt-0.5 text-[10px] font-semibold uppercase">{s.label}</p>
               </div>
             ))}
           </div>
+          <button
+            type="button"
+            onClick={load}
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            <RefreshCw className="h-3 w-3" />
+            Refresh
+          </button>
         </div>
       </div>
 
       <MasterDataUploadMonthExplorer
-        title="Employee data by month"
+        title={isDuplicatesPage ? 'Duplicates by month' : 'Employee uploads by month'}
         requests={filteredRequests}
         loading={loading}
-        hint="Employee uploads · DB Admin forwards → auto-added to master file"
-        emptyFolderMessage="No employee files in this month."
+        hint={
+          isDuplicatesPage
+            ? 'Jan–Dec · All duplicate files · Open or Delete'
+            : 'Jan–Dec · Employee uploads only'
+        }
+        emptyFolderMessage={
+          isDuplicatesPage
+            ? 'No duplicate files in this month.'
+            : 'No employee uploads in this month yet.'
+        }
         statusColumnLabel="Status"
         showSubmittedBy
+        variant="admin"
+        folderMode={isDuplicatesPage ? 'duplicates' : 'uploads'}
         onOpenRequest={openRequestFile}
+        onDeleteRequest={remove}
+        deleteLoadingId={actionLoadingId}
         renderDetails={(monthRequests, meta) => (
           <MasterDataUploadRequestList
             title={`${meta.monthLabel} ${meta.year}`}
             requests={monthRequests}
             loading={loading}
-            emptyMessage={`No employee files in ${meta.monthLabel} ${meta.year}`}
+            emptyMessage={
+              isDuplicatesPage
+                ? `No duplicates in ${meta.monthLabel} ${meta.year}`
+                : `No employee uploads in ${meta.monthLabel} ${meta.year}`
+            }
             viewportClassName="max-h-[min(70vh,720px)] overflow-y-auto"
-            canReview
+            canReview={!isDuplicatesPage}
             reviewableStatuses={['pending_admin']}
             actionLoadingId={actionLoadingId}
-            onApprove={approve}
-            onReject={(request) => {
-              setRejectTarget(request);
-              setRejectReason('');
-            }}
+            onApprove={isDuplicatesPage ? undefined : approve}
+            onReject={
+              isDuplicatesPage
+                ? undefined
+                : (request) => {
+                    setRejectTarget(request);
+                    setRejectReason('');
+                  }
+            }
             onViewDuplicates={openDuplicates}
             onViewFile={openRequestFile}
             onDelete={remove}
@@ -212,14 +304,6 @@ export function AdminEmployeeDataPanel() {
                       {item === 'all' ? 'All' : item.replace(/_/g, ' ')}
                     </button>
                   ))}
-                  <button
-                    type="button"
-                    onClick={load}
-                    className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    <RefreshCw className="h-3 w-3" />
-                    Refresh
-                  </button>
                 </div>
               </div>
             }

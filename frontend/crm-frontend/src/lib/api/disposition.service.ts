@@ -40,6 +40,24 @@ export interface DispositionTreeNode {
   entries?: DispositionEntry[];
 }
 
+export interface CallbackReminder {
+  id: string;
+  employeeId: string;
+  employeeName?: string;
+  batchId: string;
+  rootBatchId?: string;
+  campaignName: string;
+  rowIndex: number;
+  leadKey: string;
+  leadLabel?: string;
+  hours: 24 | 48;
+  description: string;
+  remindAt: string;
+  status: 'scheduled' | 'due' | 'dismissed' | string;
+  createdAt?: string;
+  dismissedAt?: string;
+}
+
 function unwrap<T>(response: { data: unknown }): T {
   const body = response.data as Record<string, unknown>;
   if (body && typeof body === 'object' && 'data' in body) {
@@ -65,5 +83,32 @@ export const dispositionService = {
     const res = await apiClient.get('/disposition/all', { params });
     const entries = unwrap<DispositionEntry[]>(res);
     return Array.isArray(entries) ? entries : [];
+  },
+
+  async createCallbackReminder(payload: {
+    batchId: string;
+    rowIndex: number;
+    hours: 24 | 48;
+    description: string;
+    leadLabel?: string;
+  }): Promise<CallbackReminder> {
+    const res = await apiClient.post('/disposition/callback-reminders', payload);
+    return unwrap<CallbackReminder>(res);
+  },
+
+  async listDueReminders(): Promise<CallbackReminder[]> {
+    const res = await apiClient.get('/disposition/callback-reminders/due');
+    const rows = unwrap<CallbackReminder[]>(res);
+    return Array.isArray(rows) ? rows : [];
+  },
+
+  async listMyReminders(): Promise<CallbackReminder[]> {
+    const res = await apiClient.get('/disposition/callback-reminders/mine');
+    const rows = unwrap<CallbackReminder[]>(res);
+    return Array.isArray(rows) ? rows : [];
+  },
+
+  async dismissReminder(id: string): Promise<void> {
+    await apiClient.post(`/disposition/callback-reminders/${id}/dismiss`);
   },
 };

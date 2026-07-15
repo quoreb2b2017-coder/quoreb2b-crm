@@ -26,6 +26,9 @@ export class AttendanceController {
     @CurrentUser() user: { id: string; roles?: string[] },
   ) {
     this.attendanceService.assertCanMarkForUser(user.id, user.roles ?? [], dto.userId);
+    if (dto.status === 'holiday') {
+      this.attendanceService.assertCanMarkHoliday(user.roles ?? []);
+    }
     return this.attendanceService.markAttendance(dto);
   }
 

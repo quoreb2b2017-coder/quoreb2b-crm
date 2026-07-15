@@ -151,19 +151,26 @@ export function MasterDatabaseQuickFilters({
     ? `Search company, email, name…`
     : 'Search master data…';
 
-  const selectOptions = (col: MasterDataColumnFilterSchema) => [
-    { value: '', label: 'All' },
-    ...col.options.slice(0, 60).map((opt) => ({
-      value: opt,
-      label: opt.length > 42 ? `${opt.slice(0, 40)}…` : opt,
-    })),
-  ];
+  const selectOptions = (col: MasterDataColumnFilterSchema) => {
+    const isLeadType = /^lead type$/i.test(col.header);
+    const opts = isLeadType ? col.options : col.options.slice(0, 60);
+    return [
+      { value: '', label: 'All' },
+      ...opts.map((opt) => ({
+        value: opt,
+        label: opt.length > 42 ? `${opt.slice(0, 40)}…` : opt,
+      })),
+    ];
+  };
 
-  const multiSelectOptions = (col: MasterDataColumnFilterSchema) =>
-    col.options.slice(0, 80).map((opt) => ({
+  const multiSelectOptions = (col: MasterDataColumnFilterSchema) => {
+    const isLeadType = /^lead type$/i.test(col.header);
+    const opts = isLeadType ? col.options : col.options.slice(0, 80);
+    return opts.map((opt) => ({
       value: opt,
       label: opt.length > 48 ? `${opt.slice(0, 46)}…` : opt,
     }));
+  };
 
   const shortFilterLabel = (header: string) => {
     if (/lead type/i.test(header)) return 'Lead type';
@@ -198,8 +205,9 @@ export function MasterDatabaseQuickFilters({
     options: MasterDataColumnFilterSchema | MasterDataColumnFilterSchema['options'],
     menuMinWidth = 300,
   ) => {
+    const isLeadType = /^lead type$/i.test(header);
     const opts = Array.isArray(options)
-      ? options.slice(0, 80).map((opt) => ({
+      ? (isLeadType ? options : options.slice(0, 80)).map((opt) => ({
           value: opt,
           label: opt.length > 48 ? `${opt.slice(0, 46)}…` : opt,
         }))

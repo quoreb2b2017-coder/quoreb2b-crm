@@ -4,14 +4,21 @@ import {
   DispositionEntry,
   DispositionEntrySchema,
 } from './schemas/disposition-entry.schema';
+import {
+  CallbackReminder,
+  CallbackReminderSchema,
+} from './schemas/callback-reminder.schema';
 import { DispositionService } from './disposition.service';
 import { DispositionController } from './disposition.controller';
 import { Batch, BatchSchema } from '../batches/schemas/batch.schema';
+import { QcEntry, QcEntrySchema } from '../qc/schemas/qc-entry.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: DispositionEntry.name, schema: DispositionEntrySchema },
+      { name: CallbackReminder.name, schema: CallbackReminderSchema },
+      { name: QcEntry.name, schema: QcEntrySchema },
       { name: Batch.name, schema: BatchSchema },
     ]),
   ],

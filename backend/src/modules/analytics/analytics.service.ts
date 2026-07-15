@@ -138,7 +138,9 @@ export class AnalyticsService {
     const [batches, masterDoc, recentLogs, health] = await Promise.all([
       this.batchModel
         .find({ $or: [{ createdBy: oid }, { sharedWith: oid }] })
-        .select('name rowCount columnCount createdAt updatedAt createdBy sharedWith batchMonth batchYear status')
+        .select(
+          'name rowCount columnCount createdAt updatedAt createdBy sharedWith batchMonth batchYear status sourceBatchId',
+        )
         .sort({ updatedAt: -1 })
         .lean()
         .exec(),
@@ -166,13 +168,24 @@ export class AnalyticsService {
     const owned = batches.filter((b) => b.createdBy?.toString() === actorId);
     const sharedWithMe = batches.filter((b) => b.createdBy?.toString() !== actorId);
 
+    // Root campaigns only — employee child slices re-count the same contacts.
+    const rootBatches = batches.filter((b) => !b.sourceBatchId);
+
     let totalRowsInBatches = 0;
     let employeesWithAccess = 0;
     let activeLeads = 0;
     let wonLeads = 0;
 
-    for (const b of batches) {
+    for (const b of rootBatches) {
       totalRowsInBatches += (b.rowCount as number) ?? 0;
+      if (b.createdBy?.toString() === actorId) {
+        employeesWithAccess += ((b.sharedWith as Types.ObjectId[]) ?? []).length;
+      }
+    }
+
+    // Still count employees on child slices created by this DB admin (shared to staff)
+    for (const b of batches) {
+      if (!b.sourceBatchId) continue;
       if (b.createdBy?.toString() === actorId) {
         employeesWithAccess += ((b.sharedWith as Types.ObjectId[]) ?? []).length;
       }
@@ -224,16 +237,16 @@ export class AnalyticsService {
             : health.checks.elasticsearch.status,
       },
       batches: {
-        total: batches.length,
-        owned: owned.length,
-        sharedWithMe: sharedWithMe.length,
+        total: rootBatches.length,
+        owned: owned.filter((b) => !b.sourceBatchId).length,
+        sharedWithMe: sharedWithMe.filter((b) => !b.sourceBatchId).length,
         totalRows: totalRowsInBatches,
         activeLeads,
         wonLeads,
         employeesShared: employeesWithAccess,
       },
       masterData,
-      recentBatches: batches.slice(0, 8).map((b) => ({
+      recentBatches: rootBatches.slice(0, 8).map((b) => ({
         id: String(b._id),
         name: b.name as string,
         rowCount: (b.rowCount as number) ?? 0,

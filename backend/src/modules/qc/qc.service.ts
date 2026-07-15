@@ -21,6 +21,8 @@ import { compactRowDataPoints, buildMergedQcSheet, appendMergedQcSheet, appendQc
 import { QcCampaignChannel, QC_CHANNEL_LABELS, QcDecision, QC_DECISION_LABELS } from './qc.constants';
 import type { QcListQueryDto, QcMergeDto, QcDecisionDto } from './dto/qc.dto';
 import { SystemRole } from '../../common/constants/roles.constant';
+import { DispositionEntry } from '../disposition/schemas/disposition-entry.schema';
+import { classifyDispositionKind } from '../disposition/disposition-status.util';
 
 export interface QcEntryResponse {
   id: string;
@@ -67,6 +69,8 @@ export class QcService {
 
   constructor(
     @InjectModel(QcEntry.name) private qcEntryModel: Model<QcEntry>,
+    @InjectModel(DispositionEntry.name)
+    private dispositionEntryModel: Model<DispositionEntry>,
     @InjectModel(Batch.name) private batchModel: Model<Batch>,
     private config: ConfigService,
     private cache: AppCacheService,
@@ -112,7 +116,25 @@ export class QcService {
       const row = params.newRows[ch.rowIndex] ?? [];
       const prev = params.oldRows[ch.rowIndex] ?? [];
       const statusValue = readRowStatus(params.newHeaders, row);
-      if (!statusValue || !isLeadMarkedForQc(params.newHeaders, row)) continue;
+      if (!statusValue) continue;
+
+      const employeeOid = new Types.ObjectId(actorId);
+
+      // Switched to DNC / voicemail — drop pending QC for this row
+      if (classifyDispositionKind(statusValue)) {
+        await this.qcEntryModel
+          .deleteMany({
+            batchId: batch._id,
+            rowIndex: ch.rowIndex,
+            employeeId: employeeOid,
+            state: 'pending',
+          })
+          .exec()
+          .catch(() => undefined);
+        continue;
+      }
+
+      if (!isLeadMarkedForQc(params.newHeaders, row)) continue;
 
       const compact = compactRowDataPoints(params.newHeaders, row);
       if (compact.headers.length === 0) continue;
@@ -122,7 +144,7 @@ export class QcService {
           {
             batchId: batch._id,
             rowIndex: ch.rowIndex,
-            employeeId: new Types.ObjectId(actorId),
+            employeeId: employeeOid,
             state: 'pending',
           },
           {
@@ -144,6 +166,15 @@ export class QcService {
           },
           { upsert: true, new: true },
         );
+        // Lead/Won/Active in QC — remove any prior disposition archive for this row
+        await this.dispositionEntryModel
+          .deleteMany({
+            batchId: batch._id,
+            rowIndex: ch.rowIndex,
+            employeeId: employeeOid,
+          })
+          .exec()
+          .catch(() => undefined);
       } catch (err) {
         this.logger.warn(
           `QC enqueue failed row ${ch.rowIndex}: ${err instanceof Error ? err.message : err}`,

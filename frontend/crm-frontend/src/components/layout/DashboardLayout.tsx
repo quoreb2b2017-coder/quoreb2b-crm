@@ -114,7 +114,8 @@ export function isPersonalNotesPath(pathname: string) {
 
 /** In-app chat — full viewport height, WhatsApp-style panels */
 export function isChatPath(pathname: string) {
-  return /^\/(admin|db-admin|employee)\/chat$/.test(pathname);
+  return /^\/(admin|db-admin|employee)\/chat$/.test(pathname)
+    || /^\/admin\/team-chats$/.test(pathname);
 }
 
 /** Master data list / upload workspace (employee my-data, db-admin master-data tabs) */
@@ -272,6 +273,12 @@ const Icons = {
       <path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/>
     </svg>
   ),
+  duplicates: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="8" y="8" width="12" height="12" rx="2" />
+      <path d="M4 16V6a2 2 0 012-2h10" />
+    </svg>
+  ),
 };
 
 const iconMap: Record<string, React.ReactNode> = {
@@ -295,6 +302,7 @@ const iconMap: Record<string, React.ReactNode> = {
   'master file':        Icons.upload,
   'my data':            Icons.upload,
   'employee data':      Icons.upload,
+  'duplicates':         Icons.duplicates,
   'email verification': Icons.upload,
   'db admin data requests': Icons.upload,
   'db admin upload requests': Icons.upload,
@@ -307,8 +315,14 @@ const iconMap: Record<string, React.ReactNode> = {
   'attendance':         Icons.attendance,
   'leave requests':     Icons.leave,
   'leave apply':        Icons.leave,
+  'salary':             Icons.tasks,
+  'salary slips':       Icons.tasks,
+  'payroll setup':      Icons.tasks,
+  'salary slip store':  Icons.backups,
+  'my salary slips':    Icons.tasks,
   'personal notes':     Icons.tasks,
   'chat':               Icons.chat,
+  'team chats':         Icons.chat,
   'mark attendance':    Icons.attendance,
   'apply for leave':    Icons.leave,
 };
@@ -350,10 +364,147 @@ function groupNavBySection(items: NavItem[]) {
   return groups;
 }
 
-function NavSectionHeader({ label, collapsed }: { label?: string; collapsed: boolean }) {
-  if (collapsed || !label) return null;
-  return <p className="crm-nav-section">{label}</p>;
+function NavSectionGroup({
+  label,
+  isCollapsed,
+  children,
+}: {
+  label?: string;
+  isCollapsed: boolean;
+  children: React.ReactNode;
+}) {
+  if (!label) {
+    return <div className="space-y-1">{children}</div>;
+  }
+
+  if (isCollapsed) {
+    return <div className="space-y-1">{children}</div>;
+  }
+
+  return (
+    <div className="mb-2">
+      <p className="crm-nav-section px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-[#2e7ad1]">
+        {label}
+      </p>
+      <div className="space-y-1 pl-0.5">{children}</div>
+    </div>
+  );
 }
+
+function NavFolderItem({
+  item,
+  pathname,
+  pendingHref,
+  isCollapsed,
+  theme: t,
+  onNavigate,
+}: {
+  item: NavItem;
+  pathname: string;
+  pendingHref: string | null;
+  isCollapsed: boolean;
+  theme: (typeof themes)[DashboardVariant];
+  onNavigate: (href: string) => void;
+}) {
+  const childActive = item.children?.some((c) => pathname === c.href || pendingHref === c.href) ?? false;
+
+  return (
+    <div className="mb-1">
+      <Tip label={item.label} collapsed={isCollapsed}>
+        <div
+          className={cn(
+            'w-full flex items-center gap-2.5 rounded-lg text-[13px] font-medium select-none',
+            isCollapsed ? 'justify-center w-9 h-9 mx-auto' : 'px-2.5 py-2.5',
+            childActive
+              ? cn(t.activeBg, t.activeText)
+              : 'text-slate-600',
+          )}
+        >
+          <span
+            className={cn(
+              'flex-shrink-0 w-5 h-5',
+              childActive ? t.activeText : t.iconText,
+            )}
+          >
+            {item.icon ?? getIcon(item.label)}
+          </span>
+          {!isCollapsed && (
+            <span className="flex-1 truncate text-left">{item.label}</span>
+          )}
+        </div>
+      </Tip>
+      {!isCollapsed && item.children ? (
+        <div className="ml-3 mt-1 mb-1 pl-2.5 border-l border-slate-200/90 space-y-1">
+          {item.children.map((child) => {
+            const cActive = pathname === child.href;
+            const cPending = pendingHref === child.href && !cActive;
+            if (child.external) {
+              return (
+                <a
+                  key={child.href}
+                  href={child.href}
+                  className={cn(
+                    'tap-smooth flex items-center gap-2 px-2.5 py-2 rounded-md text-[13px] font-medium transition-all duration-200',
+                    cActive
+                      ? cn(t.activeBg, t.activeText)
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'w-1.5 h-1.5 rounded-full flex-shrink-0',
+                      cActive ? t.activeDot : 'bg-slate-600',
+                    )}
+                  />
+                  {child.label}
+                  <svg
+                    className="w-3 h-3 ml-auto opacity-40"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" />
+                  </svg>
+                </a>
+              );
+            }
+            return (
+              <Link
+                key={child.href}
+                href={child.href}
+                onClick={() => onNavigate(child.href)}
+                className={cn(
+                  'tap-smooth flex items-center gap-2 px-2.5 py-2 rounded-md text-[13px] font-medium transition-all duration-200',
+                  cActive
+                    ? cn(t.activeBg, t.activeText)
+                    : cPending
+                      ? cn(t.activeBg, 'text-[#2e7ad1]')
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60',
+                )}
+              >
+                {cPending ? (
+                  <span className={navSpinnerClass('admin')} aria-hidden />
+                ) : (
+                  <span
+                    className={cn(
+                      'w-1.5 h-1.5 rounded-full flex-shrink-0',
+                      cActive ? t.activeDot : 'bg-slate-600',
+                    )}
+                  />
+                )}
+                {child.label}
+              </Link>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 
 function navSpinnerClass(_variant: DashboardVariant) {
   return 'h-3.5 w-3.5 flex-shrink-0 rounded-full border-2 border-slate-200 border-t-[#2e7ad1] animate-spin';
@@ -481,7 +632,7 @@ function SidebarInner({
               >
                 <span className={cn(
                   'flex-shrink-0 w-5 h-5 transition-colors duration-100',
-                  active ? t.activeText : 'text-slate-500 group-hover:text-slate-700',
+                  active ? t.activeText : cn(t.iconText, t.iconHover),
                 )}>
                   {item.icon ?? getIcon(item.label)}
                 </span>
@@ -693,143 +844,81 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
         )}
 
         {/* ── Nav items ── */}
-        <nav className={cn('flex-1 overflow-y-auto overflow-x-hidden py-1', isCollapsed ? 'px-1.5' : 'px-2')}>
-          {groupNavBySection(navItems).map((group, groupIdx) => (
-            <div key={group.label ?? `nav-group-${groupIdx}`}>
-              <NavSectionHeader label={group.label} collapsed={isCollapsed} />
+        <nav className={cn('flex-1 overflow-y-auto overflow-x-hidden py-2', isCollapsed ? 'px-1.5' : 'px-2')}>
+          {groupNavBySection(navItems).map((group, groupIdx) => {
+            return (
+            <NavSectionGroup
+              key={group.label ?? `nav-group-${groupIdx}`}
+              label={group.label}
+              isCollapsed={isCollapsed}
+            >
               {group.items.map((item) => {
-            const active = isNavItemActive(pathname, item.href);
-            const pending = pendingHref === item.href && !active;
-            const childActive = item.children?.some((c) => pathname === c.href || pendingHref === c.href);
-            const [open, setOpen] = useState(() => !!childActive);
+                const active = isNavItemActive(pathname, item.href);
+                const pending = pendingHref === item.href && !active;
 
-            if (item.children?.length) {
-              // ── Group with dropdown ──
-              return (
-                <div key={item.href} className="mb-0">
-                  <Tip label={item.label} collapsed={isCollapsed}>
-                    <button
-                      onClick={() => !isCollapsed && setOpen(v => !v)}
+                if (item.children?.length) {
+                  return (
+                    <NavFolderItem
+                      key={item.href}
+                      item={item}
+                      pathname={pathname}
+                      pendingHref={pendingHref}
+                      isCollapsed={isCollapsed}
+                      theme={t}
+                      onNavigate={handleNavClick}
+                    />
+                  );
+                }
+
+                return (
+                  <Tip key={item.href} label={item.label} collapsed={isCollapsed}>
+                    <Link
+                      href={item.href}
+                      prefetch={true}
+                      onClick={() => handleNavClick(item.href)}
+                      aria-current={active ? 'page' : undefined}
+                      aria-busy={pending || undefined}
                       className={cn(
-                        'w-full flex items-center gap-2.5 rounded-lg text-[13px] font-medium transition-all duration-200 group cursor-pointer select-none',
-                        isCollapsed ? 'justify-center w-9 h-9 mx-auto' : 'px-2.5 py-2',
-                        childActive
-                          ? cn(t.activeBg, t.activeText)
-                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 active:bg-slate-200/80',
+                        'crm-nav-link tap-smooth group mb-0 cursor-pointer select-none',
+                        isCollapsed ? 'relative justify-center w-9 h-9 mx-auto' : 'px-2.5 py-2.5',
+                        active
+                          ? cn('crm-nav-link--active', !isCollapsed && `border-l-2 ${t.activeBorder} pl-[10px]`)
+                          : pending
+                            ? cn('crm-nav-link--active', 'ring-1 ring-[#2e7ad1]/20')
+                            : 'text-slate-600',
                       )}
                     >
                       <span className={cn(
                         'flex-shrink-0 w-5 h-5 transition-colors duration-200',
-                        childActive ? t.activeText : 'text-slate-500 group-hover:text-slate-700',
+                        active || pending ? t.activeText : cn(t.iconText, t.iconHover),
                       )}>
                         {item.icon ?? getIcon(item.label)}
                       </span>
                       {!isCollapsed && (
                         <>
-                          <span className="flex-1 truncate text-left">{item.label}</span>
-                          <svg
-                            viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
-                            strokeLinecap="round" strokeLinejoin="round"
-                            className={cn('w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200', open && 'rotate-180')}
-                          >
-                            <path d="M6 9l6 6 6-6"/>
-                          </svg>
+                          <span className="flex-1 truncate">{item.label}</span>
+                          {!!item.badgeCount && item.badgeCount > 0 && (
+                            <span
+                              className={cn(
+                                'inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white',
+                                t.badgeBg,
+                              )}
+                            >
+                              {item.badgeCount > 99 ? '99+' : item.badgeCount}
+                            </span>
+                          )}
+                          {pending && <span className={navSpinnerClass(variant)} aria-hidden />}
+                          {active && !pending && <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', t.activeDot)} />}
                         </>
                       )}
-                    </button>
+                      {isCollapsed && pending && <span className={cn('absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full animate-pulse', t.activeDot)} />}
+                    </Link>
                   </Tip>
-                  {/* Sub-items */}
-                  {!isCollapsed && open && (
-                    <div className="ml-3 mt-0 pl-2.5 border-l border-slate-200/90 space-y-0">
-                      {item.children.map(child => {
-                        const cActive = pathname === child.href;
-                        const cPending = pendingHref === child.href && !cActive;
-                        const Tag = child.external ? 'a' : Link;
-                        const extraProps = child.external
-                          ? { href: child.href }
-                          : { href: child.href, onClick: () => handleNavClick(child.href) };
-                        return (
-                          <Tag
-                            key={child.href}
-                            {...extraProps}
-                            className={cn(
-                              'tap-smooth flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-200',
-                              cActive
-                                ? cn(t.activeBg, t.activeText)
-                                : cPending
-                                  ? cn(t.activeBg, 'text-[#2e7ad1]')
-                                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60',
-                            )}
-                          >
-                            {cPending ? (
-                              <span className={navSpinnerClass(variant)} aria-hidden />
-                            ) : (
-                              <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', cActive ? t.activeDot : 'bg-slate-600')} />
-                            )}
-                            {child.label}
-                            {child.external && (
-                              <svg className="w-3 h-3 ml-auto opacity-40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/>
-                              </svg>
-                            )}
-                          </Tag>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            }
-
-            // ── Regular item ──
-            return (
-              <Tip key={item.href} label={item.label} collapsed={isCollapsed}>
-                <Link
-                  href={item.href}
-                  prefetch={true}
-                  onClick={() => handleNavClick(item.href)}
-                  aria-current={active ? 'page' : undefined}
-                  aria-busy={pending || undefined}
-                  className={cn(
-                    'crm-nav-link tap-smooth group mb-0 cursor-pointer select-none',
-                    isCollapsed ? 'relative justify-center w-9 h-9 mx-auto' : 'px-2.5 py-2',
-                    active
-                      ? cn('crm-nav-link--active', !isCollapsed && `border-l-2 ${t.activeBorder} pl-[10px]`)
-                      : pending
-                        ? cn('crm-nav-link--active', 'ring-1 ring-[#2e7ad1]/20')
-                        : 'text-slate-600',
-                  )}
-                >
-                  <span className={cn(
-                    'flex-shrink-0 w-5 h-5 transition-colors duration-200',
-                    active || pending ? t.activeText : 'text-slate-500 group-hover:text-slate-700',
-                  )}>
-                    {item.icon ?? getIcon(item.label)}
-                  </span>
-                  {!isCollapsed && (
-                    <>
-                      <span className="flex-1 truncate">{item.label}</span>
-                      {!!item.badgeCount && item.badgeCount > 0 && (
-                        <span
-                          className={cn(
-                            'inline-flex min-w-[1.25rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white',
-                            t.badgeBg,
-                          )}
-                        >
-                          {item.badgeCount > 99 ? '99+' : item.badgeCount}
-                        </span>
-                      )}
-                      {pending && <span className={navSpinnerClass(variant)} aria-hidden />}
-                      {active && !pending && <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', t.activeDot)} />}
-                    </>
-                  )}
-                  {isCollapsed && pending && <span className={cn('absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full animate-pulse', t.activeDot)} />}
-                </Link>
-              </Tip>
+                );
+              })}
+            </NavSectionGroup>
             );
           })}
-            </div>
-          ))}
         </nav>
 
         {/* ── Divider ── */}

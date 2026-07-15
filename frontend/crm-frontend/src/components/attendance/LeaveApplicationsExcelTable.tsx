@@ -23,7 +23,8 @@ interface LeaveApplicationsExcelTableProps {
   title?: string;
   showEmployee?: boolean;
   actionLoading?: string | null;
-  onApprove?: (id: string) => void;
+  /** Super Admin: approve as paid or unpaid */
+  onApprove?: (id: string, payMode: 'paid' | 'unpaid') => void;
   onReject?: (id: string) => void;
 }
 
@@ -181,23 +182,35 @@ export function LeaveApplicationsExcelTable({
                     {(onApprove || onReject) && (
                       <td className="border border-[#e0e0e0] px-2 py-1 text-center">
                         {leave.status === 'pending' ? (
-                          <div className="flex justify-center gap-1">
+                          <div className="flex flex-wrap justify-center gap-1">
                             {onApprove && (
-                              <button
-                                type="button"
-                                disabled={actionLoading === leave._id}
-                                onClick={() => onApprove(leave._id)}
-                                className="rounded bg-[#2e7ad1] px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-[#2568b8] disabled:opacity-50"
-                              >
-                                Approve
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={actionLoading === leave._id}
+                                  onClick={() => onApprove(leave._id, 'paid')}
+                                  className="rounded bg-emerald-600 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                                  title="Approve as paid leave"
+                                >
+                                  Paid
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={actionLoading === leave._id}
+                                  onClick={() => onApprove(leave._id, 'unpaid')}
+                                  className="rounded bg-red-600 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                                  title="Approve as unpaid leave"
+                                >
+                                  Unpaid
+                                </button>
+                              </>
                             )}
                             {onReject && (
                               <button
                                 type="button"
                                 disabled={actionLoading === leave._id}
                                 onClick={() => onReject(leave._id)}
-                                className="rounded bg-[#c00000] px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-[#a00000] disabled:opacity-50"
+                                className="rounded bg-slate-500 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-slate-600 disabled:opacity-50"
                               >
                                 Reject
                               </button>

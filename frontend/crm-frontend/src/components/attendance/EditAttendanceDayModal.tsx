@@ -1,13 +1,13 @@
 'use client';
 
-import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
-import { useEffect, useState } from 'react';
+import { WORKSPACE_TIMEZONE } from '@/lib/constants/workspace-timezone';
+import { useEffect, useMemo, useState } from 'react';
 import { Clock, CheckCircle, AlertCircle, CalendarDays, LogOut } from 'lucide-react';
 import { attendanceService } from '@/lib/api/attendance.service';
 import { extractApiError } from '@/lib/api/errors';
+import { useAuthStore } from '@/store/auth.store';
 import {
   SideSheet,
-  sideSheetChipClass,
   sideSheetFieldClass,
   sideSheetPrimaryBtn,
   type SideSheetAccent,
@@ -19,6 +19,7 @@ import {
   isLateCheckIn,
   parseTime12hToHHmm,
 } from '@/lib/attendance/late-attendance';
+import { cn } from '@/lib/utils/cn';
 
 export interface EditAttendanceDayRow {
   date: string;
@@ -37,11 +38,36 @@ interface EditAttendanceDayModalProps {
   accent?: SideSheetAccent;
 }
 
-const STATUS_OPTIONS = ['present', 'absent', 'leave', 'half-day'] as const;
+const BASE_STATUS_OPTIONS = ['present', 'absent', 'leave', 'half-day'] as const;
+type AttendanceEditStatus = (typeof BASE_STATUS_OPTIONS)[number] | 'holiday';
+
+const STATUS_CHIP_STYLES: Record<AttendanceEditStatus, { idle: string; active: string }> = {
+  present: {
+    idle: 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:border-emerald-300',
+    active: 'border-emerald-600 bg-emerald-600 text-white shadow-md',
+  },
+  absent: {
+    idle: 'border-red-200 bg-red-50 text-red-800 hover:border-red-300',
+    active: 'border-red-600 bg-red-600 text-white shadow-md',
+  },
+  leave: {
+    idle: 'border-blue-200 bg-blue-50 text-blue-800 hover:border-blue-300',
+    active: 'border-blue-600 bg-blue-600 text-white shadow-md',
+  },
+  'half-day': {
+    idle: 'border-amber-200 bg-amber-50 text-amber-900 hover:border-amber-300',
+    active: 'border-amber-500 bg-amber-500 text-white shadow-md',
+  },
+  holiday: {
+    idle: 'border-pink-200 bg-pink-50 text-pink-800 hover:border-pink-300',
+    active: 'border-pink-600 bg-pink-600 text-white shadow-md',
+  },
+};
 
 function formatDateLabel(dateKey: string): string {
   try {
-    return new Date(`${dateKey}T12:00:00`).toLocaleDateString('en-US', { timeZone: WORKSPACE_TIMEZONE, 
+    return new Date(`${dateKey}T12:00:00`).toLocaleDateString('en-US', {
+      timeZone: WORKSPACE_TIMEZONE,
       weekday: 'short',
       day: 'numeric',
       month: 'short',
@@ -60,7 +86,18 @@ export function EditAttendanceDayModal({
   row,
   accent = 'emerald',
 }: EditAttendanceDayModalProps) {
-  const [status, setStatus] = useState<'present' | 'absent' | 'leave' | 'half-day'>('present');
+  const roles = useAuthStore((s) => s.user?.roles ?? []);
+  const canMarkHoliday = roles.includes('super_admin') || roles.includes('admin');
+
+  const statusOptions = useMemo(
+    () =>
+      canMarkHoliday
+        ? ([...BASE_STATUS_OPTIONS, 'holiday'] as AttendanceEditStatus[])
+        : ([...BASE_STATUS_OPTIONS] as AttendanceEditStatus[]),
+    [canMarkHoliday],
+  );
+
+  const [status, setStatus] = useState<AttendanceEditStatus>('present');
   const [checkInTime, setCheckInTime] = useState('09:00');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
@@ -69,15 +106,15 @@ export function EditAttendanceDayModal({
 
   useEffect(() => {
     if (!row || !isOpen) return;
-    const s = (row.status?.toLowerCase() ?? 'present') as typeof status;
-    setStatus(
-      s === 'absent' || s === 'leave' || s === 'half-day' || s === 'present' ? s : 'present',
-    );
+    const s = (row.status?.toLowerCase() ?? 'present') as AttendanceEditStatus;
+    if (s === 'holiday' && canMarkHoliday) setStatus('holiday');
+    else if (s === 'absent' || s === 'leave' || s === 'half-day' || s === 'present') setStatus(s);
+    else setStatus('present');
     setCheckInTime(row.checkInTime ? parseTime12hToHHmm(row.checkInTime) : '09:00');
-    setNotes('');
+    setNotes(s === 'holiday' ? 'Holiday' : '');
     setError('');
     setSuccess('');
-  }, [row, isOpen]);
+  }, [row, isOpen, canMarkHoliday]);
 
   const isLateEntry =
     (status === 'present' || status === 'half-day') &&
@@ -95,7 +132,8 @@ export function EditAttendanceDayModal({
         row.date,
         status,
         undefined,
-        notes.trim() || 'Updated by administrator',
+        notes.trim() ||
+          (status === 'holiday' ? 'Holiday' : 'Updated by administrator'),
         status === 'present' || status === 'half-day' ? { checkIn: checkInTime } : undefined,
       );
       setSuccess('Attendance updated');
@@ -131,7 +169,7 @@ export function EditAttendanceDayModal({
         disabled={loading}
         className={sideSheetPrimaryBtn(accent)}
       >
-        {loading ? 'Saving…' : 'Save changes'}
+        {loading ? 'Saving…' : 'Save'}
       </button>
     </div>
   );
@@ -160,17 +198,29 @@ export function EditAttendanceDayModal({
               Status
             </label>
             <div className="grid grid-cols-2 gap-2">
-              {STATUS_OPTIONS.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setStatus(s)}
-                  className={sideSheetChipClass(status === s, accent)}
-                >
-                  {s.replace('-', ' ')}
-                </button>
-              ))}
+              {statusOptions.map((s) => {
+                const styles = STATUS_CHIP_STYLES[s];
+                const active = status === s;
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setStatus(s)}
+                    className={cn(
+                      'rounded-xl border px-3 py-2.5 text-sm font-semibold capitalize transition-all',
+                      active ? styles.active : styles.idle,
+                    )}
+                  >
+                    {s.replace('-', ' ')}
+                  </button>
+                );
+              })}
             </div>
+            {canMarkHoliday && (
+              <p className="mt-2 text-[11px] text-pink-700">
+                Holiday is Super Admin only — employees and DB Admin cannot set it.
+              </p>
+            )}
           </div>
 
           {(status === 'present' || status === 'half-day') && (
@@ -207,7 +257,8 @@ export function EditAttendanceDayModal({
 
               {isLateEntry && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 sm:text-sm">
-                  Status will be Present (Late) — {formatTime12h(checkInTime)} is after {ATTENDANCE_ON_TIME_LABEL}
+                  Status will be Present (Late) — {formatTime12h(checkInTime)} is after{' '}
+                  {ATTENDANCE_ON_TIME_LABEL}
                 </div>
               )}
             </div>

@@ -176,6 +176,11 @@ export interface MasterDataUploadRequest {
   status: MasterDataUploadRequestStatus;
   sourceRole?: MasterDataUploadSourceRole;
   submittedByEmail?: string;
+  submittedByName?: string;
+  campaignName?: string;
+  dbName?: string;
+  adminName?: string;
+  isDuplicateFile?: boolean;
   reason?: string;
   reviewedByEmail?: string;
   reviewedAt?: string;

@@ -165,7 +165,10 @@ export class BatchHierarchyService {
       if (creator) dbAdminIds.add(creator);
     }
     for (const ev of shareEvents) {
-      if (ev.sharerRole === 'db_admin') dbAdminIds.add(ev.sharerId);
+      // Admin / db_admin can both be hierarchy parents when they share
+      if (ev.sharerRole === 'db_admin' || ev.sharerRole === 'admin') {
+        dbAdminIds.add(ev.sharerId);
+      }
     }
 
     const upsertEmployee = (
@@ -180,8 +183,17 @@ export class BatchHierarchyService {
         map.set(empKey, node);
         return;
       }
-      existing.dataRows += node.dataRows;
-      existing.distributedBatches.push(...node.distributedBatches);
+      // Unique by distributed batch id — never sum the same share twice
+      // (childDocs + BATCH_SHARE logs often describe the same slice).
+      const seenBatchIds = new Set(
+        existing.distributedBatches.map((b) => b.id).filter(Boolean),
+      );
+      for (const b of node.distributedBatches) {
+        if (!b.id || seenBatchIds.has(b.id)) continue;
+        seenBatchIds.add(b.id);
+        existing.distributedBatches.push(b);
+        existing.dataRows += b.rowCount;
+      }
       existing.activity = mergeActivity(existing.activity, node.activity);
     };
 
@@ -213,40 +225,57 @@ export class BatchHierarchyService {
       }
     }
 
+    // Share history is for audit only. Do NOT add parent.rowCount here —
+    // BATCH_SHARE logs use the parent batch id/count and would double child slices.
     for (const ev of shareEvents) {
-      if (ev.sharerRole !== 'db_admin') continue;
+      if (ev.sharerRole !== 'db_admin' && ev.sharerRole !== 'admin') {
+        continue;
+      }
       const batchRef = childRefs.find((b) => b.id === ev.batchId);
-      const rows = batchRef?.rowCount ?? ev.rowCount;
+      if (!batchRef) continue;
       for (const rec of ev.recipients) {
         if (rec.role !== 'employee') continue;
         const emp = userMap.get(rec.id);
         upsertEmployee(ev.sharerId, rec.id, {
           user: this.toUserRef(emp ?? { ...rec, role: 'employee' }),
-          dataRows: rows,
+          dataRows: batchRef.rowCount,
           accessType: 'distributed_batch',
-          distributedBatches: batchRef ? [batchRef] : [],
+          distributedBatches: [batchRef],
           activity: summaryByUser.get(rec.id) ?? emptySummary(),
           team: [],
         });
       }
     }
 
+    const isHierarchyParentRole = (role: string) =>
+      role === 'db_admin' || role === 'admin';
+
     const tree: HierarchyMemberNode[] = [];
+    const parentsInTree = new Set<string>();
+    const creatorId = rootDoc.createdBy?.toString() ?? '';
+
     for (const dbaId of dbAdminIds) {
-      if (!dbaId || dbaId === rootDoc.createdBy?.toString()) continue;
+      if (!dbaId) continue;
       const u = userMap.get(dbaId);
-      if (!u || u.role !== 'db_admin') continue;
+      if (!u || !isHierarchyParentRole(u.role)) continue;
 
       const distributed = childRefs.filter(
         (c) => childDocs.find((d) => String(d._id) === c.id)?.createdBy?.toString() === dbaId,
       );
-      const dataRows = distributed.reduce((s, b) => s + b.rowCount, 0) || rootRowCount;
       const teamMap = employeesUnderDba.get(dbaId);
       const team = teamMap ? [...teamMap.values()] : [];
       team.sort((a, b) => b.dataRows - a.dataRows);
 
+      // Skip empty creator/admin nodes (creator is already exposed as `creator` meta).
+      // Keep them when they actually shared / have a team — otherwise employees vanish.
+      if (team.length === 0 && distributed.length === 0) {
+        if (dbaId === creatorId || u.role !== 'db_admin') continue;
+      }
+
+      const dataRows = distributed.reduce((s, b) => s + b.rowCount, 0) || rootRowCount;
       const dbaShares = shareEvents.filter((e) => e.sharerId === dbaId);
 
+      parentsInTree.add(dbaId);
       tree.push({
         user: this.toUserRef(u),
         dataRows: distributed.length > 0 ? dataRows : rootRowCount,
@@ -258,24 +287,39 @@ export class BatchHierarchyService {
       });
     }
 
+    // Only treat employees as "nested under parent" when that parent is in the tree.
+    // Orphans (parent filtered out) must still surface in directEmployees.
     const attributedEmployees = new Set<string>();
-    for (const m of employeesUnderDba.values()) {
+    for (const [parentId, m] of employeesUnderDba) {
+      if (!parentsInTree.has(parentId)) continue;
       for (const k of m.keys()) attributedEmployees.add(k);
     }
 
     const directEmployees: HierarchyMemberNode[] = [];
+    const pushDirect = (empKey: string, node: HierarchyMemberNode) => {
+      if (attributedEmployees.has(empKey)) return;
+      attributedEmployees.add(empKey);
+      directEmployees.push(node);
+    };
+
+    // Safety net: employees under parents that did not make it into `tree`
+    for (const [parentId, teamMap] of employeesUnderDba) {
+      if (parentsInTree.has(parentId)) continue;
+      for (const [empKey, node] of teamMap) {
+        pushDirect(empKey, { ...node, team: [] });
+      }
+    }
+
     for (const doc of treeDocs) {
       for (const uid of (doc.sharedWith as Types.ObjectId[]) ?? []) {
         const empKey = uid.toString();
-        if (attributedEmployees.has(empKey)) continue;
         const u = userMap.get(empKey);
         if (!u || u.role !== 'employee') continue;
-        attributedEmployees.add(empKey);
         const rows =
           doc._id.toString() === rootId
             ? rootRowCount
             : (doc.rowCount as number) ?? 0;
-        directEmployees.push({
+        pushDirect(empKey, {
           user: this.toUserRef(u),
           dataRows: rows,
           accessType: doc._id.toString() === rootId ? 'full_share' : 'distributed_batch',

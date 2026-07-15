@@ -5,6 +5,7 @@ import { Timer, Clock, CalendarDays, RefreshCw, ChevronLeft, ChevronRight, Check
 import { cn } from '@/lib/utils/cn';
 import { useWorkTimer } from '@/hooks/useWorkTimer';
 import { DAILY_NET_WORK_TARGET_LABEL } from '@/lib/attendance/attendance-shift.constants';
+import { formatDurationFromMinutes } from '@/lib/api/work-time.service';
 
 interface WorkTimerStripProps {
   className?: string;
@@ -60,6 +61,7 @@ export function WorkTimerStrip({ className, variant = 'light', compact = false }
     dailyBreakdown,
     todayLiveFormatted,
     todayLiveMinutes,
+    todayLiveGrossMinutes,
     dailyTargetMinutes,
     onBreak,
     reload,
@@ -69,6 +71,16 @@ export function WorkTimerStrip({ className, variant = 'light', compact = false }
   } = useWorkTimer(true);
 
   const days = useMemo(() => dailyBreakdown ?? [], [dailyBreakdown]);
+  const todayWorkingFormatted = useMemo(
+    () => formatDurationFromMinutes(todayLiveMinutes ?? 0),
+    [todayLiveMinutes],
+  );
+  const todayLoginFormatted = useMemo(() => {
+    if (todayLiveGrossMinutes != null && todayLiveGrossMinutes > 0) {
+      return formatDurationFromMinutes(todayLiveGrossMinutes);
+    }
+    return todayLiveFormatted;
+  }, [todayLiveGrossMinutes, todayLiveFormatted]);
 
   const scrollBy = useCallback((dir: -1 | 1) => {
     const el = scrollRef.current;
@@ -88,8 +100,13 @@ export function WorkTimerStrip({ className, variant = 'light', compact = false }
     return (
       <div className={cn('dash-timer-bar dash-work-timer--compact', className)}>
         <div className="dash-timer-stat">
-          <span className="dash-timer-stat__label">Today</span>
-          <span className="dash-timer-stat__value">{todayLiveFormatted}</span>
+          <span className="dash-timer-stat__label">Login</span>
+          <span className="dash-timer-stat__value">{todayLoginFormatted}</span>
+        </div>
+        <div className="dash-timer-divider" aria-hidden />
+        <div className="dash-timer-stat">
+          <span className="dash-timer-stat__label">Working</span>
+          <span className="dash-timer-stat__value">{todayWorkingFormatted}</span>
         </div>
         <div className="dash-timer-divider" aria-hidden />
         <div ref={scrollRef} className="dash-timer-scroll">
@@ -97,7 +114,9 @@ export function WorkTimerStrip({ className, variant = 'light', compact = false }
             <span className="px-1 text-[10px] text-slate-400">No hours logged</span>
           ) : (
             days.map((day) => {
-              const displayFormatted = day.isToday ? todayLiveFormatted : day.totalFormatted;
+              const displayFormatted = day.isToday
+                ? todayWorkingFormatted
+                : day.totalFormatted;
               const displayMinutes = capDayMinutes(
                 day.isToday ? todayLiveMinutes : day.totalMinutes,
               );
@@ -113,7 +132,7 @@ export function WorkTimerStrip({ className, variant = 'light', compact = false }
                     day.isToday && 'dash-timer-day--today',
                     targetMet && !day.isToday && 'dash-timer-day--met',
                   )}
-                  title={day.date}
+                  title={`${day.date}${day.isToday ? ` · Login ${todayLoginFormatted}` : ''}`}
                 >
                   <span className="dash-timer-day__label">{day.dayLabel}</span>
                   <span className="dash-timer-day__val">{displayFormatted}</span>
@@ -176,15 +195,18 @@ export function WorkTimerStrip({ className, variant = 'light', compact = false }
               Today
             </p>
             <p className={cn('font-mono font-bold tabular-nums leading-none', compact ? 'text-sm lg:text-xs' : 'mt-0.5 text-xl', t.value)}>
-              {todayLiveFormatted}
+              {todayWorkingFormatted}
             </p>
             {!compact && (
               <p className={cn('mt-0.5 text-[10px]', t.sub)}>
-                {!isRunning && !onBreak
-                  ? 'Paused · logged out or idle'
-                  : onBreak
-                    ? `On break · ${isRunning ? `session ${liveFormatted}` : 'timer running'}`
-                    : `Live · this session ${liveFormatted}`}
+                Working · Login {todayLoginFormatted}
+                {onBreak
+                  ? ' · on break'
+                  : isRunning
+                    ? ` · session ${liveFormatted}`
+                    : !isOnDuty
+                      ? ' · paused'
+                      : ''}
               </p>
             )}
           </div>
@@ -237,7 +259,9 @@ export function WorkTimerStrip({ className, variant = 'light', compact = false }
               <p className={cn('py-1.5 text-[11px]', t.label)}>No time logged this month</p>
             ) : (
               days.map((day) => {
-                const displayFormatted = day.isToday ? todayLiveFormatted : day.totalFormatted;
+                const displayFormatted = day.isToday
+                  ? todayWorkingFormatted
+                  : day.totalFormatted;
                 const displayMinutes = capDayMinutes(
                   day.isToday ? todayLiveMinutes : day.totalMinutes,
                 );

@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Batch } from '../batches/schemas/batch.schema';
@@ -6,6 +6,10 @@ import { resolveRootBatchId } from '../batches/batch-root.util';
 import { resolveBatchPeriod } from '../batches/batch-month.util';
 import type { LeadRowChange } from '../activity-logs/lead-diff.util';
 import { DispositionEntry } from './schemas/disposition-entry.schema';
+import {
+  CallbackReminder,
+  CallbackReminderHours,
+} from './schemas/callback-reminder.schema';
 import { detectCampaignChannel, toQcCampaignChannel } from '../qc/qc-channel.util';
 import { statusChangedInColumns } from '../qc/qc-status.util';
 import { compactRowDataPoints } from '../qc/qc-row.util';
@@ -15,12 +19,16 @@ import {
 } from './disposition.constants';
 import {
   classifyDispositionKind,
-  isDispositionMarked,
+  shouldEnqueueDispositionArchive,
   readRowDisposition,
 } from './disposition-status.util';
 import { QcCampaignChannel, QC_CHANNEL_LABELS } from '../qc/qc.constants';
-import type { DispositionListQueryDto } from './dto/disposition.dto';
+import type {
+  CreateCallbackReminderDto,
+  DispositionListQueryDto,
+} from './dto/disposition.dto';
 import { SystemRole } from '../../common/constants/roles.constant';
+import { QcEntry } from '../qc/schemas/qc-entry.schema';
 
 export interface DispositionEntryResponse {
   id: string;
@@ -66,10 +74,13 @@ export class DispositionService {
   constructor(
     @InjectModel(DispositionEntry.name)
     private dispositionEntryModel: Model<DispositionEntry>,
+    @InjectModel(CallbackReminder.name)
+    private callbackReminderModel: Model<CallbackReminder>,
+    @InjectModel(QcEntry.name) private qcEntryModel: Model<QcEntry>,
     @InjectModel(Batch.name) private batchModel: Model<Batch>,
   ) {}
 
-  /** Queue disposition archive when employee picks Do Not Call or Direct Voicemail. */
+  /** Queue DNC archive when employee picks Do Not Call (Voicemail stays on campaign only). */
   async enqueueFromBatchUpdate(params: {
     batch: Batch;
     actorId: string;
@@ -104,10 +115,25 @@ export class DispositionService {
       const row = params.newRows[ch.rowIndex] ?? [];
       const prev = params.oldRows[ch.rowIndex] ?? [];
       const statusValue = readRowDisposition(params.newHeaders, row);
-      if (!statusValue || !isDispositionMarked(params.newHeaders, row)) continue;
+      const employeeOid = new Types.ObjectId(actorId);
+
+      // Voicemail / Not Interested / Callback / Lead: clear DNC archive for this row
+      if (statusValue && !shouldEnqueueDispositionArchive(statusValue)) {
+        await this.dispositionEntryModel
+          .deleteMany({
+            batchId: batch._id,
+            rowIndex: ch.rowIndex,
+            employeeId: employeeOid,
+          })
+          .exec()
+          .catch(() => undefined);
+        continue;
+      }
+
+      if (!statusValue || !shouldEnqueueDispositionArchive(statusValue)) continue;
 
       const dispositionKind = classifyDispositionKind(statusValue);
-      if (!dispositionKind) continue;
+      if (!dispositionKind || dispositionKind !== 'do_not_call') continue;
 
       const compact = compactRowDataPoints(params.newHeaders, row);
       if (compact.headers.length === 0) continue;
@@ -117,7 +143,7 @@ export class DispositionService {
           {
             batchId: batch._id,
             rowIndex: ch.rowIndex,
-            employeeId: new Types.ObjectId(actorId),
+            employeeId: employeeOid,
             dispositionKind,
           },
           {
@@ -139,6 +165,26 @@ export class DispositionService {
           },
           { upsert: true, new: true },
         );
+        // Drop the other disposition kind (DNC ↔ VM) so row lives in one section
+        await this.dispositionEntryModel
+          .deleteMany({
+            batchId: batch._id,
+            rowIndex: ch.rowIndex,
+            employeeId: employeeOid,
+            dispositionKind: { $ne: dispositionKind },
+          })
+          .exec()
+          .catch(() => undefined);
+        // Leave QC when marked DNC / Direct Voicemail
+        await this.qcEntryModel
+          .deleteMany({
+            batchId: batch._id,
+            rowIndex: ch.rowIndex,
+            employeeId: employeeOid,
+            state: 'pending',
+          })
+          .exec()
+          .catch(() => undefined);
       } catch (err) {
         this.logger.warn(
           `Disposition enqueue failed row ${ch.rowIndex}: ${err instanceof Error ? err.message : err}`,
@@ -351,5 +397,162 @@ export class DispositionService {
       count: list.length,
       entries: list,
     }));
+  }
+
+  async createCallbackReminder(
+    actorId: string,
+    actorName: string | undefined,
+    dto: CreateCallbackReminderDto,
+  ) {
+    const batch = await this.batchModel.findById(dto.batchId).exec();
+    if (!batch) throw new NotFoundException('Campaign not found');
+
+    const isAssignee = (batch.sharedWith as Types.ObjectId[])?.some(
+      (u) => u.toString() === actorId,
+    );
+    if (!isAssignee && batch.createdBy?.toString() !== actorId) {
+      throw new ForbiddenException('Not allowed to set callback on this campaign');
+    }
+
+    const hours = dto.hours as CallbackReminderHours;
+    const remindAt = new Date(Date.now() + hours * 60 * 60 * 1000);
+    const rootBatchId = await resolveRootBatchId(this.batchModel, batch._id.toString());
+    const rootBatch = await this.batchModel.findById(rootBatchId).lean().exec();
+    const campaignName = rootBatch?.name ?? batch.name;
+    const row = (batch.rows as string[][])?.[dto.rowIndex] ?? [];
+    const headers = (batch.headers as string[]) ?? [];
+    const leadKey = `${batch._id.toString()}:${dto.rowIndex}`;
+
+    // One active reminder per employee+row — replace prior undismissed
+    await this.callbackReminderModel
+      .updateMany(
+        {
+          batchId: batch._id,
+          rowIndex: dto.rowIndex,
+          employeeId: new Types.ObjectId(actorId),
+          status: { $in: ['scheduled', 'due'] },
+        },
+        { $set: { status: 'dismissed', dismissedAt: new Date() } },
+      )
+      .exec();
+
+    const created = await this.callbackReminderModel.create({
+      employeeId: new Types.ObjectId(actorId),
+      employeeName: actorName,
+      batchId: batch._id,
+      rootBatchId: new Types.ObjectId(rootBatchId),
+      campaignName,
+      rowIndex: dto.rowIndex,
+      leadKey,
+      leadLabel: dto.leadLabel || headers.slice(0, 3).map((_, i) => row[i] ?? '').filter(Boolean).join(' · ') || `Row ${dto.rowIndex + 1}`,
+      hours,
+      description: dto.description.trim(),
+      remindAt,
+      status: 'scheduled',
+    });
+
+    // Drop pending QC — callback is not a lead
+    await this.qcEntryModel
+      .deleteMany({
+        batchId: batch._id,
+        rowIndex: dto.rowIndex,
+        employeeId: new Types.ObjectId(actorId),
+        state: 'pending',
+      })
+      .exec()
+      .catch(() => undefined);
+
+    return this.toReminderResponse(created.toObject() as unknown as Record<string, unknown>);
+  }
+
+  /** Promote scheduled → due, return all due undismissed reminders for this employee. */
+  async listDueReminders(employeeId: string) {
+    const now = new Date();
+    await this.callbackReminderModel
+      .updateMany(
+        {
+          employeeId: new Types.ObjectId(employeeId),
+          status: 'scheduled',
+          remindAt: { $lte: now },
+        },
+        { $set: { status: 'due' } },
+      )
+      .exec();
+
+    const rows = await this.callbackReminderModel
+      .find({
+        employeeId: new Types.ObjectId(employeeId),
+        status: 'due',
+      })
+      .sort({ remindAt: 1 })
+      .lean()
+      .exec();
+
+    return rows.map((r) => this.toReminderResponse(r as Record<string, unknown>));
+  }
+
+  async listMyReminders(employeeId: string) {
+    const now = new Date();
+    await this.callbackReminderModel
+      .updateMany(
+        {
+          employeeId: new Types.ObjectId(employeeId),
+          status: 'scheduled',
+          remindAt: { $lte: now },
+        },
+        { $set: { status: 'due' } },
+      )
+      .exec();
+
+    const rows = await this.callbackReminderModel
+      .find({
+        employeeId: new Types.ObjectId(employeeId),
+        status: { $in: ['scheduled', 'due'] },
+      })
+      .sort({ remindAt: 1 })
+      .lean()
+      .exec();
+
+    return rows.map((r) => this.toReminderResponse(r as Record<string, unknown>));
+  }
+
+  async dismissReminder(employeeId: string, reminderId: string) {
+    const row = await this.callbackReminderModel
+      .findOne({
+        _id: reminderId,
+        employeeId: new Types.ObjectId(employeeId),
+      })
+      .exec();
+    if (!row) throw new NotFoundException('Reminder not found');
+    row.status = 'dismissed';
+    row.dismissedAt = new Date();
+    await row.save();
+    return { ok: true, id: reminderId };
+  }
+
+  private toReminderResponse(doc: Record<string, unknown>) {
+    return {
+      id: String(doc._id),
+      employeeId: String(doc.employeeId),
+      employeeName: doc.employeeName as string | undefined,
+      batchId: String(doc.batchId),
+      rootBatchId: doc.rootBatchId ? String(doc.rootBatchId) : undefined,
+      campaignName: String(doc.campaignName ?? ''),
+      rowIndex: Number(doc.rowIndex ?? 0),
+      leadKey: String(doc.leadKey ?? ''),
+      leadLabel: doc.leadLabel as string | undefined,
+      hours: Number(doc.hours) as 24 | 48,
+      description: String(doc.description ?? ''),
+      remindAt: doc.remindAt
+        ? new Date(doc.remindAt as string | Date).toISOString()
+        : '',
+      status: String(doc.status ?? 'scheduled'),
+      createdAt: doc.createdAt
+        ? new Date(doc.createdAt as string | Date).toISOString()
+        : undefined,
+      dismissedAt: doc.dismissedAt
+        ? new Date(doc.dismissedAt as string | Date).toISOString()
+        : undefined,
+    };
   }
 }

@@ -188,7 +188,12 @@ export function MasterDatabaseExplorer({
       const fetched = await Promise.all(
         lazyHeaders.map(async (col) => {
           try {
-            const result = await masterDataService.getColumnOptions(col.header, undefined, 60);
+            const limit = /^lead type$/i.test(col.header) ? 500 : 80;
+            const result = await masterDataService.getColumnOptions(
+              col.header,
+              undefined,
+              limit,
+            );
             return { header: col.header, options: result.options };
           } catch {
             return { header: col.header, options: [] as string[] };

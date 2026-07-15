@@ -79,7 +79,11 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
         secret: this.config.get<string>('JWT_ACCESS_SECRET'),
       });
       const userId = payload.sub as string;
+      const roles = (payload.roles as string[]) ?? [];
       client.join(`user:${userId}`);
+      if (roles.includes('admin') || roles.includes('super_admin')) {
+        client.join('chat:oversight');
+      }
       if (!this.userSockets.has(userId)) {
         this.userSockets.set(userId, new Set());
       }
@@ -99,6 +103,10 @@ export class EventsGateway implements OnGatewayInit, OnGatewayConnection, OnGate
 
   emitToUser(userId: string, event: string, data: unknown) {
     this.server.to(`user:${userId}`).emit(event, data);
+  }
+
+  emitToRoom(room: string, event: string, data: unknown) {
+    this.server.to(room).emit(event, data);
   }
 
   broadcast(event: string, data: unknown) {

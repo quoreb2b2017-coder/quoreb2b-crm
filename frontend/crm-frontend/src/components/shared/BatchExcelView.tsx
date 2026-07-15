@@ -16,7 +16,9 @@ import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
 import { CheckSuppressionModal } from '@/components/employee/CheckSuppressionModal';
 import { handleSuppressionCheckComplete } from '@/lib/master-data/handle-suppression-result';
-import { EMPLOYEE_DISPOSITION_OPTIONS } from '@/lib/disposition/disposition-values';
+import { EMPLOYEE_DISPOSITION_OPTIONS, isCallbackDisposition } from '@/lib/disposition/disposition-values';
+import { CallbackReminderSetupModal } from '@/components/disposition/CallbackReminderSetupModal';
+import { dispositionService } from '@/lib/api/disposition.service';
 
 export interface BatchExcelViewProps {
   batchId?: string;
@@ -81,6 +83,11 @@ export function BatchExcelView({
   const [checkOpen, setCheckOpen] = useState(false);
   const [duplicateHighlightRows, setDuplicateHighlightRows] = useState<number[]>([]);
   const [markedLeadRows, setMarkedLeadRows] = useState<number[]>([]);
+  const [callbackSetup, setCallbackSetup] = useState<{
+    sourceRow: number;
+    leadLabel: string;
+    apply: (value: string) => void;
+  } | null>(null);
   const sharedBy = createdByName ?? createdByEmail;
   const { trackBatchOpen, trackLeadTouch } = useLeadActivityTracker(batchId, name);
 
@@ -296,9 +303,43 @@ export function BatchExcelView({
             dispositionSelectOptions={
               enableDispositionDropdown ? EMPLOYEE_DISPOSITION_OPTIONS : undefined
             }
+            onDispositionSelect={
+              enableDispositionDropdown && batchId
+                ? ({ sourceRow, nextValue, apply }) => {
+                    if (isCallbackDisposition(nextValue)) {
+                      const row = data.rows[sourceRow] ?? [];
+                      const leadLabel =
+                        row.slice(0, 4).filter((c) => c && c !== '-').join(' · ') ||
+                        `Row ${sourceRow + 1}`;
+                      setCallbackSetup({ sourceRow, leadLabel, apply });
+                      return;
+                    }
+                    apply(nextValue);
+                  }
+                : undefined
+            }
           />
         )}
       </div>
+
+      {callbackSetup && batchId ? (
+        <CallbackReminderSetupModal
+          leadLabel={callbackSetup.leadLabel}
+          onCancel={() => setCallbackSetup(null)}
+          onConfirm={async ({ hours, description }) => {
+            await dispositionService.createCallbackReminder({
+              batchId,
+              rowIndex: callbackSetup.sourceRow,
+              hours,
+              description,
+              leadLabel: callbackSetup.leadLabel,
+            });
+            callbackSetup.apply('Callback');
+            setCallbackSetup(null);
+            toast.success(`Callback reminder set for ${hours}h`);
+          }}
+        />
+      ) : null}
 
       {batchModal && (
         <>

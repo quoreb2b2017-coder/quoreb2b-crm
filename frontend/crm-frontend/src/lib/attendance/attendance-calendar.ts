@@ -33,14 +33,15 @@ export const ATTENDANCE_STATUS_COLORS: Record<
   Exclude<AttendanceCalendarStatus, 'empty' | 'future' | 'outside'>,
   string
 > = {
-  present: '#22C55E',
+  present: '#16A34A',
   absent: '#EF4444',
   late: '#F59E0B',
   leave: '#3B82F6',
   'paid-leave': '#8B5CF6',
-  holiday: '#14B8A6',
+  /** Magenta — clearly separate from Present green */
+  holiday: '#DB2777',
   'half-day': '#EAB308',
-  weekend: '#E5E7EB',
+  weekend: '#94A3B8',
 };
 
 /** Soft cell backgrounds (dashboard calendar) */
@@ -53,9 +54,9 @@ export const ATTENDANCE_STATUS_BG: Record<
   late: '#FEF3C7',
   leave: '#DBEAFE',
   'paid-leave': '#EDE9FE',
-  holiday: '#CCFBF1',
+  holiday: '#FCE7F3',
   'half-day': '#FEF9C3',
-  weekend: '#F3F4F6',
+  weekend: '#F1F5F9',
 };
 
 export const ATTENDANCE_STATUS_TEXT: Record<
@@ -67,7 +68,7 @@ export const ATTENDANCE_STATUS_TEXT: Record<
   late: '#B45309',
   leave: '#1D4ED8',
   'paid-leave': '#6D28D9',
-  holiday: '#0F766E',
+  holiday: '#9D174D',
   'half-day': '#A16207',
 };
 
@@ -115,6 +116,7 @@ export function resolveCalendarStatus(day: AttendanceDayCell | undefined, dateKe
 
   const status = day.status?.toLowerCase() ?? '';
 
+  if (status === 'holiday') return 'holiday';
   if (day.isLate && (status === 'present' || status === 'half-day')) return 'late';
   if (status === 'weekend' && isWeekendDateKey(key)) return 'weekend';
   if (status === 'half-day') return 'half-day';

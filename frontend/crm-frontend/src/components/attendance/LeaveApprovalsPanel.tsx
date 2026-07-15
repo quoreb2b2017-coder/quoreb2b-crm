@@ -4,12 +4,13 @@ import './attendance.css';
 
 import { useCallback, useEffect, useState } from 'react';
 import { Plus, RefreshCw } from 'lucide-react';
-import { leaveService, type LeaveApplication, type LeaveStatus } from '@/lib/api/leave.service';
+import { leaveService, type LeaveApplication, type LeavePayMode, type LeaveStatus } from '@/lib/api/leave.service';
 import { extractApiError } from '@/lib/api/errors';
 import { LeaveApplicationsExcelTable } from '@/components/attendance/LeaveApplicationsExcelTable';
 import { useAttendancePanelOptional } from '@/components/attendance/AttendancePanelContext';
 import { AttendanceFullBleed } from '@/components/attendance/AttendanceFullBleed';
 import { cn } from '@/lib/utils/cn';
+import { useAuthStore } from '@/store/auth.store';
 
 const FILTERS: { id: LeaveStatus | 'all'; label: string }[] = [
   { id: 'pending', label: 'Pending' },
@@ -29,6 +30,9 @@ export function LeaveApprovalsPanel({
   subtitle = 'Review and approve leave applications from all employees',
 }: LeaveApprovalsPanelProps) {
   const panel = useAttendancePanelOptional();
+  const roles = useAuthStore((s) => s.user?.roles ?? []);
+  const canDecidePay =
+    roles.includes('super_admin') || roles.includes('admin');
   const [leaves, setLeaves] = useState<LeaveApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<LeaveStatus | 'all'>('pending');
@@ -60,10 +64,10 @@ export function LeaveApprovalsPanel({
     return () => window.removeEventListener('attendance:refresh', onRefresh);
   }, [fetchLeaves]);
 
-  const handleApprove = async (leaveId: string) => {
+  const handleApprove = async (leaveId: string, payMode: LeavePayMode) => {
     setActionLoading(leaveId);
     try {
-      await leaveService.approve(leaveId);
+      await leaveService.approve(leaveId, payMode);
       await fetchLeaves();
     } catch (err: unknown) {
       setError(extractApiError(err, 'Failed to approve leave'));
@@ -96,6 +100,11 @@ export function LeaveApprovalsPanel({
             {!loading && filter === 'pending' && pendingCount > 0 && (
               <p className="mt-1 text-[10px] font-semibold text-amber-200">
                 {pendingCount} pending request{pendingCount !== 1 ? 's' : ''} awaiting approval
+              </p>
+            )}
+            {canDecidePay && (
+              <p className="mt-1 text-[10px] text-emerald-100/90">
+                Approve as Paid or Unpaid — employees only submit Sick / Casual
               </p>
             )}
           </div>
@@ -140,7 +149,7 @@ export function LeaveApprovalsPanel({
         title="Organization Leave Applications"
         showEmployee
         actionLoading={actionLoading}
-        onApprove={handleApprove}
+        onApprove={canDecidePay ? handleApprove : undefined}
         onReject={handleReject}
       />
     </AttendanceFullBleed>

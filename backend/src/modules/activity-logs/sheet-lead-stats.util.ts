@@ -13,13 +13,53 @@ export function findStatusColumnIndex(headers: string[]): number {
   return headers.findIndex((h) => h.trim().toLowerCase() === 'disposition');
 }
 
+export function findDispositionColumnIndex(headers: string[]): number {
+  return headers.findIndex((h) => h.trim().toLowerCase() === 'disposition');
+}
+
+/**
+ * Read Status/Disposition for routing.
+ * Prefer Disposition when both columns exist and Disposition is non-empty
+ * (employee dropdown often sits on Disposition while Status stays blank).
+ */
+export function readEffectiveStatusValue(headers: string[], row: string[]): string {
+  const statusIdx = headers.findIndex((h) => h.trim().toLowerCase() === 'status');
+  const dispIdx = headers.findIndex((h) => h.trim().toLowerCase() === 'disposition');
+  const statusVal = statusIdx >= 0 ? (row[statusIdx] ?? '').trim() : '';
+  const dispVal = dispIdx >= 0 ? (row[dispIdx] ?? '').trim() : '';
+  if (dispVal && dispVal !== '-') return dispVal;
+  if (statusVal && statusVal !== '-') return statusVal;
+  return dispVal || statusVal || '';
+}
+
+/** Keep Status and Disposition cells in sync so QC / archive both see the mark. */
+export function syncStatusDispositionColumns(
+  headers: string[],
+  rows: string[][],
+): string[][] {
+  const statusIdx = headers.findIndex((h) => h.trim().toLowerCase() === 'status');
+  const dispIdx = headers.findIndex((h) => h.trim().toLowerCase() === 'disposition');
+  if (statusIdx < 0 || dispIdx < 0 || statusIdx === dispIdx) return rows;
+
+  return rows.map((row) => {
+    const next = [...row];
+    while (next.length < headers.length) next.push('');
+    const statusVal = (next[statusIdx] ?? '').trim();
+    const dispVal = (next[dispIdx] ?? '').trim();
+    if (dispVal && dispVal !== statusVal) {
+      next[statusIdx] = next[dispIdx];
+    } else if (statusVal && !dispVal) {
+      next[dispIdx] = next[statusIdx];
+    }
+    return next;
+  });
+}
+
 export function classifyRowStatus(
   headers: string[],
   row: string[],
 ): 'active' | 'won' | null {
-  const colIdx = findStatusColumnIndex(headers);
-  if (colIdx < 0) return null;
-  return classifyStatus(row[colIdx] ?? '');
+  return classifyStatus(readEffectiveStatusValue(headers, row));
 }
 
 function classifyStatus(raw: string): 'active' | 'won' | null {
@@ -41,7 +81,6 @@ function classifyStatus(raw: string): 'active' | 'won' | null {
 }
 
 export function countSheetLeadStats(headers: string[], rows: string[][]): SheetLeadStats {
-  const colIdx = findStatusColumnIndex(headers);
   let totalLeads = 0;
   let activeLeads = 0;
   let wonLeads = 0;
@@ -51,8 +90,7 @@ export function countSheetLeadStats(headers: string[], rows: string[][]): SheetL
     if (!hasData) continue;
     totalLeads++;
 
-    if (colIdx < 0) continue;
-    const kind = classifyStatus(row[colIdx] ?? '');
+    const kind = classifyStatus(readEffectiveStatusValue(headers, row));
     if (kind === 'active') activeLeads++;
     else if (kind === 'won') wonLeads++;
   }

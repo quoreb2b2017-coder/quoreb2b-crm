@@ -9,6 +9,10 @@ export class Leave extends Document {
   @Prop({ enum: ['sick', 'casual', 'earned', 'unpaid'], required: true })
   leaveType: string;
 
+  /** Set by Super Admin on approve — paid uses annual allowance, unpaid is LOP */
+  @Prop({ enum: ['paid', 'unpaid'] })
+  payMode?: string;
+
   @Prop({ required: true })
   startDate: Date;
 

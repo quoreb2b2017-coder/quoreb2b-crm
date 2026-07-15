@@ -56,13 +56,13 @@ function MemberRow({
     <>
       <tr
         className={cn(
-          'cursor-pointer border-b border-slate-200 text-left text-xs',
+          'cursor-pointer border-b border-slate-200 text-left text-[13px]',
           selected ? 'bg-[#e8f5ee]' : 'hover:bg-[#f9f9f9]',
           depth > 0 && 'bg-slate-50/80',
         )}
         onClick={() => onSelect(node.user.id)}
       >
-        <td className="w-6 border-r border-slate-100 px-1 py-1.5 text-center">
+        <td className="w-8 border-r border-slate-100 px-2 py-2.5 text-center">
           {hasTeam ? (
             <button
               type="button"
@@ -72,20 +72,20 @@ function MemberRow({
               }}
               className="text-slate-500"
             >
-              {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+              {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
             </button>
           ) : null}
         </td>
-        <td className="border-r border-slate-100 px-2 py-1.5 font-medium text-slate-800">
-          <span style={{ paddingLeft: depth * 12 }}>{node.user.name}</span>
+        <td className="border-r border-slate-100 px-3 py-2.5 font-medium text-slate-800">
+          <span style={{ paddingLeft: depth * 16 }}>{node.user.name}</span>
         </td>
-        <td className="border-r border-slate-100 px-2 py-1.5 text-slate-500">
+        <td className="border-r border-slate-100 px-3 py-2.5 text-slate-500">
           {roleBadge(node.user.role)}
         </td>
-        <td className="border-r border-slate-100 px-2 py-1.5 text-right font-mono text-slate-700">
+        <td className="border-r border-slate-100 px-3 py-2.5 text-right font-mono text-slate-700">
           {node.dataRows.toLocaleString('en-US')}
         </td>
-        <td className="px-2 py-1.5 text-right font-mono text-slate-500">
+        <td className="px-3 py-2.5 text-right font-mono text-slate-500">
           {node.activity.updates}/{node.activity.touches}/{node.activity.views}
         </td>
       </tr>
@@ -223,21 +223,21 @@ export function BatchHierarchyPanel({
       ) : !data ? null : (
         <div className="flex min-h-0 flex-1 flex-col">
           {(data.shareEvents?.length ?? 0) > 0 && (
-            <div className="max-h-[140px] overflow-y-auto border-b border-slate-300 bg-[#fafafa]">
-              <div className="border-b border-slate-200 bg-[#f3f3f3] px-3 py-1 text-[10px] font-semibold uppercase text-slate-600">
+            <div className="max-h-[200px] overflow-y-auto border-b border-slate-300 bg-[#fafafa]">
+              <div className="border-b border-slate-200 bg-[#f3f3f3] px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                 Share history
               </div>
-              <table className="w-full border-collapse text-[11px]">
+              <table className="w-full border-collapse text-[12px]">
                 <tbody>
                   {(data.shareEvents ?? []).slice(0, 6).map((ev: BatchHierarchyShareEvent) => (
                     <tr key={ev.id} className="border-b border-slate-100 hover:bg-white">
-                      <td className="px-2 py-1 font-medium text-slate-800">{ev.sharerName}</td>
-                      <td className="px-2 py-1 text-slate-600">{ev.batchName}</td>
-                      <td className="px-2 py-1 text-right font-mono">{ev.rowCount}</td>
-                      <td className="px-2 py-1 text-[#2568b8]">
+                      <td className="px-3 py-2.5 font-medium text-slate-800">{ev.sharerName}</td>
+                      <td className="px-3 py-2.5 text-slate-600">{ev.batchName}</td>
+                      <td className="px-3 py-2.5 text-right font-mono">{ev.rowCount}</td>
+                      <td className="px-3 py-2.5 text-[#2568b8]">
                         {ev.recipients.map((r) => r.name).join(', ')}
                       </td>
-                      <td className="px-2 py-1 text-right text-slate-400">
+                      <td className="px-3 py-2.5 text-right text-slate-400 whitespace-nowrap">
                         {formatWhen(ev.occurredAt)}
                       </td>
                     </tr>
@@ -249,30 +249,30 @@ export function BatchHierarchyPanel({
 
           <div
             className={cn(
-              'grid min-h-[280px] grid-cols-1 border-t border-slate-300 lg:grid-cols-[minmax(260px,0.9fr)_minmax(340px,1.1fr)]',
-              standalone ? 'min-h-0 flex-1' : 'max-h-[480px]',
+              'grid min-h-[320px] grid-cols-1 border-t border-slate-300 lg:grid-cols-[minmax(280px,0.9fr)_minmax(360px,1.1fr)]',
+              standalone ? 'min-h-0 flex-1' : 'max-h-[560px]',
             )}
           >
             <div className="overflow-auto border-r border-slate-300 bg-white lg:border-b-0">
               {data.tree.length === 0 && data.directEmployees.length === 0 ? (
-                <p className="py-6 text-center text-sm text-slate-500">
+                <p className="py-8 text-center text-sm text-slate-500">
                   Share this campaign to see team members here.
                 </p>
               ) : (
-                <table className="w-full border-collapse text-xs">
-                  <thead className="sticky top-0 z-10 bg-[#f3f3f3] text-[10px] uppercase text-slate-600">
+                <table className="w-full border-collapse text-[13px]">
+                  <thead className="sticky top-0 z-10 bg-[#f3f3f3] text-[11px] uppercase tracking-wide text-slate-600">
                     <tr>
-                      <th className="w-6 border-b border-r border-slate-200 px-1 py-1" />
-                      <th className="border-b border-r border-slate-200 px-2 py-1 text-left">
+                      <th className="w-8 border-b border-r border-slate-200 px-2 py-2.5" />
+                      <th className="border-b border-r border-slate-200 px-3 py-2.5 text-left">
                         Name
                       </th>
-                      <th className="border-b border-r border-slate-200 px-2 py-1 text-left">
+                      <th className="border-b border-r border-slate-200 px-3 py-2.5 text-left">
                         Role
                       </th>
-                      <th className="border-b border-r border-slate-200 px-2 py-1 text-right">
+                      <th className="border-b border-r border-slate-200 px-3 py-2.5 text-right">
                         Contacts
                       </th>
-                      <th className="border-b border-slate-200 px-2 py-1 text-right">
+                      <th className="border-b border-slate-200 px-3 py-2.5 text-right">
                         Up/Tch/Op
                       </th>
                     </tr>

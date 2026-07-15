@@ -1,5 +1,8 @@
-import { findStatusColumnIndex, classifyRowStatus } from '../activity-logs/sheet-lead-stats.util';
-import { classifyDispositionKind } from '../disposition/disposition-status.util';
+import { readEffectiveStatusValue } from '../activity-logs/sheet-lead-stats.util';
+import {
+  classifyDispositionKind,
+  isLocalOnlyDisposition,
+} from '../disposition/disposition-status.util';
 
 export function isStatusColumnName(label: string): boolean {
   const lower = label.trim().toLowerCase();
@@ -14,14 +17,31 @@ export function statusChangedInColumns(
 }
 
 export function readRowStatus(headers: string[], row: string[]): string {
-  const idx = findStatusColumnIndex(headers);
-  if (idx < 0) return '';
-  return (row[idx] ?? '').trim();
+  return readEffectiveStatusValue(headers, row);
 }
 
-/** Only Lead / Won / Active marks go to QC — not DNC, voicemail, or other columns. */
+function classifyRowStatusFromValue(raw: string): 'active' | 'won' | null {
+  const lower = raw.trim().toLowerCase();
+  if (!lower || lower === '-') return null;
+  if (lower === 'active') return 'active';
+  if (
+    lower === 'lead' ||
+    lower === 'leads' ||
+    lower === 'won' ||
+    lower === 'closed won' ||
+    lower === 'closed-won' ||
+    lower.includes('won')
+  ) {
+    return 'won';
+  }
+  return null;
+}
+
+/** Only Lead (and legacy Active/Won) go to QC — not DNC, voicemail, callback, NI. */
 export function isLeadMarkedForQc(headers: string[], row: string[]): boolean {
   const status = readRowStatus(headers, row);
+  if (!status) return false;
   if (classifyDispositionKind(status)) return false;
-  return classifyRowStatus(headers, row) !== null;
+  if (isLocalOnlyDisposition(status)) return false;
+  return classifyRowStatusFromValue(status) !== null;
 }

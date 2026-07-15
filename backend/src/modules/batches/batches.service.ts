@@ -35,6 +35,7 @@ import { MasterDataService } from '../master-data/master-data.service';
 import { QcService } from '../qc/qc.service';
 import { DispositionService } from '../disposition/disposition.service';
 import { detectCampaignChannel } from '../qc/qc-channel.util';
+import { syncStatusDispositionColumns } from '../activity-logs/sheet-lead-stats.util';
 
 import {
   assignedParentRowIndices,
@@ -766,7 +767,10 @@ export class BatchesService {
     if (dto.headers != null) batch.headers = dto.headers;
     if (dto.rows != null) {
       const newHeaders = dto.headers ?? oldHeaders;
-      const changes = diffBatchLeadRows(oldHeaders, oldRows, newHeaders, dto.rows);
+      // Keep Status + Disposition cells aligned so QC / DNC / VM routing always sees the mark
+      const syncedRows = syncStatusDispositionColumns(newHeaders, dto.rows);
+      dto.rows = syncedRows;
+      const changes = diffBatchLeadRows(oldHeaders, oldRows, newHeaders, syncedRows);
       if (changes.length > 0 && actor?.id) {
         void this.logLeadUpdates(actor, batchId, String(batch.name), changes);
         // Assigned employee edits stay on this batch only — never write back to master file.
@@ -778,14 +782,14 @@ export class BatchesService {
           oldHeaders,
           oldRows,
           newHeaders,
-          newRows: dto.rows,
+          newRows: syncedRows,
           changes,
         };
         void this.qcService.enqueueFromBatchUpdate(enqueueParams);
         void this.dispositionService.enqueueFromBatchUpdate(enqueueParams);
       }
-      batch.rows = dto.rows;
-      batch.rowCount = dto.rows.length;
+      batch.rows = syncedRows;
+      batch.rowCount = syncedRows.length;
       batch.columnCount = newHeaders.length ?? 0;
     } else if (dto.headers != null) {
       batch.columnCount = dto.headers.length;

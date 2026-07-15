@@ -53,6 +53,29 @@ export function useEditableSpreadsheet(
     [headers, emit],
   );
 
+  /** Update multiple cells on one row in a single emit (Status + Disposition sync). */
+  const updateRowCells = useCallback(
+    (sourceRowIndex: number, updates: Array<{ colIndex: number; value: string }>) => {
+      if (!updates.length) return;
+      setRows((prev) => {
+        const next = prev.map((r, i) => {
+          if (i !== sourceRowIndex) return r;
+          const row = [...r];
+          while (row.length < headers.length) row.push('');
+          for (const u of updates) {
+            if (u.colIndex >= 0 && u.colIndex < headers.length) {
+              row[u.colIndex] = u.value;
+            }
+          }
+          return row;
+        });
+        emit(headers, next);
+        return next;
+      });
+    },
+    [headers, emit],
+  );
+
   const updateHeader = useCallback(
     (colIndex: number, value: string) => {
       setHeaders((prev) => {
@@ -100,6 +123,7 @@ export function useEditableSpreadsheet(
     headers,
     rows,
     updateCell,
+    updateRowCells,
     updateHeader,
     addRow,
     addColumn,

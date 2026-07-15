@@ -1,5 +1,5 @@
 import { ChatApp } from '@/components/chat/ChatApp';
 
 export default function AdminChatPage() {
-  return <ChatApp />;
+  return <ChatApp mode="mine" />;
 }

@@ -1,9 +1,11 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ConflictException,
   ForbiddenException,
   BadRequestException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -25,7 +27,9 @@ import { ConfigService } from '@nestjs/config';
 import { cacheTtlSeconds, stableHash } from '../../redis/cache.util';
 
 @Injectable()
-export class UsersService {
+export class UsersService implements OnModuleInit {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     private repository: UsersRepository,
     @InjectModel(RefreshToken.name) private refreshTokenModel: Model<RefreshToken>,
@@ -34,6 +38,22 @@ export class UsersService {
     private cache: AppCacheService,
     private config: ConfigService,
   ) {}
+
+  async onModuleInit() {
+    try {
+      const cleared = await this.repository.wipeAllPlainPasswords();
+      if (cleared > 0) {
+        this.logger.warn(
+          `Removed plaintext passwords from ${cleared} user document(s) — bcrypt hash only`,
+        );
+      }
+    } catch (err) {
+      this.logger.error(
+        `Failed to wipe plain passwords: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+
   async findById(id: string) {
     const user = await this.repository.findById(id);
     if (!user) throw new NotFoundException('User not found');
@@ -113,7 +133,6 @@ export class UsersService {
     const user = await this.repository.create({
       email: dto.email.toLowerCase(),
       passwordHash,
-      plainPassword: dto.password,
       firstName: dto.firstName,
       lastName: dto.lastName,
       employeeId: dto.employeeId?.toUpperCase(),
@@ -122,6 +141,8 @@ export class UsersService {
       permissions: [],
       isActive: true,
     });
+    // Ensure no plaintext leftover from older code paths
+    await this.repository.unsetPlainPassword(String(user._id));
 
     const safe = this.sanitizeUser(user);
     await this.bustUsersCache();
@@ -224,10 +245,12 @@ export class UsersService {
         metadata: {
           targetEmail: target.email,
           targetName: `${target.firstName} ${target.lastName}`,
+          note: 'Passwords are bcrypt-hashed and cannot be retrieved',
         },
       });
     }
-    return this.repository.findPlainPassword(id);
+    // Passwords are one-way hashed — plaintext is never stored or returned.
+    return null;
   }
 
   async setActiveStatus(id: string, isActive: boolean, actor?: ActivityActor) {
@@ -304,7 +327,8 @@ export class UsersService {
     if (!valid) throw new BadRequestException('Current password is incorrect');
 
     const passwordHash = await bcrypt.hash(newPassword, 12);
-    await this.repository.update(userId, { passwordHash, plainPassword: newPassword });
+    await this.repository.update(userId, { passwordHash });
+    await this.repository.unsetPlainPassword(userId);
     await this.revokeAllSessions(userId);
 
     await this.activityLogs.logWithActor(actorFromUserDoc(user), {

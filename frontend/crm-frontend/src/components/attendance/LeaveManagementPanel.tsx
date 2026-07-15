@@ -44,10 +44,10 @@ export function LeaveManagementPanel() {
     }
   };
 
-  const handleApprove = async (leaveId: string) => {
+  const handleApprove = async (leaveId: string, payMode: 'paid' | 'unpaid') => {
     setActionLoading(leaveId);
     try {
-      await apiClient.post(`leave/${leaveId}/approve`);
+      await apiClient.post(`leave/${leaveId}/approve`, { payMode });
       setLeaves(leaves.map(l => l._id === leaveId ? { ...l, status: 'approved' } : l));
     } catch (error) {
       console.error('Failed to approve leave:', error);
@@ -81,14 +81,14 @@ export function LeaveManagementPanel() {
 
   const getLeaveTypeColor = (type: string) => {
     switch (type) {
-      case 'sick':
-        return 'bg-red-50 text-red-700';
-      case 'casual':
-        return 'bg-blue-50 text-blue-700';
       case 'earned':
-        return 'bg-green-50 text-green-700';
+        return 'bg-emerald-100 text-emerald-800 border border-emerald-200';
       case 'unpaid':
-        return 'bg-slate-50 text-slate-700';
+        return 'bg-red-100 text-red-800 border border-red-200';
+      case 'sick':
+        return 'bg-rose-100 text-rose-800 border border-rose-200';
+      case 'casual':
+        return 'bg-sky-100 text-sky-800 border border-sky-200';
       default:
         return 'bg-slate-50 text-slate-700';
     }
@@ -170,14 +170,23 @@ export function LeaveManagementPanel() {
 
                 {/* Actions */}
                 {leave.status === 'pending' && (
-                  <div className="flex gap-2 flex-shrink-0">
+                  <div className="flex flex-wrap gap-2 flex-shrink-0">
                     <button
-                      onClick={() => handleApprove(leave._id)}
+                      onClick={() => handleApprove(leave._id, 'paid')}
                       disabled={actionLoading === leave._id}
-                      className="flex items-center gap-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors disabled:opacity-50"
+                      className="flex items-center gap-1 px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                      title="Approve as paid leave"
                     >
                       <CheckCircle className="h-4 w-4" />
-                      Approve
+                      Paid
+                    </button>
+                    <button
+                      onClick={() => handleApprove(leave._id, 'unpaid')}
+                      disabled={actionLoading === leave._id}
+                      className="flex items-center gap-1 px-3 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 transition-colors disabled:opacity-50"
+                      title="Approve as unpaid leave"
+                    >
+                      Unpaid
                     </button>
                     <button
                       onClick={() => handleReject(leave._id)}

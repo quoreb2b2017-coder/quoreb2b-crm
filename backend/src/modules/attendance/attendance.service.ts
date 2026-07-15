@@ -78,10 +78,22 @@ export class AttendanceService {
     SystemRole.DB_ADMIN,
   ]);
 
+  /** Holiday can only be set by Super Admin / Admin panel roles — not DB Admin or Employee */
+  private static readonly HOLIDAY_MARK_ROLES = new Set<string>([
+    SystemRole.SUPER_ADMIN,
+    SystemRole.ADMIN,
+  ]);
+
   assertCanMarkForUser(actorId: string, actorRoles: string[], targetUserId: string) {
     if (actorId === targetUserId) return;
     if (!actorRoles.some((r) => AttendanceService.ADMIN_MARK_ROLES.has(r))) {
       throw new ForbiddenException('Only administrators can edit another user’s attendance');
+    }
+  }
+
+  assertCanMarkHoliday(actorRoles: string[]) {
+    if (!actorRoles.some((r) => AttendanceService.HOLIDAY_MARK_ROLES.has(r))) {
+      throw new ForbiddenException('Only Super Admin can mark a day as Holiday');
     }
   }
 
@@ -161,7 +173,7 @@ export class AttendanceService {
 
     // Auto-mark Saturday (6) and Sunday (0) as weekend
     let status = dto.status;
-    if (isWeekendDateKey(dto.date)) {
+    if (isWeekendDateKey(dto.date) && status !== 'holiday') {
       status = 'weekend';
     }
 

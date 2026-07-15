@@ -158,6 +158,8 @@ const CURATED_OPTION_PATTERNS: RegExp[] = [
 ];
 
 export function needsLazyColumnOptions(col: MasterDataColumnFilterSchema): boolean {
+  // Always refresh Lead Type so every distinct value appears (not just schema sample).
+  if (/^lead type$/i.test(col.header.trim())) return true;
   if (col.options.length >= 2) return false;
   return CURATED_OPTION_PATTERNS.some((p) => p.test(col.header.trim()));
 }
@@ -168,10 +170,15 @@ export function enrichFilterColumnOptions(
   const key = col.header.trim().toLowerCase();
   const defaults = SIZE_CATEGORY_DEFAULTS[key];
   const merged = new Set<string>([...col.options, ...(defaults ?? [])]);
+  const isLeadType = /^lead type$/i.test(col.header.trim());
+  const cap = isLeadType ? 500 : 80;
   const options = isSizeCategoryHeader(col.header)
-    ? sortCategoryOptions([...merged]).slice(0, 80)
-    : [...merged].filter(Boolean).slice(0, 80);
-  if (options.length >= 2 && col.kind !== 'email' && col.kind !== 'phone') {
+    ? sortCategoryOptions([...merged]).slice(0, cap)
+    : [...merged]
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+        .slice(0, cap);
+  if ((isLeadType && options.length >= 1) || (options.length >= 2 && col.kind !== 'email' && col.kind !== 'phone')) {
     return {
       ...col,
       kind: col.kind === 'status' ? 'status' : 'select',

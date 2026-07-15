@@ -15,8 +15,9 @@ export class ApplyLeaveDto {
   @IsMongoId()
   userId: string;
 
-  @IsEnum(['sick', 'casual', 'earned', 'unpaid'])
-  leaveType: 'sick' | 'casual' | 'earned' | 'unpaid';
+  /** Employees only choose type of leave — Super Admin decides paid/unpaid on approve */
+  @IsEnum(['sick', 'casual'])
+  leaveType: 'sick' | 'casual';
 
   @IsDateString()
   startDate: string;
@@ -59,8 +60,9 @@ export class LeaveQueryDto {
 }
 
 export class ApproveLeaveDto {
-  @IsMongoId()
-  approvedBy: string;
+  /** Super Admin decides: paid leave (uses allowance) or unpaid (LOP) */
+  @IsEnum(['paid', 'unpaid'])
+  payMode: 'paid' | 'unpaid';
 }
 
 export class RejectLeaveDto {

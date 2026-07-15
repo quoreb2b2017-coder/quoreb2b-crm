@@ -1,12 +1,14 @@
 import apiClient from './client';
 
 export type LeaveType = 'sick' | 'casual' | 'earned' | 'unpaid';
+export type LeavePayMode = 'paid' | 'unpaid';
 export type LeaveStatus = 'pending' | 'approved' | 'rejected';
 
 export interface LeaveApplication {
   _id: string;
   userId: string | { _id: string; firstName: string; lastName: string; email: string; employeeId?: string };
   leaveType: LeaveType;
+  payMode?: LeavePayMode;
   startDate: string;
   endDate: string;
   numberOfDays: number;
@@ -113,8 +115,8 @@ export const leaveService = {
     return unwrapLeaveList(res);
   },
 
-  async approve(leaveId: string): Promise<ApproveLeaveResult> {
-    const res = await apiClient.post(`leave/${leaveId}/approve`);
+  async approve(leaveId: string, payMode: LeavePayMode): Promise<ApproveLeaveResult> {
+    const res = await apiClient.post(`leave/${leaveId}/approve`, { payMode });
     const data = unwrap<ApproveLeaveResult>(res);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('attendance:refresh'));

@@ -18,4 +18,7 @@ export const CRM_SHELL_THEME = {
   badgeBg: 'bg-[#2e7ad1]',
   badgeRing: 'ring-[#2e7ad1]/30',
   headerDot: 'bg-[#2e7ad1]',
+  /** Sidebar nav icons — brand blue at rest + darker on hover */
+  iconText: 'text-[#2e7ad1]',
+  iconHover: 'group-hover:text-[#2568b8]',
 } as const;

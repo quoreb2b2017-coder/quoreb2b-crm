@@ -19,6 +19,7 @@ import {
   formatIstTime12h,
   listSessionsForIstDay,
   monthBounds,
+  MAX_DAILY_BREAKDOWN_ROWS,
   type ActivityLogRow,
 } from './employee-report.util';
 import {
@@ -49,6 +50,7 @@ import {
 } from './activity-actions.constant';
 import { AttendanceService } from '../attendance/attendance.service';
 import { BreakPunchesService } from '../break-punches/break-punches.service';
+import { WORK_DEDUCTIBLE_BREAK_TYPES } from '../break-punches/break-punch.constants';
 
 export interface TrackActivityContext {
   userId: string;
@@ -618,11 +620,20 @@ export class ActivityLogsService {
     const todayDateKey =
       sessionSnap.dailyBreakdown.find((d) => d.isToday)?.date ?? calendarDateKey(now);
     const { start: monthStart, end: monthEnd } = monthBounds(year, month);
-    const [breakToday, todayAttRecord, breakSessionsByDate] = await Promise.all([
-      this.breakPunchesService.getToday(userId),
-      this.attendanceService.getDayAttendanceRecord(userId, todayDateKey),
-      this.breakPunchesService.getBreakSessionsByDateForUser(userId, monthStart, monthEnd),
-    ]);
+    const [breakToday, todayAttRecord, breakSessionsByDate, workBreakMinutesByDate] =
+      await Promise.all([
+        this.breakPunchesService.getToday(userId),
+        this.attendanceService.getDayAttendanceRecord(userId, todayDateKey),
+        this.breakPunchesService.getBreakSessionsByDateForUser(userId, monthStart, monthEnd),
+        this.breakPunchesService.getBreakMinutesByDateForUser(
+          userId,
+          monthStart,
+          monthEnd,
+          now,
+          false,
+          WORK_DEDUCTIBLE_BREAK_TYPES,
+        ),
+      ]);
     const todayBreakSessions = breakSessionsByDate.get(todayDateKey) ?? [];
     const onBreak = Boolean(breakToday.activeType);
     const todayBreakMinutes = attendanceSnap.todayBreakMinutes ?? 0;
@@ -656,31 +667,50 @@ export class ActivityLogsService {
       todayAttRecord: todayAttRecord ?? undefined,
       onBreak,
       todayWorkBreakMinutesLive,
-      attendanceBreakByDate: new Map(
-        attendanceSnap.dailyBreakdown.map((row) => [row.date, row.breakMinutes]),
-      ),
+      attendanceBreakByDate: workBreakMinutesByDate,
       breakSessionsByDate,
     });
 
-    const dailyBreakdown = sessionSnap.dailyBreakdown.map((day) => {
-      const metrics = workMetricsByDay.get(day.date);
-      const grossMinutes = metrics?.grossMinutes ?? 0;
-      const breakMinutesForDay = metrics?.breakMinutes ?? 0;
-      const netMinutes = metrics?.netMinutes ?? 0;
-      return {
-        date: day.date,
-        dayLabel: day.dayLabel,
-        totalMinutes: netMinutes,
-        totalFormatted: formatDuration(netMinutes),
-        grossMinutes,
-        breakMinutes: breakMinutesForDay,
-        dailyTargetMet: isDailyWorkQuotaMet(netMinutes),
-        isToday: day.isToday,
-      };
-    });
+    // Also fold attendance break map for days not in truncated attendance UI list
+    // by preferring full net from all session days + attendance monthly floor.
+    const dailyBreakdownAll = [...workMetricsByDay.entries()]
+      .map(([date, metrics]) => {
+        const isToday = date === todayDateKey;
+        const d = new Date(`${date}T12:00:00`);
+        return {
+          date,
+          dayLabel: isToday
+            ? 'Today'
+            : formatInWorkspace(d, { weekday: 'short', day: 'numeric' }),
+          totalMinutes: metrics.netMinutes,
+          totalFormatted: formatDuration(metrics.netMinutes),
+          grossMinutes: metrics.grossMinutes,
+          breakMinutes: metrics.breakMinutes,
+          dailyTargetMet: isDailyWorkQuotaMet(metrics.netMinutes),
+          isToday,
+        };
+      })
+      .filter((row) => row.totalMinutes > 0 || row.isToday)
+      .sort((a, b) => {
+        if (a.isToday) return -1;
+        if (b.isToday) return 1;
+        return b.date.localeCompare(a.date);
+      });
+
+    const sessionMonthlyMinutes = dailyBreakdownAll.reduce(
+      (sum, row) => sum + row.totalMinutes,
+      0,
+    );
+    // Attendance snapshot monthly already includes full month (not truncated).
+    // Use the higher of the two so punch-only days aren't dropped.
+    const monthlyMinutes = Math.max(
+      sessionMonthlyMinutes,
+      attendanceSnap.monthlyMinutes ?? 0,
+    );
+    const dailyBreakdown = dailyBreakdownAll.slice(0, MAX_DAILY_BREAKDOWN_ROWS);
 
     const todayGrossMinutes =
-      dailyBreakdown.find((d) => d.isToday)?.grossMinutes ??
+      dailyBreakdownAll.find((d) => d.isToday)?.grossMinutes ??
       resolveGrossLoginMinutes(
         sessionSnap.dailyBreakdown.find((d) => d.isToday)?.totalMinutes ?? 0,
         grossAttendanceRecord,
@@ -697,7 +727,6 @@ export class ActivityLogsService {
       );
     const todayMinutes = computeNetWorkMinutes(todayGrossMinutes, breaksForLiveNet);
     const todayMinutesAtTarget = computeNetWorkMinutes(todayGrossMinutes, breaksForLiveNet);
-    const monthlyMinutes = dailyBreakdown.reduce((sum, row) => sum + row.totalMinutes, 0);
 
     const isTimerRunning = Boolean(sessionSnap.currentSession);
     const currentSession = sessionSnap.currentSession;

@@ -1,6 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent,
+} from 'react';
 import Link from 'next/link';
 import { Clock, ExternalLink, Loader2, StickyNote, X } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
@@ -16,6 +24,15 @@ import { toast } from '@/stores/toast.store';
 import { useQuickNoteStore } from '@/store/quick-note.store';
 import type { DashboardVariant } from '@/components/layout/DashboardLayout';
 import type { PersonalNote } from '@/types/personal-notes';
+
+const FAB_SIZE = 56;
+const FAB_PAD = 16;
+const PANEL_GAP = 16;
+const PANEL_WIDTH = 400;
+const DRAG_THRESHOLD = 6;
+const FAB_POS_KEY = 'crm.quick-note.fab-pos';
+
+type FabPos = { x: number; y: number };
 
 const ACCENT: Record<
   DashboardVariant,
@@ -43,6 +60,44 @@ const ACCENT: Record<
     link: 'text-violet-700 hover:text-violet-900',
   },
 };
+
+function defaultFabPos(): FabPos {
+  if (typeof window === 'undefined') return { x: FAB_PAD, y: FAB_PAD };
+  return {
+    x: Math.max(FAB_PAD, window.innerWidth - FAB_SIZE - 24),
+    y: Math.max(FAB_PAD, window.innerHeight - FAB_SIZE - 24),
+  };
+}
+
+function clampFabPos(pos: FabPos): FabPos {
+  if (typeof window === 'undefined') return pos;
+  const maxX = Math.max(FAB_PAD, window.innerWidth - FAB_SIZE - FAB_PAD);
+  const maxY = Math.max(FAB_PAD, window.innerHeight - FAB_SIZE - FAB_PAD);
+  return {
+    x: Math.min(maxX, Math.max(FAB_PAD, pos.x)),
+    y: Math.min(maxY, Math.max(FAB_PAD, pos.y)),
+  };
+}
+
+function readSavedFabPos(): FabPos | null {
+  try {
+    const raw = localStorage.getItem(FAB_POS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as FabPos;
+    if (typeof parsed?.x !== 'number' || typeof parsed?.y !== 'number') return null;
+    return clampFabPos(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function saveFabPos(pos: FabPos) {
+  try {
+    localStorage.setItem(FAB_POS_KEY, JSON.stringify(pos));
+  } catch {
+    /* ignore quota */
+  }
+}
 
 function personalNotesHref(variant: DashboardVariant): string {
   if (variant === 'admin') return '/admin/personal-notes';
@@ -74,8 +129,28 @@ export function QuickNotePad({ variant }: QuickNotePadProps) {
   const [recent, setRecent] = useState<PersonalNote[]>([]);
   const [loadingRecent, setLoadingRecent] = useState(false);
   const [capturedAt, setCapturedAt] = useState<Date | null>(null);
+  const [fabPos, setFabPos] = useState<FabPos>(defaultFabPos);
+  const [dragging, setDragging] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLTextAreaElement>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    moved: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    setFabPos(readSavedFabPos() ?? defaultFabPos());
+  }, []);
+
+  useEffect(() => {
+    const onResize = () => setFabPos((prev) => clampFabPos(prev));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const resetForm = useCallback((note: PersonalNote | null) => {
     if (note) {
@@ -126,9 +201,90 @@ export function QuickNotePad({ variant }: QuickNotePadProps) {
     return () => window.removeEventListener('keydown', onKey);
   }, [open, togglePad, closePad]);
 
+  const onFabPointerDown = (e: PointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: fabPos.x,
+      originY: fabPos.y,
+      moved: false,
+    };
+    setDragging(true);
+  };
+
+  const onFabPointerMove = (e: PointerEvent<HTMLButtonElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+    if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+    drag.moved = true;
+    setFabPos(clampFabPos({ x: drag.originX + dx, y: drag.originY + dy }));
+  };
+
+  const finishFabDrag = (e: PointerEvent<HTMLButtonElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* already released */
+    }
+    const wasDrag = drag.moved;
+    dragRef.current = null;
+    setDragging(false);
+    if (wasDrag) {
+      setFabPos((prev) => {
+        const next = clampFabPos(prev);
+        saveFabPos(next);
+        return next;
+      });
+      return;
+    }
+    if (open) closePad();
+    else openPad();
+  };
+
+  const panelStyle = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return { right: 24, bottom: 96 } as CSSProperties;
+    }
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const panelW = Math.min(vw - 24, PANEL_WIDTH);
+    const preferLeft = fabPos.x + FAB_SIZE / 2 > vw / 2;
+    const spaceAbove = fabPos.y - FAB_PAD;
+    const spaceBelow = vh - (fabPos.y + FAB_SIZE) - FAB_PAD;
+    const preferAbove = spaceAbove >= spaceBelow;
+
+    let left = preferLeft ? fabPos.x + FAB_SIZE - panelW : fabPos.x;
+    left = Math.min(Math.max(FAB_PAD, left), vw - panelW - FAB_PAD);
+
+    let top: number;
+    let maxHeight: number;
+    if (preferAbove) {
+      maxHeight = Math.min(640, Math.max(240, spaceAbove - PANEL_GAP));
+      top = fabPos.y - PANEL_GAP - maxHeight;
+    } else {
+      maxHeight = Math.min(640, Math.max(240, spaceBelow - PANEL_GAP));
+      top = fabPos.y + FAB_SIZE + PANEL_GAP;
+    }
+    top = Math.min(Math.max(FAB_PAD, top), vh - 120);
+
+    return {
+      left,
+      top,
+      right: 'auto',
+      bottom: 'auto',
+      maxHeight: `min(85vh, ${maxHeight}px)`,
+    } as CSSProperties;
+  }, [fabPos]);
+
   const handleSave = async () => {
     const body = content.trim();
-    const isCreate = !editingNote?.id;
     if (!title.trim() && !body) {
       setError('Add a title or write something in the note');
       return;
@@ -165,14 +321,19 @@ export function QuickNotePad({ variant }: QuickNotePadProps) {
     <>
       <button
         type="button"
-        onClick={() => (open ? closePad() : openPad())}
+        onPointerDown={onFabPointerDown}
+        onPointerMove={onFabPointerMove}
+        onPointerUp={finishFabDrag}
+        onPointerCancel={finishFabDrag}
+        onClick={(e) => e.preventDefault()}
+        style={{ left: fabPos.x, top: fabPos.y, right: 'auto', bottom: 'auto' }}
         className={cn(
-          'fixed bottom-6 right-6 z-[90] flex h-14 w-14 items-center justify-center rounded-full text-white shadow-lg ring-4 transition-transform hover:scale-105 active:scale-95',
+          'fixed z-[90] flex h-14 w-14 touch-none items-center justify-center rounded-full text-white shadow-lg ring-4 select-none',
+          dragging ? 'cursor-grabbing scale-105' : 'cursor-grab transition-transform hover:scale-105 active:scale-95',
           accent.fab,
           accent.fabRing,
-          open && 'rotate-0',
         )}
-        title="Quick note (Ctrl+Shift+N)"
+        title="Quick note — drag to move (Ctrl+Shift+N)"
         aria-label={open ? 'Close quick note' : 'Open quick note'}
         aria-expanded={open}
       >
@@ -188,9 +349,10 @@ export function QuickNotePad({ variant }: QuickNotePadProps) {
             onClick={closePad}
           />
           <aside
+            style={panelStyle}
             className={cn(
               'fixed z-[110] flex max-h-[min(85vh,640px)] w-[min(100vw-1.5rem,400px)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl',
-              'bottom-24 right-4 sm:right-6 animate-slide-in-right border-t-4',
+              'animate-slide-in-right border-t-4',
               accent.header,
             )}
             role="dialog"

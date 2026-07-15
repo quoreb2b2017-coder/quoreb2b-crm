@@ -45,7 +45,7 @@ const STATUS_STYLES: Record<string, string> = {
   'half-day': 'bg-[#EAB308]/20 text-[#A16207] font-semibold',
   late: 'bg-[#F59E0B]/20 text-[#B45309] font-semibold',
   weekend: 'bg-[#E5E7EB] text-slate-500 font-semibold',
-  holiday: 'bg-[#14B8A6]/15 text-[#0F766E] font-semibold',
+  holiday: 'bg-[#DB2777]/15 text-[#9D174D] font-semibold',
 };
 
 export interface AttendanceDailyRow {

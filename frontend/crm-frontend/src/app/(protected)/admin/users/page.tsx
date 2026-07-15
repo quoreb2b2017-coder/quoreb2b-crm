@@ -237,11 +237,15 @@ export default function AdminUsersPage() {
                       </button>
                     </>
                   ) : (
-                    <span className="text-xs italic text-slate-400">Not available for this user</span>
+                    <span className="text-xs italic text-slate-500">
+                      Hashed — not viewable (secure)
+                    </span>
                   )}
                 </div>
-                <p className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-600">
-                  Admin-only. Do not share this password.
+                <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                  Passwords are stored as bcrypt hashes in the database and cannot be
+                  viewed. Ask the user to reset via Change Password, or create a new
+                  temporary password when adding accounts.
                 </p>
               </div>
               <div className="px-5 pb-4">

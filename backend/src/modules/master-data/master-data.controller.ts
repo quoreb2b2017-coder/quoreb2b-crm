@@ -326,8 +326,14 @@ export class MasterDataController {
 
   @Get('upload-requests/employee/inbox')
   @Roles(SystemRole.DB_ADMIN, SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
-  listEmployeeUploadRequestsForDbAdmin(@Query() query: ListMasterDataUploadRequestsDto) {
-    return this.masterDataService.listEmployeeUploadRequestsForDbAdmin(query);
+  listEmployeeUploadRequestsForDbAdmin(
+    @Query() query: ListMasterDataUploadRequestsDto,
+    @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
+  ) {
+    return this.masterDataService.listEmployeeUploadRequestsForDbAdmin(
+      query,
+      user.roles ?? [],
+    );
   }
 
   @Get('upload-requests/my')

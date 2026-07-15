@@ -56,8 +56,23 @@ export class UsersRepository extends BaseRepository<User> {
     return this.model.find({ _id: { $in: objectIds } }).exec();
   }
 
-  async findPlainPassword(id: string): Promise<string | null> {
-    const user = await this.model.findById(id).select('+plainPassword').lean().exec();
-    return (user as unknown as { plainPassword?: string })?.plainPassword ?? null;
+  async findPlainPassword(_id: string): Promise<string | null> {
+    return null;
+  }
+
+  async unsetPlainPassword(id: string): Promise<void> {
+    if (!Types.ObjectId.isValid(id)) return;
+    await this.model.updateOne({ _id: id }, { $unset: { plainPassword: 1 } }).exec();
+  }
+
+  /** One-time / startup wipe — remove any leftover plaintext passwords from MongoDB. */
+  async wipeAllPlainPasswords(): Promise<number> {
+    const result = await this.model
+      .updateMany(
+        { plainPassword: { $exists: true, $nin: [null, ''] } },
+        { $unset: { plainPassword: 1 } },
+      )
+      .exec();
+    return result.modifiedCount ?? 0;
   }
 }

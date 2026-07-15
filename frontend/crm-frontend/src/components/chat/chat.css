@@ -639,3 +639,248 @@
     max-width: 88%;
   }
 }
+
+.wa-chat__observe-icon {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  margin-right: 0.25rem;
+  vertical-align: -0.1rem;
+  opacity: 0.7;
+}
+
+.wa-chat__files {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
+}
+
+.wa-chat__file {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  max-width: 260px;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid rgb(0 0 0 / 8%);
+  border-radius: 0.55rem;
+  background: rgb(255 255 255 / 55%);
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+
+.wa-chat__file strong {
+  display: block;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  word-break: break-all;
+}
+
+.wa-chat__file em {
+  display: block;
+  font-size: 0.68rem;
+  font-style: normal;
+  opacity: 0.7;
+}
+
+.wa-chat__file span {
+  flex: 1;
+  min-width: 0;
+}
+
+.wa-chat__observer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.75rem 1rem;
+  background: #eef6ff;
+  color: #1e4b7a;
+  font-size: 0.8rem;
+  border-top: 1px solid #d7e6f7;
+  flex-shrink: 0;
+}
+
+.wa-chat__attach {
+  display: grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--wa-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.wa-chat__attach:hover {
+  background: #e9edef;
+  color: var(--wa-text);
+}
+
+.wa-chat__composer-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.wa-chat__composer-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.wa-chat__composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.2rem;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgb(11 20 26 / 6%);
+  padding-left: 0.15rem;
+}
+
+.wa-chat__composer-main textarea,
+.wa-chat__composer-row textarea {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  border-radius: 12px;
+  padding: 0.72rem 0.85rem 0.72rem 0.35rem;
+  background: transparent;
+  outline: none;
+  resize: none;
+  max-height: 140px;
+  font: inherit;
+  font-size: 0.92rem;
+  line-height: 1.35;
+  color: var(--wa-text);
+  box-shadow: none;
+}
+
+.wa-chat__composer .wa-chat__emoji-btn {
+  display: grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  margin: 0.25rem 0 0.25rem 0.15rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--wa-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transform: none;
+  box-shadow: none;
+}
+
+.wa-chat__composer .wa-chat__emoji-btn:hover,
+.wa-chat__composer .wa-chat__emoji-btn.is-open {
+  background: #e9edef;
+  color: var(--wa-text);
+  transform: none;
+}
+
+.wa-chat__composer .wa-chat__emoji-item {
+  display: grid;
+  place-items: center;
+  width: auto;
+  height: 2rem;
+  border: none;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: inherit;
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+  transform: none;
+  box-shadow: none;
+}
+
+.wa-chat__composer .wa-chat__emoji-item:hover {
+  background: #f0f2f5;
+  transform: none;
+}
+
+.wa-chat__emoji-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 0.45rem);
+  z-index: 20;
+  max-height: 220px;
+  overflow: auto;
+  padding: 0.55rem 0.6rem 0.65rem;
+  border: 1px solid var(--wa-border);
+  border-radius: 0.85rem;
+  background: #fff;
+  box-shadow: 0 10px 28px rgb(11 20 26 / 14%);
+}
+
+.wa-chat__emoji-group + .wa-chat__emoji-group {
+  margin-top: 0.55rem;
+}
+
+.wa-chat__emoji-group p {
+  margin: 0 0 0.35rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--wa-muted);
+}
+
+.wa-chat__emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 0.15rem;
+}
+
+.wa-chat__pending-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.wa-chat__pending-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 180px;
+  padding: 0.2rem 0.4rem;
+  border-radius: 999px;
+  background: #e9edef;
+  font-size: 0.68rem;
+  color: var(--wa-text);
+}
+
+.wa-chat__pending-chip button {
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: var(--wa-muted);
+  cursor: pointer;
+  padding: 0;
+  width: auto;
+  height: auto;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

@@ -56,8 +56,13 @@ export interface MasterDataUploadMonthExplorerProps {
   emptyFolderMessage?: string;
   statusColumnLabel?: string;
   showSubmittedBy?: boolean;
-  variant?: 'default' | 'employee';
+  /** employee = My Data folders; admin = all uploads + rich Duplicates folder */
+  variant?: 'default' | 'employee' | 'admin';
+  /** How to render folders when variant splits uploads/duplicates */
+  folderMode?: 'split' | 'uploads' | 'duplicates';
   onOpenRequest?: (request: MasterDataUploadRequest) => void;
+  onDeleteRequest?: (request: MasterDataUploadRequest) => void;
+  deleteLoadingId?: string | null;
   renderDetails?: (
     monthRequests: MasterDataUploadRequest[],
     meta: { year: number; month: number; monthLabel: string },
@@ -73,7 +78,10 @@ export function MasterDataUploadMonthExplorer({
   statusColumnLabel = 'Status',
   showSubmittedBy = false,
   variant = 'default',
+  folderMode = 'split',
   onOpenRequest,
+  onDeleteRequest,
+  deleteLoadingId,
   renderDetails,
 }: MasterDataUploadMonthExplorerProps) {
   const { month: currentMonth, year: currentYear } = currentCalendarPeriod();
@@ -110,11 +118,21 @@ export function MasterDataUploadMonthExplorer({
 
   const selectedMonthLabel = monthLabel(selectedMonth);
   const isEmployeeView = variant === 'employee';
+  const isAdminView = variant === 'admin';
+  const splitFolders =
+    (isEmployeeView || isAdminView) && folderMode === 'split';
+  const uploadsOnly =
+    (isEmployeeView || isAdminView) && folderMode === 'uploads';
+  const duplicatesOnly =
+    (isEmployeeView || isAdminView) && folderMode === 'duplicates';
   const resolvedStatusLabel = isEmployeeView ? 'Type' : statusColumnLabel;
 
   const { employeeUploadFiles, employeeDuplicateFiles } = useMemo(() => {
-    if (!isEmployeeView) {
-      return { employeeUploadFiles: selectedMonthRequests, employeeDuplicateFiles: [] as MasterDataUploadRequest[] };
+    if (!splitFolders && !uploadsOnly && !duplicatesOnly) {
+      return {
+        employeeUploadFiles: selectedMonthRequests,
+        employeeDuplicateFiles: [] as MasterDataUploadRequest[],
+      };
     }
     const uploads: MasterDataUploadRequest[] = [];
     const duplicates: MasterDataUploadRequest[] = [];
@@ -126,19 +144,30 @@ export function MasterDataUploadMonthExplorer({
       }
     }
     return { employeeUploadFiles: uploads, employeeDuplicateFiles: duplicates };
-  }, [isEmployeeView, selectedMonthRequests]);
+  }, [splitFolders, uploadsOnly, duplicatesOnly, selectedMonthRequests]);
+
+  const showDuplicateColumns = isAdminView && (splitFolders || duplicatesOnly);
 
   const tableColumns = [
     'File',
-    ...(showSubmittedBy ? ['Employee'] : []),
+    ...(showSubmittedBy || isAdminView ? ['Employee'] : []),
+    ...(showDuplicateColumns ? ['Campaign', 'DB', 'Super Admin'] : []),
     'Uploaded',
     'Contacts',
     resolvedStatusLabel,
     '',
   ] as const;
 
-  const renderRequestTable = (monthRequests: MasterDataUploadRequest[]) => (
-    <table className="w-full min-w-[640px] text-sm">
+  const renderRequestTable = (
+    monthRequests: MasterDataUploadRequest[],
+    opts?: { duplicates?: boolean },
+  ) => (
+    <table
+      className={cn(
+        'w-full text-sm',
+        showDuplicateColumns || opts?.duplicates ? 'min-w-[980px]' : 'min-w-[640px]',
+      )}
+    >
       <thead>
         <tr className="border-b border-slate-100 bg-slate-50/80 text-left text-[10px] font-bold uppercase tracking-wide text-slate-500">
           {tableColumns.map((label) => (
@@ -158,14 +187,35 @@ export function MasterDataUploadMonthExplorer({
               <div className="font-medium text-slate-900">{request.fileName}</div>
               <div className="text-xs text-slate-500">{request.sheetName}</div>
             </td>
-            {showSubmittedBy && (
-              <td className="px-4 py-3 text-slate-700">{request.submittedByEmail ?? '—'}</td>
+            {(showSubmittedBy || isAdminView) && (
+              <td className="px-4 py-3 text-slate-700">
+                <div className="font-medium text-slate-800">
+                  {request.submittedByName || '—'}
+                </div>
+                {request.submittedByEmail &&
+                  request.submittedByName &&
+                  request.submittedByEmail !== request.submittedByName && (
+                    <div className="text-[11px] text-slate-500">{request.submittedByEmail}</div>
+                  )}
+                {!request.submittedByName && request.submittedByEmail && (
+                  <div className="text-[11px] text-slate-500">{request.submittedByEmail}</div>
+                )}
+              </td>
+            )}
+            {isAdminView && (showDuplicateColumns || opts?.duplicates) && (
+              <>
+                <td className="px-4 py-3 text-slate-700">
+                  {request.campaignName || '—'}
+                </td>
+                <td className="px-4 py-3 text-slate-700">{request.dbName || 'Master Data'}</td>
+                <td className="px-4 py-3 text-slate-700">{request.adminName || '—'}</td>
+              </>
             )}
             <td className="whitespace-nowrap px-4 py-3 text-slate-600">
               {formatRequestDate(request.createdAt)}
             </td>
             <td className="px-4 py-3 font-mono tabular-nums text-slate-800">
-              {isEmployeeView
+              {isEmployeeView || opts?.duplicates
                 ? formatUploadRequestContactSummary(request)
                 : request.rowCount}
             </td>
@@ -175,24 +225,40 @@ export function MasterDataUploadMonthExplorer({
                   'inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset',
                   isEmployeeView
                     ? EMPLOYEE_UPLOAD_FILE_TYPE_STYLES[getEmployeeUploadFileType(request)]
-                    : cn('capitalize', statusBadgeClass(request.status)),
+                    : opts?.duplicates
+                      ? 'bg-amber-50 text-amber-800 ring-amber-200/60'
+                      : cn('capitalize', statusBadgeClass(request.status)),
                 )}
               >
                 {isEmployeeView
                   ? getEmployeeUploadFileTypeLabel(request)
-                  : request.status.replace(/_/g, ' ')}
+                  : opts?.duplicates
+                    ? 'Duplicates'
+                    : request.status.replace(/_/g, ' ')}
               </span>
             </td>
             <td className="px-4 py-3 text-right">
-              {onOpenRequest && (
-                <button
-                  type="button"
-                  onClick={() => onOpenRequest(request)}
-                  className="rounded-lg bg-[#2e7ad1] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-[#2568b8] active:scale-[0.98]"
-                >
-                  Open
-                </button>
-              )}
+              <div className="inline-flex items-center gap-1.5">
+                {onOpenRequest && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenRequest(request)}
+                    className="rounded-lg bg-[#2e7ad1] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-[#2568b8] active:scale-[0.98]"
+                  >
+                    Open
+                  </button>
+                )}
+                {isAdminView && onDeleteRequest && (opts?.duplicates || duplicatesOnly) && (
+                  <button
+                    type="button"
+                    disabled={deleteLoadingId === request.id}
+                    onClick={() => onDeleteRequest(request)}
+                    className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-600 transition-all hover:bg-red-50 disabled:opacity-50"
+                  >
+                    {deleteLoadingId === request.id ? '…' : 'Delete'}
+                  </button>
+                )}
+              </div>
             </td>
           </tr>
         ))}
@@ -286,13 +352,34 @@ export function MasterDataUploadMonthExplorer({
                 <div className="px-4 py-12 text-center text-sm text-slate-500">
                   {emptyFolderMessage ?? `No files in ${selectedMonthLabel} ${selectedYear} yet.`}
                 </div>
-              ) : isEmployeeView ? (
+              ) : uploadsOnly ? (
+                employeeUploadFiles.length === 0 ? (
+                  <div className="px-4 py-12 text-center text-sm text-slate-500">
+                    {emptyFolderMessage ?? 'No employee uploads this month.'}
+                  </div>
+                ) : (
+                  renderRequestTable(employeeUploadFiles)
+                )
+              ) : duplicatesOnly ? (
+                employeeDuplicateFiles.length === 0 ? (
+                  <div className="px-4 py-12 text-center text-sm text-slate-500">
+                    {emptyFolderMessage ?? 'No duplicate files this month.'}
+                  </div>
+                ) : (
+                  renderRequestTable(employeeDuplicateFiles, { duplicates: true })
+                )
+              ) : splitFolders ? (
                 <div className="divide-y divide-slate-100">
                   <div>
                     <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-4 py-2.5">
                       <FolderOpen className="h-4 w-4 text-[#2e7ad1]" />
                       <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">
-                        Your uploads
+                        {isAdminView ? 'Employee uploads' : 'Your uploads'}
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        {isAdminView
+                          ? '· new data employees submit from My Data'
+                          : '· your uploaded / merged files'}
                       </span>
                       <span className="rounded-full bg-slate-200/80 px-2 py-0.5 font-mono text-[10px] tabular-nums text-slate-600">
                         {employeeUploadFiles.length}
@@ -300,7 +387,9 @@ export function MasterDataUploadMonthExplorer({
                     </div>
                     {employeeUploadFiles.length === 0 ? (
                       <div className="px-4 py-8 text-center text-sm text-slate-500">
-                        No merged uploads this month.
+                        {isAdminView
+                          ? 'No employee uploads this month — when an employee uploads from My Data, the file appears here.'
+                          : 'No merged uploads this month.'}
                       </div>
                     ) : (
                       renderRequestTable(employeeUploadFiles)
@@ -312,16 +401,21 @@ export function MasterDataUploadMonthExplorer({
                       <span className="text-xs font-semibold uppercase tracking-wide text-amber-900">
                         Duplicates folder
                       </span>
+                      <span className="text-[11px] text-amber-800/80">
+                        · rows already in master (separate from uploads)
+                      </span>
                       <span className="rounded-full bg-amber-200/80 px-2 py-0.5 font-mono text-[10px] tabular-nums text-amber-900">
                         {employeeDuplicateFiles.length}
                       </span>
                     </div>
                     {employeeDuplicateFiles.length === 0 ? (
                       <div className="px-4 py-8 text-center text-sm text-slate-500">
-                        No duplicate files this month. Rows already in master are saved here after upload.
+                        {isAdminView
+                          ? 'No duplicate files this month from any employee or upload.'
+                          : 'No duplicate files this month. Rows already in master are saved here after upload.'}
                       </div>
                     ) : (
-                      renderRequestTable(employeeDuplicateFiles)
+                      renderRequestTable(employeeDuplicateFiles, { duplicates: true })
                     )}
                   </div>
                 </div>

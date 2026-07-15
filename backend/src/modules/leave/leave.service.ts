@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Leave } from './schemas/leave.schema';
@@ -15,6 +15,7 @@ import {
   weekdayDateKeysBetween,
   yearFromDateKey,
 } from './leave-balance.util';
+import { SystemRole } from '../../common/constants/roles.constant';
 
 @Injectable()
 export class LeaveService {
@@ -140,24 +141,7 @@ export class LeaveService {
       throw new BadRequestException('Leave range has no weekdays (weekends only)');
     }
 
-    if (dto.leaveType !== 'unpaid') {
-      const years = new Set([
-        yearFromDateKey(dto.startDate.slice(0, 10)),
-        yearFromDateKey(dto.endDate.slice(0, 10)),
-      ]);
-      for (const year of years) {
-        const balance = await this.getLeaveBalance(dto.userId, year);
-        const daysInYear = weekdayDateKeysBetween(dto.startDate, dto.endDate).filter(
-          (key) => yearFromDateKey(key) === year,
-        ).length;
-        if (daysInYear > balance.paidDaysRemaining) {
-          throw new BadRequestException(
-            `Only ${balance.paidDaysRemaining} paid leave day(s) remaining for ${year} (allowance ${ANNUAL_PAID_LEAVE_ALLOWANCE})`,
-          );
-        }
-      }
-    }
-
+    // Paid vs unpaid is decided by Super Admin on approve — no balance gate at apply.
     const leave = new this.leaveModel({
       userId: new Types.ObjectId(dto.userId),
       leaveType: dto.leaveType,
@@ -224,7 +208,10 @@ export class LeaveService {
     };
   }
 
-  private async syncApprovedLeaveToAttendance(leave: Leave) {
+  private async syncApprovedLeaveToAttendance(
+    leave: Leave,
+    payMode: 'paid' | 'unpaid',
+  ) {
     const userId = leave.userId.toString();
     const weekdayKeys = weekdayDateKeysBetween(
       toDateKey(leave.startDate),
@@ -237,16 +224,22 @@ export class LeaveService {
 
     for (const dateKey of weekdayKeys) {
       const year = yearFromDateKey(dateKey);
+      if (payMode === 'unpaid') {
+        unpaidKeys.push(dateKey);
+        continue;
+      }
+
       if (!remainingByYear.has(year)) {
         const balance = await this.getLeaveBalance(userId, year);
         remainingByYear.set(year, balance.paidDaysRemaining);
       }
 
-      const usePaid = leave.leaveType !== 'unpaid' && (remainingByYear.get(year) ?? 0) > 0;
-      if (usePaid) {
+      const remaining = remainingByYear.get(year) ?? 0;
+      if (remaining > 0) {
         paidKeys.push(dateKey);
-        remainingByYear.set(year, (remainingByYear.get(year) ?? 0) - 1);
+        remainingByYear.set(year, remaining - 1);
       } else {
+        // Balance exhausted — remaining days fall to unpaid automatically
         unpaidKeys.push(dateKey);
       }
     }
@@ -261,7 +254,19 @@ export class LeaveService {
     return { paidDaysApplied: paidKeys.length, unpaidDaysApplied: unpaidKeys.length };
   }
 
-  async approveLeave(leaveId: string, approvedBy: string) {
+  async approveLeave(
+    leaveId: string,
+    approvedBy: string,
+    payMode: 'paid' | 'unpaid',
+    actorRoles: string[] = [],
+  ) {
+    const isSuperAdmin =
+      actorRoles.includes(SystemRole.SUPER_ADMIN) ||
+      actorRoles.includes(SystemRole.ADMIN);
+    if (!isSuperAdmin) {
+      throw new ForbiddenException('Only Super Admin can approve leave and choose paid/unpaid');
+    }
+
     const existing = await this.leaveModel.findById(leaveId).exec();
     if (!existing) {
       throw new BadRequestException('Leave request not found');
@@ -270,8 +275,29 @@ export class LeaveService {
       throw new BadRequestException('Only pending leave requests can be approved');
     }
 
+    if (payMode === 'paid') {
+      const years = new Set(
+        weekdayDateKeysBetween(
+          toDateKey(existing.startDate),
+          toDateKey(existing.endDate),
+        ).map((k) => yearFromDateKey(k)),
+      );
+      for (const year of years) {
+        const balance = await this.getLeaveBalance(existing.userId.toString(), year);
+        const daysInYear = weekdayDateKeysBetween(
+          toDateKey(existing.startDate),
+          toDateKey(existing.endDate),
+        ).filter((key) => yearFromDateKey(key) === year).length;
+        if (daysInYear > balance.paidDaysRemaining) {
+          throw new BadRequestException(
+            `Only ${balance.paidDaysRemaining} paid leave day(s) remaining for ${year}. Approve as Unpaid, or choose a shorter range.`,
+          );
+        }
+      }
+    }
+
     const { paidDaysApplied, unpaidDaysApplied } =
-      await this.syncApprovedLeaveToAttendance(existing);
+      await this.syncApprovedLeaveToAttendance(existing, payMode);
 
     const leave = await this.leaveModel.findByIdAndUpdate(
       leaveId,
@@ -279,6 +305,7 @@ export class LeaveService {
         status: 'approved',
         approvedBy: new Types.ObjectId(approvedBy),
         approvalDate: new Date(),
+        payMode,
         paidDaysApplied,
         unpaidDaysApplied,
         numberOfDays: paidDaysApplied + unpaidDaysApplied,
@@ -314,10 +341,11 @@ export class LeaveService {
         applicantUserId: leave.userId.toString(),
         paidDaysApplied,
         unpaidDaysApplied,
+        payMode,
         balance,
       };
     }
-    return { leave, paidDaysApplied, unpaidDaysApplied };
+    return { leave, paidDaysApplied, unpaidDaysApplied, payMode };
   }
 
   async rejectLeave(leaveId: string, rejectionReason: string) {

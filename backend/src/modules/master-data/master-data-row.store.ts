@@ -549,6 +549,67 @@ export class MasterDataRowStore {
   }
 
   /**
+   * Scan all storage chunks and collect every distinct value for one column
+   * (used for Lead Type so the filter shows all types, not just sample/top-N).
+   */
+  async collectDistinctColumnValues(
+    doc: Pick<MasterDataRecord, 'key' | 'rows' | 'storage' | 'headers'>,
+    header: string,
+    maxUnique = 500,
+  ): Promise<string[]> {
+    const headers = (doc.headers as string[]) ?? [];
+    const colIdx = headers.findIndex(
+      (h) => h.trim().toLowerCase() === header.trim().toLowerCase(),
+    );
+    if (colIdx < 0) return [];
+
+    const set = new Set<string>();
+
+    const addFromRows = (rows: string[][]) => {
+      for (const row of rows) {
+        const v = String(row[colIdx] ?? '').trim();
+        if (!v) continue;
+        set.add(v);
+        if (set.size >= maxUnique) return true;
+      }
+      return false;
+    };
+
+    if (!this.isChunked(doc)) {
+      addFromRows((doc.rows as string[][]) ?? []);
+    } else {
+      const metas = await this.chunkModel
+        .find({ masterKey: doc.key })
+        .sort({ chunkIndex: 1 })
+        .select('chunkIndex')
+        .lean()
+        .exec();
+
+      const PARALLEL = 8;
+      for (let i = 0; i < metas.length; i += PARALLEL) {
+        const batch = metas.slice(i, i + PARALLEL);
+        const chunks = await this.chunkModel
+          .find({
+            masterKey: doc.key,
+            chunkIndex: { $in: batch.map((m) => m.chunkIndex) },
+          })
+          .select('chunkIndex rows')
+          .lean()
+          .exec();
+        chunks.sort((a, b) => a.chunkIndex - b.chunkIndex);
+        for (const chunk of chunks) {
+          if (addFromRows((chunk.rows as string[][]) ?? [])) break;
+        }
+        if (set.size >= maxUnique) break;
+      }
+    }
+
+    return [...set].sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: 'base' }),
+    );
+  }
+
+  /**
    * Scan chunked storage and return absolute row indices matching filters (streams chunks).
    * Prefer OpenSearch path in MasterDataService when available — this is the Mongo fallback.
    */

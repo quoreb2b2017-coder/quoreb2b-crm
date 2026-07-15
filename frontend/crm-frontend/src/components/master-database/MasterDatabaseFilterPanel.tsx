@@ -138,7 +138,10 @@ export function MasterDatabaseFilterPanel({
 
                   {col.options.length > 0 && (
                     <div className="mdb-field-card__options">
-                      {col.options.slice(0, 12).map((opt) => (
+                      {(/^lead type$/i.test(col.header)
+                        ? col.options
+                        : col.options.slice(0, 12)
+                      ).map((opt) => (
                         <label key={opt} className="mdb-option-chip">
                           <input
                             type="checkbox"
@@ -155,7 +158,7 @@ export function MasterDatabaseFilterPanel({
                           <span title={opt}>{opt}</span>
                         </label>
                       ))}
-                      {col.options.length > 12 && (
+                      {!/^lead type$/i.test(col.header) && col.options.length > 12 && (
                         <span className="mdb-field-card__more">+{col.options.length - 12} more in data</span>
                       )}
                     </div>

@@ -40,6 +40,7 @@ export class User extends Document {
   @Prop()
   lastLoginAt?: Date;
 
+  /** @deprecated Never store reversible passwords — login uses passwordHash (bcrypt) only. */
   @Prop({ select: false })
   plainPassword?: string;
 

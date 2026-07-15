@@ -1,6 +1,6 @@
 import { Controller, Post, Get, Body, Query, Param, UseGuards, Req } from '@nestjs/common';
 import { LeaveService } from './leave.service';
-import { ApplyLeaveDto, LeaveQueryDto } from './dto/leave.dto';
+import { ApplyLeaveDto, ApproveLeaveDto, LeaveQueryDto } from './dto/leave.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 
 @Controller('leave')
@@ -46,8 +46,17 @@ export class LeaveController {
   }
 
   @Post(':leaveId/approve')
-  async approveLeave(@Param('leaveId') leaveId: string, @Req() req: any) {
-    return this.leaveService.approveLeave(leaveId, req.user.id);
+  async approveLeave(
+    @Param('leaveId') leaveId: string,
+    @Body() dto: ApproveLeaveDto,
+    @Req() req: any,
+  ) {
+    return this.leaveService.approveLeave(
+      leaveId,
+      req.user.id,
+      dto.payMode,
+      req.user.roles ?? [],
+    );
   }
 
   @Post(':leaveId/reject')

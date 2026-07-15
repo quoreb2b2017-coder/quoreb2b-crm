@@ -75,7 +75,6 @@ export class SeedService implements OnModuleInit {
       const doc = {
         email,
         passwordHash,
-        plainPassword: u.password,
         firstName: u.firstName,
         lastName: u.lastName,
         employeeId,
@@ -85,7 +84,11 @@ export class SeedService implements OnModuleInit {
         isActive: true,
       };
 
-      await this.userModel.updateOne({ email }, { $set: doc }, { upsert: true });
+      await this.userModel.updateOne(
+        { email },
+        { $set: doc, $unset: { plainPassword: 1 } },
+        { upsert: true },
+      );
 
       if (employeeId) {
         await this.userModel.updateMany(

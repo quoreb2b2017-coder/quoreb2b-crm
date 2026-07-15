@@ -5,11 +5,17 @@ export const DISPOSITION_KIND_LABELS: Record<DispositionKind, string> = {
   direct_voicemail: 'Direct Voicemail',
 };
 
-/** Employee dropdown values — Lead/Active/Won route to QC; DNC/VM route to disposition archive */
+/**
+ * Employee dropdown values:
+ * - Lead → QC
+ * - Voicemail / Not Interested → update row only (stay on campaign)
+ * - Callback → update row + reminder setup
+ * - Do Not Call → DNC archive database
+ */
 export const EMPLOYEE_DISPOSITION_OPTIONS = [
-  'Active',
   'Lead',
-  'Won',
+  'Voicemail',
+  'Callback',
   'Do Not Call',
-  'Direct Voicemail',
+  'Not Interested',
 ] as const;

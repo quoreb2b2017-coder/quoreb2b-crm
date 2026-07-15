@@ -389,6 +389,7 @@ export class SuppressionDataService {
         headers: sourceHeaders,
         rows: matchingRows,
         sourceRole: duplicateSourceRole,
+        campaignName: String(campaign.name ?? 'Suppression campaign'),
       });
     }
 

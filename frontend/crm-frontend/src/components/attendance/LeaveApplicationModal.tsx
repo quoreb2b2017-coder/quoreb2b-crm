@@ -8,7 +8,6 @@ import { countWeekdaysBetween } from '@/lib/attendance/leave-balance';
 import { PaidLeaveBalanceCard } from '@/components/attendance/PaidLeaveBalanceCard';
 import {
   SideSheet,
-  sideSheetChipClass,
   sideSheetFieldClass,
   sideSheetPrimaryBtn,
   type SideSheetAccent,
@@ -29,7 +28,7 @@ export function LeaveApplicationModal({
   userId,
   accent = 'emerald',
 }: LeaveApplicationModalProps) {
-  const [leaveType, setLeaveType] = useState<'sick' | 'casual' | 'earned' | 'unpaid'>('casual');
+  const [leaveType, setLeaveType] = useState<'sick' | 'casual'>('casual');
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [reason, setReason] = useState('');
@@ -120,17 +119,37 @@ export function LeaveApplicationModal({
             Leave type
           </label>
           <div className="grid grid-cols-2 gap-2">
-            {(['sick', 'casual', 'earned', 'unpaid'] as const).map((type) => (
+            {(
+              [
+                {
+                  type: 'sick' as const,
+                  idle: 'border-rose-200 bg-rose-50 text-rose-800 hover:border-rose-300',
+                  active: 'border-rose-600 bg-rose-600 text-white shadow-md',
+                },
+                {
+                  type: 'casual' as const,
+                  idle: 'border-sky-200 bg-sky-50 text-sky-800 hover:border-sky-300',
+                  active: 'border-sky-600 bg-sky-600 text-white shadow-md',
+                },
+              ] as const
+            ).map(({ type, idle, active }) => (
               <button
                 key={type}
                 type="button"
                 onClick={() => setLeaveType(type)}
-                className={sideSheetChipClass(leaveType === type, accent)}
+                className={
+                  leaveType === type
+                    ? `rounded-xl border px-3 py-2.5 text-sm font-semibold capitalize transition-all ${active}`
+                    : `rounded-xl border px-3 py-2.5 text-sm font-semibold capitalize transition-all ${idle}`
+                }
               >
                 {type}
               </button>
             ))}
           </div>
+          <p className="mt-2 text-[11px] text-slate-500">
+            Paid or unpaid is decided by Super Admin when they approve your request.
+          </p>
         </div>
 
         <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-sm">
@@ -159,9 +178,9 @@ export function LeaveApplicationModal({
           </div>
           <div className="mt-3 rounded-lg bg-violet-50 border border-violet-100 px-3 py-2 text-sm text-violet-900">
             <span className="font-semibold">{weekdayDays}</span> weekday(s) — weekends excluded
-            {leaveType !== 'unpaid' && weekdayDays > 0 && (
+            {weekdayDays > 0 && (
               <span className="block text-[11px] text-violet-700 mt-0.5">
-                Paid leave balance will be checked on submit
+                Super Admin will mark this as paid or unpaid on approval
               </span>
             )}
           </div>

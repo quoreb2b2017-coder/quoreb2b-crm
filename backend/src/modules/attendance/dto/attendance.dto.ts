@@ -20,8 +20,8 @@ export class MarkAttendanceDto {
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   date: string;
 
-  @IsEnum(['present', 'absent', 'leave', 'half-day', 'weekend'])
-  status: 'present' | 'absent' | 'leave' | 'half-day' | 'weekend';
+  @IsEnum(['present', 'absent', 'leave', 'half-day', 'weekend', 'holiday'])
+  status: 'present' | 'absent' | 'leave' | 'half-day' | 'weekend' | 'holiday';
 
   /** HH:mm (optional, for present / half-day) */
   @IsOptional()
@@ -67,7 +67,7 @@ export class AttendanceQueryDto {
   endDate?: string;
 
   @IsOptional()
-  @IsEnum(['present', 'absent', 'leave', 'half-day', 'weekend'])
+  @IsEnum(['present', 'absent', 'leave', 'half-day', 'weekend', 'holiday'])
   status?: string;
 
   @IsOptional()

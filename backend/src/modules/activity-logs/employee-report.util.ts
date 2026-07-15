@@ -166,7 +166,7 @@ export interface BuildSessionsOptions {
   activeSessionId?: string;
 }
 
-function buildSessions(
+export function buildSessions(
   logs: ActivityLogRow[],
   periodEnd: Date,
   opts: BuildSessionsOptions = {},
@@ -422,7 +422,8 @@ function allocateSessionToDays(
 }
 
 const MAX_MINUTES_PER_DAY = 24 * 60;
-const MAX_DAILY_BREAKDOWN_ROWS = 14;
+/** How many recent day chips to show in the work-timer UI (not used for monthly totals). */
+export const MAX_DAILY_BREAKDOWN_ROWS = 14;
 
 /** Gross active minutes per calendar day from login sessions (pauses on logout). */
 export function buildSessionGrossMinutesByDay(
@@ -432,6 +433,7 @@ export function buildSessionGrossMinutesByDay(
 ): Map<string, number> {
   const sessions = buildSessions(logs, periodEnd, opts);
   const map = new Map<string, number>();
+  // Full month — do not truncate; callers that need UI chips can slice themselves.
   for (const row of buildDailyWorkBreakdown(sessions, periodEnd)) {
     map.set(row.date, row.totalMinutes);
   }
@@ -445,6 +447,7 @@ export function buildSessionGrossMinutesByDay(
 export function buildDailyWorkBreakdown(
   sessions: SessionRow[],
   periodEnd: Date,
+  options?: { limit?: number },
 ): DailyWorkTimeRow[] {
   const dayTotals = new Map<string, number>();
   const todayKey = calendarDateKey(periodEnd);
@@ -481,7 +484,11 @@ export function buildDailyWorkBreakdown(
     return b.date.localeCompare(a.date);
   });
 
-  return sorted.slice(0, MAX_DAILY_BREAKDOWN_ROWS);
+  const limit = options?.limit;
+  if (limit != null && limit > 0) {
+    return sorted.slice(0, limit);
+  }
+  return sorted;
 }
 
 export function formatElapsedSeconds(totalSeconds: number): string {
@@ -505,7 +512,9 @@ export function buildWorkTimeSnapshot(
     activeSessionId: opts.sessionId,
   });
   const monthlyMinutes = sessions.reduce((sum, row) => sum + row.durationMinutes, 0);
-  const dailyBreakdown = buildDailyWorkBreakdown(sessions, periodEnd);
+  const dailyBreakdown = buildDailyWorkBreakdown(sessions, periodEnd, {
+    limit: MAX_DAILY_BREAKDOWN_ROWS,
+  });
   const todayRow = dailyBreakdown.find((d) => d.isToday);
   const todayMinutes = todayRow?.totalMinutes ?? 0;
 

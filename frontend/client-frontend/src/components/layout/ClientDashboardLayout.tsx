@@ -17,7 +17,7 @@ const navItems = [
 export function ClientDashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user, clearAuth } = useAuthStore();
-
+   
   return (
     <div className="min-h-screen flex">
       <aside className="w-64 bg-white border-r flex flex-col">

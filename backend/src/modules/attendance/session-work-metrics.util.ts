@@ -1,7 +1,8 @@
 import { calendarDateKey } from '../../common/utils/timezone.util';
 import {
   buildAuthBoundaryForDay,
-  buildWorkTimeSnapshot,
+  buildDailyWorkBreakdown,
+  buildSessions,
   type ActivityLogRow,
 } from '../activity-logs/employee-report.util';
 import {
@@ -33,14 +34,14 @@ export interface BuildSessionWorkMetricsInput {
 export function buildSessionWorkMetricsByDay(
   input: BuildSessionWorkMetricsInput,
 ): Map<string, DayWorkMetrics> {
-  const sessionSnap = buildWorkTimeSnapshot(input.logs, {
-    sessionId: input.sessionId,
-    periodEnd: input.periodEnd,
+  const sessions = buildSessions(input.logs, input.periodEnd, {
+    activeSessionId: input.sessionId,
   });
+  // Full month of days (no UI truncate) so monthly totals stay accurate.
+  const allDays = buildDailyWorkBreakdown(sessions, input.periodEnd);
 
   const todayDateKey =
-    sessionSnap.dailyBreakdown.find((d) => d.isToday)?.date ??
-    calendarDateKey(input.periodEnd);
+    allDays.find((d) => d.isToday)?.date ?? calendarDateKey(input.periodEnd);
 
   const todayBreakMinutes = input.attendanceBreakByDate.get(todayDateKey) ?? 0;
   const breaksForLiveNet =
@@ -63,7 +64,7 @@ export function buildSessionWorkMetricsByDay(
   const todayBreakSessions = input.breakSessionsByDate.get(todayDateKey) ?? [];
   const result = new Map<string, DayWorkMetrics>();
 
-  for (const day of sessionSnap.dailyBreakdown) {
+  for (const day of allDays) {
     const breakMinutes = input.attendanceBreakByDate.get(day.date) ?? 0;
     const grossMinutes = resolveGrossLoginMinutes(
       day.totalMinutes,

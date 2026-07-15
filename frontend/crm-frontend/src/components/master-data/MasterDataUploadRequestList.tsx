@@ -150,7 +150,23 @@ export function MasterDataUploadRequestList({
                         {STATUS_LABELS[request.status] ?? request.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-700">{request.submittedByEmail ?? '—'}</td>
+                    <td className="px-4 py-3 text-slate-700">
+                      <p className="font-medium text-slate-800">
+                        {request.submittedByName || request.submittedByEmail || '—'}
+                      </p>
+                      {request.campaignName && (
+                        <p className="mt-0.5 text-[11px] text-slate-500">
+                          Campaign: {request.campaignName}
+                        </p>
+                      )}
+                      {(request.dbName || request.adminName) && (
+                        <p className="mt-0.5 text-[11px] text-slate-500">
+                          {request.dbName ? `DB: ${request.dbName}` : null}
+                          {request.dbName && request.adminName ? ' · ' : null}
+                          {request.adminName ? `Admin: ${request.adminName}` : null}
+                        </p>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-slate-700">
                       {request.reviewedByEmail ? (
                         <div>

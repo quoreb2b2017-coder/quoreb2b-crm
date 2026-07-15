@@ -12,7 +12,11 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { SaveMasterDataDto } from './dto/save-master-data.dto';
 import { SearchMasterDataDto } from './dto/search-master-data.dto';
-import { buildMasterDataFilterSchema, enrichFilterSchemaColumns } from './master-data-filter-schema.util';
+import {
+  buildMasterDataFilterSchema,
+  enrichFilterSchemaColumns,
+  isLeadTypeHeader,
+} from './master-data-filter-schema.util';
 import {
   distinctColumnValues,
   filterMasterDataRows,
@@ -50,7 +54,7 @@ import {
 import { MasterDataUploadRequest } from './schemas/master-data-upload-request.schema';
 import { BatchesService } from '../batches/batches.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
-import { ActivityActor } from '../activity-logs/activity-user.util';
+import { ActivityActor, displayName } from '../activity-logs/activity-user.util';
 import { NotificationTriggerService } from '../notifications/notification-trigger.service';
 import { AppCacheService } from '../../redis/app-cache.service';
 import { ConfigService } from '@nestjs/config';
@@ -452,6 +456,37 @@ export class MasterDataService {
     return { headers, rows, duplicateCount, duplicatePreviewRows, duplicateRows, missingValueCount };
   }
 
+  private async resolveDuplicateFileMeta(actor: ActivityActor): Promise<{
+    dbName: string;
+    adminName: string;
+    employeeName: string;
+  }> {
+    const employeeName = displayName(actor);
+    const roles = actor.roles ?? [];
+    const isAdminActor =
+      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
+
+    let dbName = 'Master Data';
+    let adminName = isAdminActor ? employeeName : '';
+
+    try {
+      const master = await this.masterDataModel
+        .findOne({ key: MASTER_DATA_KEY })
+        .select('fileName uploadedByEmail sheetName')
+        .lean()
+        .exec();
+      if (master?.fileName) dbName = String(master.fileName);
+      else if (master?.sheetName) dbName = String(master.sheetName);
+      if (!adminName && master?.uploadedByEmail) {
+        adminName = String(master.uploadedByEmail);
+      }
+    } catch {
+      /* meta is best-effort */
+    }
+
+    return { dbName, adminName: adminName || '—', employeeName };
+  }
+
   private async createUploadDuplicateFile(
     actor: ActivityActor,
     baseFileName: string,
@@ -459,6 +494,7 @@ export class MasterDataService {
     duplicateRows: string[][],
     sourceRole: 'employee' | 'db_admin',
     duplicateCount?: number,
+    campaignName?: string,
   ) {
     const totalDuplicates = duplicateCount ?? duplicateRows.length;
     if (totalDuplicates <= 0) return null;
@@ -470,6 +506,7 @@ export class MasterDataService {
       rows: duplicateRows,
       rowCount: totalDuplicates,
       sourceRole,
+      campaignName: campaignName ?? stem,
     });
   }
 
@@ -2293,6 +2330,10 @@ export class MasterDataService {
       rows: string[][];
       sourceRole: 'employee' | 'db_admin';
       rowCount?: number;
+      campaignName?: string;
+      dbName?: string;
+      adminName?: string;
+      employeeName?: string;
     },
   ) {
     if (!params.headers.length) {
@@ -2302,6 +2343,12 @@ export class MasterDataService {
     if (rowCount <= 0 || !params.rows.length) {
       throw new BadRequestException('No duplicate rows to save');
     }
+
+    const resolved = await this.resolveDuplicateFileMeta(actor);
+    const campaignName =
+      params.campaignName?.trim() ||
+      params.fileName.replace(/-?(suppression-)?duplicates(-temp)?\.(xlsx|xls|csv)$/i, '') ||
+      params.fileName;
 
     const request = await this.uploadRequestModel.create({
       fileName: params.fileName,
@@ -2315,6 +2362,11 @@ export class MasterDataService {
       missingValueCount: 0,
       submittedBy: new Types.ObjectId(actor.id),
       submittedByEmail: actor.email,
+      submittedByName: params.employeeName?.trim() || resolved.employeeName,
+      campaignName,
+      dbName: params.dbName?.trim() || resolved.dbName,
+      adminName: params.adminName?.trim() || resolved.adminName,
+      isDuplicateFile: true,
       sourceRole: params.sourceRole,
       status: 'active',
     });
@@ -2387,10 +2439,30 @@ export class MasterDataService {
     );
   }
 
-  async listEmployeeUploadRequestsForDbAdmin(query: ListMasterDataUploadRequestsDto) {
-    const filter: Record<string, unknown> = {
-      sourceRole: 'employee',
-    };
+  async listEmployeeUploadRequestsForDbAdmin(
+    query: ListMasterDataUploadRequestsDto,
+    roles: string[] = [],
+  ) {
+    const isAdmin =
+      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
+    const filter: Record<string, unknown> = {};
+
+    if (isAdmin) {
+      // Employee Data panel:
+      // 1) every employee upload (new data they submit)
+      // 2) every duplicate companion file (any source)
+      // Do NOT dump all DB-admin master uploads here — those live under Master Data.
+      filter.$or = [
+        { sourceRole: 'employee' },
+        { isDuplicateFile: true },
+        { fileName: { $regex: /-duplicates(-temp)?\.(xlsx|xls|csv)$/i } },
+        { fileName: { $regex: /suppression-duplicates\.(xlsx|xls|csv)$/i } },
+        { sheetName: { $regex: /^Duplicates/i } },
+      ];
+    } else {
+      filter.sourceRole = 'employee';
+    }
+
     if (query.status) {
       filter.status = query.status;
     }
@@ -3192,12 +3264,40 @@ export class MasterDataService {
     const revision =
       (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? rowCount;
     return this.cache.wrap(
-      `master:filter-schema:v2:${revision}`,
+      `master:filter-schema:v3-leadtypes:${revision}`,
       cacheTtlSeconds(this.config, 'long'),
       async () => {
         const headers = doc.headers as string[];
         const rows = await this.rowStore.loadSampleRows(doc, 2_500);
-        const columns = enrichFilterSchemaColumns(buildMasterDataFilterSchema(headers, rows));
+        let columns = enrichFilterSchemaColumns(buildMasterDataFilterSchema(headers, rows));
+
+        const leadHeader = headers.find((h) => isLeadTypeHeader(h));
+        if (leadHeader) {
+          try {
+            const allTypes = await this.rowStore.collectDistinctColumnValues(
+              doc as Parameters<typeof this.rowStore.collectDistinctColumnValues>[0],
+              leadHeader,
+              500,
+            );
+            if (allTypes.length > 0) {
+              columns = columns.map((col) =>
+                isLeadTypeHeader(col.header)
+                  ? {
+                      ...col,
+                      kind: 'select' as const,
+                      options: allTypes,
+                      filledCount: Math.max(col.filledCount, 1),
+                    }
+                  : col,
+              );
+            }
+          } catch (err) {
+            this.logger.warn(
+              `Lead Type full distinct failed: ${err instanceof Error ? err.message : err}`,
+            );
+          }
+        }
+
         return {
           totalRows: rowCount,
           headers,
@@ -3225,16 +3325,29 @@ export class MasterDataService {
       throw new BadRequestException('Unknown column');
     }
 
+    const effectiveLimit = isLeadTypeHeader(header)
+      ? Math.min(Math.max(limit || 500, 500), 500)
+      : Math.min(Math.max(limit || 40, 1), 500);
+
     const revision = this.rowStore.getRowCount(doc);
-    const cacheKey = `master:colopts:${revision}:${header.toLowerCase()}:${q ?? ''}:${limit}`;
+    const cacheKey = `master:colopts:v3:${revision}:${header.toLowerCase()}:${q ?? ''}:${effectiveLimit}`;
     return this.cache.wrap(
       cacheKey,
       cacheTtlSeconds(this.config, 'short'),
       async () => {
-        const rows = await this.rowStore.loadSampleRows(doc, 2_500);
+        if (isLeadTypeHeader(header) && !q?.trim()) {
+          const options = await this.rowStore.collectDistinctColumnValues(
+            doc as Parameters<typeof this.rowStore.collectDistinctColumnValues>[0],
+            header,
+            effectiveLimit,
+          );
+          return { header, options };
+        }
+
+        const rows = await this.rowStore.loadSampleRows(doc, 10_000);
         return {
           header,
-          options: distinctColumnValues(headers, rows, header, q, limit),
+          options: distinctColumnValues(headers, rows, header, q, effectiveLimit),
         };
       },
     );
@@ -3696,10 +3809,26 @@ export class MasterDataService {
   }
 
   private toUploadRequestResponse(doc: MasterDataUploadRequest) {
+    const fileName = doc.fileName;
+    const sheetName = doc.sheetName;
+    const isDuplicateFile =
+      Boolean(doc.isDuplicateFile) ||
+      /-duplicates(-temp)?\.(xlsx|xls|csv)$/i.test(fileName) ||
+      /suppression-duplicates\.(xlsx|xls|csv)$/i.test(fileName) ||
+      /^Duplicates/i.test(sheetName ?? '');
+
+    const derivedCampaign =
+      doc.campaignName ||
+      (isDuplicateFile
+        ? fileName
+            .replace(/-?(suppression-)?duplicates(-temp)?\.(xlsx|xls|csv)$/i, '')
+            .trim() || undefined
+        : undefined);
+
     return {
       id: doc._id.toString(),
-      fileName: doc.fileName,
-      sheetName: doc.sheetName,
+      fileName,
+      sheetName,
       headers: doc.headers,
       rowCount: doc.rowCount,
       duplicateCount: doc.duplicateCount,
@@ -3708,6 +3837,11 @@ export class MasterDataService {
       status: doc.status,
       sourceRole: doc.sourceRole ?? 'db_admin',
       submittedByEmail: doc.submittedByEmail,
+      submittedByName: doc.submittedByName || doc.submittedByEmail || undefined,
+      campaignName: derivedCampaign,
+      dbName: doc.dbName || (isDuplicateFile ? 'Master Data' : undefined),
+      adminName: doc.adminName,
+      isDuplicateFile,
       reason: doc.reason,
       reviewedByEmail: doc.reviewedByEmail,
       reviewedAt: doc.reviewedAt,

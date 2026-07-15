@@ -64,6 +64,26 @@ export class MasterDataUploadRequest extends Document {
   @Prop()
   submittedByEmail?: string;
 
+  /** Display name of the employee / uploader for list UIs */
+  @Prop()
+  submittedByName?: string;
+
+  /** Campaign or source context (upload stem / suppression campaign / batch) */
+  @Prop()
+  campaignName?: string;
+
+  /** Master DB / file label this duplicate was checked against */
+  @Prop()
+  dbName?: string;
+
+  /** Super Admin / Admin associated with the master DB or who created the file */
+  @Prop()
+  adminName?: string;
+
+  /** Explicit flag — companion duplicate sheet (also detectable via fileName) */
+  @Prop({ default: false })
+  isDuplicateFile?: boolean;
+
   @Prop()
   reason?: string;
 
@@ -94,3 +114,5 @@ MasterDataUploadRequestSchema.index({ submittedBy: 1, createdAt: -1 });
 MasterDataUploadRequestSchema.index({ sourceRole: 1, status: 1, createdAt: -1 });
 MasterDataUploadRequestSchema.index({ submittedBy: 1, status: 1, createdAt: -1 });
 MasterDataUploadRequestSchema.index({ status: 1, sourceRole: 1, createdAt: -1 });
+MasterDataUploadRequestSchema.index({ isDuplicateFile: 1, createdAt: -1 });
+MasterDataUploadRequestSchema.index({ fileName: 1, createdAt: -1 });

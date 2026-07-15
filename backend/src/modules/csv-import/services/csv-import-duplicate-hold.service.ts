@@ -53,6 +53,11 @@ export class CsvImportDuplicateHoldService {
       missingValueCount: 0,
       submittedBy: job.uploadedBy,
       submittedByEmail: job.uploadedByEmail,
+      submittedByName: job.uploadedByEmail || 'Admin',
+      campaignName: (job.fileName || 'import').replace(/\.[^.]+$/, ''),
+      dbName: 'Master Data',
+      adminName: job.uploadedByEmail || 'Super Admin',
+      isDuplicateFile: true,
       sourceRole: 'db_admin',
       status: 'active',
     });

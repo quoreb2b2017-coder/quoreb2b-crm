@@ -172,6 +172,8 @@ export class CsvImportProcessorService {
 
     if (job.mode === 'replace' && job.checkpoint.lastRowNumber === 0) {
       await this.writer.deleteAllChunks(masterKey);
+      // Clear search so replace doesn't mix old rowIndex docs; batches index as they save.
+      await this.searchIndex.wipeSearchIndex(masterKey);
     }
 
     // Append must never start writing at chunk 0 — that overwrites existing master data.
@@ -377,16 +379,35 @@ export class CsvImportProcessorService {
   ): Promise<void> {
     const masterKey = job.masterKey || MASTER_DATA_KEY;
     let writtenRows = 0;
+    let startRowIndex = 0;
 
     if (job.mode === 'append') {
       // True append — fills partial last chunk, never overwrites lower indices.
-      writtenRows = await this.rowStore.appendRows(rows, masterKey, MASTER_DATA_CHUNK_SIZE);
+      const appended = await this.rowStore.appendRows(rows, masterKey, MASTER_DATA_CHUNK_SIZE);
+      writtenRows = appended.appended;
+      startRowIndex = appended.startRowIndex;
     } else {
       const chunkSize = MASTER_DATA_CHUNK_SIZE;
       const chunkSlots = Math.ceil(rows.length / chunkSize);
       const startChunkIndex = await this.jobs.allocateChunkStart(job.jobId, chunkSlots);
       const result = await this.writer.bulkWriteRows(masterKey, rows, startChunkIndex, chunkSize);
       writtenRows = result.writtenRows;
+      startRowIndex = startChunkIndex * chunkSize;
+    }
+
+    // Index into OpenSearch as soon as rows hit Mongo — searchable without manual reindex.
+    // Replace mode wipes the search index at stream start, then indexes each batch here.
+    if (writtenRows > 0 && rows.length && job.headers?.length) {
+      const revision = Date.now();
+      void this.searchIndex
+        .indexRowBatch(job.headers, rows.slice(0, writtenRows), startRowIndex, masterKey, revision)
+        .catch((err) => {
+          this.logger.warn(
+            `OpenSearch incremental index during CSV import failed: ${
+              err instanceof Error ? err.message : err
+            }`,
+          );
+        });
     }
 
     const fresh = (await this.jobs.findByJobId(job.jobId))!;
@@ -486,6 +507,7 @@ export class CsvImportProcessorService {
       message:
         `Import complete — ${totalRows.toLocaleString()} contacts in master` +
         (successRows ? ` (+${successRows.toLocaleString()} new from this file)` : '') +
+        ` · search ready` +
         (duplicateRowsHeld
           ? `, ${duplicateRowsHeld.toLocaleString()} duplicates in temp folder`
           : '') +
@@ -497,8 +519,9 @@ export class CsvImportProcessorService {
     );
     void this.cache.delByPrefix('master:');
     void this.cache.delByPrefix('dashboard:');
-    // Mongo is source of truth; rebuild OpenSearch asynchronously for <500ms filters.
-    this.searchIndex.enqueueFullReindex(job.masterKey || MASTER_DATA_KEY);
+
+    // Rows were indexed incrementally during persistBatch — just refresh for immediate search.
+    void this.searchIndex.refreshAfterIncremental();
   }
 
   private async countChunkRows(masterKey: string): Promise<number> {

@@ -217,7 +217,7 @@ export class MasterDataController {
 
   /** Compare Mongo row count vs OpenSearch indexed docs. */
   @Get('search-index/status')
-  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
   searchIndexStatus(@CurrentUser() user: Parameters<typeof actorFromJwt>[0]) {
     return this.masterDataService.getSearchIndexStatus(user.roles ?? []);
   }

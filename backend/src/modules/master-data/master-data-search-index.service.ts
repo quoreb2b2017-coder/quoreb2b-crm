@@ -10,6 +10,30 @@ import { MasterDataChunk } from './schemas/master-data-chunk.schema';
 import { MasterDataRowStore, MASTER_DATA_CHUNK_SIZE } from './master-data-row.store';
 import { buildMasterRowSearchDocument } from './master-data-opensearch.util';
 
+export type SearchReindexPhase =
+  | 'idle'
+  | 'queued'
+  | 'wiping'
+  | 'indexing'
+  | 'done'
+  | 'failed';
+
+export interface SearchReindexProgress {
+  running: boolean;
+  phase: SearchReindexPhase;
+  mode: 'idle' | 'incremental' | 'full';
+  indexed: number;
+  total: number;
+  errors: number;
+  startedAt: number | null;
+  finishedAt: number | null;
+  /** Estimated seconds remaining (null when unknown). */
+  etaSeconds: number | null;
+  /** Rough guide: ~rows per minute observed historically on this stack. */
+  estimatedFullMinutes: number | null;
+  message: string;
+}
+
 /**
  * Syncs master-data rows from MongoDB (source of truth) → OpenSearch/ES (search only).
  */
@@ -20,6 +44,22 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
   private static readonly REINDEX_SHA_CACHE_KEY = 'master:search_reindex_sha';
   private static readonly REINDEX_LOCK_KEY = 'master:search_reindex_lock';
   private static readonly REINDEX_LOCK_TTL_SEC = 14_400; // 4h
+  /** Observed ≈ 90–100k docs/min on Optimized Engine t3.large. */
+  private static readonly ROWS_PER_MINUTE = 95_000;
+
+  private progress: SearchReindexProgress = {
+    running: false,
+    phase: 'idle',
+    mode: 'idle',
+    indexed: 0,
+    total: 0,
+    errors: 0,
+    startedAt: null,
+    finishedAt: null,
+    etaSeconds: null,
+    estimatedFullMinutes: null,
+    message: 'Search index idle',
+  };
 
   constructor(
     @InjectModel(MasterDataRecord.name)
@@ -43,7 +83,7 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
       if (lastSha === buildSha) return;
       this.logger.log(`New build ${buildSha} — scheduling master search reindex…`);
       // Always wipe on deploy rebuild. Optimized Engine is append-only — soft reindexes
-      // create duplicate rowIndex docs that break DISTINCT-less pagination / miss hits.
+      // create duplicate rowIndex docs that break pagination / miss hits.
       this.enqueueFullReindex(MASTER_DATA_KEY, buildSha, { wipeFirst: true });
     } catch (err) {
       this.logger.warn(
@@ -56,9 +96,17 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
     return this.elasticsearch.isEnabled;
   }
 
+  getReindexProgress(): SearchReindexProgress {
+    return {
+      ...this.progress,
+      etaSeconds: this.computeEtaSeconds(),
+    };
+  }
+
   /**
-   * Fire-and-forget full reindex after CSV import / master save.
+   * Fire-and-forget full reindex after replace/clear/deploy.
    * Serialized + Redis-locked so dual API workers don't thrash OpenSearch.
+   * Do NOT call this after append uploads — use indexRowBatch instead (instant search).
    */
   enqueueFullReindex(
     masterKey = MASTER_DATA_KEY,
@@ -66,6 +114,18 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
     opts?: { wipeFirst?: boolean },
   ): void {
     if (!this.elasticsearch.isEnabled) return;
+    this.setProgress({
+      running: true,
+      phase: 'queued',
+      mode: 'full',
+      indexed: 0,
+      total: 0,
+      errors: 0,
+      startedAt: Date.now(),
+      finishedAt: null,
+      estimatedFullMinutes: null,
+      message: 'Full search reindex queued…',
+    });
     this.reindexChain = this.reindexChain
       .then(async () => {
         const owner = `${process.pid}:${Date.now()}`;
@@ -74,12 +134,18 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
           this.logger.log(
             'Skipping master search reindex — another worker already holds the lock',
           );
+          this.setProgress({
+            running: false,
+            phase: 'idle',
+            mode: 'idle',
+            message: 'Reindex skipped — another worker is already rebuilding search',
+          });
           return;
         }
         try {
-          const wipeFirst =
-            opts?.wipeFirst === true || this.elasticsearch.usesSqlEngine;
-          await this.reindexAll(masterKey, { wipeFirst });
+          // Only wipe when explicitly requested (deploy/admin/replace). Never auto-wipe
+          // on Optimized Engine for casual callers — that made uploads unsearchable for ~25m.
+          await this.reindexAll(masterKey, { wipeFirst: opts?.wipeFirst === true });
           const sha = buildSha ?? process.env.BUILD_SHA?.trim();
           if (sha) {
             await this.cache.set(
@@ -96,6 +162,12 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
         this.logger.error(
           `Master reindex failed: ${err instanceof Error ? err.message : err}`,
         );
+        this.setProgress({
+          running: false,
+          phase: 'failed',
+          finishedAt: Date.now(),
+          message: `Search reindex failed: ${err instanceof Error ? err.message : err}`,
+        });
       });
   }
 
@@ -114,14 +186,34 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
       200,
       Number(this.config.get('MASTER_SEARCH_INDEX_BULK_SIZE') ?? 1000),
     );
+    const totalRows = this.rowStore.getRowCount(doc);
+    const wipeFirst = Boolean(opts?.wipeFirst);
+    const etaMin = this.estimateFullMinutes(totalRows);
 
-    // Optimized Engine cannot upsert by _id — always wipe before a full rebuild.
-    const wipeFirst = Boolean(opts?.wipeFirst) || this.elasticsearch.usesSqlEngine;
+    this.setProgress({
+      running: true,
+      phase: wipeFirst ? 'wiping' : 'indexing',
+      mode: 'full',
+      indexed: 0,
+      total: totalRows,
+      errors: 0,
+      startedAt: Date.now(),
+      finishedAt: null,
+      estimatedFullMinutes: etaMin,
+      message: wipeFirst
+        ? `Clearing old search index, then rebuilding ${totalRows.toLocaleString()} contacts (~${etaMin} min)…`
+        : `Rebuilding search for ${totalRows.toLocaleString()} contacts (~${etaMin} min)…`,
+    });
+
     this.logger.log(
-      `Reindexing master-data → search engine (key=${masterKey}, wipe=${wipeFirst}, engine=${this.elasticsearch.usesSqlEngine ? 'sql' : 'dsl'})…`,
+      `Reindexing master-data → search engine (key=${masterKey}, wipe=${wipeFirst}, engine=${this.elasticsearch.usesSqlEngine ? 'sql' : 'dsl'}, rows=${totalRows})…`,
     );
     if (wipeFirst) {
       await this.elasticsearch.deleteAllMasterRows(masterKey);
+      this.setProgress({
+        phase: 'indexing',
+        message: `Indexing ${totalRows.toLocaleString()} contacts into search (~${etaMin} min)…`,
+      });
     }
 
     let indexed = 0;
@@ -136,6 +228,12 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
       if (result.errors) {
         this.logger.warn(`Bulk index partial errors: ${result.errors}`);
       }
+      this.setProgress({
+        indexed,
+        errors,
+        phase: 'indexing',
+        message: `Indexed ${indexed.toLocaleString()} / ${totalRows.toLocaleString()} contacts…`,
+      });
       buffer = [];
     };
 
@@ -155,7 +253,6 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
           .select('chunkIndex rows')
           .lean()
           .exec();
-        // Preserve chunk order so progress logs stay monotonic.
         chunks.sort((a, b) => a.chunkIndex - b.chunkIndex);
         for (const chunk of chunks) {
           const rows = (chunk.rows as string[][]) ?? [];
@@ -183,7 +280,6 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
     }
 
     await flush();
-    // Make new docs searchable immediately (refresh_interval is 5s otherwise).
     try {
       await this.elasticsearch.refreshMasterIndex();
     } catch {
@@ -194,10 +290,44 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
       `Master-data search reindex complete: ${indexed.toLocaleString()} docs` +
         (errors ? ` (${errors.toLocaleString()} errors)` : ''),
     );
+    this.setProgress({
+      running: false,
+      phase: 'done',
+      mode: 'full',
+      indexed,
+      errors,
+      finishedAt: Date.now(),
+      estimatedFullMinutes: etaMin,
+      message: `Search reindex complete — ${indexed.toLocaleString()} contacts searchable`,
+    });
     return { indexed, errors };
   }
 
-  /** Index a contiguous batch of rows (e.g. mid-import incremental). */
+  /** Drop search docs (Optimized Engine: recreate index). Used before replace imports. */
+  async wipeSearchIndex(masterKey = MASTER_DATA_KEY): Promise<void> {
+    if (!this.elasticsearch.isEnabled) return;
+    this.setProgress({
+      running: true,
+      phase: 'wiping',
+      mode: 'full',
+      indexed: 0,
+      total: 0,
+      errors: 0,
+      startedAt: Date.now(),
+      finishedAt: null,
+      estimatedFullMinutes: null,
+      message: 'Clearing search index for replace upload…',
+    });
+    await this.elasticsearch.deleteAllMasterRows(masterKey);
+    this.setProgress({
+      running: false,
+      phase: 'idle',
+      mode: 'incremental',
+      message: 'Search index cleared — new rows will be searchable as they upload',
+    });
+  }
+
+  /** Index a contiguous batch of rows (e.g. mid-import incremental). Searchable within seconds. */
   async indexRowBatch(
     headers: string[],
     rows: string[][],
@@ -210,10 +340,51 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
       buildMasterRowSearchDocument(headers, row, startRowIndex + i, masterKey, revision),
     );
     const bulkSize = 1000;
+    let indexed = 0;
+    let errors = 0;
     for (let i = 0; i < docs.length; i += bulkSize) {
-      await this.elasticsearch.bulkIndexMasterRows(docs.slice(i, i + bulkSize));
+      const result = await this.elasticsearch.bulkIndexMasterRows(docs.slice(i, i + bulkSize));
+      indexed += result.indexed;
+      errors += result.errors;
     }
     await this.elasticsearch.refreshMasterIndex();
+    // Don't clobber an in-flight full reindex progress banner.
+    if (!this.progress.running || this.progress.mode === 'incremental') {
+      this.setProgress({
+        running: false,
+        phase: 'done',
+        mode: 'incremental',
+        indexed,
+        total: rows.length,
+        errors,
+        startedAt: this.progress.startedAt ?? Date.now(),
+        finishedAt: Date.now(),
+        estimatedFullMinutes: 0,
+        message: `New upload searchable — ${indexed.toLocaleString()} contacts indexed`,
+      });
+    }
+  }
+
+  /** After append import: force refresh so latest incremental docs are queryable. */
+  async refreshAfterIncremental(): Promise<void> {
+    if (!this.elasticsearch.isEnabled) return;
+    try {
+      await this.elasticsearch.refreshMasterIndex();
+      void this.cache.delByPrefix('master:filter-idx:');
+      if (!this.progress.running) {
+        this.setProgress({
+          phase: 'done',
+          mode: 'incremental',
+          finishedAt: Date.now(),
+          estimatedFullMinutes: 0,
+          message: 'Upload complete — new contacts are searchable now',
+        });
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Search refresh after upload failed: ${err instanceof Error ? err.message : err}`,
+      );
+    }
   }
 
   /** Fast duplicate lookup against indexed master rows (OpenSearch). */
@@ -227,6 +398,9 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
     openSearchCount: number;
     engine: 'sql' | 'dsl' | 'unknown' | 'disabled';
     inSync: boolean;
+    reindex: SearchReindexProgress;
+    /** Guide for a full wipe rebuild of the current master size. */
+    fullReindexEtaMinutes: number;
   }> {
     if (!this.elasticsearch.isEnabled) {
       return {
@@ -234,6 +408,8 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
         openSearchCount: 0,
         engine: 'disabled',
         inSync: false,
+        reindex: this.getReindexProgress(),
+        fullReindexEtaMinutes: 0,
       };
     }
     const doc = await this.masterDataModel
@@ -250,6 +426,35 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
       openSearchCount,
       engine,
       inSync: mongoRowCount > 0 && drift <= Math.max(100, Math.floor(mongoRowCount * 0.01)),
+      reindex: this.getReindexProgress(),
+      fullReindexEtaMinutes: this.estimateFullMinutes(mongoRowCount),
+    };
+  }
+
+  estimateFullMinutes(rowCount: number): number {
+    if (rowCount <= 0) return 1;
+    return Math.max(1, Math.ceil(rowCount / MasterDataSearchIndexService.ROWS_PER_MINUTE));
+  }
+
+  private computeEtaSeconds(): number | null {
+    const { running, indexed, total, startedAt } = this.progress;
+    if (!running || !startedAt || total <= 0 || indexed <= 0) {
+      if (running && total > 0) {
+        return Math.ceil((total / MasterDataSearchIndexService.ROWS_PER_MINUTE) * 60);
+      }
+      return null;
+    }
+    const elapsedSec = Math.max(1, (Date.now() - startedAt) / 1000);
+    const rate = indexed / elapsedSec;
+    if (rate <= 0) return null;
+    return Math.max(0, Math.ceil((total - indexed) / rate));
+  }
+
+  private setProgress(patch: Partial<SearchReindexProgress>): void {
+    this.progress = {
+      ...this.progress,
+      ...patch,
+      etaSeconds: null, // recomputed on read
     };
   }
 

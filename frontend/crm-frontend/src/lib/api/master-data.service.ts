@@ -20,6 +20,32 @@ const MASTER_DATA_ALLOWED_EXTENSIONS = new Set(['csv', 'xlsx', 'xls']);
 
 export type MasterDataSaveMode = 'append' | 'replace';
 
+export interface MasterDataSearchReindexProgress {
+  running: boolean;
+  phase: 'idle' | 'queued' | 'wiping' | 'indexing' | 'done' | 'failed';
+  mode: 'idle' | 'incremental' | 'full';
+  indexed: number;
+  total: number;
+  errors: number;
+  startedAt: number | null;
+  finishedAt: number | null;
+  etaSeconds: number | null;
+  estimatedFullMinutes: number | null;
+  message: string;
+}
+
+export interface MasterDataSearchIndexStatus {
+  ok: boolean;
+  message?: string;
+  index?: string;
+  mongoRowCount: number;
+  openSearchCount: number;
+  engine: 'sql' | 'dsl' | 'unknown' | 'disabled';
+  inSync: boolean;
+  reindex: MasterDataSearchReindexProgress;
+  fullReindexEtaMinutes: number;
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -784,6 +810,14 @@ export const masterDataService = {
       window.dispatchEvent(new CustomEvent('upload-request-deleted', { detail: { id: 'all' } }));
     }
     return result;
+  },
+
+  /** Mongo vs OpenSearch coverage + live reindex progress / ETA. */
+  getSearchIndexStatus: async (): Promise<MasterDataSearchIndexStatus> => {
+    const { data } = await apiClient.get('/master-data/search-index/status', {
+      timeout: MASTER_DATA_READ_TIMEOUT_MS,
+    });
+    return unwrap<MasterDataSearchIndexStatus>({ data });
   },
 
 };

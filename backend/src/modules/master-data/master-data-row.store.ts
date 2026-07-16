@@ -198,7 +198,7 @@ export class MasterDataRowStore {
     masterKey: string = MASTER_DATA_KEY,
     chunkSize = MASTER_DATA_CHUNK_SIZE,
     onProgress?: (savedRows: number, totalRows: number) => void,
-  ): Promise<number> {
+  ): Promise<{ appended: number; startRowIndex: number }> {
     const run = () =>
       this.appendRowsUnlocked(newRows, masterKey, chunkSize, onProgress);
     const previous = this.appendChains.get(masterKey) ?? Promise.resolve();
@@ -218,8 +218,8 @@ export class MasterDataRowStore {
     masterKey: string = MASTER_DATA_KEY,
     chunkSize = MASTER_DATA_CHUNK_SIZE,
     onProgress?: (savedRows: number, totalRows: number) => void,
-  ): Promise<number> {
-    if (!newRows.length) return 0;
+  ): Promise<{ appended: number; startRowIndex: number }> {
+    if (!newRows.length) return { appended: 0, startRowIndex: 0 };
 
     const lastChunk = await this.chunkModel
       .findOne({ masterKey })
@@ -236,6 +236,12 @@ export class MasterDataRowStore {
     if (updatingLastChunk && lastChunk) {
       carry = [...((lastChunk.rows as string[][]) ?? [])];
     }
+
+    const startRowIndex =
+      lastChunkIndex < 0
+        ? 0
+        : lastChunkIndex * chunkSize +
+          (updatingLastChunk ? carry.length : chunkSize);
 
     let appended = 0;
     let insertBatch: Array<{ masterKey: string; chunkIndex: number; rows: string[][] }> = [];
@@ -289,7 +295,7 @@ export class MasterDataRowStore {
 
     await flushInserts();
     onProgress?.(appended, newRows.length);
-    return appended;
+    return { appended, startRowIndex };
   }
 
   /**

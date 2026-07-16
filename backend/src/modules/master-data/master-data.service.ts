@@ -265,13 +265,35 @@ export class MasterDataService {
       const skippedDuplicates = incoming.rows.length - addedRows;
 
       if (newRows.length) {
-        await this.rowStore.appendRows(newRows, MASTER_DATA_KEY, undefined, (saved, total) => {
-          onProgress?.(
-            saved,
-            total,
-            `Saving ${saved.toLocaleString()} / ${total.toLocaleString()} new rows…`,
-          );
-        });
+        const { appended, startRowIndex } = await this.rowStore.appendRows(
+          newRows,
+          MASTER_DATA_KEY,
+          undefined,
+          (saved, total) => {
+            onProgress?.(
+              saved,
+              total,
+              `Saving ${saved.toLocaleString()} / ${total.toLocaleString()} new rows…`,
+            );
+          },
+        );
+        if (this.searchIndex.isSearchEngineEnabled() && appended > 0) {
+          void this.searchIndex
+            .indexRowBatch(
+              mergedHeaders,
+              newRows,
+              startRowIndex,
+              MASTER_DATA_KEY,
+              Date.now(),
+            )
+            .catch((err) => {
+              this.logger.warn(
+                `OpenSearch incremental index during merge failed: ${
+                  err instanceof Error ? err.message : err
+                }`,
+              );
+            });
+        }
       }
 
       return {
@@ -2411,6 +2433,7 @@ export class MasterDataService {
       }
 
       this.bustMasterCaches();
+      void this.searchIndex.refreshAfterIncremental();
 
       const result = {
         request: request ? this.toUploadRequestResponse(request) : null,
@@ -2427,7 +2450,7 @@ export class MasterDataService {
       await updateJob({
         phase: 'done',
         percent: 100,
-        message: `Complete — ${addedRows.toLocaleString()} merged · ${duplicateCount.toLocaleString()} duplicate(s)`,
+        message: `Complete — ${addedRows.toLocaleString()} merged · ${duplicateCount.toLocaleString()} duplicate(s) · search ready`,
         rowsProcessed: totalIncoming,
         totalRows: totalIncoming,
         result,
@@ -3931,7 +3954,8 @@ export class MasterDataService {
 
   /** Trigger search-index rebuild after master data mutations (CSV import, save). */
   notifySearchIndexDirty(masterKey = MASTER_DATA_KEY): void {
-    this.searchIndex.enqueueFullReindex(masterKey);
+    // Prefer incremental path elsewhere. Full wipe rebuild only when replace/clear needs it.
+    void this.searchIndex.refreshAfterIncremental();
   }
 
   private async getFilteredIndicesCached(
@@ -4415,7 +4439,8 @@ export class MasterDataService {
   async getSearchIndexStatus(roles: string[] = []) {
     const isAdmin =
       roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
-    if (!isAdmin) throw new ForbiddenException('Access denied');
+    const isDbAdmin = roles.includes(SystemRole.DB_ADMIN);
+    if (!isAdmin && !isDbAdmin) throw new ForbiddenException('Access denied');
     if (!this.elasticsearch.isEnabled) {
       return {
         ok: false,
@@ -4424,6 +4449,8 @@ export class MasterDataService {
         openSearchCount: 0,
         engine: 'disabled' as const,
         inSync: false,
+        reindex: this.searchIndex.getReindexProgress(),
+        fullReindexEtaMinutes: 0,
       };
     }
     const status = await this.searchIndex.getSearchIndexStatus(MASTER_DATA_KEY);

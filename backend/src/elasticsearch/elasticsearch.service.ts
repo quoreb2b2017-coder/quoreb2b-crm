@@ -134,6 +134,8 @@ export class ElasticsearchService implements OnModuleInit {
               number_of_shards: 1,
               number_of_replicas: 1,
               refresh_interval: '5s',
+              // Merged uploads can exceed the default 1000 mapped fields.
+              'index.mapping.total_fields.limit': 5000,
             },
             mappings: {
               dynamic: true,
@@ -158,6 +160,16 @@ export class ElasticsearchService implements OnModuleInit {
           },
         });
         this.logger.log(`Created search index ${index}`);
+      } else {
+        // Raise field limit on existing indexes (default 1000 breaks wide spreadsheets).
+        try {
+          await this.client.indices.putSettings({
+            index,
+            body: { 'index.mapping.total_fields.limit': 5000 },
+          });
+        } catch {
+          /* best-effort */
+        }
       }
       this.masterIndexReady = true;
     } catch (error) {
@@ -220,25 +232,41 @@ export class ElasticsearchService implements OnModuleInit {
       }
       body.push(doc);
     }
-    try {
-      const result = await this.client.bulk({ refresh: false, body });
-      const errors = result.body?.errors
-        ? (result.body.items ?? []).filter((i: { index?: { error?: unknown } }) => i.index?.error)
-            .length
-        : 0;
-      if (errors > 0) {
-        const sample = (result.body.items ?? []).find(
-          (i: { index?: { error?: unknown } }) => i.index?.error,
-        );
+
+    const maxAttempts = 4;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const result = await this.client.bulk({ refresh: false, body });
+        const errors = result.body?.errors
+          ? (result.body.items ?? []).filter(
+              (i: { index?: { error?: unknown } }) => i.index?.error,
+            ).length
+          : 0;
+        if (errors > 0) {
+          const sample = (result.body.items ?? []).find(
+            (i: { index?: { error?: unknown } }) => i.index?.error,
+          );
+          this.logger.warn(
+            `Bulk index errors=${errors} sample=${JSON.stringify(sample?.index?.error).slice(0, 300)}`,
+          );
+          // Partial item errors are usually mapping/data issues — retrying won't help.
+          return { indexed: docs.length - errors, errors };
+        }
+        return { indexed: docs.length, errors: 0 };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        if (attempt >= maxAttempts) {
+          this.logger.error(`Master-data bulk index failed after ${maxAttempts} attempts: ${msg}`);
+          return { indexed: 0, errors: docs.length };
+        }
+        const delayMs = Math.min(8_000, 500 * 2 ** (attempt - 1));
         this.logger.warn(
-          `Bulk index errors=${errors} sample=${JSON.stringify(sample?.index?.error).slice(0, 300)}`,
+          `Master-data bulk index attempt ${attempt}/${maxAttempts} failed (${msg}) — retry in ${delayMs}ms`,
         );
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
-      return { indexed: docs.length - errors, errors };
-    } catch (error) {
-      this.logger.error('Master-data bulk index failed', error);
-      return { indexed: 0, errors: docs.length };
     }
+    return { indexed: 0, errors: docs.length };
   }
 
   /**
@@ -385,8 +413,10 @@ export class ElasticsearchService implements OnModuleInit {
     const limit = Math.max(1, Math.min(size, 5000));
     const offset = Math.max(0, from);
 
-    const countQuery = `SELECT COUNT(*) as c FROM ${index} WHERE ${where}`;
-    const pageQuery = `SELECT rowIndex FROM ${index} WHERE ${where} ORDER BY rowIndex LIMIT ${limit} OFFSET ${offset}`;
+    // Optimized Engine is append-only — soft reindexes create duplicate rowIndex docs.
+    // DISTINCT keeps pagination/search from skipping unique master rows.
+    const countQuery = `SELECT COUNT(DISTINCT rowIndex) as c FROM ${index} WHERE ${where}`;
+    const pageQuery = `SELECT DISTINCT rowIndex FROM ${index} WHERE ${where} ORDER BY rowIndex LIMIT ${limit} OFFSET ${offset}`;
 
     const [countRes, pageRes] = await Promise.all([
       this.client.transport.request({
@@ -404,9 +434,14 @@ export class ElasticsearchService implements OnModuleInit {
     const countBody = (countRes as { body?: { datarows?: unknown[][] } }).body;
     const pageBody = (pageRes as { body?: { datarows?: unknown[][] } }).body;
     const total = Number(countBody?.datarows?.[0]?.[0] ?? 0);
-    const rowIndices = (pageBody?.datarows ?? [])
-      .map((row) => Number(row?.[0]))
-      .filter((n) => Number.isFinite(n) && n >= 0);
+    const seen = new Set<number>();
+    const rowIndices: number[] = [];
+    for (const row of pageBody?.datarows ?? []) {
+      const n = Number(row?.[0]);
+      if (!Number.isFinite(n) || n < 0 || seen.has(n)) continue;
+      seen.add(n);
+      rowIndices.push(n);
+    }
 
     return { rowIndices, total };
   }
@@ -588,7 +623,7 @@ export class ElasticsearchService implements OnModuleInit {
           method: 'POST',
           path: '/_plugins/_sql',
           body: {
-            query: `SELECT COUNT(*) as c FROM ${index} WHERE masterKey = '${masterKey.replace(/'/g, "''")}'`,
+            query: `SELECT COUNT(DISTINCT rowIndex) as c FROM ${index} WHERE masterKey = '${masterKey.replace(/'/g, "''")}'`,
           },
         });
         return Number((r as { body?: { datarows?: unknown[][] } }).body?.datarows?.[0]?.[0] ?? 0);

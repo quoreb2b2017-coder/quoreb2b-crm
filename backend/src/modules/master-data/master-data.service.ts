@@ -4398,7 +4398,35 @@ export class MasterDataService {
           'Search engine disabled. Set ELASTICSEARCH_ENABLED=true and point ELASTICSEARCH_NODE at OpenSearch/ES.',
       };
     }
-    const { indexed } = await this.searchIndex.reindexAll(MASTER_DATA_KEY, { wipeFirst: true });
-    return { ok: true, indexed, index: this.elasticsearch.masterDataIndexName() };
+    const { indexed, errors } = await this.searchIndex.reindexAll(MASTER_DATA_KEY, {
+      wipeFirst: true,
+    });
+    const status = await this.searchIndex.getSearchIndexStatus(MASTER_DATA_KEY);
+    return {
+      ok: true,
+      indexed,
+      errors,
+      index: this.elasticsearch.masterDataIndexName(),
+      ...status,
+    };
+  }
+
+  /** Admin: Mongo vs OpenSearch coverage for master-data search. */
+  async getSearchIndexStatus(roles: string[] = []) {
+    const isAdmin =
+      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
+    if (!isAdmin) throw new ForbiddenException('Access denied');
+    if (!this.elasticsearch.isEnabled) {
+      return {
+        ok: false,
+        message: 'Search engine disabled',
+        mongoRowCount: 0,
+        openSearchCount: 0,
+        engine: 'disabled' as const,
+        inSync: false,
+      };
+    }
+    const status = await this.searchIndex.getSearchIndexStatus(MASTER_DATA_KEY);
+    return { ok: true, index: this.elasticsearch.masterDataIndexName(), ...status };
   }
 }

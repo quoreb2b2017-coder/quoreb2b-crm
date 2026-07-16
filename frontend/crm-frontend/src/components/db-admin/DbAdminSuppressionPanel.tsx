@@ -153,26 +153,31 @@ export function DbAdminSuppressionPanel() {
     setChecking(true);
     setResultSheet(null);
     try {
-      const next: { email?: CheckSuppressionResult; domain?: CheckSuppressionResult } = {};
+      const jobs: Array<Promise<CheckSuppressionResult>> = [];
 
       if (emailText) {
-        next.email = await suppressionDataService.checkSuppression({
-          suppressionCampaignId: campaignId,
-          checkMode: 'email',
-          manualInput: emailText,
-          baseFileName: 'manual-email-check',
-        });
+        jobs.push(
+          suppressionDataService.checkSuppression({
+            suppressionCampaignId: campaignId,
+            checkMode: 'email',
+            manualInput: emailText,
+            baseFileName: 'manual-email-check',
+          }),
+        );
       }
       if (domainText) {
-        next.domain = await suppressionDataService.checkSuppression({
-          suppressionCampaignId: campaignId,
-          checkMode: 'domain',
-          manualInput: domainText,
-          baseFileName: 'manual-domain-check',
-        });
+        jobs.push(
+          suppressionDataService.checkSuppression({
+            suppressionCampaignId: campaignId,
+            checkMode: 'domain',
+            manualInput: domainText,
+            baseFileName: 'manual-domain-check',
+          }),
+        );
       }
 
-      const merged = mergeTemplateRows([next.email, next.domain]);
+      const parts = await Promise.all(jobs);
+      const merged = mergeTemplateRows(parts);
       setResultSheet(merged);
 
       if (merged.matchCount === 0) {

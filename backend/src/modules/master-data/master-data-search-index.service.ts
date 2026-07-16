@@ -54,11 +54,15 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
    * Fire-and-forget full reindex after CSV import / master save.
    * Serialized so concurrent imports don't thrash OpenSearch.
    */
-  enqueueFullReindex(masterKey = MASTER_DATA_KEY, buildSha?: string): void {
+  enqueueFullReindex(
+    masterKey = MASTER_DATA_KEY,
+    buildSha?: string,
+    opts?: { wipeFirst?: boolean },
+  ): void {
     if (!this.elasticsearch.isEnabled) return;
     this.reindexChain = this.reindexChain
       .then(async () => {
-        await this.reindexAll(masterKey);
+        await this.reindexAll(masterKey, { wipeFirst: opts?.wipeFirst === true });
         const sha = buildSha ?? process.env.BUILD_SHA?.trim();
         if (sha) {
           await this.cache.set(
@@ -75,7 +79,10 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
       });
   }
 
-  async reindexAll(masterKey = MASTER_DATA_KEY): Promise<{ indexed: number }> {
+  async reindexAll(
+    masterKey = MASTER_DATA_KEY,
+    opts?: { wipeFirst?: boolean },
+  ): Promise<{ indexed: number }> {
     if (!this.elasticsearch.isEnabled) return { indexed: 0 };
 
     const doc = await this.masterDataModel.findOne({ key: masterKey }).lean().exec();
@@ -88,8 +95,13 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
       Number(this.config.get('MASTER_SEARCH_INDEX_BULK_SIZE') ?? 1000),
     );
 
-    this.logger.log(`Reindexing master-data → search engine (key=${masterKey})…`);
-    await this.elasticsearch.deleteAllMasterRows(masterKey);
+    this.logger.log(
+      `Reindexing master-data → search engine (key=${masterKey}, wipe=${Boolean(opts?.wipeFirst)})…`,
+    );
+    // Never wipe by default — wiping made newly uploaded emails unsearchable until rebuild finished.
+    if (opts?.wipeFirst) {
+      await this.elasticsearch.deleteAllMasterRows(masterKey);
+    }
 
     let indexed = 0;
     let buffer: ReturnType<typeof buildMasterRowSearchDocument>[] = [];
@@ -140,6 +152,12 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
     }
 
     await flush();
+    // Make new docs searchable immediately (refresh_interval is 5s otherwise).
+    try {
+      await this.elasticsearch.refreshMasterIndex();
+    } catch {
+      /* optional */
+    }
     void this.cache.delByPrefix('master:filter-idx:');
     this.logger.log(`Master-data search reindex complete: ${indexed.toLocaleString()} docs`);
     return { indexed };
@@ -161,6 +179,7 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
     for (let i = 0; i < docs.length; i += bulkSize) {
       await this.elasticsearch.bulkIndexMasterRows(docs.slice(i, i + bulkSize));
     }
+    await this.elasticsearch.refreshMasterIndex();
   }
 
   /** Fast duplicate lookup against indexed master rows (OpenSearch). */

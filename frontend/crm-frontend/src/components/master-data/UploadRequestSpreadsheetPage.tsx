@@ -43,11 +43,20 @@ export function UploadRequestSpreadsheetPage({
       .then((detail) => {
         setRequest(detail);
         const isDuplicatesView = viewMode === 'duplicates';
-        const rows = isDuplicatesView
-          ? detail.duplicatePreviewRows ?? []
-          : detail.status === 'active' && detail.workRows?.length
+        // Prefer full rows/workRows (incl. hold-hydrated). Preview-only was causing 0 contacts.
+        const fullRows =
+          detail.status === 'active' && detail.workRows?.length
             ? detail.workRows
-            : detail.rows;
+            : detail.rows?.length
+              ? detail.rows
+              : detail.duplicatePreviewRows ?? [];
+        const rows = isDuplicatesView
+          ? detail.rows?.length
+            ? detail.rows
+            : detail.workRows?.length
+              ? detail.workRows
+              : detail.duplicatePreviewRows ?? []
+          : fullRows;
         setData({
           fileName: isDuplicatesView
             ? `${detail.fileName} — duplicates`
@@ -149,6 +158,7 @@ export function UploadRequestSpreadsheetPage({
           dataResetKey={`upload-request-${requestId}-${viewMode}`}
           editable={false}
           fillHeight
+          datasetRowCount={getUploadRequestTotalContacts(request)}
         />
       </div>
     </div>

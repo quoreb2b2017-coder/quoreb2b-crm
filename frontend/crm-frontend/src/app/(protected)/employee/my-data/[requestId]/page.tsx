@@ -28,7 +28,9 @@ export default function EmployeeMyDataRequestPage() {
         const rows =
           detail.status === 'active' && detail.workRows?.length
             ? detail.workRows
-            : detail.rows;
+            : detail.rows?.length
+              ? detail.rows
+              : detail.duplicatePreviewRows ?? [];
         setRequest(detail);
         setData({
           fileName: detail.fileName,

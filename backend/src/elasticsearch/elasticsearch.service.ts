@@ -566,6 +566,17 @@ export class ElasticsearchService implements OnModuleInit {
     }
   }
 
+  async refreshMasterIndex(): Promise<void> {
+    if (!this.enabled || !this.client) return;
+    try {
+      await this.client.indices.refresh({ index: this.masterDataIndexName() });
+    } catch (error) {
+      this.logger.debug(
+        `Master index refresh skipped: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+  }
+
   async countMasterRows(masterKey: string): Promise<number> {
     if (!this.enabled || !this.client) return 0;
     try {

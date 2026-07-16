@@ -312,13 +312,48 @@ export class SuppressionDataService {
     }
 
     const versionKey = `${String(campaign._id)}:${campaign.rowCount ?? supRows.length}`;
-    const suppressionKeys = await this.loadSuppressionKeySet(
-      dto.suppressionCampaignId,
-      versionKey,
-      supHeaders,
-      supRows,
-      dto.checkMode,
-    );
+
+    // Manual email/domain check — single pass over suppression rows (no double scan).
+    const manualValues = dto.manualInput?.trim()
+      ? parseManualCheckValues(dto.manualInput, dto.checkMode)
+      : [];
+    const manualOnly =
+      manualValues.length > 0 &&
+      !dto.sourceRequestId &&
+      !dto.sourceBatchId &&
+      !hasInlineSource;
+
+    let suppressionKeys: Set<string>;
+    const matchedManualRowsRaw: string[][] = [];
+
+    if (manualOnly) {
+      const want = new Set(manualValues);
+      suppressionKeys = new Set<string>();
+      for (const row of supRows) {
+        if (matchedManualRowsRaw.length >= MANUAL_MATCH_ROW_LIMIT) break;
+        const key = extractRowCheckKey(row, supHeaders, dto.checkMode);
+        if (!key || !want.has(key)) continue;
+        suppressionKeys.add(key);
+        matchedManualRowsRaw.push(row);
+      }
+    } else {
+      suppressionKeys = await this.loadSuppressionKeySet(
+        dto.suppressionCampaignId,
+        versionKey,
+        supHeaders,
+        supRows,
+        dto.checkMode,
+      );
+      if (manualValues.length > 0) {
+        const want = new Set(manualValues);
+        for (const row of supRows) {
+          if (matchedManualRowsRaw.length >= MANUAL_MATCH_ROW_LIMIT) break;
+          const key = extractRowCheckKey(row, supHeaders, dto.checkMode);
+          if (!key || !want.has(key)) continue;
+          matchedManualRowsRaw.push(row);
+        }
+      }
+    }
 
     let sourceHeaders: string[] = [];
     let sourceRows: string[][] = [];
@@ -385,21 +420,6 @@ export class SuppressionDataService {
           collectMatches(chunk.headers, chunk.rows, (i) => chunk.sourceIndices[i] ?? i);
         },
       );
-    }
-
-    const manualValues = dto.manualInput?.trim()
-      ? parseManualCheckValues(dto.manualInput, dto.checkMode)
-      : [];
-    const manualValueSet = new Set(manualValues);
-    const matchedManualRowsRaw: string[][] = [];
-
-    if (manualValueSet.size > 0) {
-      for (const row of supRows) {
-        if (matchedManualRowsRaw.length >= MANUAL_MATCH_ROW_LIMIT) break;
-        const key = extractRowCheckKey(row, supHeaders, dto.checkMode);
-        if (!key || !manualValueSet.has(key)) continue;
-        matchedManualRowsRaw.push(row);
-      }
     }
 
     const matchedManual = manualValues.filter((value) => suppressionKeys.has(value));

@@ -1722,14 +1722,18 @@ export class MasterDataService {
       const merged = await this.mergeUploadRequestToMaster(request, actor);
       mergedAddedRows = merged.addedRows ?? rows.length;
     } else if (duplicateCount > 0 || dto.rows.length > 0) {
-      // Always keep an "Your uploads" receipt so My Data shows both folders.
+      // Keep openable rows on the receipt (preview of submitted / duplicates) — empty rows → 0 contacts UI.
+      const receiptRows =
+        duplicateRows.length > 0
+          ? duplicateRows.slice(0, 5_000)
+          : duplicatePreviewRows.slice(0, DUPLICATE_PREVIEW_LIMIT);
       request = await this.uploadRequestModel.create({
         fileName: dto.fileName,
         sheetName: 'Uploaded',
         headers,
-        rows: [],
-        workRows: [],
-        rowCount: 0,
+        rows: receiptRows,
+        workRows: receiptRows.map((row) => [...row]),
+        rowCount: receiptRows.length,
         submittedRowCount: dto.rows.length,
         duplicateCount,
         duplicatePreviewRows,
@@ -1966,6 +1970,7 @@ export class MasterDataService {
     let pendingDuplicateBatch: string[][] = [];
     let pendingUploadBatch: string[][] = [];
     let duplicateRequestId: Types.ObjectId | null = null;
+    let duplicateHoldKey: string | null = null;
     let uploadRequestId: Types.ObjectId | null = null;
     const storedDuplicateRows: string[][] = [];
     let flushCount = 0;
@@ -2058,13 +2063,16 @@ export class MasterDataService {
 
       if (!duplicateRequestId) {
         const duplicateMeta = await duplicateMetaPromise;
+        duplicateHoldKey = `upload_dup_${new Types.ObjectId().toString()}`;
+        await this.rowStore.appendRows(batch, duplicateHoldKey);
         const created = await this.uploadRequestModel.create({
           fileName: `${stem}-duplicates.xlsx`,
           sheetName: 'Duplicates',
           headers: targetHeaders,
-          rows: batch,
-          workRows: batch.map((row) => [...row]),
+          rows: batch.slice(0, DUPLICATE_PREVIEW_LIMIT),
+          workRows: batch.slice(0, DUPLICATE_PREVIEW_LIMIT).map((row) => [...row]),
           rowCount: duplicateCount,
+          rowsHoldKey: duplicateHoldKey,
           duplicateCount: 0,
           duplicatePreviewRows: storedDuplicateRows.slice(0, DUPLICATE_PREVIEW_LIMIT),
           missingValueCount: 0,
@@ -2082,14 +2090,17 @@ export class MasterDataService {
         return;
       }
 
+      if (duplicateHoldKey) {
+        await this.rowStore.appendRows(batch, duplicateHoldKey);
+      }
       await this.uploadRequestModel.updateOne(
         { _id: duplicateRequestId },
         {
-          $push: {
-            rows: { $each: batch },
-            workRows: { $each: batch.map((row) => [...row]) },
+          $set: {
+            rowCount: duplicateCount,
+            isDuplicateFile: true,
+            ...(duplicateHoldKey ? { rowsHoldKey: duplicateHoldKey } : {}),
           },
-          $set: { rowCount: duplicateCount, isDuplicateFile: true },
         },
       );
     };
@@ -2508,8 +2519,15 @@ export class MasterDataService {
     if (rowCount <= 0) {
       throw new BadRequestException('No duplicate rows to save');
     }
-    // Prefer real rows; if only a count is known, still create the Duplicates folder file.
-    const rowsToStore = params.rows.length > 0 ? params.rows : [];
+    // Prefer real rows; large sets go to chunk hold so open never hits Mongo 16MB / empty docs.
+    const INLINE_DUP_CAP = 800;
+    let rowsToStore = params.rows.length > 0 ? params.rows : [];
+    let rowsHoldKey: string | undefined;
+    if (rowsToStore.length > INLINE_DUP_CAP) {
+      rowsHoldKey = `upload_dup_${new Types.ObjectId().toString()}`;
+      await this.rowStore.appendRows(rowsToStore, rowsHoldKey);
+      rowsToStore = rowsToStore.slice(0, DUPLICATE_PREVIEW_LIMIT);
+    }
 
     const resolved = await this.resolveDuplicateFileMeta(actor);
     const campaignName =
@@ -2524,8 +2542,12 @@ export class MasterDataService {
       rows: rowsToStore,
       workRows: rowsToStore.map((row) => [...row]),
       rowCount,
+      rowsHoldKey,
       duplicateCount: 0,
-      duplicatePreviewRows: rowsToStore.slice(0, DUPLICATE_PREVIEW_LIMIT),
+      duplicatePreviewRows: (params.rows.length ? params.rows : rowsToStore).slice(
+        0,
+        DUPLICATE_PREVIEW_LIMIT,
+      ),
       missingValueCount: 0,
       submittedBy: new Types.ObjectId(actor.id),
       submittedByEmail: actor.email,
@@ -4148,7 +4170,7 @@ export class MasterDataService {
       });
     }
 
-    void this.bustMasterCaches();
+    void this.bustMasterCaches({ reindex: true, wipe: true });
     void this.cache.delByPrefix('batch:');
     void this.cache.delByPrefix('dashboard:');
     void this.cache.delByPrefix('analytics:');
@@ -4319,22 +4341,28 @@ export class MasterDataService {
     let rows = doc.rows ?? [];
     let workRows = doc.workRows?.length ? doc.workRows : rows;
 
-    // CSV append duplicate hold: full rows live in chunks — don't show misaligned preview only.
+    // Full rows may live in chunk hold (large duplicate files) — prefer those over empty/preview docs.
     const holdKey = (doc as MasterDataUploadRequest & { rowsHoldKey?: string }).rowsHoldKey;
-    if (holdKey && (doc.isDuplicateFile || /duplicates/i.test(doc.fileName))) {
+    if (holdKey) {
       try {
-        const held = await this.rowStore.loadRowsByHoldKey(holdKey, 5_000);
+        const held = await this.rowStore.loadRowsByHoldKey(holdKey, 50_000);
         if (held.length) {
           rows = held;
           workRows = held;
         }
       } catch (err) {
         this.logger.warn(
-          `Failed to load duplicate hold rows for ${holdKey}: ${
+          `Failed to load hold rows for ${holdKey}: ${
             err instanceof Error ? err.message : err
           }`,
         );
       }
+    }
+
+    // Receipts often store metadata only — fall back to preview so open is never blank when we have samples.
+    if (!rows.length && doc.duplicatePreviewRows?.length) {
+      rows = doc.duplicatePreviewRows;
+      workRows = doc.duplicatePreviewRows;
     }
 
     return {
@@ -4344,12 +4372,18 @@ export class MasterDataService {
     };
   }
 
-  private bustMasterCaches(): void {
+  private bustMasterCaches(opts?: { reindex?: boolean; wipe?: boolean }): void {
     this.masterDedupKeysCache = null;
     void this.cache.delByPrefix('master:');
     void this.cache.delByPrefix('analytics:');
     void this.cache.delByPrefix('dashboard:');
-    this.searchIndex.enqueueFullReindex(MASTER_DATA_KEY);
+    // Default: keep OpenSearch live. Full wipe+rebuild made newly uploaded emails
+    // invisible for minutes/hours. Callers that clear/replace pass wipe+reindex.
+    if (opts?.reindex) {
+      this.searchIndex.enqueueFullReindex(MASTER_DATA_KEY, undefined, {
+        wipeFirst: opts.wipe === true,
+      });
+    }
   }
 
   /** Admin: force rebuild of OpenSearch master-data index from Mongo. */
@@ -4364,7 +4398,7 @@ export class MasterDataService {
           'Search engine disabled. Set ELASTICSEARCH_ENABLED=true and point ELASTICSEARCH_NODE at OpenSearch/ES.',
       };
     }
-    const { indexed } = await this.searchIndex.reindexAll(MASTER_DATA_KEY);
+    const { indexed } = await this.searchIndex.reindexAll(MASTER_DATA_KEY, { wipeFirst: true });
     return { ok: true, indexed, index: this.elasticsearch.masterDataIndexName() };
   }
 }

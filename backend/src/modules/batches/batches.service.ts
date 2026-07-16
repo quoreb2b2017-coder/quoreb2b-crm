@@ -210,12 +210,21 @@ export class BatchesService {
     const campaignChannel =
       dto.campaignChannel ?? parentChannel ?? detectCampaignChannel(dto.name);
 
-    let autoSharedDbAdmins: Types.ObjectId[] = [];
-    if (isAdmin && !sourceId) {
-      const dbAdmins = await this.usersRepository.findActiveByRoles([SystemRole.DB_ADMIN]);
-      autoSharedDbAdmins = dbAdmins.map(
-        (u) => new Types.ObjectId(String((u.toObject ? u.toObject() : u as { _id: Types.ObjectId })._id)),
-      );
+    // Super Admin / DB Admin share one library — auto-share root campaigns both ways.
+    let autoSharedPeers: Types.ObjectId[] = [];
+    const isDbAdmin = roles.includes(SystemRole.DB_ADMIN);
+    if ((isAdmin || isDbAdmin) && !sourceId) {
+      const peers = await this.usersRepository.findActiveByRoles([
+        SystemRole.DB_ADMIN,
+        SystemRole.SUPER_ADMIN,
+        SystemRole.ADMIN,
+      ]);
+      autoSharedPeers = peers
+        .map((u) => {
+          const o = u.toObject ? u.toObject() : (u as { _id: Types.ObjectId });
+          return new Types.ObjectId(String(o._id));
+        })
+        .filter((id) => id.toString() !== actor.id);
     }
 
     const batch = await this.model.create({
@@ -240,7 +249,7 @@ export class BatchesService {
       createdBy: new Types.ObjectId(actor.id),
       createdByEmail: actor.email,
       createdByName: actor.name,
-      sharedWith: autoSharedDbAdmins,
+      sharedWith: autoSharedPeers,
     });
 
     const rootBatchId = sourceId
@@ -276,20 +285,25 @@ export class BatchesService {
 
     void this.bustBatchCaches(actor.id, batch._id.toString());
 
-    if (autoSharedDbAdmins.length > 0) {
+    if (autoSharedPeers.length > 0) {
       try {
-        const dbAdminUsers = await this.usersRepository.findByIds(
-          autoSharedDbAdmins.map((id) => id.toString()),
+        const peerUsers = await this.usersRepository.findByIds(
+          autoSharedPeers.map((id) => id.toString()),
         );
         await Promise.all(
-          dbAdminUsers.map((recipient) => {
+          peerUsers.map((recipient) => {
             const o = recipient.toObject ? recipient.toObject() : recipient;
-            return this.notifications.notifyUser(String((o as { _id: Types.ObjectId })._id), {
+            const recipientId = String((o as { _id: Types.ObjectId })._id);
+            const recipientRoles = ((o as { roles?: string[] }).roles ?? []) as string[];
+            const actionUrl = recipientRoles.includes(SystemRole.DB_ADMIN)
+              ? '/db-admin/batches'
+              : '/admin/batches';
+            return this.notifications.notifyUser(recipientId, {
               type: 'info',
               title: 'New campaign available',
               message: `Campaign "${batch.name}" is ready in your library`,
               priority: 'medium',
-              actionUrl: '/db-admin/batches',
+              actionUrl,
               actionLabel: 'Open campaign library',
               metadata: { batchId: batch._id.toString(), batchName: batch.name },
             });
@@ -379,14 +393,22 @@ export class BatchesService {
     });
   }
 
+  /** Super Admin / Admin / DB Admin share the same campaign library (no manual share needed). */
+  private isCampaignLibraryRole(roles: string[] = []): boolean {
+    return (
+      roles.includes(SystemRole.SUPER_ADMIN) ||
+      roles.includes(SystemRole.ADMIN) ||
+      roles.includes(SystemRole.DB_ADMIN)
+    );
+  }
+
   async findAll(actorId: string, roles: string[] = []) {
-    const isAdmin =
-      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
-    const cacheKey = isAdmin ? 'batch:list:admin' : `batch:list:${actorId}`;
+    const sharedLibrary = this.isCampaignLibraryRole(roles);
+    const cacheKey = sharedLibrary ? 'batch:list:library' : `batch:list:${actorId}`;
     return this.cache.wrap(
       cacheKey,
       cacheTtlSeconds(this.config, 'short'),
-      () => (isAdmin ? this.loadAllBatchesForAdmin() : this.loadAllBatches(actorId)),
+      () => (sharedLibrary ? this.loadAllBatchesForAdmin() : this.loadAllBatches(actorId)),
     );
   }
 
@@ -449,10 +471,9 @@ export class BatchesService {
   }
 
   async findOne(batchId: string, actorId: string, roles: string[] = []) {
-    const isAdmin =
-      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
+    const sharedLibrary = this.isCampaignLibraryRole(roles);
     return this.cache.wrap(
-      `batch:full:${batchId}:${actorId}:${isAdmin ? 'admin' : 'user'}`,
+      `batch:full:${batchId}:${actorId}:${sharedLibrary ? 'library' : 'user'}`,
       cacheTtlSeconds(this.config, 'medium'),
       () => this.loadOneBatch(batchId, actorId, roles),
     );
@@ -463,9 +484,8 @@ export class BatchesService {
     actorId: string,
     roles: string[] = [],
   ): void {
-    const isAdmin =
-      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
-    if (isAdmin) return;
+    // Super Admin + DB Admin share one library — either can open any standard campaign.
+    if (this.isCampaignLibraryRole(roles)) return;
 
     const isOwner = batch.createdBy?.toString() === actorId;
     const isShared = (batch.sharedWith as Types.ObjectId[])?.some(
@@ -854,9 +874,8 @@ export class BatchesService {
     const batch = await this.model.findById(batchId).exec();
     if (!batch) throw new NotFoundException('Campaign not found');
 
-    const isAdmin =
-      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
-    if (!isAdmin && batch.createdBy?.toString() !== actorId) {
+    // Super Admin + DB Admin share one library — either can delete any campaign.
+    if (!this.isCampaignLibraryRole(roles) && batch.createdBy?.toString() !== actorId) {
       throw new ForbiddenException('Only creator can delete');
     }
 

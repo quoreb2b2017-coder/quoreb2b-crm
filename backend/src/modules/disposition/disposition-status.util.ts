@@ -1,11 +1,15 @@
-import { DispositionKind } from './disposition.constants';
+import {
+  DISPOSITION_KIND_LABELS,
+  DispositionKind,
+  monthsAheadForDispositionKind,
+} from './disposition.constants';
 import { readEffectiveStatusValue } from '../activity-logs/sheet-lead-stats.util';
 
 export function readRowDisposition(headers: string[], row: string[]): string {
   return readEffectiveStatusValue(headers, row);
 }
 
-/** Only Do Not Call goes to the DNC disposition archive / database. */
+/** Map employee disposition text → archive kind (or null if not archived). */
 export function classifyDispositionKind(raw: string): DispositionKind | null {
   const lower = raw.trim().toLowerCase();
   if (!lower || lower === '-') return null;
@@ -29,6 +33,24 @@ export function classifyDispositionKind(raw: string): DispositionKind | null {
     lower === 'direct vm'
   ) {
     return 'direct_voicemail';
+  }
+
+  if (
+    lower === 'call after 3 months' ||
+    lower === 'call after 3 month' ||
+    lower === 'call after3 months' ||
+    lower === 'callback after 3 months'
+  ) {
+    return 'call_after_3_months';
+  }
+
+  if (
+    lower === 'call after 6 months' ||
+    lower === 'call after 6 month' ||
+    lower === 'call after6 months' ||
+    lower === 'callback after 6 months'
+  ) {
+    return 'call_after_6_months';
   }
 
   return null;
@@ -59,14 +81,36 @@ export function isCallbackDisposition(raw: string): boolean {
   return lower === 'callback' || lower === 'call back' || lower === 'call-back';
 }
 
-export function isDispositionMarked(headers: string[], row: string[]): boolean {
-  const value = readRowDisposition(headers, row);
-  // Only archive DNC (and legacy Direct Voicemail). Plain Voicemail is local-only.
-  const kind = classifyDispositionKind(value);
-  return kind === 'do_not_call' || kind === 'direct_voicemail';
+export function isScheduledCallDisposition(raw: string): boolean {
+  return (
+    classifyDispositionKind(raw) === 'call_after_3_months' ||
+    classifyDispositionKind(raw) === 'call_after_6_months'
+  );
 }
 
-/** Should this status change create a new DispositionEntry? Only DNC going forward. */
-export function shouldEnqueueDispositionArchive(raw: string): boolean {
-  return classifyDispositionKind(raw) === 'do_not_call';
+export function isDispositionMarked(headers: string[], row: string[]): boolean {
+  const value = readRowDisposition(headers, row);
+  const kind = classifyDispositionKind(value);
+  return (
+    kind === 'do_not_call' ||
+    kind === 'direct_voicemail' ||
+    kind === 'call_after_3_months' ||
+    kind === 'call_after_6_months'
+  );
 }
+
+/** Should this status change create / update a DispositionEntry archive row? */
+export function shouldEnqueueDispositionArchive(raw: string): boolean {
+  const kind = classifyDispositionKind(raw);
+  return (
+    kind === 'do_not_call' ||
+    kind === 'call_after_3_months' ||
+    kind === 'call_after_6_months'
+  );
+}
+
+export function dispositionArchiveLabel(kind: DispositionKind): string {
+  return DISPOSITION_KIND_LABELS[kind] ?? kind;
+}
+
+export { monthsAheadForDispositionKind };

@@ -7,6 +7,92 @@ export function rowKey(row: string[]): string {
   return row.join('\u001f');
 }
 
+function headerToken(header: string): string {
+  return String(header ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function normalizeContactPart(value: string): string {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function normalizeDomainPart(value: string): string {
+  return normalizeContactPart(value)
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/.*$/, '');
+}
+
+function findContactColumnIndex(headers: string[], needles: string[]): number {
+  const norms = headers.map(headerToken);
+  const wants = needles.map(headerToken).filter(Boolean);
+  for (const want of wants) {
+    const exact = norms.findIndex((h) => h === want);
+    if (exact >= 0) return exact;
+  }
+  for (const want of wants) {
+    if (want.length < 3) continue;
+    const partial = norms.findIndex((h) => h.includes(want) || want.includes(h));
+    if (partial >= 0) return partial;
+  }
+  return -1;
+}
+
+function findEmailColumnIndex(headers: string[]): number {
+  const norms = headers.map(headerToken);
+  const preferred = ['emailid', 'emailaddress', 'workemail', 'businessemail', 'email'];
+  for (const want of preferred) {
+    const exact = norms.findIndex((h) => h === want);
+    if (exact >= 0) return exact;
+  }
+  for (let i = 0; i < norms.length; i += 1) {
+    const h = norms[i];
+    if (!h.includes('email')) continue;
+    if (h.includes('status') || h.includes('verif') || h.includes('bounce')) continue;
+    return i;
+  }
+  return -1;
+}
+
+/**
+ * Duplicate identity: First Name + Last Name + Domain + Email (normalized).
+ * Falls back to full-row key when those columns are missing or all empty.
+ */
+export function contactDedupeKey(headers: string[], row: string[]): string {
+  const firstIdx = findContactColumnIndex(headers, [
+    'firstname',
+    'fname',
+    'givenname',
+  ]);
+  const lastIdx = findContactColumnIndex(headers, [
+    'lastname',
+    'lname',
+    'surname',
+    'familyname',
+  ]);
+  const domainIdx = findContactColumnIndex(headers, [
+    'domain',
+    'companydomain',
+    'emaildomain',
+    'websitedomain',
+  ]);
+  const emailIdx = findEmailColumnIndex(headers);
+
+  const first = firstIdx >= 0 ? normalizeContactPart(String(row[firstIdx] ?? '')) : '';
+  const last = lastIdx >= 0 ? normalizeContactPart(String(row[lastIdx] ?? '')) : '';
+  const domain = domainIdx >= 0 ? normalizeDomainPart(String(row[domainIdx] ?? '')) : '';
+  const email = emailIdx >= 0 ? normalizeContactPart(String(row[emailIdx] ?? '')) : '';
+
+  if (!first && !last && !domain && !email) {
+    return rowKey(row.map((cell) => String(cell ?? '').trim()));
+  }
+  return [first, last, domain, email].join('\u001f');
+}
+
 export function headersEqual(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((h, i) => h === b[i]);
 }
@@ -88,7 +174,7 @@ export function mergeAppendSheets(
     const aligned = headersUnchanged
       ? row.map(formatCell)
       : alignRowWithIndex(row, existingIdx, headers, formatCell);
-    seen.add(rowKey(aligned));
+    seen.add(contactDedupeKey(headers, aligned));
     rows.push(aligned);
   }
 
@@ -97,7 +183,7 @@ export function mergeAppendSheets(
       headersUnchanged && headersEqual(incoming.headers, headers)
         ? row.map(formatCell)
         : alignRowWithIndex(row, incomingIdx, headers, formatCell);
-    const key = rowKey(aligned);
+    const key = contactDedupeKey(headers, aligned);
     if (row.some((cell) => cell.length > 0) && !seen.has(key)) {
       rows.push(aligned);
       seen.add(key);

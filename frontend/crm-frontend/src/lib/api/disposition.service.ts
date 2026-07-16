@@ -1,7 +1,11 @@
 import apiClient from './client';
 import type { QcCampaignChannel } from './qc.service';
 
-export type DispositionKind = 'do_not_call' | 'direct_voicemail';
+export type DispositionKind =
+  | 'do_not_call'
+  | 'direct_voicemail'
+  | 'call_after_3_months'
+  | 'call_after_6_months';
 
 export interface DispositionEntry {
   id: string;

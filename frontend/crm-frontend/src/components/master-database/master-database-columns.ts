@@ -246,13 +246,18 @@ export function filterAdvancedColumns(
   return columns.filter(isAdvancedFilterColumn);
 }
 
-/** Skip link / exact-size columns in dropdown filters */
+/** Skip link / exact-size / low-value columns in More filters */
 export function isExcludedDropdownColumn(header: string): boolean {
   const h = header.trim();
   if (/link$/i.test(h)) return true;
   if (/exact employee size/i.test(h)) return true;
   if (/^employee size$/i.test(h)) return true;
   if (/^revenue size$/i.test(h) && !/category/i.test(h)) return true;
+  // Not useful in More filters
+  if (/^address\s*1$/i.test(h) || /^address1$/i.test(h)) return true;
+  if (/^address type$/i.test(h)) return true;
+  if (/^direct number$/i.test(h)) return true;
+  if (/^salutation$/i.test(h)) return true;
   return false;
 }
 
@@ -374,6 +379,18 @@ export function buildCuratedQuickFilters(
   if (email && !used.has(email.header)) {
     fields.push({ type: 'text', column: email, placeholder: 'Email contains…' });
     used.add(email.header);
+  }
+
+  const domain = findFilterColumn(columns, /^domain$/i);
+  if (domain && !used.has(domain.header)) {
+    fields.push({ type: 'text', column: domain, placeholder: 'Domain contains…' });
+    used.add(domain.header);
+  }
+
+  const firstName = findFilterColumn(columns, /^first name$/i);
+  if (firstName && !used.has(firstName.header)) {
+    fields.push({ type: 'text', column: firstName, placeholder: 'First name…' });
+    used.add(firstName.header);
   }
 
   return fields;

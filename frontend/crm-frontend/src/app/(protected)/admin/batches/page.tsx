@@ -209,8 +209,9 @@ export default function AdminBatchesPage() {
               </div>
               <div className="px-6 py-4">
                 <p className="mb-3 rounded-lg border border-emerald-100 bg-emerald-50/80 px-3 py-2 text-xs leading-relaxed text-emerald-900">
-                  <span className="font-semibold">DB Administrators</span> already receive every new
-                  campaign automatically — no need to share with them here.{' '}
+                  <span className="font-semibold">Super Admin</span> and{' '}
+                  <span className="font-semibold">DB Administrators</span> share the same campaign
+                  library automatically — no need to share between them here.{' '}
                   <span className="font-semibold">Employees</span> receive an{' '}
                   <span className="font-semibold">equal, unique slice</span> of leads with no duplicate
                   contacts across team members.

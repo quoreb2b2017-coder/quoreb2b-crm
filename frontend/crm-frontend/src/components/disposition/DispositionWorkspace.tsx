@@ -11,6 +11,7 @@ import {
   FolderOpen,
   Layers,
   PhoneOff,
+  CalendarClock,
   Voicemail,
   UserRound,
 } from 'lucide-react';
@@ -18,6 +19,7 @@ import { cn } from '@/lib/utils/cn';
 import {
   dispositionService,
   type DispositionEntry,
+  type DispositionKind,
   type DispositionTreeNode,
 } from '@/lib/api/disposition.service';
 import { toast } from '@/stores/toast.store';
@@ -27,14 +29,55 @@ import {
   collectDispositionEntries,
   flattenDispositionTree,
 } from '@/lib/disposition/disposition-entries-to-sheet';
+import {
+  DISPOSITION_KIND_LABELS,
+  DISPOSITION_KIND_TITLES,
+} from '@/lib/disposition/disposition-values';
+
+function kindIcon(kind?: DispositionKind) {
+  if (kind === 'direct_voicemail') return Voicemail;
+  if (kind === 'call_after_3_months' || kind === 'call_after_6_months') return CalendarClock;
+  return PhoneOff;
+}
 
 function isPathActive(path: string[], selectedPath: string[]): boolean {
   if (selectedPath.length < path.length) return false;
   return path.every((k, i) => selectedPath[i] === k);
 }
 
-export function DispositionWorkspace() {
-  const [tree, setTree] = useState<DispositionTreeNode[]>([]);
+const KIND_PAGE_META: Record<
+  DispositionKind,
+  { title: string; subtitle: string; emptyHint: string }
+> = {
+  do_not_call: {
+    title: 'DNC',
+    subtitle: 'Do Not Call — by month, campaign & employee',
+    emptyHint: 'When employees pick Do Not Call, records appear here.',
+  },
+  direct_voicemail: {
+    title: 'DO',
+    subtitle: 'Direct Voicemail archive — by month, campaign & employee',
+    emptyHint: 'Historical Direct Voicemail records appear here.',
+  },
+  call_after_3_months: {
+    title: '3M',
+    subtitle: 'Call after 3 months — by due month, campaign & employee',
+    emptyHint: 'When employees pick Call after 3 months, records appear here.',
+  },
+  call_after_6_months: {
+    title: '6M',
+    subtitle: 'Call after 6 months — by due month, campaign & employee',
+    emptyHint: 'When employees pick Call after 6 months, records appear here.',
+  },
+};
+
+export function DispositionWorkspace({
+  kinds,
+}: {
+  /** Show only these archive kinds (separate sidebar folders). */
+  kinds: DispositionKind[];
+}) {
+  const [rawTree, setRawTree] = useState<DispositionTreeNode[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPath, setSelectedPath] = useState<string[]>([]);
   const [showAll, setShowAll] = useState(true);
@@ -43,6 +86,17 @@ export function DispositionWorkspace() {
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set());
   const [showAllMonths, setShowAllMonths] = useState(true);
   const hasLoadedRef = useRef(false);
+
+  const kindSet = useMemo(() => new Set(kinds), [kinds]);
+  const kindsKey = kinds.join('|');
+  const primaryKind = kinds[0];
+  const pageMeta = KIND_PAGE_META[primaryKind] ?? KIND_PAGE_META.do_not_call;
+  const showKindTabs = kinds.length > 1;
+
+  const tree = useMemo(
+    () => rawTree.filter((n) => n.dispositionKind && kindSet.has(n.dispositionKind)),
+    [rawTree, kindSet],
+  );
 
   const toggleKey = useCallback((key: string) => {
     setExpandedKeys((prev) => {
@@ -56,7 +110,7 @@ export function DispositionWorkspace() {
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent || !hasLoadedRef.current) setLoading(true);
     try {
-      setTree(await dispositionService.getAllTree());
+      setRawTree(await dispositionService.getAllTree());
       hasLoadedRef.current = true;
     } catch {
       toast.error('Could not load disposition archive');
@@ -68,6 +122,13 @@ export function DispositionWorkspace() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    setSelectedPath([]);
+    setShowAll(true);
+    setFilterEmployeeId(null);
+    setExpandedKeys(new Set());
+  }, [kindsKey]);
 
   const allEntries = useMemo(() => flattenDispositionTree(tree), [tree]);
 
@@ -119,10 +180,10 @@ export function DispositionWorkspace() {
 
   const sheetTitle = useMemo(() => {
     if (showAll || selectedPath.length === 0) {
-      return 'All dispositions — Do Not Call & Direct Voicemail';
+      return `All ${pageMeta.title} records`;
     }
-    return selectedNode?.label ?? 'Disposition records';
-  }, [showAll, selectedPath, selectedNode]);
+    return selectedNode?.label ?? `${pageMeta.title} records`;
+  }, [showAll, selectedPath, selectedNode, pageMeta.title]);
 
   const activeKindKey = selectedPath[0] ?? tree[0]?.key ?? '';
   const activeKindNode = tree.find((n) => n.key === activeKindKey) ?? tree[0];
@@ -145,12 +206,10 @@ export function DispositionWorkspace() {
     <div className="qc-workspace xl-workbook flex min-h-0 flex-1 flex-col">
       <div className="qc-workspace-titlebar xl-titlebar flex-shrink-0 py-2">
         <div className="flex items-center gap-2.5">
-          <span className="qc-workspace-badge">DNC / VM</span>
+          <span className="qc-workspace-badge">{pageMeta.title}</span>
           <div>
-            <h1 className="text-sm font-bold leading-tight text-white">Disposition archive</h1>
-            <p className="text-[10px] text-white/75">
-              Do Not Call &amp; Direct Voicemail — by month, campaign &amp; employee
-            </p>
+            <h1 className="text-sm font-bold leading-tight text-white">{pageMeta.title}</h1>
+            <p className="text-[10px] text-white/75">{pageMeta.subtitle}</p>
           </div>
         </div>
         <span className="qc-stat-pill qc-stat-pill--titlebar">
@@ -186,33 +245,43 @@ export function DispositionWorkspace() {
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-1 border-b border-slate-100 px-2 py-1.5">
-            {tree.map((kindNode) => {
-              const Icon =
-                kindNode.dispositionKind === 'direct_voicemail' ? Voicemail : PhoneOff;
-              const active = activeKindKey === kindNode.key;
-              return (
-                <button
-                  key={kindNode.key}
-                  type="button"
-                  onClick={() => {
-                    selectPath([kindNode.key]);
-                    setExpandedKeys((prev) => new Set(prev).add(kindNode.key));
-                  }}
-                  className={cn(
-                    'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold ring-1',
-                    active
-                      ? 'bg-violet-700 text-white ring-violet-700'
-                      : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50',
-                  )}
-                >
-                  <Icon className="h-3 w-3" />
-                  {kindNode.label}
-                  <span className="rounded-full bg-black/10 px-1">{kindNode.count ?? 0}</span>
-                </button>
-              );
-            })}
-          </div>
+          {showKindTabs && (
+            <div className="flex flex-wrap gap-1 border-b border-slate-100 px-2 py-1.5">
+              {tree.map((kindNode) => {
+                const Icon = kindIcon(kindNode.dispositionKind);
+                const active = activeKindKey === kindNode.key;
+                return (
+                  <button
+                    key={kindNode.key}
+                    type="button"
+                    onClick={() => {
+                      selectPath([kindNode.key]);
+                      setExpandedKeys((prev) => new Set(prev).add(kindNode.key));
+                    }}
+                    title={
+                      kindNode.dispositionKind
+                        ? DISPOSITION_KIND_TITLES[kindNode.dispositionKind]
+                        : kindNode.label
+                    }
+                    className={cn(
+                      'inline-flex max-w-full items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold ring-1',
+                      active
+                        ? 'bg-violet-700 text-white ring-violet-700'
+                        : 'bg-white text-slate-700 ring-slate-200 hover:bg-slate-50',
+                    )}
+                  >
+                    <Icon className="h-3 w-3 shrink-0" />
+                    <span className="truncate">
+                      {kindNode.dispositionKind
+                        ? DISPOSITION_KIND_LABELS[kindNode.dispositionKind]
+                        : kindNode.label}
+                    </span>
+                    <span className="rounded-full bg-black/10 px-1">{kindNode.count ?? 0}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           <div className="min-h-0 flex-1 overflow-auto p-1">
             {loading ? (
@@ -222,9 +291,9 @@ export function DispositionWorkspace() {
                 <span className="qc-empty-state-icon qc-empty-state-icon--pending">
                   <ClipboardList strokeWidth={1.75} />
                 </span>
-                <p className="text-xs font-semibold text-slate-700">No dispositions yet</p>
+                <p className="text-xs font-semibold text-slate-700">No {pageMeta.title} records yet</p>
                 <p className="mt-1 max-w-[200px] text-[10px] leading-relaxed text-slate-500">
-                  When employees pick Do Not Call or Direct Voicemail, records appear here.
+                  {pageMeta.emptyHint}
                 </p>
               </div>
             ) : (
@@ -409,7 +478,7 @@ export function DispositionWorkspace() {
               title={sheetTitle}
               entries={displayEntries}
               loading={loading}
-              emptyMessage="Pick Do Not Call or Direct Voicemail on an assigned campaign"
+              emptyMessage={pageMeta.emptyHint}
             />
           </div>
         </div>

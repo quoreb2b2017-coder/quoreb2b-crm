@@ -7,7 +7,10 @@ interface MemoryEntry {
   expiresAt: number;
 }
 
-const REDIS_OP_TIMEOUT_MS = 2_500;
+const REDIS_OP_TIMEOUT_MS = 1_200;
+/** After Redis failures, skip Redis and use memory-only for this window. */
+const REDIS_CIRCUIT_COOLDOWN_MS = 30_000;
+const REDIS_CIRCUIT_OPEN_AFTER = 2;
 
 /** Shared cache: Redis when available, in-memory L1 fallback. */
 @Injectable()
@@ -15,6 +18,9 @@ export class AppCacheService {
   private readonly logger = new Logger(AppCacheService.name);
   private readonly memory = new Map<string, MemoryEntry>();
   private readonly prefix: string;
+  private redisFailCount = 0;
+  private redisCircuitOpenUntil = 0;
+  private loggedCircuitOpen = false;
 
   constructor(
     config: ConfigService,
@@ -25,6 +31,29 @@ export class AppCacheService {
 
   private fullKey(key: string): string {
     return `${this.prefix}:${key}`;
+  }
+
+  private redisCircuitOpen(): boolean {
+    return Date.now() < this.redisCircuitOpenUntil;
+  }
+
+  private noteRedisFailure(err: unknown): void {
+    this.redisFailCount += 1;
+    if (this.redisFailCount < REDIS_CIRCUIT_OPEN_AFTER) return;
+    this.redisCircuitOpenUntil = Date.now() + REDIS_CIRCUIT_COOLDOWN_MS;
+    if (!this.loggedCircuitOpen) {
+      this.loggedCircuitOpen = true;
+      this.logger.warn(
+        `Redis unavailable — using in-memory cache for ${REDIS_CIRCUIT_COOLDOWN_MS / 1000}s (${
+          err instanceof Error ? err.message : err
+        })`,
+      );
+    }
+  }
+
+  private noteRedisSuccess(): void {
+    this.redisFailCount = 0;
+    this.loggedCircuitOpen = false;
   }
 
   private readMemory(key: string): string | null {
@@ -45,14 +74,18 @@ export class AppCacheService {
   }
 
   private async withRedisTimeout<T>(op: () => Promise<T>): Promise<T | null> {
+    if (!this.redis || this.redisCircuitOpen()) return null;
     try {
-      return await Promise.race([
+      const value = await Promise.race([
         op(),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('Redis operation timed out')), REDIS_OP_TIMEOUT_MS),
         ),
       ]);
+      this.noteRedisSuccess();
+      return value;
     } catch (err) {
+      this.noteRedisFailure(err);
       this.logger.debug(
         `Redis op skipped: ${err instanceof Error ? err.message : err}`,
       );
@@ -64,7 +97,7 @@ export class AppCacheService {
     const mem = this.readMemory(key);
     if (mem !== null) return mem;
 
-    if (!this.redis) return null;
+    if (!this.redis || this.redisCircuitOpen()) return null;
 
     const value = await this.withRedisTimeout(() => this.redis!.get(this.fullKey(key)));
     if (value !== null) {
@@ -76,7 +109,7 @@ export class AppCacheService {
   async set(key: string, value: string, ttlSeconds: number): Promise<void> {
     this.writeMemory(key, value, ttlSeconds);
 
-    if (!this.redis) return;
+    if (!this.redis || this.redisCircuitOpen()) return;
 
     await this.withRedisTimeout(() => this.redis!.set(this.fullKey(key), value, ttlSeconds));
   }
@@ -107,7 +140,7 @@ export class AppCacheService {
 
   async del(key: string): Promise<void> {
     this.memory.delete(key);
-    if (!this.redis) return;
+    if (!this.redis || this.redisCircuitOpen()) return;
     await this.withRedisTimeout(() => this.redis!.del(this.fullKey(key)));
   }
 
@@ -117,8 +150,9 @@ export class AppCacheService {
         this.memory.delete(key);
       }
     }
-    if (!this.redis) return;
-    await this.withRedisTimeout(() => this.redis!.delByPattern(`${this.prefix}:${localPrefix}*`));
+    if (!this.redis || this.redisCircuitOpen()) return;
+    await this.withRedisTimeout(() =>
+      this.redis!.delByPattern(`${this.prefix}:${localPrefix}*`),
+    );
   }
 }
-

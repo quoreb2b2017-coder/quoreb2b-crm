@@ -508,17 +508,36 @@ export function MasterDatabaseQuickFilters({
                   const isSizeCategory = isSizeCategoryHeader(col.header);
 
                   if (col.kind === 'email' || col.kind === 'phone') {
+                    const textValue = filters.columnText[col.header] ?? '';
                     const checked = filters.mustExist.has(col.header);
                     return (
-                      <label key={col.header} className="mdb-filter-block mdb-filter-block--toggle">
+                      <div key={col.header} className="mdb-filter-block">
+                        <span className="mdb-filter-block__label">
+                          {col.kind === 'email' ? (
+                            <Mail className="h-3 w-3" />
+                          ) : (
+                            <Phone className="h-3 w-3" />
+                          )}
+                          {col.header}
+                        </span>
                         <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => toggleMustExist(col.header, e.target.checked)}
+                          type="text"
+                          className="mdb-filter-block__input"
+                          placeholder={col.kind === 'email' ? 'Email contains…' : 'Phone contains…'}
+                          value={textValue}
+                          onChange={(e) => setColumnText(col.header, e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && onSearch()}
+                          onBlur={() => textValue.trim() && onSearch()}
                         />
-                        {col.kind === 'email' ? <Mail className="h-3.5 w-3.5" /> : <Phone className="h-3.5 w-3.5" />}
-                        <span>Has {col.header}</span>
-                      </label>
+                        <label className="mdb-filter-block mdb-filter-block--toggle mt-1">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => toggleMustExist(col.header, e.target.checked)}
+                          />
+                          <span>Has {col.header}</span>
+                        </label>
+                      </div>
                     );
                   }
 

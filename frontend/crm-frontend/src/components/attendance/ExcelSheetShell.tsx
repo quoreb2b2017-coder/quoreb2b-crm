@@ -93,7 +93,7 @@ export function ExcelSheetShell({
         </div>
       )}
 
-      <div ref={contentRef} className="min-h-0 flex-1">
+      <div ref={contentRef} className="min-h-0 flex-1 overflow-auto">
         {children}
       </div>
     </div>

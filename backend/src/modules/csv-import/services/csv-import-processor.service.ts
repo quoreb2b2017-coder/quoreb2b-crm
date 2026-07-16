@@ -39,8 +39,8 @@ import {
 import {
   alignRowWithIndex,
   buildHeaderIndexMap,
+  contactDedupeKey,
   normalizeHeaderKey,
-  rowKey,
 } from '../../master-data/master-data-merge.util';
 
 function sleep(ms: number): Promise<void> {
@@ -265,7 +265,7 @@ export class CsvImportProcessorService {
           if (!rowHasSourceData(raw, sourceHeaders)) continue;
           const aligned = alignRowWithIndex(raw, sourceIdx, targetHeaders, formatMasterDataCell);
           if (seen) {
-            const key = rowKey(aligned);
+            const key = contactDedupeKey(targetHeaders, aligned);
             if (seen.has(key)) {
               dupBuffer.push(aligned);
               continue;
@@ -363,6 +363,7 @@ export class CsvImportProcessorService {
         holdKey || this.duplicateHold.holdKeyForJob(job.jobId),
         targetHeaders,
         duplicateRowsHeld,
+        job.fileName,
       );
     }
 
@@ -459,6 +460,20 @@ export class CsvImportProcessorService {
     // otherwise append imports leave dashboards showing a stale/wrong TOTAL DATA count.
     const totalRows = await this.countChunkRows(job.masterKey || MASTER_DATA_KEY);
     await this.patchMasterMeta(job, job.headers, totalRows, job.fileName);
+
+    // Personal library: show both "Your uploads" + "Duplicates" for the uploader (DB Admin).
+    try {
+      await this.duplicateHold.createUploadReceipt(job, {
+        headers: job.headers ?? [],
+        addedRows: successRows,
+        duplicateCount: duplicateRowsHeld,
+        totalRowsEstimate: job.progress?.totalEstimate || successRows + duplicateRowsHeld,
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Could not create upload receipt for ${job.jobId}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
 
     await this.jobs.updateStatus(job.jobId, 'completed', {
       completedAt: new Date(),

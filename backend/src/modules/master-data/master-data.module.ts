@@ -14,6 +14,10 @@ import {
   MasterDataChunk,
   MasterDataChunkSchema,
 } from './schemas/master-data-chunk.schema';
+import {
+  CsvImportJob,
+  CsvImportJobSchema,
+} from '../csv-import/schemas/csv-import-job.schema';
 import { MasterDataRowStore } from './master-data-row.store';
 import { MasterDataImportJobService } from './master-data-import-job.service';
 import { EmployeeUploadImportJobService } from './employee-upload-import-job.service';
@@ -33,6 +37,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
       { name: MasterDataRecord.name, schema: MasterDataSchema },
       { name: MasterDataUploadRequest.name, schema: MasterDataUploadRequestSchema },
       { name: MasterDataChunk.name, schema: MasterDataChunkSchema },
+      { name: CsvImportJob.name, schema: CsvImportJobSchema },
     ]),
   ],
   controllers: [MasterDataController],

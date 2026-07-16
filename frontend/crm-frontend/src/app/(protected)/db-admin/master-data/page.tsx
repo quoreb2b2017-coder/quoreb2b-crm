@@ -67,7 +67,7 @@ export default function DbAdminMasterDataPage() {
               : 'text-slate-600 hover:bg-slate-100',
           )}
         >
-          Employee requests
+          Employee data
           {pendingEmployeeCount > 0 && (
             <span
               className={cn(

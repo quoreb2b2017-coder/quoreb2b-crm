@@ -3,15 +3,32 @@ export const EMPLOYEE_DISPOSITION_OPTIONS = [
   'Lead',
   'Voicemail',
   'Callback',
+  'Call after 3 months',
+  'Call after 6 months',
   'Do Not Call',
   'Not Interested',
 ] as const;
 
-export type DispositionKind = 'do_not_call' | 'direct_voicemail';
+export type DispositionKind =
+  | 'do_not_call'
+  | 'direct_voicemail'
+  | 'call_after_3_months'
+  | 'call_after_6_months';
 
+/** Short sidebar / tree folder names (employee dropdown keeps full wording). */
 export const DISPOSITION_KIND_LABELS: Record<DispositionKind, string> = {
+  do_not_call: 'DNC',
+  direct_voicemail: 'DO',
+  call_after_3_months: '3M',
+  call_after_6_months: '6M',
+};
+
+/** Full names for tooltips / hover (sidebar shows short labels). */
+export const DISPOSITION_KIND_TITLES: Record<DispositionKind, string> = {
   do_not_call: 'Do Not Call',
   direct_voicemail: 'Direct Voicemail',
+  call_after_3_months: 'Call after 3 months',
+  call_after_6_months: 'Call after 6 months',
 };
 
 /** @deprecated Status is email-only — use isDispositionColumn for the call dropdown. */
@@ -29,11 +46,22 @@ export function isCallbackDisposition(raw: string): boolean {
   return lower === 'callback' || lower === 'call back' || lower === 'call-back';
 }
 
+export function isScheduledCallDisposition(raw: string): boolean {
+  const lower = (raw ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return (
+    lower === 'call after 3 months' ||
+    lower === 'call after 3 month' ||
+    lower === 'call after 6 months' ||
+    lower === 'call after 6 month'
+  );
+}
+
 /** Row highlight by disposition / status value (Excel-readable). */
 export type DispositionRowTone =
   | 'lead'
   | 'voicemail'
   | 'callback'
+  | 'call_after'
   | 'do_not_call'
   | 'not_interested'
   | 'active'
@@ -56,6 +84,7 @@ export function classifyDispositionRowTone(raw: string): DispositionRowTone {
     return 'voicemail';
   }
   if (isCallbackDisposition(lower)) return 'callback';
+  if (isScheduledCallDisposition(lower)) return 'call_after';
   if (
     lower === 'do not call' ||
     lower === 'donot call' ||
@@ -103,6 +132,8 @@ export function dispositionRowToneClass(tone: DispositionRowTone): string {
       return 'bg-[#f1f5f9] hover:bg-[#e2e8f0]'; // plain stay-in-place
     case 'callback':
       return 'bg-[#fef3c7] hover:bg-[#fde68a]'; // amber reminder
+    case 'call_after':
+      return 'bg-[#e0e7ff] hover:bg-[#c7d2fe]'; // indigo scheduled
     case 'not_interested':
       return 'bg-[#f8fafc] hover:bg-[#f1f5f9]'; // stay-in-place
     case 'active':

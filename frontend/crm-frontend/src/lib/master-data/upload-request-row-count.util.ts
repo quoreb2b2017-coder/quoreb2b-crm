@@ -23,16 +23,26 @@ export function formatUploadRequestContactSummary(request: MasterDataUploadReque
   const uploaded =
     typeof request.mergedAddedRows === 'number'
       ? request.mergedAddedRows
-      : request.rowCount;
+      : typeof request.rowCount === 'number' && request.rowCount > 0
+        ? request.rowCount
+        : 0;
   const dups = request.duplicateCount ?? 0;
+  const submitted =
+    typeof request.submittedRowCount === 'number' && request.submittedRowCount > 0
+      ? request.submittedRowCount
+      : uploaded + dups;
+
   if (uploaded > 0 && dups > 0) {
-    return `${uploaded.toLocaleString('en-US')} uploaded · ${dups.toLocaleString('en-US')} dup`;
+    return `${uploaded.toLocaleString('en-US')} uploaded · ${dups.toLocaleString('en-US')} dup · ${submitted.toLocaleString('en-US')} in file`;
   }
   if (uploaded > 0) {
-    return `${uploaded.toLocaleString('en-US')} uploaded`;
+    return `${uploaded.toLocaleString('en-US')} uploaded${submitted > uploaded ? ` · ${submitted.toLocaleString('en-US')} in file` : ''}`;
   }
   if (dups > 0) {
-    return `0 uploaded · ${dups.toLocaleString('en-US')} dup`;
+    return `0 uploaded · ${dups.toLocaleString('en-US')} dup · ${submitted.toLocaleString('en-US')} in file`;
+  }
+  if (submitted > 0) {
+    return `${submitted.toLocaleString('en-US')} in file · 0 uploaded`;
   }
   return `${total.toLocaleString('en-US')} contact${total === 1 ? '' : 's'}`;
 }

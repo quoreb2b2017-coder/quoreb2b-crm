@@ -51,11 +51,7 @@ export default function DbAdminBatchViewPage() {
     };
   }, [router]);
 
-  const canEdit = Boolean(
-    user?.id &&
-    batch &&
-    (batch.createdBy === user.id || batch.sharedWith?.includes(user.id)),
-  );
+  const canEdit = Boolean(user?.id && batch);
   const isOwner = Boolean(user?.id && batch?.createdBy === user.id);
   const fromAdmin = !isOwner;
 

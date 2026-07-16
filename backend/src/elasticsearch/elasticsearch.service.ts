@@ -336,7 +336,8 @@ export class ElasticsearchService implements OnModuleInit {
         body: {
           from,
           size,
-          track_total_hits: true,
+          // Exact total over millions of hits is expensive; cap tracking for speed.
+          track_total_hits: 50_000,
           _source: ['rowIndex'],
           sort: [{ rowIndex: 'asc' }],
           ...query,

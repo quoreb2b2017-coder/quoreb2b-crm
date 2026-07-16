@@ -155,6 +155,7 @@ export class CsvImportDuplicateHoldService {
     holdKey: string,
     headers: string[],
     totalDuplicates: number,
+    originalFileName?: string,
   ): Promise<void> {
     if (totalDuplicates <= 0) {
       await this.uploadRequestModel.deleteOne({ _id: new Types.ObjectId(requestId) }).exec();
@@ -169,12 +170,16 @@ export class CsvImportDuplicateHoldService {
       .lean()
       .exec();
     const preview = ((previewChunk?.rows as string[][]) ?? []).slice(0, PREVIEW_LIMIT);
+    const stem = (originalFileName || 'import').replace(/\.[^.]+$/, '');
+    const finalName = `${stem}-duplicates.xlsx`;
 
     await this.uploadRequestModel
       .updateOne(
         { _id: new Types.ObjectId(requestId) },
         {
           $set: {
+            fileName: finalName,
+            sheetName: 'Duplicates',
             headers,
             rows: preview,
             workRows: preview,
@@ -192,6 +197,58 @@ export class CsvImportDuplicateHoldService {
     this.logger.log(
       `Duplicates folder ready: ${totalDuplicates.toLocaleString()} rows (hold ${holdKey})`,
     );
+  }
+
+  /**
+   * "Your uploads" receipt for DB Admin / Admin personal library.
+   * Always created alongside the duplicates folder so both show after import.
+   */
+  async createUploadReceipt(
+    job: CsvImportJob,
+    params: {
+      headers: string[];
+      addedRows: number;
+      duplicateCount: number;
+      totalRowsEstimate?: number;
+    },
+  ): Promise<string | null> {
+    if (!job.uploadedBy) return null;
+
+    const addedRows = Math.max(0, params.addedRows);
+    const duplicateCount = Math.max(0, params.duplicateCount);
+    if (addedRows <= 0 && duplicateCount <= 0 && !(params.totalRowsEstimate ?? 0)) {
+      return null;
+    }
+
+    const fileName = job.fileName || 'import.xlsx';
+    const request = await this.uploadRequestModel.create({
+      fileName,
+      sheetName: 'Uploaded',
+      headers: params.headers ?? [],
+      rows: [],
+      workRows: [],
+      rowCount: addedRows,
+      submittedRowCount: params.totalRowsEstimate ?? addedRows + duplicateCount,
+      duplicateCount,
+      duplicatePreviewRows: [],
+      missingValueCount: 0,
+      submittedBy: job.uploadedBy,
+      submittedByEmail: job.uploadedByEmail || '',
+      submittedByName: job.uploadedByEmail || 'Admin',
+      sourceRole: 'db_admin',
+      status: 'approved',
+      mergedAddedRows: addedRows,
+      mergedTotalRows: undefined,
+      reviewedBy: job.uploadedBy,
+      reviewedByEmail: job.uploadedByEmail || '',
+      reviewedAt: new Date(),
+      isDuplicateFile: false,
+    });
+
+    this.logger.log(
+      `Upload receipt created for job ${job.jobId}: +${addedRows} new, ${duplicateCount} duplicates`,
+    );
+    return request._id.toString();
   }
 
   /** Load all (or first `limit`) duplicate rows from chunk storage. */

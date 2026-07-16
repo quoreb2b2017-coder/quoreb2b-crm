@@ -149,9 +149,11 @@ export function DbAdminMasterDataUploadPanel() {
         title="My data folders"
         requests={requests}
         loading={loading}
-        hint="Your uploads by month · merged contacts go to master file"
+        hint="Aapki uploads + Duplicates — dono folders (sirf aapki files)"
         statusColumnLabel="Status"
         emptyFolderMessage="No files in this month yet. Upload a file and it will appear here."
+        variant="employee"
+        folderMode="split"
         onOpenRequest={openRequestFile}
         renderDetails={(monthRequests, meta) => (
           <div className="border-t border-slate-100 bg-slate-50/40 px-4 py-3 text-xs text-slate-600">

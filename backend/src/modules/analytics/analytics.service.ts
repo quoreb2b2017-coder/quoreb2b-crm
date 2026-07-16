@@ -135,9 +135,10 @@ export class AnalyticsService {
     }
     const oid = new Types.ObjectId(actorId);
 
+    // Same library as Super Admin — all standard campaigns (no share filter).
     const [batches, masterDoc, recentLogs, health] = await Promise.all([
       this.batchModel
-        .find({ $or: [{ createdBy: oid }, { sharedWith: oid }] })
+        .find({ $or: [{ batchKind: { $exists: false } }, { batchKind: 'standard' }] })
         .select(
           'name rowCount columnCount createdAt updatedAt createdBy sharedWith batchMonth batchYear status sourceBatchId',
         )

@@ -206,10 +206,11 @@ export function EmployeeMyDataPanel() {
 
       <MasterDataUploadMonthExplorer
         variant="employee"
+        folderMode="split"
         title="My data folders"
         requests={requests}
         loading={loading}
-        hint="Each upload shows in Your uploads (how many new) and Duplicates folder (full duplicate rows)."
+        hint="Your uploads + Duplicates — dono folders mein aapki files dikhengi"
         emptyFolderMessage="No files in this month yet. Upload a file and it will appear here."
         onOpenRequest={openRequestInExcel}
       />

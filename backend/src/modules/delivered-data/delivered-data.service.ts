@@ -11,7 +11,9 @@ import { ConfigService } from '@nestjs/config';
 import { CreateSuppressionCampaignDto } from './dto/create-suppression-campaign.dto';
 import { UploadSuppressionCampaignDto } from './dto/upload-suppression-campaign.dto';
 import { CheckSuppressionDto } from './dto/check-suppression.dto';
-import { mergeAppendSheets, mergeHeaders } from '../master-data/master-data-merge.util';
+import { mergeAppendSheets, mergeHeaders, alignRowWithIndex, buildHeaderIndexMap } from '../master-data/master-data-merge.util';
+import { formatMasterDataCell } from '../master-data/master-data-format.util';
+import { MASTER_DATA_TEMPLATE_HEADERS } from '../master-data/master-data-template.constants';
 import { BatchesService } from '../batches/batches.service';
 import { MasterDataService } from '../master-data/master-data.service';
 import { ActivityLogsService } from '../activity-logs/activity-logs.service';
@@ -34,6 +36,19 @@ import {
 
 const DUPLICATE_PREVIEW_LIMIT = 100;
 const MAX_CAMPAIGN_ROWS = 50000;
+const MANUAL_MATCH_ROW_LIMIT = 5_000;
+
+function alignRowsToMasterTemplate(
+  sourceHeaders: string[],
+  sourceRows: string[][],
+): { headers: string[]; rows: string[][] } {
+  const headers = [...MASTER_DATA_TEMPLATE_HEADERS];
+  const sourceIdx = buildHeaderIndexMap(sourceHeaders);
+  const rows = sourceRows.map((row) =>
+    alignRowWithIndex(row, sourceIdx, headers, formatMasterDataCell),
+  );
+  return { headers, rows };
+}
 
 @Injectable()
 export class SuppressionDataService {
@@ -375,7 +390,23 @@ export class SuppressionDataService {
     const manualValues = dto.manualInput?.trim()
       ? parseManualCheckValues(dto.manualInput, dto.checkMode)
       : [];
+    const manualValueSet = new Set(manualValues);
+    const matchedManualRowsRaw: string[][] = [];
+
+    if (manualValueSet.size > 0) {
+      for (const row of supRows) {
+        if (matchedManualRowsRaw.length >= MANUAL_MATCH_ROW_LIMIT) break;
+        const key = extractRowCheckKey(row, supHeaders, dto.checkMode);
+        if (!key || !manualValueSet.has(key)) continue;
+        matchedManualRowsRaw.push(row);
+      }
+    }
+
     const matchedManual = manualValues.filter((value) => suppressionKeys.has(value));
+    const templateAlignedManual =
+      matchedManualRowsRaw.length > 0
+        ? alignRowsToMasterTemplate(supHeaders, matchedManualRowsRaw)
+        : { headers: [...MASTER_DATA_TEMPLATE_HEADERS], rows: [] as string[][] };
 
     let duplicateFile: Awaited<
       ReturnType<MasterDataService['createSuppressionDuplicateFile']>
@@ -383,12 +414,27 @@ export class SuppressionDataService {
 
     if (matchingRows.length > 0 && sourceHeaders.length) {
       const stem = baseFileName.replace(/\.(xlsx|xls|csv)$/i, '');
+      const alignedSource = alignRowsToMasterTemplate(sourceHeaders, matchingRows);
       duplicateFile = await this.masterDataService.createSuppressionDuplicateFile(actor, {
         fileName: `${stem}-suppression-duplicates.xlsx`,
         sheetName: 'Duplicates',
-        headers: sourceHeaders,
-        rows: matchingRows,
+        headers: alignedSource.headers,
+        rows: alignedSource.rows,
         sourceRole: duplicateSourceRole,
+        campaignName: String(campaign.name ?? 'Suppression campaign'),
+      });
+    } else if (templateAlignedManual.rows.length > 0) {
+      // Manual email/domain check — save matched suppression rows in official template format.
+      const stem = (dto.baseFileName ?? 'manual-suppression-check').replace(
+        /\.(xlsx|xls|csv)$/i,
+        '',
+      );
+      duplicateFile = await this.masterDataService.createSuppressionDuplicateFile(actor, {
+        fileName: `${stem}-suppression-duplicates.xlsx`,
+        sheetName: 'Duplicates',
+        headers: templateAlignedManual.headers,
+        rows: templateAlignedManual.rows,
+        sourceRole: isDbAdmin ? 'db_admin' : duplicateSourceRole,
         campaignName: String(campaign.name ?? 'Suppression campaign'),
       });
     }
@@ -403,6 +449,7 @@ export class SuppressionDataService {
           checkMode: dto.checkMode,
           fileDuplicateCount: matchingRows.length,
           manualDuplicateCount: matchedManual.length,
+          manualMatchedRows: templateAlignedManual.rows.length,
           duplicateFileId: duplicateFile?.id ?? null,
         },
       });
@@ -418,10 +465,18 @@ export class SuppressionDataService {
       fileDuplicateCount: matchingRows.length,
       manualDuplicateCount: matchedManual.length,
       matchedManualValues: matchedManual,
-      duplicatePreviewRows: matchingRows.slice(0, DUPLICATE_PREVIEW_LIMIT),
+      matchedManualHeaders: templateAlignedManual.headers,
+      matchedManualRows: templateAlignedManual.rows.slice(0, DUPLICATE_PREVIEW_LIMIT),
+      duplicatePreviewRows:
+        matchingRows.length > 0
+          ? alignRowsToMasterTemplate(sourceHeaders, matchingRows).rows.slice(
+              0,
+              DUPLICATE_PREVIEW_LIMIT,
+            )
+          : templateAlignedManual.rows.slice(0, DUPLICATE_PREVIEW_LIMIT),
       duplicateFileId: duplicateFile?.id ?? null,
       duplicateFileName: duplicateFile?.fileName ?? null,
-      duplicateSourceRole,
+      duplicateSourceRole: isDbAdmin ? 'db_admin' : duplicateSourceRole,
       duplicateSourceIndices,
     };
   }

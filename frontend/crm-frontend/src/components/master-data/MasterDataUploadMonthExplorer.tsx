@@ -63,6 +63,15 @@ export interface MasterDataUploadMonthExplorerProps {
   onOpenRequest?: (request: MasterDataUploadRequest) => void;
   onDeleteRequest?: (request: MasterDataUploadRequest) => void;
   deleteLoadingId?: string | null;
+  /** Allow delete on upload files (not only duplicates folder). */
+  allowDeleteUploads?: boolean;
+  toolbarExtra?: React.ReactNode;
+  canReview?: boolean;
+  reviewableStatuses?: Array<MasterDataUploadRequest['status']>;
+  actionLoadingId?: string | null;
+  onApprove?: (request: MasterDataUploadRequest) => void;
+  onReject?: (request: MasterDataUploadRequest) => void;
+  onForward?: (request: MasterDataUploadRequest) => void;
   renderDetails?: (
     monthRequests: MasterDataUploadRequest[],
     meta: { year: number; month: number; monthLabel: string },
@@ -82,6 +91,14 @@ export function MasterDataUploadMonthExplorer({
   onOpenRequest,
   onDeleteRequest,
   deleteLoadingId,
+  allowDeleteUploads = false,
+  toolbarExtra,
+  canReview = false,
+  reviewableStatuses = [],
+  actionLoadingId,
+  onApprove,
+  onReject,
+  onForward,
   renderDetails,
 }: MasterDataUploadMonthExplorerProps) {
   const { month: currentMonth, year: currentYear } = currentCalendarPeriod();
@@ -119,12 +136,10 @@ export function MasterDataUploadMonthExplorer({
   const selectedMonthLabel = monthLabel(selectedMonth);
   const isEmployeeView = variant === 'employee';
   const isAdminView = variant === 'admin';
-  const splitFolders =
-    (isEmployeeView || isAdminView) && folderMode === 'split';
-  const uploadsOnly =
-    (isEmployeeView || isAdminView) && folderMode === 'uploads';
-  const duplicatesOnly =
-    (isEmployeeView || isAdminView) && folderMode === 'duplicates';
+  // Always honor folderMode so uploaded + duplicate files both show when split.
+  const splitFolders = folderMode === 'split';
+  const uploadsOnly = folderMode === 'uploads';
+  const duplicatesOnly = folderMode === 'duplicates';
   const resolvedStatusLabel = isEmployeeView ? 'Type' : statusColumnLabel;
 
   const { employeeUploadFiles, employeeDuplicateFiles } = useMemo(() => {
@@ -215,9 +230,7 @@ export function MasterDataUploadMonthExplorer({
               {formatRequestDate(request.createdAt)}
             </td>
             <td className="px-4 py-3 font-mono tabular-nums text-slate-800">
-              {isEmployeeView || opts?.duplicates
-                ? formatUploadRequestContactSummary(request)
-                : request.rowCount}
+              {formatUploadRequestContactSummary(request)}
             </td>
             <td className="px-4 py-3">
               <span
@@ -238,7 +251,7 @@ export function MasterDataUploadMonthExplorer({
               </span>
             </td>
             <td className="px-4 py-3 text-right">
-              <div className="inline-flex items-center gap-1.5">
+              <div className="inline-flex flex-wrap items-center justify-end gap-1.5">
                 {onOpenRequest && (
                   <button
                     type="button"
@@ -248,7 +261,45 @@ export function MasterDataUploadMonthExplorer({
                     Open
                   </button>
                 )}
-                {isAdminView && onDeleteRequest && (opts?.duplicates || duplicatesOnly) && (
+                {canReview &&
+                  reviewableStatuses.includes(request.status) &&
+                  (onApprove || onReject) && (
+                    <>
+                      {onApprove && (
+                        <button
+                          type="button"
+                          disabled={actionLoadingId === request.id}
+                          onClick={() => onApprove(request)}
+                          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          Approve
+                        </button>
+                      )}
+                      {onReject && (
+                        <button
+                          type="button"
+                          disabled={actionLoadingId === request.id}
+                          onClick={() => onReject(request)}
+                          className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+                        >
+                          Reject
+                        </button>
+                      )}
+                    </>
+                  )}
+                {onForward && request.status === 'active' && (
+                  <button
+                    type="button"
+                    disabled={actionLoadingId === request.id}
+                    onClick={() => onForward(request)}
+                    className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-[#2568b8] hover:bg-violet-100 disabled:opacity-50"
+                  >
+                    Send to Admin
+                  </button>
+                )}
+                {isAdminView &&
+                  onDeleteRequest &&
+                  (opts?.duplicates || duplicatesOnly || allowDeleteUploads) && (
                   <button
                     type="button"
                     disabled={deleteLoadingId === request.id}
@@ -273,30 +324,36 @@ export function MasterDataUploadMonthExplorer({
         rowCount={totalInYear}
         countUnit="file"
         loading={loading}
+        className="overflow-visible"
         toolbar={
-          <div className="flex w-full flex-wrap items-center gap-2">
-            <span className="font-medium text-slate-700">Year</span>
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className={dataToolbarSelect()}
-            >
-              {availableYears.map((year) => (
-                <option key={year} value={year}>
-                  {year}
-                </option>
-              ))}
-            </select>
-            <span className={dataToolbarBadge()}>12 folders · Jan–Dec</span>
-            <span className={dataToolbarBadge()}>
-              {totalInYear} file{totalInYear === 1 ? '' : 's'} in {selectedYear}
-            </span>
+          <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-medium text-slate-700">Year</span>
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                className={dataToolbarSelect()}
+              >
+                {availableYears.map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+              <span className={dataToolbarBadge()}>12 folders · Jan–Dec</span>
+              <span className={dataToolbarBadge()}>
+                {totalInYear} file{totalInYear === 1 ? '' : 's'} in {selectedYear}
+              </span>
+            </div>
+            {toolbarExtra ? (
+              <div className="flex min-w-0 flex-wrap gap-1.5 sm:ml-auto">{toolbarExtra}</div>
+            ) : null}
           </div>
         }
         hint={hint}
       >
         <div className="flex min-h-0 flex-col bg-white lg:flex-row">
-          <aside className="w-full shrink-0 border-b border-slate-100 bg-slate-50/50 lg:w-[200px] lg:border-b-0 lg:border-r">
+          <aside className="w-full shrink-0 border-b border-slate-100 bg-slate-50/50 lg:max-h-[min(70vh,720px)] lg:w-[200px] lg:overflow-y-auto lg:border-b-0 lg:border-r">
             <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
               {selectedYear} folders
             </div>
@@ -337,17 +394,19 @@ export function MasterDataUploadMonthExplorer({
           </aside>
 
           <section className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-[#e8f1fb]/40 px-4 py-2.5">
-              <div className="flex items-center gap-2 text-sm font-semibold text-[#2568b8]">
-                <ChevronRight className="h-4 w-4" />
-                <span>{selectedMonthLabel} {selectedYear}</span>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-[#e8f1fb]/40 px-3 py-2.5 sm:px-4">
+              <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-[#2568b8]">
+                <ChevronRight className="h-4 w-4 shrink-0" />
+                <span className="truncate">
+                  {selectedMonthLabel} {selectedYear}
+                </span>
               </div>
-              <span className="text-xs text-slate-600">
+              <span className="shrink-0 text-xs text-slate-600">
                 {selectedMonthRequests.length} file{selectedMonthRequests.length === 1 ? '' : 's'}
               </span>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="max-h-[min(70vh,720px)] overflow-x-auto overflow-y-auto overscroll-contain">
               {selectedMonthRequests.length === 0 ? (
                 <div className="px-4 py-12 text-center text-sm text-slate-500">
                   {emptyFolderMessage ?? `No files in ${selectedMonthLabel} ${selectedYear} yet.`}
@@ -379,10 +438,16 @@ export function MasterDataUploadMonthExplorer({
                       <span className="text-[11px] text-slate-500">
                         {isAdminView
                           ? '· new data employees submit from My Data'
-                          : '· your uploaded / merged files'}
+                          : '· kitne contacts upload hue (merged)'}
                       </span>
                       <span className="rounded-full bg-slate-200/80 px-2 py-0.5 font-mono text-[10px] tabular-nums text-slate-600">
-                        {employeeUploadFiles.length}
+                        {employeeUploadFiles.length} file
+                        {employeeUploadFiles.length === 1 ? '' : 's'}
+                        {employeeUploadFiles.length > 0
+                          ? ` · ${employeeUploadFiles
+                              .reduce((sum, r) => sum + (r.mergedAddedRows ?? 0), 0)
+                              .toLocaleString('en-US')} uploaded`
+                          : ''}
                       </span>
                     </div>
                     {employeeUploadFiles.length === 0 ? (

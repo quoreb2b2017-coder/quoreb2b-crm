@@ -3,7 +3,7 @@ import {
   hasAdvancedMasterFilters,
   hasMasterDataSearchCriteria,
 } from './master-data-search.util';
-import { rowKey } from './master-data-merge.util';
+import { contactDedupeKey } from './master-data-merge.util';
 import { formatMasterDataCell } from './master-data-format.util';
 import {
   extractRowCheckKey,
@@ -31,13 +31,49 @@ function escapeWildcard(value: string): string {
   return value.replace(/[\\*?]/g, '\\$&');
 }
 
+/** Strip `%` from user input so it is not treated as a SQL LIKE wildcard. */
+function sanitizeSqlLikeInput(value: string): string {
+  return value.replace(/%/g, '');
+}
+
 export function sqlQuote(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
-/** Stable dedup key aligned to master-data row storage (same as Mongo rowKey). */
-export function masterRowFingerprint(row: string[]): string {
-  return rowKey(row.map((cell) => formatMasterDataCell(cell)));
+function sqlCiEquals(field: string, value: string): string {
+  return `LOWER(${field}) = ${sqlQuote(value.trim().toLowerCase())}`;
+}
+
+function sqlCiLike(field: string, pattern: string): string {
+  return `LOWER(${field}) LIKE ${sqlQuote(pattern.toLowerCase())}`;
+}
+
+function sqlLikeExact(field: string, pattern: string): string {
+  return `${field} LIKE ${sqlQuote(pattern.toLowerCase())}`;
+}
+
+function looksLikeEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+function isEmailColumnHeader(header: string): boolean {
+  const h = header.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!h.includes('email')) return false;
+  // Avoid matching status / verification note columns that mention email.
+  if (h.includes('status') || h.includes('verif') || h.includes('bounce')) return false;
+  return true;
+}
+
+function resolveEmailHeader(headers: string[]): string | null {
+  return resolveHeader(headers, 'emailid', 'email', 'emailaddress', 'workemail', 'businessemail');
+}
+
+/** Stable dedup key: First Name + Last Name + Domain + Email. */
+export function masterRowFingerprint(headers: string[], row: string[]): string {
+  return contactDedupeKey(
+    headers,
+    row.map((cell) => formatMasterDataCell(cell)),
+  );
 }
 
 function fuzzyHeaderNeedles(...needles: string[]): string[] {
@@ -56,21 +92,93 @@ function resolveHeader(headers: string[], ...needles: string[]): string | null {
   return null;
 }
 
+function buildEmailDslClause(
+  headers: string[],
+  value: string,
+  match: 'contains' | 'equals' | 'startsWith' = 'contains',
+): Record<string, unknown> {
+  const v = value.trim().toLowerCase();
+  if (!v) return { match_all: {} };
+  const emailHeader = resolveEmailHeader(headers);
+  const should: Record<string, unknown>[] = [];
+
+  if (match === 'equals' || looksLikeEmail(v)) {
+    should.push({ term: { suppEmail: v } });
+  } else if (match === 'startsWith') {
+    should.push({
+      wildcard: { suppEmail: { value: `${escapeWildcard(v)}*`, case_insensitive: true } },
+    });
+  } else {
+    should.push({
+      wildcard: { suppEmail: { value: `*${escapeWildcard(v)}*`, case_insensitive: true } },
+    });
+  }
+
+  if (emailHeader) {
+    should.push(buildColumnClause(emailHeader, v, match));
+  }
+
+  return { bool: { should, minimum_should_match: 1 } };
+}
+
+function buildEmailSqlClause(
+  headers: string[],
+  value: string,
+  match: 'contains' | 'equals' | 'startsWith' = 'contains',
+): string {
+  const raw = value.trim().toLowerCase();
+  if (!raw) return '1 = 1';
+  // Full emails keep `_` (matched via equality on normalized suppEmail).
+  // Partial contains/startsWith strip LIKE metacharacters to avoid false patterns.
+  const v = looksLikeEmail(raw) || match === 'equals' ? raw : sanitizeSqlLikeInput(raw);
+  if (!v) return '1 = 1';
+  const emailHeader = resolveEmailHeader(headers);
+  const parts: string[] = [];
+
+  if (match === 'equals' || looksLikeEmail(raw)) {
+    parts.push(`suppEmail = ${sqlQuote(raw)}`);
+  } else if (match === 'startsWith') {
+    parts.push(sqlLikeExact('suppEmail', `${v}%`));
+  } else {
+    parts.push(sqlLikeExact('suppEmail', `%${v}%`));
+  }
+
+  if (emailHeader) {
+    const field = flatFieldName(emailHeader);
+    if (match === 'equals' || looksLikeEmail(raw)) {
+      parts.push(sqlCiEquals(field, raw));
+    } else if (match === 'startsWith') {
+      parts.push(sqlCiLike(field, `${v}%`));
+    } else {
+      parts.push(sqlCiLike(field, `%${v}%`));
+    }
+  }
+
+  return `(${parts.join(' OR ')})`;
+}
+
 function buildColumnClause(
   header: string,
   value: string,
   match: 'contains' | 'equals' | 'startsWith' = 'contains',
 ): Record<string, unknown> {
-  const key = headerToFieldKey(header);
+  const field = flatFieldName(header);
   const v = value.trim();
   if (!v) return { match_all: {} };
   if (match === 'equals') {
-    return { term: { [flatFieldName(key)]: v } };
+    return {
+      term: {
+        [field]: {
+          value: v,
+          case_insensitive: true,
+        },
+      },
+    };
   }
   if (match === 'startsWith') {
     return {
       wildcard: {
-        [flatFieldName(key)]: {
+        [field]: {
           value: `${escapeWildcard(v.toLowerCase())}*`,
           case_insensitive: true,
         },
@@ -79,12 +187,54 @@ function buildColumnClause(
   }
   return {
     wildcard: {
-      [flatFieldName(key)]: {
+      [field]: {
         value: `*${escapeWildcard(v.toLowerCase())}*`,
         case_insensitive: true,
       },
     },
   };
+}
+
+function buildGlobalQueryDsl(headers: string[], query: string): Record<string, unknown> {
+  const q = query.trim();
+  if (!q) return { match_all: {} };
+
+  // Exact / partial email in the main search box — MATCH/@ tokenization is unreliable.
+  if (q.includes('@') || looksLikeEmail(q)) {
+    return buildEmailDslClause(headers, q, looksLikeEmail(q) ? 'equals' : 'contains');
+  }
+
+  return {
+    multi_match: {
+      query: q,
+      type: 'best_fields',
+      fields: ['searchText^2'],
+      operator: 'and',
+      fuzziness: 'AUTO',
+    },
+  };
+}
+
+function buildGlobalQuerySql(headers: string[], query: string): string {
+  const q = query.trim();
+  if (!q) return '1 = 1';
+  if (q.includes('@') || looksLikeEmail(q)) {
+    return buildEmailSqlClause(headers, q, looksLikeEmail(q) ? 'equals' : 'contains');
+  }
+  return `MATCH(searchText, ${sqlQuote(q)})`;
+}
+
+function buildSqlColumnFilter(headers: string[], header: string, value: string, match: 'contains' | 'equals' | 'startsWith'): string {
+  if (isEmailColumnHeader(header) || looksLikeEmail(value)) {
+    return buildEmailSqlClause(headers, value, match);
+  }
+  const field = flatFieldName(header);
+  const v = value.trim();
+  if (match === 'equals') return sqlCiEquals(field, v);
+  const safe = sanitizeSqlLikeInput(v);
+  if (!safe) return '1 = 1';
+  if (match === 'startsWith') return sqlCiLike(field, `${safe}%`);
+  return sqlCiLike(field, `%${safe}%`);
 }
 
 /**
@@ -100,20 +250,42 @@ export function buildMasterDataOpenSearchQuery(
 
   const query = input.query?.trim();
   if (query) {
-    must.push({
-      multi_match: {
-        query,
-        type: 'best_fields',
-        fields: ['searchText^2'],
-        operator: 'and',
-        fuzziness: 'AUTO',
-      },
-    });
+    must.push(buildGlobalQueryDsl(headers, query));
   }
 
   for (const f of input.columnFilters ?? []) {
     if (!f.header?.trim() || !f.value?.trim()) continue;
-    filter.push(buildColumnClause(f.header, f.value, f.match ?? 'contains'));
+    const match = f.match ?? 'contains';
+    if (isEmailColumnHeader(f.header) || looksLikeEmail(f.value)) {
+      filter.push(buildEmailDslClause(headers, f.value, match));
+    } else if (/^domain$/i.test(f.header.trim())) {
+      // Prefer normalized keyword field — leading wildcards on f_* are slow.
+      const v = f.value.trim().toLowerCase();
+      if (match === 'equals') {
+        filter.push({ term: { suppDomain: v } });
+      } else if (match === 'startsWith') {
+        filter.push({
+          wildcard: { suppDomain: { value: `${escapeWildcard(v)}*`, case_insensitive: true } },
+        });
+      } else {
+        filter.push({
+          bool: {
+            should: [
+              { term: { suppDomain: v } },
+              {
+                wildcard: {
+                  suppDomain: { value: `*${escapeWildcard(v)}*`, case_insensitive: true },
+                },
+              },
+              buildColumnClause(f.header, f.value, match),
+            ],
+            minimum_should_match: 1,
+          },
+        });
+      }
+    } else {
+      filter.push(buildColumnClause(f.header, f.value, match));
+    }
   }
 
   for (const f of input.columnValueFilters ?? []) {
@@ -153,6 +325,18 @@ export function buildMasterDataOpenSearchQuery(
 
   for (const header of input.mustExistColumns ?? []) {
     if (!header?.trim()) continue;
+    if (isEmailColumnHeader(header)) {
+      filter.push({
+        bool: {
+          should: [
+            { exists: { field: 'suppEmail' } },
+            { exists: { field: flatFieldName(header) } },
+          ],
+          minimum_should_match: 1,
+        },
+      });
+      continue;
+    }
     filter.push({ exists: { field: flatFieldName(header) } });
   }
 
@@ -179,8 +363,18 @@ export function buildMasterDataOpenSearchQuery(
     }
 
     if (f.hasEmail) {
-      const header = resolveHeader(headers, 'email', 'emailaddress');
-      if (header) filter.push({ exists: { field: flatFieldName(header) } });
+      filter.push({
+        bool: {
+          should: [
+            { exists: { field: 'suppEmail' } },
+            (() => {
+              const header = resolveEmailHeader(headers);
+              return header ? { exists: { field: flatFieldName(header) } } : null;
+            })(),
+          ].filter(Boolean) as Record<string, unknown>[],
+          minimum_should_match: 1,
+        },
+      });
     }
     if (f.hasPhone) {
       const header = resolveHeader(headers, 'phone', 'mobile', 'telephone');
@@ -219,23 +413,12 @@ export function buildMasterDataSqlWhere(
 
   const query = input.query?.trim();
   if (query) {
-    // Prefer MATCH for relevance; LIKE as fallback for short terms
-    const cleaned = query.replace(/'/g, "''");
-    parts.push(`MATCH(searchText, ${sqlQuote(cleaned)})`);
+    parts.push(buildGlobalQuerySql(headers, query));
   }
 
   for (const f of input.columnFilters ?? []) {
     if (!f.header?.trim() || !f.value?.trim()) continue;
-    const field = flatFieldName(f.header);
-    const v = f.value.trim();
-    const match = f.match ?? 'contains';
-    if (match === 'equals') {
-      parts.push(`${field} = ${sqlQuote(v)}`);
-    } else if (match === 'startsWith') {
-      parts.push(`${field} LIKE ${sqlQuote(`${v}%`)}`);
-    } else {
-      parts.push(`${field} LIKE ${sqlQuote(`%${v}%`)}`);
-    }
+    parts.push(buildSqlColumnFilter(headers, f.header, f.value, f.match ?? 'contains'));
   }
 
   for (const f of input.columnValueFilters ?? []) {
@@ -244,9 +427,11 @@ export function buildMasterDataSqlWhere(
     const values = f.values.map((v) => v.trim()).filter(Boolean);
     if (!values.length) continue;
     if (values.length === 1) {
-      parts.push(`${field} = ${sqlQuote(values[0])}`);
+      parts.push(sqlCiEquals(field, values[0]));
     } else {
-      parts.push(`${field} IN (${values.map(sqlQuote).join(', ')})`);
+      parts.push(
+        `(${values.map((v) => sqlCiEquals(field, v)).join(' OR ')})`,
+      );
     }
   }
 
@@ -258,8 +443,8 @@ export function buildMasterDataSqlWhere(
       .map((header) => {
         if (!header?.trim()) return null;
         const field = flatFieldName(header);
-        if (values.length === 1) return `${field} = ${sqlQuote(values[0])}`;
-        return `${field} IN (${values.map(sqlQuote).join(', ')})`;
+        if (values.length === 1) return sqlCiEquals(field, values[0]);
+        return `(${values.map((v) => sqlCiEquals(field, v)).join(' OR ')})`;
       })
       .filter(Boolean);
     if (orParts.length) {
@@ -276,6 +461,13 @@ export function buildMasterDataSqlWhere(
 
   for (const header of input.mustExistColumns ?? []) {
     if (!header?.trim()) continue;
+    if (isEmailColumnHeader(header)) {
+      const field = flatFieldName(header);
+      parts.push(
+        `((suppEmail IS NOT NULL AND suppEmail != '') OR (${field} IS NOT NULL AND ${field} != ''))`,
+      );
+      continue;
+    }
     const field = flatFieldName(header);
     parts.push(`${field} IS NOT NULL AND ${field} != ''`);
   }
@@ -300,12 +492,19 @@ export function buildMasterDataSqlWhere(
       const header = resolveHeader(headers, ...needles);
       if (!header) continue;
       const field = flatFieldName(header);
-      if (match === 'equals') parts.push(`${field} = ${sqlQuote(value.trim())}`);
-      else parts.push(`${field} LIKE ${sqlQuote(`%${value.trim()}%`)}`);
+      if (match === 'equals') parts.push(sqlCiEquals(field, value.trim()));
+      else parts.push(sqlCiLike(field, `%${value.trim()}%`));
     }
     if (f.hasEmail) {
-      const header = resolveHeader(headers, 'email', 'emailaddress');
-      if (header) parts.push(`${flatFieldName(header)} IS NOT NULL AND ${flatFieldName(header)} != ''`);
+      const header = resolveEmailHeader(headers);
+      const field = header ? flatFieldName(header) : null;
+      if (field) {
+        parts.push(
+          `((suppEmail IS NOT NULL AND suppEmail != '') OR (${field} IS NOT NULL AND ${field} != ''))`,
+        );
+      } else {
+        parts.push(`suppEmail IS NOT NULL AND suppEmail != ''`);
+      }
     }
     if (f.hasPhone) {
       const header = resolveHeader(headers, 'phone', 'mobile', 'telephone');
@@ -344,18 +543,20 @@ export function buildMasterRowSearchDocument(
   };
 
   for (let i = 0; i < headers.length; i += 1) {
-    const key = headerToFieldKey(headers[i] ?? `col_${i}`);
+    const header = headers[i] ?? `col_${i}`;
+    const key = headerToFieldKey(header);
     const raw = String(row[i] ?? '').trim();
     if (!raw) continue;
     const field = flatFieldName(key);
     if (!(field in doc)) {
-      doc[field] = raw;
+      // Store emails lowercased so keyword SQL LIKE/equals matches paste casing.
+      doc[field] = isEmailColumnHeader(header) ? raw.toLowerCase() : raw;
     }
     parts.push(raw);
   }
 
   doc.searchText = parts.join(' ');
-  doc.rowFingerprint = masterRowFingerprint(row);
+  doc.rowFingerprint = masterRowFingerprint(headers, row);
   const suppEmail = extractRowCheckKey(row, headers, 'email');
   const suppDomain = extractRowCheckKey(row, headers, 'domain');
   if (suppEmail) doc.suppEmail = suppEmail;

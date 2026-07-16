@@ -11,14 +11,11 @@ import {
 import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
 import { MasterDataUploadMonthExplorer } from '@/components/master-data/MasterDataUploadMonthExplorer';
-import { MasterDataUploadRequestList } from '@/components/master-data/MasterDataUploadRequestList';
-import {
-  resolveDuplicatesOpenPath,
-  uploadRequestFilePath,
-} from '@/lib/master-data/upload-request-nav';
+import { uploadRequestFilePath } from '@/lib/master-data/upload-request-nav';
 import { isEmployeeDuplicateFile } from '@/lib/master-data/employee-upload-file.util';
 import { cn } from '@/lib/utils/cn';
 import { useUploadRequestRefresh } from '@/hooks/useUploadRequestRefresh';
+import { dataFilterPill } from '@/components/master-data/DataPageShell';
 
 const FILTERS: Array<MasterDataUploadRequestStatus | 'all'> = [
   'all',
@@ -29,27 +26,22 @@ const FILTERS: Array<MasterDataUploadRequestStatus | 'all'> = [
   'rejected',
 ];
 
-type DataScope = 'uploads' | 'duplicates' | 'all';
+type AdminEmployeeDataPanelMode = 'uploads' | 'duplicates';
 
 export function AdminEmployeeDataPanel({
   mode = 'uploads',
 }: {
-  /** uploads = Employee Data page; duplicates = sidebar Duplicates page */
-  mode?: 'uploads' | 'duplicates';
+  /** uploads = Employee Data page (uploads only); duplicates = sidebar Duplicates page */
+  mode?: AdminEmployeeDataPanelMode;
 }) {
   const router = useRouter();
   const [requests, setRequests] = useState<MasterDataUploadRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<MasterDataUploadRequestStatus | 'all'>('all');
-  const [scope, setScope] = useState<DataScope>(mode);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [rejectTarget, setRejectTarget] = useState<MasterDataUploadRequest | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const isDuplicatesPage = mode === 'duplicates';
-
-  useEffect(() => {
-    setScope(mode);
-  }, [mode]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -82,10 +74,10 @@ export function AdminEmployeeDataPanel({
   }, [requests]);
 
   const scopedRequests = useMemo(() => {
-    if (scope === 'uploads') return uploadFiles;
-    if (scope === 'duplicates') return duplicateFiles;
-    return requests;
-  }, [scope, uploadFiles, duplicateFiles, requests]);
+    // Employee Data: uploads only. Duplicates live on the Duplicates sidebar page.
+    if (isDuplicatesPage) return duplicateFiles;
+    return uploadFiles;
+  }, [isDuplicatesPage, duplicateFiles, uploadFiles]);
 
   const filteredRequests = useMemo(
     () =>
@@ -157,14 +149,10 @@ export function AdminEmployeeDataPanel({
     router.push(uploadRequestFilePath('admin_employee', request.id));
   };
 
-  const openDuplicates = (request: MasterDataUploadRequest) => {
-    router.push(resolveDuplicatesOpenPath('admin_employee', request, requests));
-  };
-
   const remove = async (request: MasterDataUploadRequest) => {
     if (
       !confirm(
-        `Delete "${request.fileName}" from employee ${request.submittedByEmail ?? ''}? This removes the upload from employee panels only. Master file contacts stay unchanged.`,
+        `Delete "${request.fileName}" from employee panel (${request.submittedByEmail ?? ''})?\n\nIMPORTANT: Master file contacts will NOT be deleted — sirf panel se file hatogi.`,
       )
     ) {
       return;
@@ -172,7 +160,7 @@ export function AdminEmployeeDataPanel({
     setActionLoadingId(request.id);
     try {
       await masterDataService.deleteUploadRequest(request.id);
-      toast.success('Deleted', 'Removed from employee panel. Master file is unchanged.');
+      toast.success('Panel se delete', 'Master file unchanged — contacts abhi bhi master mein hain.');
       await load();
     } catch (err) {
       toast.error('Delete failed', extractApiError(err));
@@ -202,7 +190,7 @@ export function AdminEmployeeDataPanel({
             <p className="text-xs text-slate-500">
               {isDuplicatesPage
                 ? 'Everyone’s duplicate files · Jan–Dec · file, employee, campaign, DB, super admin · Super Admin can delete'
-                : 'Files employees upload from My Data (new data only — duplicates live under Duplicates in the sidebar)'}
+                : 'Employee uploads by month — approve / reject. Duplicate files are on the Duplicates page.'}
             </p>
           </div>
           <div className="flex flex-wrap gap-2 text-center">
@@ -255,18 +243,18 @@ export function AdminEmployeeDataPanel({
       </div>
 
       <MasterDataUploadMonthExplorer
-        title={isDuplicatesPage ? 'Duplicates by month' : 'Employee uploads by month'}
+        title={isDuplicatesPage ? 'Duplicates by month' : 'Employee data by month'}
         requests={filteredRequests}
         loading={loading}
         hint={
           isDuplicatesPage
             ? 'Jan–Dec · All duplicate files · Open or Delete'
-            : 'Jan–Dec · Employee uploads only'
+            : 'Jan–Dec · Employee uploads — Open, Approve, Reject, or Delete'
         }
         emptyFolderMessage={
           isDuplicatesPage
             ? 'No duplicate files in this month.'
-            : 'No employee uploads in this month yet.'
+            : 'No employee files in this month yet.'
         }
         statusColumnLabel="Status"
         showSubmittedBy
@@ -275,59 +263,33 @@ export function AdminEmployeeDataPanel({
         onOpenRequest={openRequestFile}
         onDeleteRequest={remove}
         deleteLoadingId={actionLoadingId}
-        renderDetails={(monthRequests, meta) => (
-          <MasterDataUploadRequestList
-            title={`${meta.monthLabel} ${meta.year}`}
-            requests={monthRequests}
-            loading={loading}
-            emptyMessage={
-              isDuplicatesPage
-                ? `No duplicates in ${meta.monthLabel} ${meta.year}`
-                : `No employee uploads in ${meta.monthLabel} ${meta.year}`
-            }
-            viewportClassName="max-h-[min(70vh,720px)] overflow-y-auto"
-            canReview={!isDuplicatesPage}
-            reviewableStatuses={['pending_admin']}
-            actionLoadingId={actionLoadingId}
-            onApprove={isDuplicatesPage ? undefined : approve}
-            onReject={
-              isDuplicatesPage
-                ? undefined
-                : (request) => {
-                    setRejectTarget(request);
-                    setRejectReason('');
-                  }
-            }
-            onViewDuplicates={openDuplicates}
-            onViewFile={openRequestFile}
-            onDelete={remove}
-            allowDeleteApproved
-            toolbar={
-              <div className="flex w-full flex-wrap items-center gap-2">
-                <span className="text-sm font-medium text-slate-700">
-                  {meta.monthLabel} {meta.year}
-                </span>
-                <div className="ml-auto flex flex-wrap gap-1.5">
-                  {FILTERS.map((item) => (
-                    <button
-                      key={item}
-                      type="button"
-                      onClick={() => setFilter(item)}
-                      className={cn(
-                        'rounded-lg px-2.5 py-1 text-[11px] font-semibold capitalize',
-                        filter === item
-                          ? 'bg-[#2e7ad1] text-white'
-                          : 'border border-slate-200 text-slate-600 hover:bg-slate-50',
-                      )}
-                    >
-                      {item === 'all' ? 'All' : item.replace(/_/g, ' ')}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            }
-          />
-        )}
+        allowDeleteUploads={!isDuplicatesPage}
+        canReview={!isDuplicatesPage}
+        reviewableStatuses={['pending_admin']}
+        actionLoadingId={actionLoadingId}
+        onApprove={isDuplicatesPage ? undefined : approve}
+        onReject={
+          isDuplicatesPage
+            ? undefined
+            : (request) => {
+                setRejectTarget(request);
+                setRejectReason('');
+              }
+        }
+        toolbarExtra={
+          <div className="ml-auto flex flex-wrap gap-1.5">
+            {FILTERS.map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setFilter(item)}
+                className={dataFilterPill(filter === item)}
+              >
+                {item === 'all' ? 'All' : item.replace(/_/g, ' ')}
+              </button>
+            ))}
+          </div>
+        }
       />
 
       {rejectTarget && (

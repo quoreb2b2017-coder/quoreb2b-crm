@@ -36,6 +36,7 @@ import { SystemRole } from '../../common/constants/roles.constant';
 import {
   alignRowWithIndex,
   buildHeaderIndexMap,
+  contactDedupeKey,
   headersEqual,
   mergeAppendSheets,
   mergeHeaders,
@@ -68,6 +69,7 @@ import { EmployeeUploadS3Service } from './employee-upload-s3.service';
 import { MASTER_DATA_TEMPLATE_HEADERS } from './master-data-template.constants';
 import { MasterDataImportLockService } from './master-data-import-lock.service';
 import { MasterDataSearchIndexService } from './master-data-search-index.service';
+import { CsvImportJob } from '../csv-import/schemas/csv-import-job.schema';
 import {
   buildMasterDataOpenSearchQuery,
   buildMasterDataSqlWhere,
@@ -178,6 +180,8 @@ export class MasterDataService {
     private masterDataModel: Model<MasterDataRecord>,
     @InjectModel(MasterDataUploadRequest.name)
     private uploadRequestModel: Model<MasterDataUploadRequest>,
+    @InjectModel(CsvImportJob.name)
+    private csvImportJobModel: Model<CsvImportJob>,
     @Inject(forwardRef(() => BatchesService))
     private batchesService: BatchesService,
     private activityLogs: ActivityLogsService,
@@ -242,7 +246,7 @@ export class MasterDataService {
           ? row.map(formatMasterDataCell)
           : alignRowWithIndex(row, incomingIdx, mergedHeaders, formatMasterDataCell);
         if (!rowHasSourceData(row, incoming.headers)) continue;
-        const key = this.rowKey(aligned);
+        const key = this.rowKey(mergedHeaders, aligned);
         if (seen.has(key)) continue;
         seen.add(key);
         newRows.push(aligned);
@@ -350,8 +354,9 @@ export class MasterDataService {
       .exec() as Promise<MasterDataRecord>;
   }
 
-  private rowKey(row: string[]) {
-    return row.join('\u001f');
+  /** First Name + Last Name + Domain + Email (normalized). */
+  private rowKey(headers: string[], row: string[]) {
+    return contactDedupeKey(headers, row);
   }
 
   /** OpenSearch fingerprint batch lookup (falls back to empty when search engine off). */
@@ -442,7 +447,7 @@ export class MasterDataService {
       for (const rawRow of slice) {
         const normalized = this.normalizeRowToHeaders(rawRow, dto.headers, headers);
         missingValueCount += normalized.filter((cell) => cell === '-').length;
-        normalizedBatch.push({ key: this.rowKey(normalized), row: normalized });
+        normalizedBatch.push({ key: this.rowKey(headers, normalized), row: normalized });
       }
 
       const existingInMaster = useOpenSearchDedup
@@ -675,7 +680,7 @@ export class MasterDataService {
         targetHeaders,
         formatMasterDataCell,
       );
-      const key = this.rowKey(aligned);
+      const key = this.rowKey(targetHeaders, aligned);
       if (seen!.has(key) || incomingSeen.has(key)) {
         skippedDuplicates += 1;
         continue;
@@ -843,7 +848,7 @@ export class MasterDataService {
           targetHeaders,
           formatMasterDataCell,
         );
-        const key = this.rowKey(aligned);
+        const key = this.rowKey(targetHeaders, aligned);
         if (seen.has(key) || incomingSeen.has(key)) {
           skippedDuplicates += 1;
           continue;
@@ -1590,10 +1595,35 @@ export class MasterDataService {
         submittedByEmail: actor.email,
         sourceRole: 'db_admin',
         status: 'pending',
+        isDuplicateFile: false,
       });
 
       const merged = await this.mergeUploadRequestToMaster(request, actor);
       mergedAddedRows = merged.addedRows ?? rows.length;
+    } else if (duplicateCount > 0 || dto.rows.length > 0) {
+      // Keep "Your uploads" receipt so uploads + duplicates both appear.
+      request = await this.uploadRequestModel.create({
+        fileName: dto.fileName,
+        sheetName: dto.sheetName || 'Uploaded',
+        headers,
+        rows: [],
+        workRows: [],
+        rowCount: 0,
+        submittedRowCount: dto.rows.length,
+        duplicateCount,
+        duplicatePreviewRows,
+        missingValueCount,
+        submittedBy: new Types.ObjectId(actor.id),
+        submittedByEmail: actor.email,
+        submittedByName: displayName(actor),
+        sourceRole: 'db_admin',
+        status: 'approved',
+        mergedAddedRows: 0,
+        reviewedBy: new Types.ObjectId(actor.id),
+        reviewedByEmail: actor.email,
+        reviewedAt: new Date(),
+        isDuplicateFile: false,
+      });
     }
 
     const duplicateFile = await this.createUploadDuplicateFile(
@@ -1602,6 +1632,7 @@ export class MasterDataService {
       headers,
       duplicateRows,
       'db_admin',
+      duplicateCount,
     );
 
     try {
@@ -1671,7 +1702,7 @@ export class MasterDataService {
     if (rows.length > 0) {
       request = await this.uploadRequestModel.create({
         fileName: dto.fileName,
-        sheetName: dto.sheetName,
+        sheetName: dto.sheetName || 'Uploaded',
         headers,
         rows,
         workRows: rows.map((row) => [...row]),
@@ -1694,7 +1725,7 @@ export class MasterDataService {
       // Always keep an "Your uploads" receipt so My Data shows both folders.
       request = await this.uploadRequestModel.create({
         fileName: dto.fileName,
-        sheetName: dto.sheetName || 'Uploaded',
+        sheetName: 'Uploaded',
         headers,
         rows: [],
         workRows: [],
@@ -1918,7 +1949,6 @@ export class MasterDataService {
 
     const DUPLICATE_FLUSH_BATCH = 3_000;
     const DEDUP_LOOKUP_BATCH = 500;
-    const NEW_ROW_FLUSH_BATCH = 3_000;
 
     let existing = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
     let targetHeaders: string[] = [];
@@ -1975,54 +2005,6 @@ export class MasterDataService {
       });
     };
 
-    const flushUploadReceiptBatch = async () => {
-      if (!pendingUploadBatch.length || !targetHeaders.length) return;
-      const batch = pendingUploadBatch;
-      pendingUploadBatch = [];
-
-      if (!uploadRequestId) {
-        const created = await this.uploadRequestModel.create({
-          fileName,
-          sheetName,
-          headers: targetHeaders,
-          rows: batch,
-          workRows: batch.map((row) => [...row]),
-          rowCount: batch.length,
-          submittedRowCount: totalIncoming || batch.length,
-          duplicateCount: 0,
-          duplicatePreviewRows: [],
-          missingValueCount: 0,
-          submittedBy: new Types.ObjectId(actor.id),
-          submittedByEmail: actor.email,
-          submittedByName: actorDisplayName,
-          sourceRole: 'employee',
-          status: 'approved',
-          mergedAddedRows: batch.length,
-          reviewedBy: new Types.ObjectId(actor.id),
-          reviewedByEmail: actor.email,
-          reviewedAt: new Date(),
-          isDuplicateFile: false,
-        });
-        uploadRequestId = created._id;
-        return;
-      }
-
-      await this.uploadRequestModel.updateOne(
-        { _id: uploadRequestId },
-        {
-          $push: {
-            rows: { $each: batch },
-            workRows: { $each: batch.map((row) => [...row]) },
-          },
-          $set: {
-            rowCount: addedRows,
-            mergedAddedRows: addedRows,
-            submittedRowCount: totalIncoming || addedRows,
-          },
-        },
-      );
-    };
-
     const flushMasterBatch = async (forceMeta = false) => {
       if (!pendingMaster.length) return;
       const batch = pendingMaster;
@@ -2030,9 +2012,10 @@ export class MasterDataService {
       pendingMaster = [];
       await this.rowStore.appendRows(batch, MASTER_DATA_KEY, undefined);
       addedRows += batch.length;
-      pendingUploadBatch.push(...batch);
-      if (pendingUploadBatch.length >= NEW_ROW_FLUSH_BATCH) {
-        await flushUploadReceiptBatch();
+      // Keep a small preview for the "Your uploads" receipt (not the full merge payload).
+      if (pendingUploadBatch.length < DUPLICATE_PREVIEW_LIMIT) {
+        const room = DUPLICATE_PREVIEW_LIMIT - pendingUploadBatch.length;
+        pendingUploadBatch.push(...batch.slice(0, room));
       }
       if (this.searchIndex.isSearchEngineEnabled() && targetHeaders.length) {
         void this.searchIndex
@@ -2162,7 +2145,7 @@ export class MasterDataService {
           formatMasterDataCell,
         );
         missingValueCount += normalized.filter((cell) => cell === '-').length;
-        const key = this.rowKey(normalized);
+        const key = this.rowKey(targetHeaders, normalized);
         pendingLookup.push({ key, row: normalized });
         if (pendingLookup.length >= DEDUP_LOOKUP_BATCH) {
           await resolvePendingLookup();
@@ -2296,18 +2279,19 @@ export class MasterDataService {
       });
 
       await flushMasterBatch(true);
-      await flushUploadReceiptBatch();
       await flushDuplicateBatch();
 
-      // Ensure "Your uploads" always appears when anything was processed.
+      // Always create/update the "Your uploads" receipt with how many were uploaded.
+      const uploadPreview = pendingUploadBatch.slice(0, DUPLICATE_PREVIEW_LIMIT);
+      pendingUploadBatch = [];
       if (!uploadRequestId && (addedRows > 0 || duplicateCount > 0 || totalIncoming > 0)) {
         const created = await this.uploadRequestModel.create({
           fileName,
-          sheetName,
+          sheetName: 'Uploaded',
           headers: targetHeaders,
-          rows: [],
-          workRows: [],
-          rowCount: 0,
+          rows: uploadPreview,
+          workRows: uploadPreview.map((row) => [...row]),
+          rowCount: addedRows,
           submittedRowCount: totalIncoming,
           duplicateCount,
           duplicatePreviewRows: storedDuplicateRows.slice(0, DUPLICATE_PREVIEW_LIMIT),
@@ -2317,8 +2301,8 @@ export class MasterDataService {
           submittedByName: actorDisplayName,
           sourceRole: 'employee',
           status: 'approved',
-          mergedAddedRows: 0,
-          mergedTotalRows: baseRowCount,
+          mergedAddedRows: addedRows,
+          mergedTotalRows: baseRowCount + addedRows,
           reviewedBy: new Types.ObjectId(actor.id),
           reviewedByEmail: actor.email,
           reviewedAt: new Date(),
@@ -2330,6 +2314,8 @@ export class MasterDataService {
           { _id: uploadRequestId },
           {
             $set: {
+              fileName,
+              sheetName: 'Uploaded',
               rowCount: addedRows,
               submittedRowCount: totalIncoming,
               duplicateCount,
@@ -2340,6 +2326,9 @@ export class MasterDataService {
               status: 'approved',
               isDuplicateFile: false,
               submittedByName: actorDisplayName,
+              ...(uploadPreview.length
+                ? { rows: uploadPreview, workRows: uploadPreview.map((row) => [...row]) }
+                : {}),
             },
           },
         );
@@ -2361,14 +2350,14 @@ export class MasterDataService {
         if (freshDuplicateDoc) {
           duplicateFile = this.toUploadRequestResponse(freshDuplicateDoc);
         }
-      } else if (duplicateCount > 0 && storedDuplicateRows.length > 0) {
+      } else if (duplicateCount > 0) {
         duplicateFile = await this.createUploadDuplicateFile(
           actor,
           fileName,
           targetHeaders,
           storedDuplicateRows,
           'employee',
-          storedDuplicateRows.length,
+          duplicateCount,
         );
       }
 
@@ -2516,9 +2505,11 @@ export class MasterDataService {
       throw new BadRequestException('At least one column header is required');
     }
     const rowCount = params.rowCount ?? params.rows.length;
-    if (rowCount <= 0 || !params.rows.length) {
+    if (rowCount <= 0) {
       throw new BadRequestException('No duplicate rows to save');
     }
+    // Prefer real rows; if only a count is known, still create the Duplicates folder file.
+    const rowsToStore = params.rows.length > 0 ? params.rows : [];
 
     const resolved = await this.resolveDuplicateFileMeta(actor);
     const campaignName =
@@ -2530,11 +2521,11 @@ export class MasterDataService {
       fileName: params.fileName,
       sheetName: params.sheetName,
       headers: params.headers,
-      rows: params.rows,
-      workRows: params.rows.map((row) => [...row]),
+      rows: rowsToStore,
+      workRows: rowsToStore.map((row) => [...row]),
       rowCount,
       duplicateCount: 0,
-      duplicatePreviewRows: [],
+      duplicatePreviewRows: rowsToStore.slice(0, DUPLICATE_PREVIEW_LIMIT),
       missingValueCount: 0,
       submittedBy: new Types.ObjectId(actor.id),
       submittedByEmail: actor.email,
@@ -2596,10 +2587,9 @@ export class MasterDataService {
 
   async listUploadRequests(query: ListMasterDataUploadRequestsDto) {
     const filter: Record<string, unknown> = {};
+    // Omit status → all statuses (approved DB Admin merges must be visible to Super Admin).
     if (query.status) {
       filter.status = query.status;
-    } else {
-      filter.status = { $in: ['pending', 'pending_admin'] };
     }
     if (query.sourceRole) {
       filter.sourceRole = query.sourceRole;
@@ -2820,6 +2810,11 @@ export class MasterDataService {
     request.status = 'approved';
     request.mergedAddedRows = merged.addedRows ?? request.rowCount;
     request.mergedTotalRows = merged.rowCount;
+    request.submittedRowCount = request.submittedRowCount ?? request.rowCount;
+    if (!request.isDuplicateFile) {
+      request.sheetName = 'Uploaded';
+      request.isDuplicateFile = false;
+    }
     request.reviewedBy = new Types.ObjectId(actor.id);
     request.reviewedByEmail = actor.email;
     request.reviewedAt = new Date();
@@ -2836,15 +2831,263 @@ export class MasterDataService {
       filter.status = query.status;
     }
     // All statuses (including approved / merged) stay visible until Super Admin deletes the request.
-    const docs = await this.uploadRequestModel
+    let docs = await this.uploadRequestModel
       .find(filter)
       .select(UPLOAD_REQUEST_LIST_PROJECTION)
       .sort({ createdAt: -1 })
       .lean()
       .exec();
+
+    // Older CSV imports only saved the duplicates-temp file. Create the missing
+    // "Your uploads" companion so My Data always shows both folders.
+    const backfilled = await this.ensureCompanionUploadReceipts(actorId, docs);
+    if (backfilled) {
+      docs = await this.uploadRequestModel
+        .find(filter)
+        .select(UPLOAD_REQUEST_LIST_PROJECTION)
+        .sort({ createdAt: -1 })
+        .lean()
+        .exec();
+    }
+
     return docs.map((doc) =>
       this.toUploadRequestResponse(doc as unknown as MasterDataUploadRequest),
     );
+  }
+
+  /** Stem used to pair `file.xlsx` with `file-duplicates-temp.xlsx`. */
+  private uploadFileStem(fileName: string): string {
+    return String(fileName || '')
+      .replace(/-?(suppression-)?duplicates(-temp)?\.(xlsx|xls|csv)$/i, '')
+      .replace(/\.(xlsx|xls|csv)$/i, '')
+      .trim();
+  }
+
+  private isDuplicateUploadDoc(doc: {
+    isDuplicateFile?: boolean;
+    fileName?: string;
+    sheetName?: string;
+  }): boolean {
+    if (doc.isDuplicateFile === true) return true;
+    if (doc.isDuplicateFile === false) return false;
+    const fileName = doc.fileName ?? '';
+    const sheetName = (doc.sheetName ?? '').trim();
+    return (
+      /-duplicates(-temp)?\.(xlsx|xls|csv)$/i.test(fileName) ||
+      /suppression-duplicates\.(xlsx|xls|csv)$/i.test(fileName) ||
+      /^(Duplicates)(\s|\(|$)/i.test(sheetName)
+    );
+  }
+
+  /**
+   * Recover uploaded/duplicate counts from the completed CSV import job (if any).
+   */
+  private async lookupImportCountsForStem(
+    actorId: string,
+    stem: string,
+    duplicateRequestId?: string,
+  ): Promise<{ uploaded: number; duplicates: number; totalInFile: number } | null> {
+    if (!Types.ObjectId.isValid(actorId) || !stem) return null;
+    const oid = new Types.ObjectId(actorId);
+    const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    let job: {
+      checkpoint?: { successRows?: number };
+      duplicateRowsHeld?: number;
+      progress?: { totalEstimate?: number; success?: number };
+      fileName?: string;
+    } | null = null;
+
+    if (duplicateRequestId && Types.ObjectId.isValid(duplicateRequestId)) {
+      job = await this.csvImportJobModel
+        .findOne({
+          uploadedBy: oid,
+          duplicateHoldRequestId: duplicateRequestId,
+          status: 'completed',
+        })
+        .select('checkpoint duplicateRowsHeld progress fileName')
+        .sort({ completedAt: -1, updatedAt: -1 })
+        .lean()
+        .exec();
+    }
+
+    if (!job) {
+      const stemRe = new RegExp(`^${escape(stem)}(\\.(xlsx|xls|csv))?$`, 'i');
+      job = await this.csvImportJobModel
+        .findOne({
+          uploadedBy: oid,
+          status: 'completed',
+          fileName: stemRe,
+        })
+        .select('checkpoint duplicateRowsHeld progress fileName')
+        .sort({ completedAt: -1, updatedAt: -1 })
+        .lean()
+        .exec();
+    }
+
+    if (!job) return null;
+
+    const uploaded = Math.max(
+      0,
+      Number(job.checkpoint?.successRows ?? job.progress?.success ?? 0) || 0,
+    );
+    const duplicates = Math.max(0, Number(job.duplicateRowsHeld ?? 0) || 0);
+    const totalInFile = Math.max(
+      uploaded + duplicates,
+      Number(job.progress?.totalEstimate ?? 0) || 0,
+    );
+    return { uploaded, duplicates, totalInFile };
+  }
+
+  /**
+   * If a user only has duplicate-hold files (no matching upload receipt), create
+   * lightweight "Your uploads" companions so both folders populate.
+   * Also repairs receipts that were backfilled with 0 uploaded when the import
+   * job still has the real successRows count.
+   */
+  private async ensureCompanionUploadReceipts(
+    actorId: string,
+    docs: Array<Record<string, unknown>>,
+  ): Promise<boolean> {
+    if (!Types.ObjectId.isValid(actorId) || !docs.length) return false;
+    const oid = new Types.ObjectId(actorId);
+
+    const uploadByStem = new Map<string, Record<string, unknown>>();
+    const orphanDups: Array<Record<string, unknown>> = [];
+    for (const doc of docs) {
+      const fileName = String(doc.fileName ?? '');
+      const stem = this.uploadFileStem(fileName).toLowerCase();
+      if (!stem) continue;
+      if (this.isDuplicateUploadDoc(doc as { isDuplicateFile?: boolean; fileName?: string; sheetName?: string })) {
+        orphanDups.push(doc);
+      } else {
+        uploadByStem.set(stem, doc);
+      }
+    }
+
+    let changed = 0;
+
+    // Repair existing "0 uploaded" receipts when the CSV job has real counts.
+    for (const [stemKey, upload] of uploadByStem) {
+      const currentUploaded = Number(upload.mergedAddedRows ?? 0) || 0;
+      if (currentUploaded > 0 || !upload._id) continue;
+
+      const matchingDup = orphanDups.find(
+        (d) => this.uploadFileStem(String(d.fileName ?? '')).toLowerCase() === stemKey,
+      );
+      const counts = await this.lookupImportCountsForStem(
+        actorId,
+        this.uploadFileStem(String(upload.fileName ?? '')),
+        matchingDup?._id ? String(matchingDup._id) : undefined,
+      );
+      if (!counts || counts.uploaded <= 0) continue;
+
+      await this.uploadRequestModel.updateOne(
+        { _id: upload._id },
+        {
+          $set: {
+            mergedAddedRows: counts.uploaded,
+            rowCount: counts.uploaded,
+            duplicateCount: Math.max(counts.duplicates, Number(upload.duplicateCount ?? 0) || 0),
+            submittedRowCount: Math.max(
+              counts.totalInFile,
+              counts.uploaded + counts.duplicates,
+              Number(upload.submittedRowCount ?? 0) || 0,
+            ),
+            sheetName: 'Uploaded',
+            isDuplicateFile: false,
+          },
+        },
+      );
+      changed += 1;
+    }
+
+    for (const dup of orphanDups) {
+      const fileName = String(dup.fileName ?? '');
+      const stem = this.uploadFileStem(fileName);
+      if (!stem) continue;
+      const stemKey = stem.toLowerCase();
+      if (uploadByStem.has(stemKey)) continue;
+
+      const dupCount = Number(dup.rowCount ?? dup.duplicateCount ?? 0) || 0;
+      const counts = await this.lookupImportCountsForStem(
+        actorId,
+        stem,
+        dup._id ? String(dup._id) : undefined,
+      );
+      const uploaded = counts?.uploaded ?? 0;
+      const duplicates = Math.max(dupCount, counts?.duplicates ?? 0);
+      const submitted = Math.max(
+        counts?.totalInFile ?? 0,
+        uploaded + duplicates,
+        duplicates,
+      );
+
+      const createdAt =
+        dup.createdAt instanceof Date
+          ? dup.createdAt
+          : dup.createdAt
+            ? new Date(String(dup.createdAt))
+            : new Date();
+      const headers = Array.isArray(dup.headers) ? (dup.headers as string[]) : [];
+
+      try {
+        await this.uploadRequestModel.create({
+          fileName: `${stem}.xlsx`,
+          sheetName: 'Uploaded',
+          headers,
+          rows: [],
+          workRows: [],
+          rowCount: uploaded,
+          submittedRowCount: submitted,
+          duplicateCount: duplicates,
+          duplicatePreviewRows: [],
+          missingValueCount: 0,
+          submittedBy: oid,
+          submittedByEmail: String(dup.submittedByEmail ?? ''),
+          submittedByName: String(dup.submittedByName ?? dup.submittedByEmail ?? 'Upload'),
+          campaignName: String(dup.campaignName ?? stem),
+          dbName: String(dup.dbName ?? 'Master Data'),
+          adminName: String(dup.adminName ?? ''),
+          sourceRole: (dup.sourceRole as 'employee' | 'db_admin') || 'db_admin',
+          status: 'approved',
+          mergedAddedRows: uploaded,
+          reviewedBy: oid,
+          reviewedByEmail: String(dup.submittedByEmail ?? ''),
+          reviewedAt: createdAt,
+          isDuplicateFile: false,
+          createdAt,
+          updatedAt: createdAt,
+        });
+        uploadByStem.set(stemKey, { fileName: `${stem}.xlsx` });
+        changed += 1;
+
+        if (/-duplicates-temp\.(xlsx|xls|csv)$/i.test(fileName) && dup._id) {
+          await this.uploadRequestModel.updateOne(
+            { _id: dup._id },
+            {
+              $set: {
+                fileName: `${stem}-duplicates.xlsx`,
+                sheetName: 'Duplicates',
+                isDuplicateFile: true,
+              },
+            },
+          );
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Could not backfill upload receipt for "${fileName}": ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
+
+    if (changed > 0) {
+      this.logger.log(
+        `Repaired/backfilled ${changed} Your-uploads receipt(s) for user ${actorId}`,
+      );
+      this.bustMasterCaches();
+    }
+    return changed > 0;
   }
 
   async reviewUploadRequest(
@@ -2932,8 +3175,23 @@ export class MasterDataService {
       throw new NotFoundException('Upload request not found');
     }
 
-    // Upload requests are removed from employee/DB Admin panels only.
-    // Rows already merged into master data stay in the master file.
+    // Panel-only delete: NEVER touch master_upload rows/chunks/OpenSearch.
+    // Optional: clean temporary duplicate-hold chunks (masterKey = holdKey ≠ MASTER_DATA_KEY).
+    const holdKey = String(
+      (request as MasterDataUploadRequest & { rowsHoldKey?: string }).rowsHoldKey ?? '',
+    ).trim();
+    if (holdKey && holdKey !== MASTER_DATA_KEY) {
+      try {
+        await this.rowStore.deleteChunks(holdKey);
+      } catch (err) {
+        this.logger.warn(
+          `Could not clean duplicate-hold chunks for ${holdKey}: ${
+            err instanceof Error ? err.message : err
+          }`,
+        );
+      }
+    }
+
     await this.uploadRequestModel.deleteOne({ _id: request._id }).exec();
     await this.notifications.deleteByUploadRequestId(requestId);
 
@@ -2943,8 +3201,8 @@ export class MasterDataService {
     try {
       await this.notifications.notifyUser(request.submittedBy.toString(), {
         type: 'warning',
-        title: isEmployeeRequest ? 'Your data file was deleted' : 'Master data request deleted',
-        message: `${request.fileName} was removed from your panel. Master file contacts are unchanged.`,
+        title: isEmployeeRequest ? 'Your data file was deleted' : 'Upload file removed from panel',
+        message: `${request.fileName} was removed from your panel only. Master file contacts were NOT deleted.`,
         priority: 'medium',
         actionUrl: submitterActionUrl,
         actionLabel: 'Open My Data',
@@ -2952,6 +3210,7 @@ export class MasterDataService {
           requestId,
           status: request.status,
           deleted: true,
+          masterFileUnchanged: true,
         },
       });
     } catch {
@@ -2963,11 +3222,11 @@ export class MasterDataService {
         await this.notifications.notifyDbAdmins({
           type: 'warning',
           title: 'Employee upload removed',
-          message: `Admin deleted ${request.fileName} from ${request.submittedByEmail ?? 'employee'}`,
+          message: `Admin deleted ${request.fileName} from ${request.submittedByEmail ?? 'employee'} (panel only — master unchanged)`,
           priority: 'medium',
           actionUrl: '/db-admin/master-data?tab=employee',
           actionLabel: 'Employee requests',
-          metadata: { requestId, deleted: true },
+          metadata: { requestId, deleted: true, masterFileUnchanged: true },
         });
       } catch {
         /* notification should not block request delete */
@@ -2986,6 +3245,8 @@ export class MasterDataService {
           rowCount: request.rowCount,
           status: request.status,
           sourceRole: request.sourceRole ?? 'db_admin',
+          masterFileUnchanged: true,
+          cleanedHoldKey: holdKey && holdKey !== MASTER_DATA_KEY ? holdKey : null,
         },
       });
     } catch (err) {
@@ -2998,6 +3259,7 @@ export class MasterDataService {
       deleted: true,
       id: requestId,
       sourceRole: request.sourceRole ?? 'db_admin',
+      masterFileUnchanged: true,
     };
   }
 
@@ -3078,6 +3340,16 @@ export class MasterDataService {
     if (typeof cached === 'number' && Number.isFinite(cached) && cached >= 0) {
       return cached;
     }
+
+    // Trust declared rowCount for chunked masters — full chunk aggregate is multi-second
+    // and was the main reason bootstrap/search felt slow even with OpenSearch.
+    const declared = this.rowStore.getRowCount(doc);
+    if (declared > 0) {
+      await this.cache.setJson(cacheKey, declared, cacheTtlSeconds(this.config, 'long'));
+      await this.cache.setJson(MASTER_COUNT_CACHE_KEY, declared, cacheTtlSeconds(this.config, 'long'));
+      return declared;
+    }
+
     const rowCount = await this.rowStore.countStoredRows(doc);
     await this.cache.setJson(cacheKey, rowCount, cacheTtlSeconds(this.config, 'long'));
     await this.cache.setJson(MASTER_COUNT_CACHE_KEY, rowCount, cacheTtlSeconds(this.config, 'long'));
@@ -3346,14 +3618,18 @@ export class MasterDataService {
 
     if (mode === 'all') {
       const from = (page - 1) * limit;
-      const { rowIndices, total } = await this.elasticsearch.searchMasterPage(
-        osQuery,
-        from,
-        limit,
-        sqlWhere,
-      );
+      // OpenSearch find + campaign coverage in parallel (coverage was sequential before).
+      const [{ rowIndices, total }, coverage] = await Promise.all([
+        this.elasticsearch.searchMasterPage(osQuery, from, limit, sqlWhere),
+        this.batchesService.getMasterBatchCoverage([], [], masterRevision, rowCount),
+      ]);
       const rows = await this.rowStore.getRowsByIndices(doc, rowIndices);
-      const batchedByRow = await this.buildPageBatchedByRow(rowIndices, masterRevision, rowCount);
+      const batchedByRow: Record<string, Array<{ id: string; name: string }>> = {};
+      for (const idx of rowIndices) {
+        const key = String(idx);
+        const refs = coverage.batchedByRow[key];
+        if (refs?.length) batchedByRow[key] = refs;
+      }
       return {
         headers,
         rows,
@@ -3990,10 +4266,13 @@ export class MasterDataService {
     const fileName = doc.fileName;
     const sheetName = doc.sheetName;
     const isDuplicateFile =
-      Boolean(doc.isDuplicateFile) ||
-      /-duplicates(-temp)?\.(xlsx|xls|csv)$/i.test(fileName) ||
-      /suppression-duplicates\.(xlsx|xls|csv)$/i.test(fileName) ||
-      /^Duplicates/i.test(sheetName ?? '');
+      doc.isDuplicateFile === true
+        ? true
+        : doc.isDuplicateFile === false
+          ? false
+          : /-duplicates(-temp)?\.(xlsx|xls|csv)$/i.test(fileName) ||
+            /suppression-duplicates\.(xlsx|xls|csv)$/i.test(fileName) ||
+            /^(Duplicates)(\s|\(|$)/i.test((sheetName ?? '').trim());
 
     const derivedCampaign =
       doc.campaignName ||

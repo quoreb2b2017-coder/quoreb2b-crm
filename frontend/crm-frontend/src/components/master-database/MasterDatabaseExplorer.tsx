@@ -73,7 +73,7 @@ const CAMPAIGN_MAX_ROWS = 50_000;
 function campaignPartCount(contactCount: number): number {
   return Math.ceil(contactCount / CAMPAIGN_MAX_ROWS);
 }
-const AUTO_SEARCH_MS = 500;
+const AUTO_SEARCH_MS = 700;
 
 export type MasterDatabaseVariant = 'admin' | 'db_admin';
 
@@ -430,6 +430,26 @@ export function MasterDatabaseExplorer({
     await executeFilteredSearch(1, pageSize, { resetSelection: true });
   }, [executeFilteredSearch, isDbAdmin, pageSize]);
 
+  /** Excel column Search → Apply: full-template rows from OpenSearch, not current page only */
+  const handleColumnContainsApply = useCallback(
+    (header: string, query: string) => {
+      if (!useServerSearch) return false;
+      const q = query.trim();
+      if (!q) return false;
+      const current = filtersRef.current;
+      const next = {
+        ...current,
+        columnText: { ...current.columnText, [header]: q },
+      };
+      filtersRef.current = next;
+      setFilters(next);
+      setPage(1);
+      void executeFilteredSearch(1, pageSize, { resetSelection: true });
+      return true;
+    },
+    [executeFilteredSearch, pageSize, useServerSearch],
+  );
+
   useEffect(() => {
     if (!useServerSearch) return;
     if (!canAutoSearchMasterData(filters)) {
@@ -445,7 +465,7 @@ export function MasterDatabaseExplorer({
     }
     const timer = setTimeout(() => {
       void runSearch();
-    }, embedded ? AUTO_SEARCH_MS : 600);
+    }, embedded ? AUTO_SEARCH_MS : 800);
     return () => clearTimeout(timer);
   }, [embedded, filters, isFilteredView, loadBrowsePage, pageSize, runSearch, useServerSearch]);
 
@@ -922,6 +942,9 @@ export function MasterDatabaseExplorer({
               onTogglePageSelection={toggleSelectAllPage}
               datasetRowCount={embedded ? filteredTotal : undefined}
               onCreateBatch={embedded ? onCreateBatch : undefined}
+              onColumnContainsApply={
+                useServerSearch ? handleColumnContainsApply : undefined
+              }
             />
           </div>
 

@@ -11,16 +11,12 @@ import {
 import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
 import { MasterDataUploadMonthExplorer } from '@/components/master-data/MasterDataUploadMonthExplorer';
-import { MasterDataUploadRequestList } from '@/components/master-data/MasterDataUploadRequestList';
 import {
   DataPageShell,
   dataFilterPill,
-  dataToolbarBadge,
 } from '@/components/master-data/DataPageShell';
-import {
-  resolveDuplicatesOpenPath,
-  uploadRequestFilePath,
-} from '@/lib/master-data/upload-request-nav';
+import { uploadRequestFilePath } from '@/lib/master-data/upload-request-nav';
+import { isEmployeeDuplicateFile } from '@/lib/master-data/employee-upload-file.util';
 import { useUploadRequestRefresh } from '@/hooks/useUploadRequestRefresh';
 
 const FILTERS: Array<MasterDataUploadRequestStatus | 'all'> = [
@@ -64,12 +60,21 @@ export function DbAdminEmployeeDataPanel({ onRequestsChanged }: DbAdminEmployeeD
   useUploadRequestRefresh(load);
 
   const filteredRequests = useMemo(
-    () => requests.filter((request) => (filter === 'all' ? true : request.status === filter)),
+    () =>
+      requests.filter(
+        (request) =>
+          !isEmployeeDuplicateFile(request) &&
+          (filter === 'all' ? true : request.status === filter),
+      ),
     [filter, requests],
   );
 
   const pendingDbCount = useMemo(
-    () => requests.filter((request) => request.status === 'pending_db_admin').length,
+    () =>
+      requests.filter(
+        (request) =>
+          !isEmployeeDuplicateFile(request) && request.status === 'pending_db_admin',
+      ).length,
     [requests],
   );
 
@@ -112,7 +117,10 @@ export function DbAdminEmployeeDataPanel({ onRequestsChanged }: DbAdminEmployeeD
     setActionLoadingId(request.id);
     try {
       await masterDataService.forwardEmployeeRequestToAdmin(request.id);
-      toast.success('Merged to master', `${request.rowCount} contact(s) added to master file automatically`);
+      toast.success(
+        'Merged to master',
+        `${request.rowCount} contact(s) added to master file automatically`,
+      );
       window.dispatchEvent(new CustomEvent('master-data-updated'));
       await load();
     } catch (err) {
@@ -126,14 +134,10 @@ export function DbAdminEmployeeDataPanel({ onRequestsChanged }: DbAdminEmployeeD
     router.push(uploadRequestFilePath('db_admin_employee', request.id));
   };
 
-  const openDuplicates = (request: MasterDataUploadRequest) => {
-    router.push(resolveDuplicatesOpenPath('db_admin_employee', request, requests));
-  };
-
   return (
     <DataPageShell
       title="Employee data"
-      subtitle="Review employee uploads by month folder — approve, reject, or forward to Super Admin."
+      subtitle="Review employee uploads by month — approve, reject, or forward to Super Admin."
       actions={
         <button
           type="button"
@@ -148,8 +152,10 @@ export function DbAdminEmployeeDataPanel({ onRequestsChanged }: DbAdminEmployeeD
     >
       {pendingDbCount > 0 && (
         <div className="rounded-xl border border-amber-200/80 bg-amber-50/90 px-4 py-2.5 text-sm text-amber-900">
-          <span className="font-semibold">{pendingDbCount} request{pendingDbCount !== 1 ? 's' : ''}</span>
-          {' '}waiting for your review
+          <span className="font-semibold">
+            {pendingDbCount} request{pendingDbCount !== 1 ? 's' : ''}
+          </span>{' '}
+          waiting for your review
         </div>
       )}
 
@@ -157,48 +163,36 @@ export function DbAdminEmployeeDataPanel({ onRequestsChanged }: DbAdminEmployeeD
         title="Employee data folders"
         requests={filteredRequests}
         loading={loading}
-        hint="Employee uploads filed by month · Jan through Dec"
+        hint="Employee uploads by month — Open, Approve, Reject, or Send to Admin"
         emptyFolderMessage="No employee files in this month folder."
         statusColumnLabel="Workflow status"
         showSubmittedBy
+        variant="admin"
+        folderMode="uploads"
         onOpenRequest={openRequestFile}
-        renderDetails={(monthRequests, meta) => (
-          <MasterDataUploadRequestList
-            title={`${meta.monthLabel} ${meta.year} — employee files`}
-            requests={monthRequests}
-            loading={loading}
-            emptyMessage={`No employee files in ${meta.monthLabel} ${meta.year}`}
-            viewportClassName="max-h-[min(70vh,720px)] overflow-y-auto"
-            canReview
-            reviewableStatuses={['pending_db_admin']}
-            actionLoadingId={actionLoadingId}
-            onApprove={approve}
-            onReject={(request) => {
-              setRejectTarget(request);
-              setRejectReason('');
-            }}
-            onForward={forward}
-            onViewDuplicates={openDuplicates}
-            onViewFile={openRequestFile}
-            toolbar={
-              <div className="flex w-full flex-wrap items-center gap-2">
-                <span className={dataToolbarBadge()}>{meta.monthLabel} {meta.year}</span>
-                <div className="ml-auto flex flex-wrap gap-1.5">
-                  {FILTERS.map((item) => (
-                    <button
-                      key={item}
-                      type="button"
-                      onClick={() => setFilter(item)}
-                      className={dataFilterPill(filter === item)}
-                    >
-                      {item === 'all' ? 'All' : item.replace(/_/g, ' ')}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            }
-          />
-        )}
+        canReview
+        reviewableStatuses={['pending_db_admin']}
+        actionLoadingId={actionLoadingId}
+        onApprove={approve}
+        onReject={(request) => {
+          setRejectTarget(request);
+          setRejectReason('');
+        }}
+        onForward={forward}
+        toolbarExtra={
+          <div className="ml-auto flex flex-wrap gap-1.5">
+            {FILTERS.map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setFilter(item)}
+                className={dataFilterPill(filter === item)}
+              >
+                {item === 'all' ? 'All' : item.replace(/_/g, ' ')}
+              </button>
+            ))}
+          </div>
+        }
       />
 
       {rejectTarget && (

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useState, useCallback, useEffect, memo } from 'react';
 import { cn } from '@/lib/utils/cn';
 import { useAuthStore } from '@/store/auth.store';
@@ -54,12 +54,13 @@ export function isAdminUserReportPath(pathname: string) {
   return /^\/admin\/users\/[^/]+\/report$/.test(pathname);
 }
 
-/** Master data spreadsheet (admin upload + DB admin read-only master file) */
+/** Master data spreadsheet (admin upload + open request sheets + DB admin read-only master file) */
 export function isMasterDataSpreadsheetPath(pathname: string) {
-  return (
-    pathname.startsWith('/admin/master-data-upload') ||
-    pathname === '/db-admin/master-file'
-  );
+  if (pathname === '/db-admin/master-file') return true;
+  if (pathname === '/admin/master-data-upload') return true;
+  // Open a specific upload/duplicates sheet — not the DB Admin data inbox list.
+  if (/^\/admin\/master-data-upload\/requests\/[^/]+/.test(pathname)) return true;
+  return false;
 }
 
 /** Bulk email verification — full width spreadsheet-style panel */
@@ -118,13 +119,16 @@ export function isChatPath(pathname: string) {
     || /^\/admin\/team-chats$/.test(pathname);
 }
 
-/** Master data list / upload workspace (employee my-data, db-admin master-data tabs) */
+/** Master data list / upload workspace (employee my-data, db-admin master-data, admin DB admin data inbox) */
 export function isMasterDataWorkspacePath(pathname: string) {
   return (
     pathname === '/employee/my-data' ||
     /^\/employee\/my-data\/[^/]+\/duplicates$/.test(pathname) ||
     pathname === '/db-admin/master-data' ||
-    pathname.startsWith('/db-admin/master-data/')
+    pathname.startsWith('/db-admin/master-data/') ||
+    pathname === '/admin/master-data-upload/requests' ||
+    pathname === '/admin/employee-data' ||
+    pathname === '/admin/duplicates'
   );
 }
 
@@ -279,6 +283,12 @@ const Icons = {
       <path d="M4 16V6a2 2 0 012-2h10" />
     </svg>
   ),
+  suppression: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+      <path d="M9 12l2 2 4-4" />
+    </svg>
+  ),
 };
 
 const iconMap: Record<string, React.ReactNode> = {
@@ -303,6 +313,7 @@ const iconMap: Record<string, React.ReactNode> = {
   'my data':            Icons.upload,
   'employee data':      Icons.upload,
   'duplicates':         Icons.duplicates,
+  'suppression':        Icons.suppression,
   'email verification': Icons.upload,
   'db admin data requests': Icons.upload,
   'db admin upload requests': Icons.upload,
@@ -312,6 +323,10 @@ const iconMap: Record<string, React.ReactNode> = {
   'all qc':             Icons.leads,
   'qc review':          Icons.leads,
   'ready qc':           Icons.leads,
+  'dnc':                Icons.leads,
+  'disposition':        Icons.leads,
+  '3m':                 Icons.logs,
+  '6m':                 Icons.logs,
   'attendance':         Icons.attendance,
   'leave requests':     Icons.leave,
   'leave apply':        Icons.leave,
@@ -344,10 +359,51 @@ const roleLabel: Record<DashboardVariant, string> = {
   employee: 'Employee',
 };
 
-function isNavItemActive(pathname: string, href: string) {
-  if (pathname === href) return true;
-  if (/\/dashboard$/.test(href)) return false;
-  return href.length > 7 && pathname.startsWith(href);
+function parseNavHref(href: string): { path: string; tab: string | null } {
+  const qIndex = href.indexOf('?');
+  if (qIndex < 0) return { path: href, tab: null };
+  const path = href.slice(0, qIndex);
+  const params = new URLSearchParams(href.slice(qIndex + 1));
+  return { path, tab: params.get('tab') };
+}
+
+/**
+ * Active nav match — supports query tabs like `/db-admin/master-data?tab=employee`
+ * so "My data" and "Employee data" don't both highlight as the same route.
+ */
+function isNavItemActive(
+  pathname: string,
+  href: string,
+  search = '',
+): boolean {
+  const { path: hrefPath, tab: hrefTab } = parseNavHref(href);
+  const currentTab = new URLSearchParams(
+    search.startsWith('?') ? search.slice(1) : search,
+  ).get('tab');
+
+  if (pathname !== hrefPath) {
+    if (/\/dashboard$/.test(hrefPath)) return false;
+    // Nested paths only for hrefs without an explicit tab query.
+    if (hrefTab) return false;
+    return hrefPath.length > 7 && pathname.startsWith(hrefPath + '/');
+  }
+
+  // Same path: match tab query exactly (null/absent = default "mine" tab).
+  if (hrefTab) {
+    if (currentTab === hrefTab) return true;
+    // Employee-request detail routes belong under Employee data.
+    if (
+      hrefTab === 'employee' &&
+      pathname.startsWith('/db-admin/master-data/employee-requests')
+    ) {
+      return true;
+    }
+    return false;
+  }
+  // Default My data — not active while Employee data tab (or its sub-routes) is open.
+  if (currentTab === 'employee') return false;
+  if (pathname.startsWith('/db-admin/master-data/employee-requests')) return false;
+  return true;
 }
 
 function groupNavBySection(items: NavItem[]) {
@@ -616,7 +672,7 @@ function SidebarInner({
       {/* ── Nav items ── */}
       <nav className={cn('flex-1 overflow-y-auto overflow-x-hidden py-1', isCollapsed ? 'px-1.5' : 'px-2')}>
         {navItems.map((item) => {
-          const active = pathname === item.href || (item.href !== '/admin/dashboard' && pathname.startsWith(item.href) && item.href.length > 7);
+          const active = isNavItemActive(pathname, item.href, '');
           return (
             <Tip key={item.href} label={item.label} collapsed={isCollapsed}>
               <Link
@@ -735,6 +791,8 @@ function SidebarInner({
 export function DashboardLayout({ children, title, variant, navItems }: DashboardLayoutProps) {
   useGlobalSpreadsheetCopyGuard();
   const pathname = usePathname() ?? '';
+  const searchParams = useSearchParams();
+  const search = searchParams?.toString() ? `?${searchParams.toString()}` : '';
   const router = useRouter();
   const { pendingHref, isNavigating, startNavigation } = useNavigation();
   const batchExcelView = isBatchExcelViewPath(pathname);
@@ -755,8 +813,8 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
   const onDismissIdleWarn = useCallback(() => setIdleWarn(false), []);
   const { logout: portalLogout } = useIdleLogout(portalTracking, onIdleWarn, onDismissIdleWarn);
 
-  // close mobile on route change
-  useEffect(() => { setMobileOpen(false); }, [pathname]);
+  // close mobile on route / tab change
+  useEffect(() => { setMobileOpen(false); }, [pathname, search]);
 
   const handleLogout = useCallback(async () => {
     if (portalTracking) {
@@ -779,7 +837,7 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
 
   const currentNavLabel =
     navItems.find((n) => n.href === pendingHref)?.label ??
-    navItems.find((n) => isNavItemActive(pathname, n.href))?.label ??
+    navItems.find((n) => isNavItemActive(pathname, n.href, search))?.label ??
     'Overview';
 
   const handleNavClick = useCallback(
@@ -857,7 +915,7 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
               isCollapsed={isCollapsed}
             >
               {group.items.map((item) => {
-                const active = isNavItemActive(pathname, item.href);
+                const active = isNavItemActive(pathname, item.href, search);
                 const pending = pendingHref === item.href && !active;
 
                 if (item.children?.length) {

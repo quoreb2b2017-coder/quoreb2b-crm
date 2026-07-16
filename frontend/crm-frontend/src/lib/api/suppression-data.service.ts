@@ -46,6 +46,10 @@ export interface CheckSuppressionResult {
   fileDuplicateCount: number;
   manualDuplicateCount: number;
   matchedManualValues: string[];
+  /** Official master-data template headers for matched suppression rows */
+  matchedManualHeaders?: string[];
+  /** Template-aligned matched rows (preview) */
+  matchedManualRows?: string[][];
   duplicatePreviewRows: string[][];
   duplicateFileId: string | null;
   duplicateFileName: string | null;

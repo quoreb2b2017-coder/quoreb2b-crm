@@ -3,11 +3,14 @@ import type { MasterDataUploadRequest } from '@/lib/api/master-data.service';
 export type EmployeeUploadFileType = 'merged' | 'duplicates' | 'upload';
 
 export function isEmployeeDuplicateFile(request: MasterDataUploadRequest): boolean {
-  if (request.isDuplicateFile) return true;
+  // Prefer explicit flag / filename — do NOT treat sheet names like "Master Data" or
+  // accidental "Duplicates*" sheet titles as the duplicates folder file.
+  if (request.isDuplicateFile === true) return true;
+  if (request.isDuplicateFile === false) return false;
   return (
     /-duplicates(-temp)?\.(xlsx|xls|csv)$/i.test(request.fileName) ||
     /suppression-duplicates\.(xlsx|xls|csv)$/i.test(request.fileName) ||
-    /^Duplicates/i.test(request.sheetName ?? '')
+    /^(Duplicates)(\s|\(|$)/i.test((request.sheetName ?? '').trim())
   );
 }
 

@@ -15,7 +15,10 @@ import { statusChangedInColumns } from '../qc/qc-status.util';
 import { compactRowDataPoints } from '../qc/qc-row.util';
 import {
   DISPOSITION_KIND_LABELS,
+  DISPOSITION_TREE_KINDS,
   DispositionKind,
+  duePeriodFromNow,
+  monthsAheadForDispositionKind,
 } from './disposition.constants';
 import {
   classifyDispositionKind,
@@ -80,7 +83,7 @@ export class DispositionService {
     @InjectModel(Batch.name) private batchModel: Model<Batch>,
   ) {}
 
-  /** Queue DNC archive when employee picks Do Not Call (Voicemail stays on campaign only). */
+  /** Queue archive when employee picks Do Not Call or Call after 3/6 months. */
   async enqueueFromBatchUpdate(params: {
     batch: Batch;
     actorId: string;
@@ -108,7 +111,7 @@ export class DispositionService {
     const rootBatchId = await resolveRootBatchId(this.batchModel, batch._id.toString());
     const rootBatch = await this.batchModel.findById(rootBatchId).lean().exec();
     const channel = this.resolveChannel(batch, rootBatch);
-    const period = resolveBatchPeriod(batch as unknown as Record<string, unknown>);
+    const campaignPeriod = resolveBatchPeriod(batch as unknown as Record<string, unknown>);
     const campaignName = rootBatch?.name ?? batch.name;
 
     for (const ch of statusChanges) {
@@ -117,7 +120,7 @@ export class DispositionService {
       const statusValue = readRowDisposition(params.newHeaders, row);
       const employeeOid = new Types.ObjectId(actorId);
 
-      // Voicemail / Not Interested / Callback / Lead: clear DNC archive for this row
+      // Local-only / non-archive statuses: clear any prior archive for this row
       if (statusValue && !shouldEnqueueDispositionArchive(statusValue)) {
         await this.dispositionEntryModel
           .deleteMany({
@@ -133,10 +136,22 @@ export class DispositionService {
       if (!statusValue || !shouldEnqueueDispositionArchive(statusValue)) continue;
 
       const dispositionKind = classifyDispositionKind(statusValue);
-      if (!dispositionKind || dispositionKind !== 'do_not_call') continue;
+      if (!dispositionKind) continue;
+      // Only archive DNC + scheduled call-after folders (legacy VM read-only via tree).
+      if (
+        dispositionKind !== 'do_not_call' &&
+        dispositionKind !== 'call_after_3_months' &&
+        dispositionKind !== 'call_after_6_months'
+      ) {
+        continue;
+      }
 
       const compact = compactRowDataPoints(params.newHeaders, row);
       if (compact.headers.length === 0) continue;
+
+      const monthsAhead = monthsAheadForDispositionKind(dispositionKind);
+      const folderPeriod =
+        monthsAhead != null ? duePeriodFromNow(monthsAhead) : campaignPeriod;
 
       try {
         await this.dispositionEntryModel.findOneAndUpdate(
@@ -152,8 +167,9 @@ export class DispositionService {
               rootBatchId: new Types.ObjectId(rootBatchId),
               campaignName,
               campaignChannel: channel,
-              batchMonth: period.batchMonth,
-              batchYear: period.batchYear,
+              // Call-after folders use due month; DNC keeps campaign period.
+              batchMonth: folderPeriod.batchMonth,
+              batchYear: folderPeriod.batchYear,
               leadKey: ch.leadKey,
               leadLabel: ch.leadLabel,
               statusValue,
@@ -165,7 +181,7 @@ export class DispositionService {
           },
           { upsert: true, new: true },
         );
-        // Drop the other disposition kind (DNC ↔ VM) so row lives in one section
+        // Drop other archive kinds for this row so it lives in one section
         await this.dispositionEntryModel
           .deleteMany({
             batchId: batch._id,
@@ -175,16 +191,18 @@ export class DispositionService {
           })
           .exec()
           .catch(() => undefined);
-        // Leave QC when marked DNC / Direct Voicemail
-        await this.qcEntryModel
-          .deleteMany({
-            batchId: batch._id,
-            rowIndex: ch.rowIndex,
-            employeeId: employeeOid,
-            state: 'pending',
-          })
-          .exec()
-          .catch(() => undefined);
+        // Leave QC when marked DNC (scheduled call-after stays eligible for QC if already there)
+        if (dispositionKind === 'do_not_call') {
+          await this.qcEntryModel
+            .deleteMany({
+              batchId: batch._id,
+              rowIndex: ch.rowIndex,
+              employeeId: employeeOid,
+              state: 'pending',
+            })
+            .exec()
+            .catch(() => undefined);
+        }
       } catch (err) {
         this.logger.warn(
           `Disposition enqueue failed row ${ch.rowIndex}: ${err instanceof Error ? err.message : err}`,
@@ -290,7 +308,7 @@ export class DispositionService {
       byKind.set(e.dispositionKind, list);
     }
 
-    const kinds: DispositionKind[] = ['do_not_call', 'direct_voicemail'];
+    const kinds: DispositionKind[] = [...DISPOSITION_TREE_KINDS];
     return kinds
       .filter((k) => (byKind.get(k)?.length ?? 0) > 0)
       .map((kind) => {

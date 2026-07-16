@@ -6,7 +6,7 @@ import { MasterDataChunk } from './schemas/master-data-chunk.schema';
 import {
   alignRowWithIndex,
   buildHeaderIndexMap,
-  rowKey,
+  contactDedupeKey,
   type SheetSnapshot,
 } from './master-data-merge.util';
 import {
@@ -94,6 +94,7 @@ export class MasterDataRowStore {
   }
 
   async deleteChunks(masterKey: string = MASTER_DATA_KEY): Promise<void> {
+    // Callers that clean duplicate-hold storage pass a holdKey (≠ MASTER_DATA_KEY).
     await this.chunkModel.deleteMany({ masterKey }).exec();
   }
 
@@ -156,7 +157,7 @@ export class MasterDataRowStore {
 
     const trackRow = (row: string[]) => {
       const aligned = alignRowWithIndex(row, sourceIdx, targetHeaders, formatCell);
-      seen.add(rowKey(aligned));
+      seen.add(contactDedupeKey(targetHeaders, aligned));
       processed += 1;
       if (options?.onProgress && processed % YIELD_EVERY_ROWS === 0) {
         options.onProgress(processed);
@@ -387,7 +388,7 @@ export class MasterDataRowStore {
         for await (const chunk of cursor) {
           for (const row of (chunk.rows as string[][]) ?? []) {
             const aligned = alignRowWithIndex(row, existingIdx, mergedHeaders);
-            seen.add(rowKey(aligned));
+            seen.add(contactDedupeKey(mergedHeaders, aligned));
             carry.push(aligned);
             if (carry.length >= chunkSize * 2) {
               await flushCarry();
@@ -405,7 +406,7 @@ export class MasterDataRowStore {
           skippedDuplicates += 1;
           continue;
         }
-        const key = rowKey(aligned);
+        const key = contactDedupeKey(mergedHeaders, aligned);
         if (seen.has(key)) {
           skippedDuplicates += 1;
           continue;

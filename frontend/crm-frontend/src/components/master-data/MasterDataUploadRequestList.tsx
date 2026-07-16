@@ -44,6 +44,8 @@ interface MasterDataUploadRequestListProps {
   canReview?: boolean;
   reviewableStatuses?: MasterDataUploadRequestStatus[];
   actionLoadingId?: string | null;
+  /** When false, hide Duplicates / Missing filled columns (Employee Data review). */
+  showUploadStats?: boolean;
   onViewDuplicates?: (request: MasterDataUploadRequest) => void;
   onViewFile?: (request: MasterDataUploadRequest) => void;
   viewFileLoadingId?: string | null;
@@ -64,6 +66,7 @@ export function MasterDataUploadRequestList({
   canReview,
   reviewableStatuses = ['pending'],
   actionLoadingId,
+  showUploadStats = true,
   onViewDuplicates,
   onViewFile,
   viewFileLoadingId,
@@ -73,6 +76,18 @@ export function MasterDataUploadRequestList({
   onDelete,
   allowDeleteApproved = false,
 }: MasterDataUploadRequestListProps) {
+  const columns = [
+    'File',
+    'Contacts',
+    ...(showUploadStats ? (['Duplicates', 'Missing filled'] as const) : []),
+    'Status',
+    'Submitted by',
+    'Reviewed',
+    'Reason',
+    'Action',
+  ];
+  const colSpan = columns.length;
+
   return (
     <ExcelSheetShell
       title={title}
@@ -85,17 +100,7 @@ export function MasterDataUploadRequestList({
         <table className="w-full min-w-full text-sm">
           <thead>
             <tr className="border-b border-slate-100 bg-slate-50/90 text-left text-[10px] font-bold uppercase tracking-wide text-slate-500">
-              {[
-                'File',
-                'Contacts',
-                'Duplicates',
-                'Missing filled',
-                'Status',
-                'Submitted by',
-                'Reviewed',
-                'Reason',
-                'Action',
-              ].map((label) => (
+              {columns.map((label) => (
                 <th key={label} className="px-4 py-2.5 font-semibold">
                   {label}
                 </th>
@@ -105,13 +110,13 @@ export function MasterDataUploadRequestList({
           <tbody className="divide-y divide-slate-100">
             {loading ? (
               <tr>
-                <td colSpan={9} className="px-4 py-10 text-center text-slate-500">
+                <td colSpan={colSpan} className="px-4 py-10 text-center text-slate-500">
                   Loading requests…
                 </td>
               </tr>
             ) : requests.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-10 text-center text-slate-500">
+                <td colSpan={colSpan} className="px-4 py-10 text-center text-slate-500">
                   {emptyMessage}
                 </td>
               </tr>
@@ -125,21 +130,25 @@ export function MasterDataUploadRequestList({
                       <p className="mt-0.5 text-xs text-slate-500">{request.sheetName}</p>
                     </td>
                     <td className="px-4 py-3 font-medium text-slate-900">{request.rowCount}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-slate-900">{request.duplicateCount}</span>
-                        {request.duplicateCount > 0 && onViewDuplicates && (
-                          <button
-                            type="button"
-                            onClick={() => onViewDuplicates(request)}
-                            className="text-xs font-semibold text-[#2e7ad1] underline underline-offset-2"
-                          >
-                            View
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 font-medium text-slate-900">{request.missingValueCount}</td>
+                    {showUploadStats && (
+                      <>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-slate-900">{request.duplicateCount}</span>
+                            {request.duplicateCount > 0 && onViewDuplicates && (
+                              <button
+                                type="button"
+                                onClick={() => onViewDuplicates(request)}
+                                className="text-xs font-semibold text-[#2e7ad1] underline underline-offset-2"
+                              >
+                                View
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 font-medium text-slate-900">{request.missingValueCount}</td>
+                      </>
+                    )}
                     <td className="px-4 py-3">
                       <span
                         className={cn(
@@ -192,7 +201,7 @@ export function MasterDataUploadRequestList({
                             {viewFileLoadingId === request.id ? 'Opening…' : 'Open'}
                           </button>
                         )}
-                        {request.duplicateCount > 0 && onViewDuplicates && (
+                        {showUploadStats && request.duplicateCount > 0 && onViewDuplicates && (
                           <button
                             type="button"
                             onClick={() => onViewDuplicates(request)}

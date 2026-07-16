@@ -22,7 +22,16 @@ const crmNav: AdminNavItem[] = [
   { label: 'Attendance', href: '/admin/attendance', section: 'Operations' },
   { label: 'Analytics', href: '/admin/analytics', section: 'Operations' },
   { label: 'QC review', href: '/admin/qc', section: 'Operations' },
-  { label: 'Dispositions', href: '/admin/disposition', section: 'Operations' },
+  {
+    label: 'Disposition',
+    href: '/admin/disposition',
+    section: 'Operations',
+    children: [
+      { label: 'DNC', href: '/admin/disposition' },
+      { label: '3M', href: '/admin/disposition/3m' },
+      { label: '6M', href: '/admin/disposition/6m' },
+    ],
+  },
   { label: 'Ready QC', href: '/admin/qc/ready', section: 'Operations' },
   { label: 'Leave requests', href: '/admin/leave-apply', section: 'Operations' },
   {

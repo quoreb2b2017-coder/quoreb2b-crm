@@ -39,6 +39,7 @@ export default function SharedBatchesPage({
   const [usersLoading, setUsersLoading] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   const loadBatches = useCallback(async () => {
     setLoading(true);
@@ -102,6 +103,31 @@ export default function SharedBatchesPage({
     }
   };
 
+  const handleDelete = async (batch: BatchRecord) => {
+    const isRootCampaign = !batch.sourceBatchId;
+    const msg = isRootCampaign
+      ? `Delete campaign "${batch.name}"?\n\nContacts will return to Master Data as available rows (no longer in All campaigns). Related sub-campaigns and QC data will also be removed.`
+      : `Delete sub-campaign "${batch.name}"?\n\nThis slice will be removed. Master Data is unchanged.`;
+    if (!confirm(msg)) return;
+    setDeleting(batch.id);
+    try {
+      const result = await batchesService.delete(batch.id);
+      if (result.restoredToMaster && (result.masterRowsRestored ?? 0) > 0) {
+        toast.success(
+          'Campaign deleted',
+          `${result.masterRowsRestored?.toLocaleString()} contacts returned to Master Data`,
+        );
+      } else {
+        toast.success('Campaign deleted', `"${batch.name}" removed`);
+      }
+      await loadBatches();
+    } catch (e) {
+      toast.error('Delete failed', extractApiError(e));
+    } finally {
+      setDeleting(null);
+    }
+  };
+
   const toggleUser = (id: string) => {
     setSelectedUserIds((prev) => {
       const next = new Set(prev);
@@ -113,12 +139,12 @@ export default function SharedBatchesPage({
 
   const subtitle =
     role === 'db_admin'
-      ? 'Add year · Jan–Dec folders · admin-shared and your campaigns'
+      ? 'Same library as Super Admin — create from Master File or open any campaign'
       : 'Add year · Jan–Dec folders · campaigns shared with you';
 
   const emptyHint =
     role === 'db_admin'
-      ? 'Create a campaign from Master File, or open an admin-shared campaign'
+      ? 'Create a campaign from Master File — Super Admin and DB Admin both see it automatically'
       : 'When admin shares a campaign, it appears in the month it was created';
 
   const openBatch = (b: BatchRecord) => router.push(`${basePath}/batches/${b.id}`);
@@ -146,9 +172,18 @@ export default function SharedBatchesPage({
                 <BatchActionButton onClick={() => openShareModal(b)}>Share</BatchActionButton>
               )}
               {role === 'db_admin' && !own && (
-                <span className="px-1 text-[10px] text-amber-800">Admin</span>
+                <span className="px-1 text-[10px] text-amber-800">Library</span>
               )}
               <BatchXlButton onClick={() => router.push(`${basePath}/batches/${b.id}`)} />
+              {role === 'db_admin' && (
+                <BatchActionButton
+                  variant="danger"
+                  disabled={deleting === b.id}
+                  onClick={() => handleDelete(b)}
+                >
+                  {deleting === b.id ? '…' : 'Delete'}
+                </BatchActionButton>
+              )}
             </>
           );
         }}

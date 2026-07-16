@@ -36,7 +36,7 @@ function colLetter(index: number): string {
   return s;
 }
 
-const emptyFilter = (): ColumnFilterState => ({ selected: null, sort: null });
+const emptyFilter = (): ColumnFilterState => ({ selected: null, sort: null, contains: null });
 
 type EditTarget =
   | { kind: 'cell'; sourceRow: number; col: number }
@@ -104,6 +104,11 @@ interface ExcelPreviewGridProps {
     nextValue: string;
     apply: (value: string) => void;
   }) => void;
+  /**
+   * When set, Search → Apply runs a full-data search (e.g. master OpenSearch)
+   * instead of filtering only the current page. Return true if handled.
+   */
+  onColumnContainsApply?: (header: string, query: string) => boolean | void;
 }
 
 export function ExcelPreviewGrid({
@@ -137,6 +142,7 @@ export function ExcelPreviewGrid({
   focusDisplayRow,
   dispositionSelectOptions,
   onDispositionSelect,
+  onColumnContainsApply,
 }: ExcelPreviewGridProps) {
   const editable = editableProp ?? Boolean(onDataChange);
   const canExport = useCanExportSpreadsheet();
@@ -400,10 +406,18 @@ export function ExcelPreviewGrid({
     const f = filters[col];
     if (!f) return false;
     if (f.sort) return true;
-    if (f.selected === null) return false;
+    if ((f.contains ?? '').trim()) return true;
+    if (f.selected === null || f.selected === undefined) return false;
     const all = getUniqueColumnValues(sourceRows, col);
     return f.selected.size < all.length;
   };
+
+  const scrollGridToTop = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.scrollTop = 0;
+    el.scrollLeft = 0;
+  }, [containerRef]);
 
   const openFilterMenu = (colIndex: number, el: HTMLElement) => {
     const rect = el.getBoundingClientRect();
@@ -425,6 +439,43 @@ export function ExcelPreviewGrid({
     currentFilter?.selected === null || currentFilter?.selected === undefined
       ? new Set(uniqueValues)
       : currentFilter.selected;
+
+  const applyContainsSearch = () => {
+    if (openCol == null) return;
+    const q = search.trim();
+    const header = headers[openCol] ?? '';
+
+    if (q && onColumnContainsApply?.(header, q)) {
+      setFilters((prev) => {
+        const next = { ...prev };
+        delete next[openCol];
+        return next;
+      });
+      setOpenFilterCol(null);
+      setFilterMenuPos(null);
+      setSearch('');
+      requestAnimationFrame(() => scrollGridToTop());
+      return;
+    }
+
+    if (q) {
+      const matching = uniqueValues.filter((v) => v.toLowerCase().includes(q.toLowerCase()));
+      updateFilter(openCol, {
+        contains: q,
+        selected:
+          matching.length > 0 && matching.length < uniqueValues.length
+            ? new Set(matching)
+            : matching.length === 0
+              ? new Set()
+              : null,
+      });
+    }
+
+    setOpenFilterCol(null);
+    setFilterMenuPos(null);
+    setSearch('');
+    requestAnimationFrame(() => scrollGridToTop());
+  };
 
   const toggleValue = (value: string) => {
     if (openCol == null) return;
@@ -1084,19 +1135,23 @@ export function ExcelPreviewGrid({
             filteredOptions={filteredOptions}
             selectedSet={selectedSet}
             sort={filters[openCol]?.sort ?? null}
+            containsActive={(filters[openCol]?.contains ?? '').trim()}
             onToggle={toggleValue}
             onSelectAll={selectAllVisible}
             onDeselectAll={deselectAllVisible}
             onClear={() => clearColumnFilter(openCol)}
+            onApply={applyContainsSearch}
             onSortAsc={() => {
               updateFilter(openCol, { sort: 'asc' });
               setOpenFilterCol(null);
               setFilterMenuPos(null);
+              requestAnimationFrame(() => scrollGridToTop());
             }}
             onSortDesc={() => {
               updateFilter(openCol, { sort: 'desc' });
               setOpenFilterCol(null);
               setFilterMenuPos(null);
+              requestAnimationFrame(() => scrollGridToTop());
             }}
             onClose={() => {
               setOpenFilterCol(null);
@@ -1118,10 +1173,12 @@ function FilterDropdown({
   filteredOptions,
   selectedSet,
   sort,
+  containsActive,
   onToggle,
   onSelectAll,
   onDeselectAll,
   onClear,
+  onApply,
   onSortAsc,
   onSortDesc,
   onClose,
@@ -1133,10 +1190,12 @@ function FilterDropdown({
   filteredOptions: string[];
   selectedSet: Set<string>;
   sort: 'asc' | 'desc' | null;
+  containsActive: string;
   onToggle: (v: string) => void;
   onSelectAll: () => void;
   onDeselectAll: () => void;
   onClear: () => void;
+  onApply: () => void;
   onSortAsc: () => void;
   onSortDesc: () => void;
   onClose: () => void;
@@ -1188,9 +1247,25 @@ function FilterDropdown({
             type="text"
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Search..."
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                onApply();
+              }
+            }}
+            placeholder="Type detail & Apply — matching rows on top"
+            autoFocus
             className="w-full border border-[#ababab] px-2 py-1 text-xs outline-none focus:border-[#2e7ad1]"
           />
+          {containsActive ? (
+            <p className="mt-1 text-[10px] font-medium text-[#2e7ad1]">
+              Active: contains “{containsActive}”
+            </p>
+          ) : (
+            <p className="mt-1 text-[10px] text-slate-500">
+              Enter any value → Apply shows full matching rows at the top
+            </p>
+          )}
         </div>
 
         <div className="flex gap-2 border-b border-[#eee] px-2 py-1 text-[11px]">
@@ -1232,7 +1307,7 @@ function FilterDropdown({
           </button>
           <button
             type="button"
-            onClick={onClose}
+            onClick={onApply}
             className="flex-1 rounded-lg bg-[#2e7ad1] py-2 text-xs font-semibold text-white shadow-sm hover:bg-[#2568b8]"
           >
             Apply

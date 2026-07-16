@@ -15,7 +15,12 @@ import { DispositionKind } from '../disposition.constants';
 
 export class DispositionListQueryDto {
   @IsOptional()
-  @IsEnum(['do_not_call', 'direct_voicemail'])
+  @IsEnum([
+    'do_not_call',
+    'direct_voicemail',
+    'call_after_3_months',
+    'call_after_6_months',
+  ])
   kind?: DispositionKind;
 
   @IsOptional()

@@ -236,8 +236,15 @@ function unwrap<T>(response: { data: unknown }): T {
   return (body?.data ?? body) as T;
 }
 
-function statusQuery(status?: MasterDataUploadRequestStatus | 'all') {
-  return status && status !== 'all' ? `?status=${status}` : '';
+function statusQuery(
+  status?: MasterDataUploadRequestStatus | 'all',
+  sourceRole?: MasterDataUploadSourceRole,
+) {
+  const params = new URLSearchParams();
+  if (status && status !== 'all') params.set('status', status);
+  if (sourceRole) params.set('sourceRole', sourceRole);
+  const q = params.toString();
+  return q ? `?${q}` : '';
 }
 
 function readApiStatus(err: unknown): number | undefined {
@@ -656,9 +663,12 @@ export const masterDataService = {
 
   getUploadRequests: async (
     status?: MasterDataUploadRequestStatus | 'all',
+    sourceRole?: MasterDataUploadSourceRole,
   ): Promise<MasterDataUploadRequest[]> => {
     try {
-      const { data } = await apiClient.get(`/master-data/upload-requests${statusQuery(status)}`);
+      const { data } = await apiClient.get(
+        `/master-data/upload-requests${statusQuery(status, sourceRole)}`,
+      );
       return unwrap<MasterDataUploadRequest[]>({ data });
     } catch (err: unknown) {
       const statusCode = readApiStatus(err);
@@ -745,9 +755,14 @@ export const masterDataService = {
 
   deleteUploadRequest: async (
     requestId: string,
-  ): Promise<{ deleted: boolean; id: string; sourceRole?: string }> => {
+  ): Promise<{ deleted: boolean; id: string; sourceRole?: string; masterFileUnchanged?: boolean }> => {
     const { data } = await apiClient.delete(`/master-data/upload-requests/${requestId}`);
-    const result = unwrap<{ deleted: boolean; id: string; sourceRole?: string }>({ data });
+    const result = unwrap<{
+      deleted: boolean;
+      id: string;
+      sourceRole?: string;
+      masterFileUnchanged?: boolean;
+    }>({ data });
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
         new CustomEvent('upload-request-deleted', { detail: { id: requestId } }),

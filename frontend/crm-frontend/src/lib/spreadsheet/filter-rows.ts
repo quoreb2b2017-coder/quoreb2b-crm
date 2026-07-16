@@ -4,6 +4,8 @@ export interface ColumnFilterState {
   /** null = no value filter (show all) */
   selected: Set<string> | null;
   sort: SortDirection;
+  /** Case-insensitive substring match (Search box → Apply) */
+  contains?: string | null;
 }
 
 export function getUniqueColumnValues(rows: string[][], colIndex: number): string[] {
@@ -12,6 +14,23 @@ export function getUniqueColumnValues(rows: string[][], colIndex: number): strin
     set.add((row[colIndex] ?? '').trim() || '(Blank)');
   }
   return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
+function cellDisplayValue(row: string[], col: number): string {
+  return (row[col] ?? '').trim() || '(Blank)';
+}
+
+function rowMatchesColumnFilter(row: string[], col: number, f: ColumnFilterState): boolean {
+  const cell = cellDisplayValue(row, col);
+  const needle = (f.contains ?? '').trim().toLowerCase();
+  if (needle) {
+    if (!cell.toLowerCase().includes(needle)) return false;
+  }
+  if (f.selected === null || f.selected === undefined) {
+    return true;
+  }
+  if (f.selected.size === 0) return false;
+  return f.selected.has(cell);
 }
 
 export function applyColumnFilters(
@@ -23,17 +42,19 @@ export function applyColumnFilters(
 
   for (let col = 0; col < headers.length; col++) {
     const f = filters[col];
-    if (!f || f.selected === null) continue;
+    if (!f) continue;
+    const hasContains = Boolean((f.contains ?? '').trim());
+    const hasSelected = f.selected !== null && f.selected !== undefined;
+    if (!hasContains && !hasSelected) continue;
 
-    if (f.selected.size === 0) return [];
+    if (hasSelected && f.selected!.size === 0) return [];
 
-    const allValues = getUniqueColumnValues(rows, col);
-    if (f.selected.size >= allValues.length) continue;
+    if (hasSelected && !hasContains) {
+      const allValues = getUniqueColumnValues(rows, col);
+      if (f.selected!.size >= allValues.length) continue;
+    }
 
-    result = result.filter((row) => {
-      const v = (row[col] ?? '').trim() || '(Blank)';
-      return f.selected!.has(v);
-    });
+    result = result.filter((row) => rowMatchesColumnFilter(row, col, f));
   }
 
   const sortEntry = Object.entries(filters).find(([, f]) => f.sort);
@@ -61,14 +82,21 @@ export function applyColumnFiltersWithIndices(
 
   for (let col = 0; col < headers.length; col++) {
     const f = filters[col];
-    if (!f || f.selected === null) continue;
-    if (f.selected.size === 0) return { rows: [], sourceIndices: [] };
-    const allValues = getUniqueColumnValues(rows, col);
-    if (f.selected.size >= allValues.length) continue;
-    indexed = indexed.filter(({ row }) => {
-      const v = (row[col] ?? '').trim() || '(Blank)';
-      return f.selected!.has(v);
-    });
+    if (!f) continue;
+    const hasContains = Boolean((f.contains ?? '').trim());
+    const hasSelected = f.selected !== null && f.selected !== undefined;
+    if (!hasContains && !hasSelected) continue;
+
+    if (hasSelected && f.selected!.size === 0) {
+      return { rows: [], sourceIndices: [] };
+    }
+
+    if (hasSelected && !hasContains) {
+      const allValues = getUniqueColumnValues(rows, col);
+      if (f.selected!.size >= allValues.length) continue;
+    }
+
+    indexed = indexed.filter(({ row }) => rowMatchesColumnFilter(row, col, f));
   }
 
   const sortEntry = Object.entries(filters).find(([, f]) => f.sort);
@@ -90,10 +118,10 @@ export function applyColumnFiltersWithIndices(
 }
 
 export function hasActiveFilters(filters: Record<number, ColumnFilterState>): boolean {
-  return Object.entries(filters).some(([col, f]) => {
+  return Object.entries(filters).some(([, f]) => {
     if (f.sort) return true;
-    if (f.selected === null) return false;
-    const allCount = f.selected.size;
-    return allCount > 0;
+    if ((f.contains ?? '').trim()) return true;
+    if (f.selected === null || f.selected === undefined) return false;
+    return f.selected.size > 0;
   });
 }

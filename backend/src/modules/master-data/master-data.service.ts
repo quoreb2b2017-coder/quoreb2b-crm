@@ -15,7 +15,9 @@ import { SearchMasterDataDto } from './dto/search-master-data.dto';
 import {
   buildMasterDataFilterSchema,
   enrichFilterSchemaColumns,
+  isFullScanSelectHeader,
   isLeadTypeHeader,
+  isStatusHeader,
 } from './master-data-filter-schema.util';
 import {
   distinctColumnValues,
@@ -3761,28 +3763,28 @@ export class MasterDataService {
     const revision =
       (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? rowCount;
     return this.cache.wrap(
-      `master:filter-schema:v3-leadtypes:${revision}`,
+      `master:filter-schema:v4-status:${revision}`,
       cacheTtlSeconds(this.config, 'long'),
       async () => {
         const headers = doc.headers as string[];
         const rows = await this.rowStore.loadSampleRows(doc, 2_500);
         let columns = enrichFilterSchemaColumns(buildMasterDataFilterSchema(headers, rows));
 
-        const leadHeader = headers.find((h) => isLeadTypeHeader(h));
-        if (leadHeader) {
+        const fullScanHeaders = headers.filter((h) => isFullScanSelectHeader(h));
+        for (const scanHeader of fullScanHeaders) {
           try {
-            const allTypes = await this.rowStore.collectDistinctColumnValues(
+            const allValues = await this.rowStore.collectDistinctColumnValues(
               doc as Parameters<typeof this.rowStore.collectDistinctColumnValues>[0],
-              leadHeader,
-              500,
+              scanHeader,
+              isLeadTypeHeader(scanHeader) ? 500 : 100,
             );
-            if (allTypes.length > 0) {
+            if (allValues.length > 0) {
               columns = columns.map((col) =>
-                isLeadTypeHeader(col.header)
+                col.header.trim().toLowerCase() === scanHeader.trim().toLowerCase()
                   ? {
                       ...col,
-                      kind: 'select' as const,
-                      options: allTypes,
+                      kind: isStatusHeader(col.header) ? ('status' as const) : ('select' as const),
+                      options: allValues,
                       filledCount: Math.max(col.filledCount, 1),
                     }
                   : col,
@@ -3790,7 +3792,7 @@ export class MasterDataService {
             }
           } catch (err) {
             this.logger.warn(
-              `Lead Type full distinct failed: ${err instanceof Error ? err.message : err}`,
+              `Full distinct for "${scanHeader}" failed: ${err instanceof Error ? err.message : err}`,
             );
           }
         }
@@ -3822,22 +3824,37 @@ export class MasterDataService {
       throw new BadRequestException('Unknown column');
     }
 
-    const effectiveLimit = isLeadTypeHeader(header)
-      ? Math.min(Math.max(limit || 500, 500), 500)
+    const fullScan = isFullScanSelectHeader(header);
+    const effectiveLimit = fullScan
+      ? Math.min(Math.max(limit || (isLeadTypeHeader(header) ? 500 : 100), 40), 500)
       : Math.min(Math.max(limit || 40, 1), 500);
 
     const revision = this.rowStore.getRowCount(doc);
-    const cacheKey = `master:colopts:v3:${revision}:${header.toLowerCase()}:${q ?? ''}:${effectiveLimit}`;
+    const cacheKey = `master:colopts:v4:${revision}:${header.toLowerCase()}:${q ?? ''}:${effectiveLimit}`;
     return this.cache.wrap(
       cacheKey,
       cacheTtlSeconds(this.config, 'short'),
       async () => {
-        if (isLeadTypeHeader(header) && !q?.trim()) {
+        if (fullScan && !q?.trim()) {
           const options = await this.rowStore.collectDistinctColumnValues(
             doc as Parameters<typeof this.rowStore.collectDistinctColumnValues>[0],
             header,
             effectiveLimit,
           );
+          return { header, options };
+        }
+
+        if (fullScan && q?.trim()) {
+          const needle = q.trim().toLowerCase();
+          const options = (
+            await this.rowStore.collectDistinctColumnValues(
+              doc as Parameters<typeof this.rowStore.collectDistinctColumnValues>[0],
+              header,
+              500,
+            )
+          )
+            .filter((v) => v.toLowerCase().includes(needle))
+            .slice(0, effectiveLimit);
           return { header, options };
         }
 

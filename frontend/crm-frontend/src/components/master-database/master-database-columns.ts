@@ -149,6 +149,7 @@ const SIZE_CATEGORY_DEFAULTS: Record<string, string[]> = {
 
 const CURATED_OPTION_PATTERNS: RegExp[] = [
   /^lead type$/i,
+  /^status$/i,
   /^country$/i,
   /^state$/i,
   /^industry type$/i,
@@ -158,8 +159,8 @@ const CURATED_OPTION_PATTERNS: RegExp[] = [
 ];
 
 export function needsLazyColumnOptions(col: MasterDataColumnFilterSchema): boolean {
-  // Always refresh Lead Type so every distinct value appears (not just schema sample).
-  if (/^lead type$/i.test(col.header.trim())) return true;
+  // Always refresh Lead Type / Status so every distinct value appears (not just schema sample).
+  if (/^lead type$/i.test(col.header.trim()) || /^status$/i.test(col.header.trim())) return true;
   if (col.options.length >= 2) return false;
   return CURATED_OPTION_PATTERNS.some((p) => p.test(col.header.trim()));
 }
@@ -171,7 +172,8 @@ export function enrichFilterColumnOptions(
   const defaults = SIZE_CATEGORY_DEFAULTS[key];
   const merged = new Set<string>([...col.options, ...(defaults ?? [])]);
   const isLeadType = /^lead type$/i.test(col.header.trim());
-  const cap = isLeadType ? 500 : 80;
+  const isStatus = /^status$/i.test(col.header.trim());
+  const cap = isLeadType ? 500 : isStatus ? 100 : 80;
   const options = isSizeCategoryHeader(col.header)
     ? sortCategoryOptions([...merged]).slice(0, cap)
     : [...merged]

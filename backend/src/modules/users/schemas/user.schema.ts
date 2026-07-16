@@ -40,9 +40,13 @@ export class User extends Document {
   @Prop()
   lastLoginAt?: Date;
 
-  /** @deprecated Never store reversible passwords — login uses passwordHash (bcrypt) only. */
+  /** @deprecated Legacy plaintext — wiped on boot. Use passwordEnc. */
   @Prop({ select: false })
   plainPassword?: string;
+
+  /** AES-GCM ciphertext for Super-Admin password view only (login still uses passwordHash). */
+  @Prop({ select: false })
+  passwordEnc?: string;
 
   @Prop({
     type: {

@@ -56,5 +56,11 @@ export const usersService = {
   setStatus: (id: string, isActive: boolean) =>
     apiClient.patch(`/users/${id}/status`, { isActive }),
 
-  delete: (id: string) => apiClient.delete(`/users/${id}`),
+  sendDeleteOtp: (id: string) =>
+    apiClient.post<{ data: { message: string; email?: string; requiresOtp?: boolean } }>(
+      `/users/${id}/delete-otp`,
+    ),
+
+  delete: (id: string, otp?: string) =>
+    apiClient.delete(`/users/${id}`, { data: otp ? { otp } : {} }),
 };

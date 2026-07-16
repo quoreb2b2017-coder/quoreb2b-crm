@@ -25,10 +25,22 @@ import { NotificationTriggerService } from '../notifications/notification-trigge
 import { AppCacheService } from '../../redis/app-cache.service';
 import { ConfigService } from '@nestjs/config';
 import { cacheTtlSeconds, stableHash } from '../../redis/cache.util';
+import {
+  decryptViewablePassword,
+  encryptViewablePassword,
+} from './password-view.util';
+import { ResendMailService } from '../auth/resend-mail.service';
+
+interface ActionOtpEntry {
+  code: string;
+  expiresAt: number;
+  purpose: string;
+}
 
 @Injectable()
 export class UsersService implements OnModuleInit {
   private readonly logger = new Logger(UsersService.name);
+  private readonly actionOtps = new Map<string, ActionOtpEntry>();
 
   constructor(
     private repository: UsersRepository,
@@ -37,6 +49,7 @@ export class UsersService implements OnModuleInit {
     private notifications: NotificationTriggerService,
     private cache: AppCacheService,
     private config: ConfigService,
+    private resendMail: ResendMailService,
   ) {}
 
   async onModuleInit() {
@@ -129,6 +142,7 @@ export class UsersService implements OnModuleInit {
 
     const panel = dto.panel ?? this.panelForRoles(roles);
     const passwordHash = await bcrypt.hash(dto.password, 12);
+    const passwordEnc = this.encryptPasswordForView(dto.password);
 
     const user = await this.repository.create({
       email: dto.email.toLowerCase(),
@@ -140,9 +154,13 @@ export class UsersService implements OnModuleInit {
       panel,
       permissions: [],
       isActive: true,
+      ...(passwordEnc ? { passwordEnc } : {}),
     });
-    // Ensure no plaintext leftover from older code paths
+    // Drop any legacy plaintext; keep encrypted vault copy when available.
     await this.repository.unsetPlainPassword(String(user._id));
+    if (passwordEnc) {
+      await this.repository.setPasswordEnc(String(user._id), passwordEnc);
+    }
 
     const safe = this.sanitizeUser(user);
     await this.bustUsersCache();
@@ -236,27 +254,40 @@ export class UsersService implements OnModuleInit {
   }
 
   async getPlainPassword(id: string, actor?: ActivityActor): Promise<string | null> {
-    const target = await this.repository.findById(id);
-    if (actor && target) {
-      await this.activityLogs.logWithActor(actor, {
-        action: 'VIEW_USER_PASSWORD',
-        resource: 'users',
-        resourceId: id,
-        metadata: {
-          targetEmail: target.email,
-          targetName: `${target.firstName} ${target.lastName}`,
-          note: 'Passwords are bcrypt-hashed and cannot be retrieved',
-        },
-      });
+    const actorRoles = actor?.roles ?? [];
+    if (!actorRoles.includes(SystemRole.SUPER_ADMIN)) {
+      throw new ForbiddenException('Only Super Admin can view user passwords');
     }
-    // Passwords are one-way hashed — plaintext is never stored or returned.
-    return null;
+
+    const target = await this.repository.findById(id);
+    if (!target) throw new NotFoundException('User not found');
+
+    const enc = await this.repository.findPasswordEnc(id);
+    const secret = this.passwordViewSecret();
+    const password = enc && secret ? decryptViewablePassword(enc, secret) : null;
+
+    await this.activityLogs.logWithActor(actor!, {
+      action: 'VIEW_USER_PASSWORD',
+      resource: 'users',
+      resourceId: id,
+      metadata: {
+        targetEmail: target.email,
+        targetName: `${target.firstName} ${target.lastName}`,
+        targetRole: target.roles?.[0],
+        revealed: Boolean(password),
+        note: password
+          ? 'Password revealed to Super Admin'
+          : 'No viewable password stored — reset/create password again',
+      },
+    });
+
+    return password;
   }
 
   async setActiveStatus(id: string, isActive: boolean, actor?: ActivityActor) {
     const user = await this.repository.findById(id);
     if (!user) throw new NotFoundException('User not found');
-    this.assertManageable(user);
+    this.assertManageable(user, actor, { allowAdminTargets: false });
 
     await this.repository.update(id, { isActive });
     if (!isActive) {
@@ -293,14 +324,109 @@ export class UsersService implements OnModuleInit {
     return updated;
   }
 
-  async deleteManagedUser(id: string, actor?: ActivityActor) {
+  /** Send OTP to Super Admin email before deleting another Super Admin. */
+  async sendDeleteSuperAdminOtp(targetId: string, actor: ActivityActor) {
+    if (!actor.roles?.includes(SystemRole.SUPER_ADMIN)) {
+      throw new ForbiddenException('Only Super Admin can delete Super Admin accounts');
+    }
+    const target = await this.repository.findById(targetId);
+    if (!target) throw new NotFoundException('User not found');
+    if (!this.isAdminAccount(target)) {
+      throw new BadRequestException('OTP is only required when deleting a Super Admin account');
+    }
+    if (String(target._id) === actor.id) {
+      throw new ForbiddenException('You cannot delete your own account');
+    }
+
+    const email = (actor.email || '').toLowerCase().trim();
+    if (!email) {
+      const actorUser = await this.repository.findById(actor.id);
+      if (!actorUser?.email) {
+        throw new BadRequestException('Could not resolve Super Admin email for OTP');
+      }
+    }
+    const otpEmail = email || (await this.repository.findById(actor.id))!.email.toLowerCase();
+
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const purpose = `delete-super-admin:${targetId}`;
+    const key = this.actionOtpKey(otpEmail, purpose);
+    this.actionOtps.set(key, {
+      code,
+      purpose,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+    });
+
+    if (this.resendMail.isConfigured()) {
+      await this.resendMail.sendOtpEmail(otpEmail, code);
+      return {
+        message: `OTP sent to ${otpEmail}`,
+        email: otpEmail,
+        requiresOtp: true,
+      };
+    }
+
+    const devFallback =
+      this.config.get<string>('NODE_ENV') !== 'production' &&
+      process.env.OTP_DEV_FALLBACK === 'true';
+    if (devFallback) {
+      this.logger.warn(`[OTP_DEV_FALLBACK] delete-super-admin code for ${otpEmail}: ${code}`);
+      return {
+        message: `OTP sent to ${otpEmail}`,
+        email: otpEmail,
+        requiresOtp: true,
+        ...(process.env.NODE_ENV !== 'production' ? { devCode: code } : {}),
+      };
+    }
+
+    throw new BadRequestException(
+      'Email service is not configured. Set RESEND_API_KEY on the server.',
+    );
+  }
+
+  async deleteManagedUser(
+    id: string,
+    actor?: ActivityActor,
+    opts?: { otp?: string },
+  ) {
     const user = await this.repository.findById(id);
     if (!user) throw new NotFoundException('User not found');
-    this.assertManageable(user);
+
+    const targetIsAdmin = this.isAdminAccount(user);
+    if (targetIsAdmin) {
+      if (!actor?.roles?.includes(SystemRole.SUPER_ADMIN)) {
+        throw new ForbiddenException('Only Super Admin can delete Super Admin accounts');
+      }
+      if (actor.id && String(user._id) === actor.id) {
+        throw new ForbiddenException('You cannot delete your own account');
+      }
+      const remaining = await this.repository.countSuperAdmins();
+      if (user.roles?.includes(SystemRole.SUPER_ADMIN) && remaining <= 1) {
+        throw new ForbiddenException('Cannot delete the last Super Admin account');
+      }
+
+      let otpEmail = (actor.email || '').toLowerCase().trim();
+      if (!otpEmail) {
+        const actorUser = await this.repository.findById(actor.id);
+        otpEmail = actorUser?.email?.toLowerCase() ?? '';
+      }
+      if (!otpEmail) {
+        throw new BadRequestException('Could not resolve Super Admin email for OTP');
+      }
+      const otp = opts?.otp?.trim();
+      if (!otp) {
+        throw new BadRequestException('OTP is required to delete a Super Admin account');
+      }
+      const purpose = `delete-super-admin:${id}`;
+      if (!this.verifyActionOtp(otpEmail, purpose, otp)) {
+        throw new ForbiddenException('Invalid or expired OTP');
+      }
+    } else {
+      this.assertManageable(user, actor, { allowAdminTargets: false });
+    }
 
     if (actor) {
       await this.activityLogs.logWithActor(actor, {
-        action: 'USER_DELETED',
+        action: targetIsAdmin ? 'SUPER_ADMIN_DELETED_VIA_OTP' : 'USER_DELETED',
         resource: 'users',
         resourceId: id,
         metadata: {
@@ -329,6 +455,10 @@ export class UsersService implements OnModuleInit {
     const passwordHash = await bcrypt.hash(newPassword, 12);
     await this.repository.update(userId, { passwordHash });
     await this.repository.unsetPlainPassword(userId);
+    const passwordEnc = this.encryptPasswordForView(newPassword);
+    if (passwordEnc) {
+      await this.repository.setPasswordEnc(userId, passwordEnc);
+    }
     await this.revokeAllSessions(userId);
 
     await this.activityLogs.logWithActor(actorFromUserDoc(user), {
@@ -339,6 +469,41 @@ export class UsersService implements OnModuleInit {
     });
 
     return { message: 'Password updated successfully. Please sign in again.' };
+  }
+
+  private encryptPasswordForView(plain: string): string | null {
+    const secret = this.passwordViewSecret();
+    if (!secret || !plain) return null;
+    return encryptViewablePassword(plain, secret);
+  }
+
+  private passwordViewSecret(): string | null {
+    const secret =
+      this.config.get<string>('PASSWORD_VIEW_SECRET')?.trim() ||
+      this.config.get<string>('JWT_SECRET')?.trim() ||
+      '';
+    return secret || null;
+  }
+
+  private isAdminAccount(user: User): boolean {
+    const roles = user.roles ?? [];
+    return roles.includes(SystemRole.ADMIN) || roles.includes(SystemRole.SUPER_ADMIN);
+  }
+
+  private actionOtpKey(email: string, purpose: string): string {
+    return `${email.toLowerCase().trim()}::${purpose}`;
+  }
+
+  private verifyActionOtp(email: string, purpose: string, otp: string): boolean {
+    const key = this.actionOtpKey(email, purpose);
+    const entry = this.actionOtps.get(key);
+    if (!entry || entry.purpose !== purpose || entry.expiresAt < Date.now()) {
+      this.actionOtps.delete(key);
+      return false;
+    }
+    if (entry.code !== otp.trim()) return false;
+    this.actionOtps.delete(key);
+    return true;
   }
 
   private async revokeAllSessions(userId: string) {
@@ -380,10 +545,21 @@ export class UsersService implements OnModuleInit {
     }
   }
 
-  private assertManageable(user: User) {
+  private assertManageable(
+    user: User,
+    actor?: ActivityActor,
+    opts?: { allowAdminTargets?: boolean },
+  ) {
     const roles = user.roles ?? [];
-    if (roles.includes(SystemRole.ADMIN) || roles.includes(SystemRole.SUPER_ADMIN)) {
-      throw new ForbiddenException('Admin accounts cannot be blocked or deleted');
+    const actorIsSuperAdmin = actor?.roles?.includes(SystemRole.SUPER_ADMIN) === true;
+    const targetIsAdmin =
+      roles.includes(SystemRole.ADMIN) || roles.includes(SystemRole.SUPER_ADMIN);
+
+    if (targetIsAdmin) {
+      if (!opts?.allowAdminTargets || !actorIsSuperAdmin) {
+        throw new ForbiddenException('Admin accounts cannot be blocked or deleted');
+      }
+      return;
     }
     if (!roles.includes(SystemRole.EMPLOYEE) && !roles.includes(SystemRole.DB_ADMIN)) {
       throw new ForbiddenException('Only employee and database administrator accounts can be managed');
@@ -392,7 +568,11 @@ export class UsersService implements OnModuleInit {
 
   sanitizeUser(user: User) {
     const obj = user.toObject ? user.toObject() : user;
-    const { passwordHash, plainPassword, ...safe } = obj as User & { passwordHash?: string; plainPassword?: string };
+    const { passwordHash, plainPassword, passwordEnc, ...safe } = obj as User & {
+      passwordHash?: string;
+      plainPassword?: string;
+      passwordEnc?: string;
+    };
     return {
       id: safe._id?.toString() ?? safe.id,
       email: safe.email,

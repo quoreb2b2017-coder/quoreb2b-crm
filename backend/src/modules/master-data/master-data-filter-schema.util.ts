@@ -10,6 +10,7 @@ export interface MasterDataColumnFilterSchema {
 
 const MAX_OPTIONS = 40;
 const MAX_LEAD_TYPE_OPTIONS = 500;
+const MAX_STATUS_OPTIONS = 100;
 const MAX_OPTION_LEN = 80;
 
 const SIZE_CATEGORY_DEFAULTS: Record<string, string[]> = {
@@ -37,6 +38,16 @@ export function isLeadTypeHeader(header: string): boolean {
   return /^lead type$/i.test(header.trim());
 }
 
+/** Exact Status column — full distinct scan so Valid/Invalid/etc. appear in filters. */
+export function isStatusHeader(header: string): boolean {
+  return /^status$/i.test(header.trim());
+}
+
+/** Columns that must scan all chunks (not just the first N sample rows). */
+export function isFullScanSelectHeader(header: string): boolean {
+  return isLeadTypeHeader(header) || isStatusHeader(header);
+}
+
 export function enrichFilterSchemaColumns(
   columns: MasterDataColumnFilterSchema[],
 ): MasterDataColumnFilterSchema[] {
@@ -44,15 +55,22 @@ export function enrichFilterSchemaColumns(
     const key = col.header.trim().toLowerCase();
     const defaults = SIZE_CATEGORY_DEFAULTS[key];
     const merged = new Set<string>([...col.options, ...(defaults ?? [])]);
-    const cap = isLeadTypeHeader(col.header) ? MAX_LEAD_TYPE_OPTIONS : MAX_OPTIONS;
+    const cap = isLeadTypeHeader(col.header)
+      ? MAX_LEAD_TYPE_OPTIONS
+      : isStatusHeader(col.header)
+        ? MAX_STATUS_OPTIONS
+        : MAX_OPTIONS;
     const options = [...merged]
       .filter(Boolean)
       .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
       .slice(0, cap);
-    if (isLeadTypeHeader(col.header) || options.length >= 2) {
+    if (isFullScanSelectHeader(col.header) || options.length >= 2) {
       return {
         ...col,
-        kind: col.kind === 'email' || col.kind === 'phone' ? col.kind : 'select',
+        kind:
+          col.kind === 'email' || col.kind === 'phone' || col.kind === 'status'
+            ? col.kind
+            : 'select',
         options,
         filledCount: Math.max(col.filledCount, options.length > 0 ? 1 : 0, 1),
       };
@@ -93,11 +111,16 @@ export function buildMasterDataFilterSchema(
       let kind = headerKind(header);
       let options: string[] = [];
       const isLeadType = isLeadTypeHeader(header);
-      const cap = isLeadType ? MAX_LEAD_TYPE_OPTIONS : MAX_OPTIONS;
+      const isStatus = isStatusHeader(header);
+      const cap = isLeadType
+        ? MAX_LEAD_TYPE_OPTIONS
+        : isStatus
+          ? MAX_STATUS_OPTIONS
+          : MAX_OPTIONS;
 
-      if (kind === 'status' || isLeadType) {
+      if (kind === 'status' || isLeadType || isStatus) {
         options = unique.slice(0, cap);
-        kind = isLeadType ? 'select' : kind;
+        kind = isLeadType ? 'select' : isStatus ? 'status' : kind;
       } else if (kind === 'text' && unique.length >= 2) {
         const top = unique.slice(0, cap);
         const allFit = top.every((v) => v.length <= MAX_OPTION_LEN);

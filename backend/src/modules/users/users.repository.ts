@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { BaseRepository } from '../../common/repositories/base.repository';
+import { SystemRole } from '../../common/constants/roles.constant';
 import { User } from './schemas/user.schema';
 
 /** Fallback employee-ID lookup (empty — no demo accounts). */
@@ -56,6 +57,24 @@ export class UsersRepository extends BaseRepository<User> {
     return this.model.find({ _id: { $in: objectIds } }).exec();
   }
 
+  async findPasswordEnc(id: string): Promise<string | null> {
+    if (!Types.ObjectId.isValid(id)) return null;
+    const doc = await this.model
+      .findById(id)
+      .select('+passwordEnc')
+      .lean()
+      .exec();
+    const enc = (doc as { passwordEnc?: string } | null)?.passwordEnc;
+    return enc?.trim() ? enc : null;
+  }
+
+  async setPasswordEnc(id: string, passwordEnc: string): Promise<void> {
+    if (!Types.ObjectId.isValid(id)) return;
+    await this.model
+      .updateOne({ _id: id }, { $set: { passwordEnc }, $unset: { plainPassword: 1 } })
+      .exec();
+  }
+
   async findPlainPassword(_id: string): Promise<string | null> {
     return null;
   }
@@ -74,5 +93,12 @@ export class UsersRepository extends BaseRepository<User> {
       )
       .exec();
     return result.modifiedCount ?? 0;
+  }
+
+  async countSuperAdmins(): Promise<number> {
+    return this.model.countDocuments({
+      roles: SystemRole.SUPER_ADMIN,
+      isActive: true,
+    });
   }
 }

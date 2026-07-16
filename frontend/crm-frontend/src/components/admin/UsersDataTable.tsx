@@ -68,11 +68,14 @@ interface UsersDataTableProps {
   loading: boolean;
   actionLoading: string | null;
   navigationEnabled: boolean;
+  /** When true, password view + Super Admin delete are enabled. */
+  isSuperAdmin?: boolean;
+  currentUserId?: string;
   className?: string;
   onOpenPassword: (userId: string, name: string) => void;
   onOpenReport: (user: Record<string, unknown>) => void;
   onToggleBlock: (userId: string, active: boolean) => void;
-  onDelete: (userId: string, name: string) => void;
+  onDelete: (userId: string, name: string, role: string) => void;
 }
 
 function primaryRole(roles: string[]): string {
@@ -151,6 +154,8 @@ export function UsersDataTable({
   loading,
   actionLoading,
   navigationEnabled,
+  isSuperAdmin = false,
+  currentUserId,
   className,
   onOpenPassword,
   onOpenReport,
@@ -159,6 +164,12 @@ export function UsersDataTable({
 }: UsersDataTableProps) {
   const rows = parseRows(users);
   const isManageable = (role: string) => role === 'employee' || role === 'db_admin';
+  const isSuperAdminTarget = (role: string) => role === 'super_admin' || role === 'admin';
+  const canDelete = (row: UserRowMeta) => {
+    if (currentUserId && row.userId === currentUserId) return false;
+    if (isManageable(row.role)) return true;
+    return isSuperAdmin && isSuperAdminTarget(row.role);
+  };
   const hasActivityReport = (role: string) => role === 'employee' || role === 'db_admin';
 
   const { containerRef, isActive, setCell } = useExcelTableNavigation({
@@ -170,7 +181,7 @@ export function UsersDataTable({
       if (!row) return;
       switch (pos.col) {
         case 7:
-          onOpenPassword(row.userId, row.name);
+          if (isSuperAdmin) onOpenPassword(row.userId, row.name);
           break;
         case 8:
           if (hasActivityReport(row.role)) onOpenReport(row.raw);
@@ -179,7 +190,7 @@ export function UsersDataTable({
           if (isManageable(row.role)) onToggleBlock(row.userId, row.active);
           break;
         case 10:
-          if (isManageable(row.role)) onDelete(row.userId, row.name);
+          if (canDelete(row)) onDelete(row.userId, row.name, row.role);
           break;
         default:
           break;
@@ -331,20 +342,24 @@ export function UsersDataTable({
                         align="center"
                         className={isActive(rowIndex, 7) ? 'bg-[#e7f3ff]' : undefined}
                       >
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenPassword(row.userId, row.name);
-                          }}
-                          title="View password (Enter)"
-                          className={cn(
-                            'pointer-events-auto text-[11px] font-semibold text-[#2e7ad1] underline decoration-[#2e7ad1]/40 underline-offset-2 hover:text-[#2568b8]',
-                            isActive(rowIndex, 7) && 'decoration-[#2e7ad1]',
-                          )}
-                        >
-                          View
-                        </button>
+                        {isSuperAdmin ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenPassword(row.userId, row.name);
+                            }}
+                            title="View password (Enter)"
+                            className={cn(
+                              'pointer-events-auto text-[11px] font-semibold text-[#2e7ad1] underline decoration-[#2e7ad1]/40 underline-offset-2 hover:text-[#2568b8]',
+                              isActive(rowIndex, 7) && 'decoration-[#2e7ad1]',
+                            )}
+                          >
+                            View
+                          </button>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
                       </GridCell>
                       <GridCell
                         row={rowIndex}
@@ -398,14 +413,14 @@ export function UsersDataTable({
                         onActivate={activate(10)}
                         align="center"
                       >
-                        {isManageable(row.role) ? (
+                        {canDelete(row) ? (
                           <XlActionButton
                             active={isActive(rowIndex, 10)}
                             variant="danger"
                             disabled={actionLoading === `delete-${row.userId}`}
                             onClick={(e) => {
                               e.stopPropagation();
-                              onDelete(row.userId, row.name);
+                              onDelete(row.userId, row.name, row.role);
                             }}
                           >
                             Delete

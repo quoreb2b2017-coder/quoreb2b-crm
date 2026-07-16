@@ -29,6 +29,7 @@ const emptyForm = {
 export default function AdminUsersPage() {
   const router = useRouter();
   const currentRoles = useAuthStore((s) => s.user?.roles ?? []);
+  const currentUserId = useAuthStore((s) => s.user?.id ?? '');
   const isSuperAdmin = currentRoles.includes('super_admin');
 
   const roleOptions = useMemo<RoleOption[]>(
@@ -46,6 +47,14 @@ export default function AdminUsersPage() {
   const [pwModal, setPwModal] = useState<{ userId: string; name: string } | null>(null);
   const [pw, setPw] = useState<string | null | undefined>(undefined);
   const [showPw, setShowPw] = useState(false);
+  const [deleteModal, setDeleteModal] = useState<{
+    userId: string;
+    name: string;
+    role: string;
+    emailHint?: string;
+  } | null>(null);
+  const [deleteOtp, setDeleteOtp] = useState('');
+  const [deleteSending, setDeleteSending] = useState(false);
 
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
@@ -126,13 +135,60 @@ export default function AdminUsersPage() {
     }
   };
 
-  const handleDeleteUser = async (userId: string, name: string) => {
+  const handleDeleteUser = async (userId: string, name: string, role: string) => {
     if (!userId || userId === 'undefined') return;
-    if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return;
-    setActionLoading(`delete-${userId}`);
+    const needsOtp = role === 'super_admin' || role === 'admin';
+    if (!needsOtp) {
+      if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return;
+      setActionLoading(`delete-${userId}`);
+      try {
+        await usersService.delete(userId);
+        toast.success('User deleted', `"${name}" was removed.`);
+        await loadUsers();
+      } catch (err: unknown) {
+        toast.error('Delete failed', extractApiError(err, 'Failed to delete user'));
+      } finally {
+        setActionLoading(null);
+      }
+      return;
+    }
+
+    setDeleteModal({ userId, name, role });
+    setDeleteOtp('');
+    setDeleteSending(true);
     try {
-      await usersService.delete(userId);
-      toast.success('User deleted', `"${name}" was removed.`);
+      const res = await usersService.sendDeleteOtp(userId);
+      const raw = res.data as unknown;
+      const payload =
+        (raw as { data?: { email?: string; message?: string } })?.data ??
+        (raw as { email?: string; message?: string });
+      setDeleteModal({
+        userId,
+        name,
+        role,
+        emailHint: payload?.email,
+      });
+      toast.success('OTP sent', payload?.message || 'Check your email for the delete code');
+    } catch (err: unknown) {
+      setDeleteModal(null);
+      toast.error('OTP failed', extractApiError(err, 'Could not send delete OTP'));
+    } finally {
+      setDeleteSending(false);
+    }
+  };
+
+  const confirmDeleteWithOtp = async () => {
+    if (!deleteModal) return;
+    if (!deleteOtp.trim()) {
+      toast.error('OTP required', 'Enter the code sent to your email');
+      return;
+    }
+    setActionLoading(`delete-${deleteModal.userId}`);
+    try {
+      await usersService.delete(deleteModal.userId, deleteOtp.trim());
+      toast.success('User deleted', `"${deleteModal.name}" was removed.`);
+      setDeleteModal(null);
+      setDeleteOtp('');
       await loadUsers();
     } catch (err: unknown) {
       toast.error('Delete failed', extractApiError(err, 'Failed to delete user'));
@@ -142,6 +198,7 @@ export default function AdminUsersPage() {
   };
 
   const openPwModal = async (userId: string, name: string) => {
+    if (!isSuperAdmin) return;
     setPwModal({ userId, name });
     setPw(undefined);
     setShowPw(false);
@@ -188,7 +245,9 @@ export default function AdminUsersPage() {
         users={users}
         loading={loading}
         actionLoading={actionLoading}
-        navigationEnabled={!drawerOpen && !pwModal}
+        navigationEnabled={!drawerOpen && !pwModal && !deleteModal}
+        isSuperAdmin={isSuperAdmin}
+        currentUserId={currentUserId}
         onOpenPassword={openPwModal}
         onOpenReport={openReport}
         onToggleBlock={handleToggleBlock}
@@ -238,14 +297,13 @@ export default function AdminUsersPage() {
                     </>
                   ) : (
                     <span className="text-xs italic text-slate-500">
-                      Hashed — not viewable (secure)
+                      Not available — set password again (Create User / Change Password)
                     </span>
                   )}
                 </div>
                 <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                  Passwords are stored as bcrypt hashes in the database and cannot be
-                  viewed. Ask the user to reset via Change Password, or create a new
-                  temporary password when adding accounts.
+                  Only Super Admin can view passwords. Older accounts created before this
+                  update may need a password reset once to become viewable.
                 </p>
               </div>
               <div className="px-5 pb-4">
@@ -254,6 +312,58 @@ export default function AdminUsersPage() {
                   className="w-full rounded-lg bg-slate-100 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-200"
                 >
                   Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {deleteModal && (
+        <>
+          <div
+            onClick={() => !actionLoading && setDeleteModal(null)}
+            className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm"
+          />
+          <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="pointer-events-auto w-full max-w-sm overflow-hidden rounded-xl bg-white shadow-xl">
+              <div className="border-b border-slate-100 px-5 py-4">
+                <p className="text-sm font-semibold text-slate-900">Delete Super Admin</p>
+                <p className="mt-0.5 text-xs text-slate-400">
+                  Confirm deletion of <span className="font-medium text-slate-700">{deleteModal.name}</span>
+                  {deleteModal.emailHint ? ` — OTP sent to ${deleteModal.emailHint}` : ''}
+                </p>
+              </div>
+              <div className="space-y-3 px-5 py-4">
+                <Input
+                  label="OTP code"
+                  value={deleteOtp}
+                  onChange={(e) => setDeleteOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="6-digit code"
+                  autoFocus
+                />
+                <p className="text-xs text-slate-500">
+                  {deleteSending
+                    ? 'Sending OTP…'
+                    : 'Enter the OTP emailed to your Super Admin inbox to permanently delete this account.'}
+                </p>
+              </div>
+              <div className="flex gap-2 px-5 pb-4">
+                <button
+                  type="button"
+                  disabled={Boolean(actionLoading)}
+                  onClick={() => setDeleteModal(null)}
+                  className="flex-1 rounded-lg bg-slate-100 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={Boolean(actionLoading) || deleteSending || deleteOtp.trim().length < 4}
+                  onClick={() => void confirmDeleteWithOtp()}
+                  className="flex-1 rounded-lg bg-red-600 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  {actionLoading ? 'Deleting…' : 'Delete'}
                 </button>
               </div>
             </div>

@@ -13,6 +13,7 @@ import { UsersService } from './users.service';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { SetUserStatusDto } from './dto/set-user-status.dto';
+import { DeleteUserDto } from './dto/delete-user.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -47,13 +48,22 @@ export class UsersController {
   }
 
   @Get(':id/password')
-  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
+  @Roles(SystemRole.SUPER_ADMIN)
   async getPassword(
     @Param('id') id: string,
     @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
   ) {
     const password = await this.usersService.getPlainPassword(id, actorFromJwt(user));
     return { password };
+  }
+
+  @Post(':id/delete-otp')
+  @Roles(SystemRole.SUPER_ADMIN)
+  sendDeleteOtp(
+    @Param('id') id: string,
+    @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
+  ) {
+    return this.usersService.sendDeleteSuperAdminOtp(id, actorFromJwt(user));
   }
 
   @Patch(':id/status')
@@ -70,9 +80,10 @@ export class UsersController {
   @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
   remove(
     @Param('id') id: string,
+    @Body() dto: DeleteUserDto = {},
     @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
   ) {
-    return this.usersService.deleteManagedUser(id, actorFromJwt(user));
+    return this.usersService.deleteManagedUser(id, actorFromJwt(user), { otp: dto?.otp });
   }
 
   @Get(':id')

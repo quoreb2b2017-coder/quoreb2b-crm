@@ -7,6 +7,7 @@ import { UsersService } from './users.service';
 import { UsersRepository } from './users.repository';
 import { ActivityLogsModule } from '../activity-logs/activity-logs.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { ResendMailService } from '../auth/resend-mail.service';
 
 @Module({
   imports: [
@@ -18,7 +19,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     ]),
   ],
   controllers: [UsersController],
-  providers: [UsersService, UsersRepository],
+  providers: [UsersService, UsersRepository, ResendMailService],
   exports: [UsersService, UsersRepository],
 })
 export class UsersModule {}

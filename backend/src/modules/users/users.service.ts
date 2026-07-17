@@ -306,9 +306,12 @@ export class UsersService implements OnModuleInit {
     await this.repository.update(id, { passwordHash });
     await this.repository.unsetPlainPassword(id);
     const passwordEnc = this.encryptPasswordForView(newPassword);
-    if (passwordEnc) {
-      await this.repository.setPasswordEnc(id, passwordEnc);
+    if (!passwordEnc) {
+      throw new BadRequestException(
+        'Password view vault is not configured (PASSWORD_VIEW_SECRET / JWT_ACCESS_SECRET). Contact ops.',
+      );
     }
+    await this.repository.setPasswordEnc(id, passwordEnc);
     await this.revokeAllSessions(id);
     await this.bustUsersCache();
 
@@ -522,7 +525,11 @@ export class UsersService implements OnModuleInit {
   private passwordViewSecret(): string | null {
     const secret =
       this.config.get<string>('PASSWORD_VIEW_SECRET')?.trim() ||
+      this.config.get<string>('JWT_ACCESS_SECRET')?.trim() ||
       this.config.get<string>('JWT_SECRET')?.trim() ||
+      process.env.PASSWORD_VIEW_SECRET?.trim() ||
+      process.env.JWT_ACCESS_SECRET?.trim() ||
+      process.env.JWT_SECRET?.trim() ||
       '';
     return secret || null;
   }

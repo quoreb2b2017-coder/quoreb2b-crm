@@ -74,7 +74,11 @@ export class SeedService implements OnModuleInit {
   private async seedDefaultUsers() {
     const viewSecret =
       this.config.get<string>('PASSWORD_VIEW_SECRET')?.trim() ||
+      this.config.get<string>('JWT_ACCESS_SECRET')?.trim() ||
       this.config.get<string>('JWT_SECRET')?.trim() ||
+      process.env.PASSWORD_VIEW_SECRET?.trim() ||
+      process.env.JWT_ACCESS_SECRET?.trim() ||
+      process.env.JWT_SECRET?.trim() ||
       '';
 
     for (const u of DEFAULT_USERS) {

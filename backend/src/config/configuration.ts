@@ -46,6 +46,9 @@ export default () => ({
   REDIS_CACHE_TTL_LONG_SECONDS: parseInt(process.env.REDIS_CACHE_TTL_LONG_SECONDS || '600', 10),
   JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET,
   JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET,
+  /** AES vault for Super-Admin password view (falls back to JWT_ACCESS_SECRET in UsersService). */
+  PASSWORD_VIEW_SECRET:
+    process.env.PASSWORD_VIEW_SECRET || process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET,
   JWT_ACCESS_EXPIRES_IN: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
   JWT_REFRESH_EXPIRES_IN: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
   BULLMQ_PREFIX: process.env.BULLMQ_PREFIX || 'quoreb2b',

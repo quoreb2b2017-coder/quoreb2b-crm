@@ -85,6 +85,13 @@ set_env_var BULK_EMAIL_MX_ONLY_FALLBACK "${BULK_EMAIL_MX_ONLY_FALLBACK:-true}" "
 set_env_var BULK_EMAIL_SKIP_CATCH_ALL_PROBE "${BULK_EMAIL_SKIP_CATCH_ALL_PROBE:-true}" "$ENV_FILE"
 set_env_var SUPER_ADMIN_LOGIN_EMAILS "${SUPER_ADMIN_LOGIN_EMAILS:-quoreb2b2017@gmail.com}" "$ENV_FILE"
 set_env_var MASTER_DATA_MAX_ROWS "${MASTER_DATA_MAX_ROWS:-10000000}" "$ENV_FILE"
+# Password view vault — reuse JWT access secret when not explicitly set
+if ! grep -q '^PASSWORD_VIEW_SECRET=.\+' "$ENV_FILE" 2>/dev/null; then
+  JWT_ACCESS="$(grep '^JWT_ACCESS_SECRET=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)"
+  if [ -n "$JWT_ACCESS" ]; then
+    set_env_var PASSWORD_VIEW_SECRET "$JWT_ACCESS" "$ENV_FILE"
+  fi
+fi
 if grep -q '^ELASTICSEARCH_NODE=.\+' "$ENV_FILE" 2>/dev/null; then
   set_env_var ELASTICSEARCH_ENABLED "${ELASTICSEARCH_ENABLED:-true}" "$ENV_FILE"
 fi

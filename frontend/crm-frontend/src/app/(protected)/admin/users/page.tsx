@@ -48,6 +48,8 @@ export default function AdminUsersPage() {
   const [pwModal, setPwModal] = useState<{ userId: string; name: string } | null>(null);
   const [pw, setPw] = useState<string | null | undefined>(undefined);
   const [showPw, setShowPw] = useState(false);
+  const [newPw, setNewPw] = useState('');
+  const [pwSaving, setPwSaving] = useState(false);
   const [deleteModal, setDeleteModal] = useState<{
     userId: string;
     name: string;
@@ -203,6 +205,7 @@ export default function AdminUsersPage() {
     setPwModal({ userId, name });
     setPw(undefined);
     setShowPw(false);
+    setNewPw('');
     try {
       const res = await usersService.getPassword(userId);
       const raw = res.data as unknown;
@@ -213,6 +216,30 @@ export default function AdminUsersPage() {
       );
     } catch {
       setPw(null);
+    }
+  };
+
+  const saveUserPassword = async () => {
+    if (!pwModal || newPw.trim().length < 8) {
+      toast.error('Password too short', 'Use at least 8 characters');
+      return;
+    }
+    setPwSaving(true);
+    try {
+      const res = await usersService.resetPassword(pwModal.userId, newPw.trim());
+      const raw = res.data as unknown;
+      const password =
+        (raw as { data?: { password?: string } })?.data?.password ??
+        (raw as { password?: string })?.password ??
+        newPw.trim();
+      setPw(password);
+      setShowPw(true);
+      setNewPw('');
+      toast.success('Password set', `${pwModal.name} can sign in with the new password`);
+    } catch (err: unknown) {
+      toast.error('Could not set password', extractApiError(err, 'Failed to update password'));
+    } finally {
+      setPwSaving(false);
     }
   };
 
@@ -297,14 +324,33 @@ export default function AdminUsersPage() {
                       </button>
                     </>
                   ) : (
-                    <span className="text-xs italic text-slate-500">
-                      Not available — set password again (Create User / Change Password)
-                    </span>
+                    <div className="w-full space-y-3">
+                      <p className="text-xs text-slate-500">
+                        No stored password for this account. Set one below — Super Admin can view it
+                        anytime after that.
+                      </p>
+                      <Input
+                        label="New password"
+                        type="password"
+                        value={newPw}
+                        onChange={(e) => setNewPw(e.target.value)}
+                        placeholder="At least 8 characters"
+                        minLength={8}
+                      />
+                      <button
+                        type="button"
+                        disabled={pwSaving || newPw.trim().length < 8}
+                        onClick={() => void saveUserPassword()}
+                        className="w-full rounded-lg bg-[#2e7ad1] py-2 text-sm font-semibold text-white hover:bg-[#2568b8] disabled:opacity-50"
+                      >
+                        {pwSaving ? 'Saving…' : 'Set password'}
+                      </button>
+                    </div>
                   )}
                 </div>
                 <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                  Only Super Admin can view passwords. Older accounts created before this
-                  update may need a password reset once to become viewable.
+                  Super Admin can view any user password. Older accounts need a one-time password set
+                  here before View works.
                 </p>
               </div>
               <div className="px-5 pb-4">

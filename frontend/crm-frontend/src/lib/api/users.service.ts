@@ -53,6 +53,11 @@ export const usersService = {
 
   getPassword: (id: string) => apiClient.get<{ data: { password: string | null } }>(`/users/${id}/password`),
 
+  resetPassword: (id: string, password: string) =>
+    apiClient.patch<{ data: { password: string; message: string } }>(`/users/${id}/password`, {
+      password,
+    }),
+
   setStatus: (id: string, isActive: boolean) =>
     apiClient.patch(`/users/${id}/status`, { isActive }),
 

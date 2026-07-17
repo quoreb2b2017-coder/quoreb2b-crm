@@ -14,6 +14,7 @@ import { PaginationDto } from '../../common/dto/pagination.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { SetUserStatusDto } from './dto/set-user-status.dto';
 import { DeleteUserDto } from './dto/delete-user.dto';
+import { AdminResetPasswordDto } from './dto/admin-reset-password.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -55,6 +56,16 @@ export class UsersController {
   ) {
     const password = await this.usersService.getPlainPassword(id, actorFromJwt(user));
     return { password };
+  }
+
+  @Patch(':id/password')
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
+  resetPassword(
+    @Param('id') id: string,
+    @Body() dto: AdminResetPasswordDto,
+    @CurrentUser() user: Parameters<typeof actorFromJwt>[0],
+  ) {
+    return this.usersService.resetPasswordByAdmin(id, dto.password, actorFromJwt(user));
   }
 
   @Post(':id/delete-otp')

@@ -20,6 +20,7 @@ export const ACTIVITY_ACTION_LABELS: Record<string, string> = {
   LEAD_TOUCH: 'Lead opened / edited',
   LEAD_VIEW: 'Campaign opened',
   VIEW_USER_PASSWORD: 'Viewed user password',
+  ADMIN_RESET_USER_PASSWORD: 'Reset user password (admin)',
   USER_CREATE: 'User created',
   USER_STATUS_CHANGE: 'User status changed',
   USER_DELETE: 'User deleted',

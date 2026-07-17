@@ -75,7 +75,7 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
     @Optional() private readonly redis?: RedisService,
   ) {}
 
-  /** Reindex once per deploy so suppression fields (suppEmail/suppDomain) stay in sync. */
+  /** Reindex once per deploy when Mongo and OpenSearch are out of sync. */
   async onApplicationBootstrap(): Promise<void> {
     if (!this.elasticsearch.isEnabled) return;
     const buildSha = process.env.BUILD_SHA?.trim();
@@ -83,10 +83,30 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
     try {
       const lastSha = await this.cache.get(MasterDataSearchIndexService.REINDEX_SHA_CACHE_KEY);
       if (lastSha === buildSha) return;
-      this.logger.log(`New build ${buildSha} — scheduling master search reindex…`);
-      // Always wipe on deploy rebuild. Optimized Engine is append-only — soft reindexes
-      // create duplicate rowIndex docs that break pagination / miss hits.
-      this.enqueueFullReindex(MASTER_DATA_KEY, buildSha, { wipeFirst: true });
+
+      const status = await this.getSearchIndexStatus();
+      if (status.inSync) {
+        this.logger.log(
+          `Build ${buildSha} — search index already in sync (${status.openSearchCount.toLocaleString()} docs); skipping deploy reindex`,
+        );
+        await this.cache.set(
+          MasterDataSearchIndexService.REINDEX_SHA_CACHE_KEY,
+          buildSha,
+          60 * 60 * 24 * 30,
+        );
+        return;
+      }
+
+      const drift = Math.abs(status.mongoRowCount - status.openSearchCount);
+      const wipeFirst =
+        status.openSearchCount === 0 ||
+        drift > Math.max(10_000, Math.floor(status.mongoRowCount * 0.05));
+
+      this.logger.log(
+        `Build ${buildSha} — scheduling master search reindex ` +
+          `(mongo=${status.mongoRowCount.toLocaleString()}, os=${status.openSearchCount.toLocaleString()}, wipe=${wipeFirst})…`,
+      );
+      this.enqueueFullReindex(MASTER_DATA_KEY, buildSha, { wipeFirst });
     } catch (err) {
       this.logger.warn(
         `Could not schedule reindex: ${err instanceof Error ? err.message : err}`,

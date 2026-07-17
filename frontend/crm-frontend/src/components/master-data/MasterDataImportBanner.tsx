@@ -27,19 +27,14 @@ export function MasterDataImportBanner() {
   const jobId = useMasterDataImportStore((s) => s.jobId);
   const progress = useMasterDataImportStore((s) => s.progress);
   const fileName = useMasterDataImportStore((s) => s.fileName);
+  const reindexRunning = Boolean(searchStatus?.reindex?.running);
 
   useEffect(() => {
     if (uiPhase === 'active') setHidden(false);
-  }, [uiPhase, jobId]);
+    if (reindexRunning) setHidden(false);
+  }, [uiPhase, jobId, reindexRunning]);
 
-  // After replace imports (or while a full reindex runs), show live ETA.
   useEffect(() => {
-    const shouldPoll =
-      uiPhase === 'done' ||
-      uiPhase === 'active' ||
-      searchStatus?.reindex?.running === true;
-    if (!shouldPoll) return;
-
     let cancelled = false;
     const poll = async () => {
       try {
@@ -55,23 +50,23 @@ export function MasterDataImportBanner() {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [uiPhase, searchStatus?.reindex?.running]);
+  }, []);
 
-  if (hidden || !progress) return null;
-  if (uiPhase !== 'active' && uiPhase !== 'done') return null;
+  const showImport = Boolean(progress) && (uiPhase === 'active' || uiPhase === 'done');
+  const showReindexOnly = !showImport && reindexRunning;
+  if (hidden || (!showImport && !showReindexOnly)) return null;
 
-  const percent = Number.isFinite(progress.percent)
-    ? Math.max(0, Math.min(100, progress.percent))
+  const percent = Number.isFinite(progress?.percent)
+    ? Math.max(0, Math.min(100, progress!.percent))
     : 0;
-  const isDone = uiPhase === 'done' || progress.phase === 'done';
+  const isDone = showReindexOnly || uiPhase === 'done' || progress?.phase === 'done';
   const reindex = searchStatus?.reindex;
-  const reindexRunning = Boolean(reindex?.running);
   const rowLabel =
-    progress.totalRows != null && progress.totalRows > 0
+    progress?.totalRows != null && progress.totalRows > 0
       ? `${(progress.rowsProcessed ?? 0).toLocaleString()} / ${progress.totalRows.toLocaleString()} rows`
       : null;
   const partLabel =
-    progress.totalParts && progress.totalParts > 1
+    progress?.totalParts && progress.totalParts > 1
       ? `Saving batch ${progress.partIndex ?? '?'}/${progress.totalParts}`
       : null;
 
@@ -80,12 +75,18 @@ export function MasterDataImportBanner() {
     reindex?.estimatedFullMinutes ?? searchStatus?.fullReindexEtaMinutes,
   );
 
-  let title = isDone ? 'Master data import complete' : 'Master data import running';
-  let footer = isDone
-    ? 'Search ready — new contacts are searchable now'
-    : `${partLabel ? `${partLabel} · ` : ''}${rowLabel ? `${rowLabel} · ` : ''}${percent}% — switch tabs freely; import continues on the server`;
+  let title = showReindexOnly
+    ? 'Search index rebuilding'
+    : isDone
+      ? 'Master data import complete'
+      : 'Master data import running';
+  let footer = showReindexOnly
+    ? `Search is partially available until rebuild finishes${etaLabel ? ` · ${etaLabel}` : ''}`
+    : isDone
+      ? 'Search ready — new contacts are searchable now'
+      : `${partLabel ? `${partLabel} · ` : ''}${rowLabel ? `${rowLabel} · ` : ''}${percent}% — switch tabs freely; import continues on the server`;
 
-  if (isDone && reindexRunning) {
+  if ((isDone || showReindexOnly) && reindexRunning) {
     title = 'Search reindex running (automatic)';
     footer = `${reindex?.message || 'Rebuilding search index…'}${etaLabel ? ` · ${etaLabel}` : ''}`;
   } else if (isDone && reindex?.phase === 'done') {
@@ -113,7 +114,7 @@ export function MasterDataImportBanner() {
           </p>
         )}
         <p className="mt-1 text-xs text-slate-600">
-          {reindexRunning ? reindex?.message || progress.message : progress.message}
+          {reindexRunning ? reindex?.message || progress?.message : progress?.message}
         </p>
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
           <div

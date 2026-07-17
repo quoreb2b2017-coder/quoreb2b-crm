@@ -292,6 +292,40 @@ export class UsersService implements OnModuleInit {
     return password;
   }
 
+  /** Super Admin sets a user's password and stores a viewable copy for later reveal. */
+  async resetPasswordByAdmin(id: string, newPassword: string, actor?: ActivityActor) {
+    const actorRoles = actor?.roles ?? [];
+    if (!isSuperAdminRole(actorRoles)) {
+      throw new ForbiddenException('Only Super Admin can reset user passwords');
+    }
+
+    const user = await this.repository.findById(id);
+    if (!user) throw new NotFoundException('User not found');
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await this.repository.update(id, { passwordHash });
+    await this.repository.unsetPlainPassword(id);
+    const passwordEnc = this.encryptPasswordForView(newPassword);
+    if (passwordEnc) {
+      await this.repository.setPasswordEnc(id, passwordEnc);
+    }
+    await this.revokeAllSessions(id);
+    await this.bustUsersCache();
+
+    await this.activityLogs.logWithActor(actor!, {
+      action: 'ADMIN_RESET_USER_PASSWORD',
+      resource: 'users',
+      resourceId: id,
+      metadata: {
+        targetEmail: user.email,
+        targetName: `${user.firstName} ${user.lastName}`,
+        targetRole: user.roles?.[0],
+      },
+    });
+
+    return { password: newPassword, message: 'Password updated. User must sign in again.' };
+  }
+
   async setActiveStatus(id: string, isActive: boolean, actor?: ActivityActor) {
     const user = await this.repository.findById(id);
     if (!user) throw new NotFoundException('User not found');

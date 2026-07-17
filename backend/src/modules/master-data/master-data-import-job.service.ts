@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { AppCacheService } from '../../redis/app-cache.service';
+import { RedisService } from '../../redis/redis.service';
 
 export type MasterDataImportPhase =
   | 'uploading'
@@ -40,7 +41,14 @@ const lastPersistAt = new Map<string, number>();
 
 @Injectable()
 export class MasterDataImportJobService {
-  constructor(private cache: AppCacheService) {}
+  constructor(
+    private cache: AppCacheService,
+    @Optional() private readonly redis?: RedisService,
+  ) {}
+
+  private redisKey(jobId: string): string {
+    return `master:job:${jobId}`;
+  }
 
   createJob(
     fileName: string,
@@ -64,7 +72,9 @@ export class MasterDataImportJobService {
   async getJob(jobId: string): Promise<MasterDataImportJobStatus | null> {
     const mem = jobs.get(jobId);
     if (mem) return mem;
-    const raw = await this.cache.get(`master:import:${jobId}`);
+    const raw =
+      (this.redis ? await this.redis.get(this.redisKey(jobId)).catch(() => null) : null) ??
+      (await this.cache.get(`master:import:${jobId}`));
     if (!raw) return null;
     try {
       return JSON.parse(raw) as MasterDataImportJobStatus;
@@ -108,6 +118,13 @@ export class MasterDataImportJobService {
   }
 
   private async persist(jobId: string, status: MasterDataImportJobStatus): Promise<void> {
+    if (this.redis) {
+      try {
+        await this.redis.set(this.redisKey(jobId), JSON.stringify(status), JOB_TTL_SECONDS);
+      } catch {
+        // AppCache below remains an in-process fallback.
+      }
+    }
     await this.cache.set(`master:import:${jobId}`, JSON.stringify(status), JOB_TTL_SECONDS);
   }
 }

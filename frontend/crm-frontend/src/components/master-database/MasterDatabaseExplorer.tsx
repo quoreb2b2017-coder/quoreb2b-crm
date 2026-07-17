@@ -38,7 +38,6 @@ import { batchesService } from '@/lib/api/batches.service';
 import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
 import { useCanExportSpreadsheet } from '@/hooks/useSpreadsheetCopyGuard';
-import { MasterDataClearConfirmModal } from '@/components/master-data/MasterDataClearConfirmModal';
 import { DbAdminCampaignWizard } from '@/components/db-admin/DbAdminCampaignWizard';
 import { MasterDatabaseFilterPanel, MasterDatabaseFilterTags } from './MasterDatabaseFilterPanel';
 import { MasterDatabaseFilterSidebar } from './MasterDatabaseFilterSidebar';
@@ -142,30 +141,8 @@ export function MasterDatabaseExplorer({
   const [filterSidebarOpen, setFilterSidebarOpen] = useState(true);
 
   const importBusy = importPhase === 'active';
-  const [clearModalOpen, setClearModalOpen] = useState(false);
   const [dedupBusy, setDedupBusy] = useState(false);
-
-  const handleDeduplicate = useCallback(async () => {
-    if (
-      !window.confirm(
-        'Remove duplicate contacts from master data?\n\nDuplicate = same First Name + Last Name + Domain + Email. First copy is kept, extra copies are permanently deleted. Search index will rebuild automatically after this.',
-      )
-    )
-      return;
-    setDedupBusy(true);
-    try {
-      const res = await masterDataService.deduplicate();
-      toast.success(
-        'Duplicates removed',
-        `${res.removed.toLocaleString('en-US')} duplicate contacts deleted — ${res.kept.toLocaleString('en-US')} unique contacts kept. Search reindex is running in the background (a few minutes).`,
-      );
-      window.dispatchEvent(new CustomEvent('master-data-updated'));
-    } catch (e) {
-      toast.error('Dedup failed', extractApiError(e));
-    } finally {
-      setDedupBusy(false);
-    }
-  }, []);
+  const [dedupMessage, setDedupMessage] = useState('');
   const [batchModal, setBatchModal] = useState<{
     rows: string[][];
     headers: string[];
@@ -318,6 +295,34 @@ export function MasterDatabaseExplorer({
     }
   }, [enrichFilterSchemaInBackground, isDbAdmin, loadCoverage]);
 
+  const handleDeduplicate = useCallback(async () => {
+    if (
+      !window.confirm(
+        'Remove duplicate contacts from master data?\n\nDuplicate = same First Name + Last Name + Domain + Email. First copy is kept, extra copies are permanently deleted. Search index will rebuild automatically after this.',
+      )
+    )
+      return;
+    setDedupBusy(true);
+    setDedupMessage('Starting…');
+    try {
+      const res = await masterDataService.deduplicate((progress) => {
+        if (progress.message) setDedupMessage(progress.message);
+      });
+      toast.success(
+        res.removed > 0 ? 'Duplicates removed' : 'No duplicates found',
+        res.removed > 0
+          ? `${res.removed.toLocaleString('en-US')} duplicate contacts deleted — ${res.kept.toLocaleString('en-US')} unique contacts kept. Search reindex is running in the background (a few minutes).`
+          : `All ${res.kept.toLocaleString('en-US')} contacts are already unique. Search reindex is running in the background.`,
+      );
+      await loadData();
+    } catch (e) {
+      toast.error('Dedup failed', extractApiError(e));
+    } finally {
+      setDedupBusy(false);
+      setDedupMessage('');
+    }
+  }, [loadData]);
+
   useEffect(() => {
     void loadData();
   }, [loadData]);
@@ -349,10 +354,9 @@ export function MasterDatabaseExplorer({
   }, [embedded, hasSearched, isDbAdmin, isLargeMasterDataset, loading, pageSize]);
 
   useEffect(() => {
-    if (!embedded && !isDbAdmin) return;
     const onRefresh = () => {
       void loadCoverage();
-      if (isDbAdmin && !embedded) void loadData();
+      void loadData();
     };
     window.addEventListener('batch-created', onRefresh);
     window.addEventListener('master-data-updated', onRefresh);
@@ -360,7 +364,7 @@ export function MasterDatabaseExplorer({
       window.removeEventListener('batch-created', onRefresh);
       window.removeEventListener('master-data-updated', onRefresh);
     };
-  }, [embedded, isDbAdmin, loadCoverage, loadData]);
+  }, [loadCoverage, loadData]);
 
   const useServerSearch = embedded || isDbAdmin || isLargeMasterDataset;
   const useFilterSidebar = embedded || isDbAdmin || isLargeMasterDataset;
@@ -1107,26 +1111,15 @@ export function MasterDatabaseExplorer({
             : 'Assign to Sales'}
         </button>
         {canDedupMaster && (
-          <>
-            <button
-              type="button"
-              className="mdb-btn"
-              disabled={dedupBusy || importBusy}
-              onClick={() => void handleDeduplicate()}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              {dedupBusy ? 'Removing…' : 'Remove duplicates'}
-            </button>
-            <button
-              type="button"
-              className="mdb-btn mdb-btn--danger"
-              disabled={dedupBusy || importBusy}
-              onClick={() => setClearModalOpen(true)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Clear
-            </button>
-          </>
+          <button
+            type="button"
+            className="mdb-btn"
+            disabled={dedupBusy || importBusy}
+            onClick={() => void handleDeduplicate()}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {dedupBusy ? (dedupMessage || 'Removing…') : 'Remove duplicates'}
+          </button>
         )}
         {!embedded && (
           <div className="mdb-more-menu">
@@ -1301,16 +1294,7 @@ export function MasterDatabaseExplorer({
                     onClick={() => void handleDeduplicate()}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
-                    {dedupBusy ? 'Removing…' : 'Remove duplicates'}
-                  </button>
-                  <button
-                    type="button"
-                    className="mdb-titlebar__btn mdb-titlebar__btn--danger"
-                    disabled={dedupBusy || importBusy}
-                    onClick={() => setClearModalOpen(true)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Clear
+                    {dedupBusy ? (dedupMessage || 'Removing…') : 'Remove duplicates'}
                   </button>
                 </div>
               )}
@@ -1394,13 +1378,7 @@ export function MasterDatabaseExplorer({
                   onClick={() => void handleDeduplicate()}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
-                  {dedupBusy ? 'Removing…' : 'Remove duplicates'}
-                </button>
-              )}
-              {canDedupMaster && (
-                <button type="button" className="mdb-btn mdb-btn--danger" onClick={() => setClearModalOpen(true)}>
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Clear
+                  {dedupBusy ? (dedupMessage || 'Removing…') : 'Remove duplicates'}
                 </button>
               )}
             </div>
@@ -1547,19 +1525,6 @@ export function MasterDatabaseExplorer({
           onCreated={() => {
             setBatchModal(null);
             void loadCoverage();
-          }}
-        />
-      )}
-
-      {!isDbAdmin && (
-        <MasterDataClearConfirmModal
-          open={clearModalOpen}
-          onClose={() => setClearModalOpen(false)}
-          onConfirm={async () => {
-            await masterDataService.clear();
-            setClearModalOpen(false);
-            await loadData();
-            toast.success('Master data cleared');
           }}
         />
       )}

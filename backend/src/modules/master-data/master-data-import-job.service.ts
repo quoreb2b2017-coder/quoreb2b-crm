@@ -7,6 +7,7 @@ export type MasterDataImportPhase =
   | 'queued'
   | 'parsing'
   | 'merging'
+  | 'deduping'
   | 'saving'
   | 'done'
   | 'failed';

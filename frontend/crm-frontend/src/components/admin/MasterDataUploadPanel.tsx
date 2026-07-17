@@ -3,7 +3,7 @@
 import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Upload, Download, Trash2, Cloud, Loader2, Save, Database, Megaphone, CircleDot } from 'lucide-react';
+import { Upload, Download, Cloud, Loader2, Save, Database, Megaphone, CircleDot } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { ExcelPreviewGrid } from '@/components/admin/ExcelPreviewGrid';
 import { downloadMasterDataTemplate } from '@/lib/spreadsheet/master-data-template';
@@ -31,7 +31,6 @@ import { toast } from '@/stores/toast.store';
 import { useAuthStore } from '@/store/auth.store';
 import { useCanExportSpreadsheet } from '@/hooks/useSpreadsheetCopyGuard';
 import { useDebouncedAutoSave, type AutoSaveStatus } from '@/hooks/useDebouncedAutoSave';
-import { MasterDataClearConfirmModal } from '@/components/master-data/MasterDataClearConfirmModal';
 import { DbAdminCampaignWizard } from '@/components/db-admin/DbAdminCampaignWizard';
 import { MasterDatabaseExplorer, type MasterBatchCreatePayload } from '@/components/master-database/MasterDatabaseExplorer';
 
@@ -199,8 +198,6 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
     duplicateCount: number;
     totalRows: number;
   } | null>(null);
-  const [clearModalOpen, setClearModalOpen] = useState(false);
-  const [clearing, setClearing] = useState(false);
 
   const applyLargeDatasetRecord = useCallback(
     (record: Awaited<ReturnType<typeof masterDataService.getCurrent>> & { rowCount: number }) => {
@@ -537,32 +534,6 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
     }
   };
 
-  const confirmClearData = async () => {
-    setClearing(true);
-    try {
-      const result = await masterDataService.clear();
-      setData(null);
-      setFilteredRows([]);
-      setFilteredViewActive(false);
-      setTotalRows(0);
-      setSavedAt(null);
-      setCoverage(null);
-      setError('');
-      setDirty(false);
-      setClearModalOpen(false);
-      const n = result.deletedBatches ?? 0;
-      toast.success(
-        'All data cleared',
-        `Master data removed · ${n} campaign${n === 1 ? '' : 'es'} deleted from database`,
-      );
-      window.dispatchEvent(new CustomEvent('master-data-cleared'));
-    } catch (e) {
-      toast.error('Clear failed', extractApiError(e, 'Could not clear data'));
-    } finally {
-      setClearing(false);
-    }
-  };
-
   // ── Open batch modal ──
   const openBatchModal = useCallback(
     (payload: MasterBatchCreatePayload) => {
@@ -711,20 +682,10 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
             </button>
           )}
           {!isDbAdminView && data && canExport && (
-            <>
-              <button type="button" onClick={handleDownloadFormatted}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-[#2e7ad1] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-[#2568b8]">
-                <Download className="h-3.5 w-3.5" />Export Excel
-              </button>
-              <button
-                type="button"
-                onClick={() => setClearModalOpen(true)}
-                disabled={savingDb || clearing}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-700 transition-all hover:bg-red-50 disabled:opacity-50"
-              >
-                <Trash2 className="h-3.5 w-3.5" />Clear
-              </button>
-            </>
+            <button type="button" onClick={handleDownloadFormatted}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#2e7ad1] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-[#2568b8]">
+              <Download className="h-3.5 w-3.5" />Export Excel
+            </button>
           )}
         </div>
       </div>
@@ -1161,13 +1122,6 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
           </div>
         </>
       )}
-
-      <MasterDataClearConfirmModal
-        open={clearModalOpen}
-        onClose={() => !clearing && setClearModalOpen(false)}
-        onConfirm={confirmClearData}
-        clearing={clearing}
-      />
     </div>
   );
 }

@@ -146,7 +146,7 @@ export class MasterDataRowStore {
       .sort({ chunkIndex: 1 })
       .select('chunkIndex rows')
       .lean()
-      .cursor({ batchSize: 20 });
+      .cursor({ batchSize: 50 });
 
     for await (const chunk of cursor) {
       const rows = (chunk.rows as string[][]) ?? [];

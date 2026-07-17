@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -4189,73 +4190,169 @@ export class MasterDataService {
   /**
    * Admin: remove duplicate contacts already inside master data (keeps first copy).
    * Identity = First Name + Last Name + Domain + Email (same rule uploads use).
+   * Runs as a background job so the HTTP request returns immediately.
    */
   async deduplicateMaster(actor: ActivityActor, roles: string[] = []) {
     const isAdmin =
       roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
     if (!isAdmin) throw new ForbiddenException('Access denied');
 
-    const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+    const doc = await this.masterDataModel
+      .findOne({ key: MASTER_DATA_KEY })
+      .select('key headers rowCount storage fileName')
+      .lean()
+      .exec();
     if (!doc) throw new NotFoundException('No master data uploaded yet');
 
+    const jobId = this.importJobs.createJob('Remove duplicates', {
+      phase: 'deduping',
+      percent: 0,
+      message: 'Queued — removing duplicate contacts…',
+      totalRows: doc.rowCount ?? 0,
+    });
+
+    const acquired = await this.importLock.acquire(jobId);
+    if (!acquired) {
+      await this.importJobs.updateJob(jobId, {
+        phase: 'failed',
+        percent: 0,
+        error: 'Another master data job is already running',
+        message: 'Please wait — an import or dedup job is already in progress',
+      });
+      throw new ConflictException('Another master data job is already running');
+    }
+
+    void this.runDedupJob(jobId, actor, doc).finally(() => this.importLock.release(jobId));
+
+    return { jobId, started: true };
+  }
+
+  private async runDedupJob(
+    jobId: string,
+    actor: ActivityActor,
+    doc: {
+      headers: string[];
+      rowCount?: number;
+      storage?: 'inline' | 'chunked';
+      fileName?: string;
+    },
+  ) {
     const headers = doc.headers as string[];
     const keyFn = (row: string[]) => contactDedupeKey(headers, row);
+    const totalEstimate = Math.max(doc.rowCount ?? 0, 1);
 
     let scanned = 0;
     let kept = 0;
     let removed = 0;
 
-    if (doc.storage === 'chunked') {
-      const result = await this.rowStore.deduplicateChunks(
-        MASTER_DATA_KEY,
-        keyFn,
-        (s, k, r) => {
-          this.logger.log(
-            `Dedup progress: scanned ${s.toLocaleString()}, kept ${k.toLocaleString()}, removed ${r.toLocaleString()}`,
-          );
-        },
-      );
-      scanned = result.scanned;
-      kept = result.kept;
-      removed = result.removed;
-    } else {
-      const rows = (doc.rows as string[][]) ?? [];
-      const seen = new Set<string>();
-      const unique: string[][] = [];
-      for (const row of rows) {
-        scanned += 1;
-        const key = keyFn(row);
-        if (seen.has(key)) {
-          removed += 1;
-          continue;
+    try {
+      await this.importJobs.updateJob(jobId, {
+        phase: 'deduping',
+        percent: 1,
+        message: 'Scanning master data for duplicate contacts…',
+      });
+
+      if (doc.storage === 'chunked') {
+        const result = await this.rowStore.deduplicateChunks(
+          MASTER_DATA_KEY,
+          keyFn,
+          (s, k, r) => {
+            scanned = s;
+            kept = k;
+            removed = r;
+            void this.importJobs.updateJob(jobId, {
+              phase: 'deduping',
+              percent: Math.min(98, Math.round((s / totalEstimate) * 100)),
+              rowsProcessed: s,
+              message: `Scanned ${s.toLocaleString()} — removed ${r.toLocaleString()} duplicate(s)…`,
+            });
+          },
+        );
+        scanned = result.scanned;
+        kept = result.kept;
+        removed = result.removed;
+      } else {
+        const fullDoc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+        if (!fullDoc) throw new NotFoundException('No master data uploaded yet');
+        const rows = (fullDoc.rows as string[][]) ?? [];
+        const seen = new Set<string>();
+        const unique: string[][] = [];
+        for (const row of rows) {
+          scanned += 1;
+          const key = keyFn(row);
+          if (seen.has(key)) {
+            removed += 1;
+          } else {
+            seen.add(key);
+            unique.push(row);
+          }
+          if (scanned % 10_000 === 0) {
+            kept = unique.length;
+            await this.importJobs.updateJob(jobId, {
+              phase: 'deduping',
+              percent: Math.min(98, Math.round((scanned / totalEstimate) * 100)),
+              rowsProcessed: scanned,
+              message: `Scanned ${scanned.toLocaleString()} — removed ${removed.toLocaleString()} duplicate(s)…`,
+            });
+          }
         }
-        seen.add(key);
-        unique.push(row);
+        kept = unique.length;
+        fullDoc.rows = unique;
+        fullDoc.rowCount = kept;
+        const baseName = (fullDoc.fileName ?? 'master').replace(/\s*\(\d[\d,]* rows\)\s*$/i, '');
+        fullDoc.fileName = `${baseName} (${kept.toLocaleString()} rows)`;
+        fullDoc.markModified('rows');
+        await fullDoc.save();
       }
-      kept = unique.length;
-      doc.rows = unique;
+
+      if (doc.storage === 'chunked') {
+        const baseName = (doc.fileName ?? 'master').replace(/\s*\(\d[\d,]* rows\)\s*$/i, '');
+        await this.masterDataModel
+          .updateOne(
+            { key: MASTER_DATA_KEY },
+            {
+              $set: {
+                rowCount: kept,
+                fileName: `${baseName} (${kept.toLocaleString()} rows)`,
+                rows: [],
+              },
+            },
+          )
+          .exec();
+      }
+
+      await this.activityLogs.logWithActor(actor, {
+        action: 'MASTER_DATA_DEDUP',
+        resource: 'master-data',
+        metadata: { scanned, kept, removed },
+      });
+
+      void this.bustMasterCaches({ reindex: true, wipe: true });
+
+      this.logger.log(
+        `Master dedup complete: scanned=${scanned.toLocaleString()} kept=${kept.toLocaleString()} removed=${removed.toLocaleString()}`,
+      );
+
+      await this.importJobs.updateJob(jobId, {
+        phase: 'done',
+        percent: 100,
+        rowsProcessed: scanned,
+        message:
+          removed > 0
+            ? `Removed ${removed.toLocaleString()} duplicate contact(s) — ${kept.toLocaleString()} unique kept`
+            : 'No duplicate contacts found',
+        result: { scanned, kept, removed, totalRows: kept },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Dedup failed';
+      this.logger.error(`Master dedup failed: ${message}`);
+      await this.importJobs.updateJob(jobId, {
+        phase: 'failed',
+        percent: 0,
+        error: message,
+        message: `Duplicate removal failed: ${message}`,
+      });
     }
-
-    doc.rowCount = kept;
-    doc.fileName = doc.fileName.replace(/\s*\(\d[\d,]* rows\)\s*$/i, '');
-    doc.fileName = `${doc.fileName} (${kept.toLocaleString()} rows)`;
-    doc.markModified('rows');
-    await doc.save();
-
-    await this.activityLogs.logWithActor(actor, {
-      action: 'MASTER_DATA_DEDUP',
-      resource: 'master-data',
-      metadata: { scanned, kept, removed },
-    });
-
-    // Row indices shifted — rebuild search index from scratch and drop caches.
-    void this.bustMasterCaches({ reindex: true, wipe: true });
-
-    this.logger.log(
-      `Master dedup complete: scanned=${scanned.toLocaleString()} kept=${kept.toLocaleString()} removed=${removed.toLocaleString()}`,
-    );
-
-    return { scanned, kept, removed, totalRows: kept };
   }
 
   async clear(user?: ActivityActor) {

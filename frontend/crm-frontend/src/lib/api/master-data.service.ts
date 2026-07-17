@@ -820,23 +820,33 @@ export const masterDataService = {
     return unwrap<MasterDataSearchIndexStatus>({ data });
   },
 
-  /** Remove duplicate contacts already in master data (keeps first copy). */
-  deduplicate: async () => {
+  /** Remove duplicate contacts already in master data (keeps first copy). Runs as background job. */
+  deduplicate: async (
+    onProgress?: (progress: MasterDataImportProgress) => void,
+  ): Promise<{ scanned: number; kept: number; removed: number; totalRows: number }> => {
     const { data } = await apiClient.post(
       '/master-data/deduplicate',
       {},
-      { timeout: 30 * 60 * 1000 },
+      { timeout: 120_000 },
     );
-    const result = unwrap<{
-      scanned: number;
-      kept: number;
-      removed: number;
-      totalRows: number;
-    }>({ data });
+    const start = unwrap<{ jobId: string; started: boolean }>({ data });
+    const result = await masterDataService.waitForImportJob(start.jobId, onProgress);
+    const parsed = result as {
+      scanned?: number;
+      kept?: number;
+      removed?: number;
+      totalRows?: number;
+    };
+    const payload = {
+      scanned: parsed.scanned ?? 0,
+      kept: parsed.kept ?? parsed.totalRows ?? 0,
+      removed: parsed.removed ?? 0,
+      totalRows: parsed.totalRows ?? parsed.kept ?? 0,
+    };
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('master-data-updated'));
     }
-    return result;
+    return payload;
   },
 
 };

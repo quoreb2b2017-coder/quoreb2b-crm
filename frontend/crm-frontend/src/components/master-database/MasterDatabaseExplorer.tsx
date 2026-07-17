@@ -140,6 +140,7 @@ export function MasterDatabaseExplorer({
 
   const importBusy = importPhase === 'active';
   const [clearModalOpen, setClearModalOpen] = useState(false);
+  const [dedupBusy, setDedupBusy] = useState(false);
   const [batchModal, setBatchModal] = useState<{
     rows: string[][];
     headers: string[];
@@ -1316,6 +1317,35 @@ export function MasterDatabaseExplorer({
                   Template
                 </button>
               )}
+              <button
+                type="button"
+                className="mdb-btn"
+                disabled={dedupBusy || importBusy}
+                onClick={async () => {
+                  if (
+                    !window.confirm(
+                      'Remove duplicate contacts from master data?\n\nDuplicate = same First Name + Last Name + Domain + Email. First copy is kept, extra copies are permanently deleted. Search index will rebuild automatically after this.',
+                    )
+                  )
+                    return;
+                  setDedupBusy(true);
+                  try {
+                    const res = await masterDataService.deduplicate();
+                    toast.success(
+                      'Duplicates removed',
+                      `${res.removed.toLocaleString('en-US')} duplicate contacts deleted — ${res.kept.toLocaleString('en-US')} unique contacts kept. Search reindex is running in the background (a few minutes).`,
+                    );
+                    window.dispatchEvent(new CustomEvent('master-data-updated'));
+                  } catch (e) {
+                    toast.error('Dedup failed', extractApiError(e));
+                  } finally {
+                    setDedupBusy(false);
+                  }
+                }}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {dedupBusy ? 'Removing…' : 'Remove duplicates'}
+              </button>
               <button type="button" className="mdb-btn mdb-btn--danger" onClick={() => setClearModalOpen(true)}>
                 <Trash2 className="h-3.5 w-3.5" />
                 Clear

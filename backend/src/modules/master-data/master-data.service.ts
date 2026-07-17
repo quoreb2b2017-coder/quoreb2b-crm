@@ -4186,6 +4186,78 @@ export class MasterDataService {
     return ids.some((u) => u.toString() === actorId);
   }
 
+  /**
+   * Admin: remove duplicate contacts already inside master data (keeps first copy).
+   * Identity = First Name + Last Name + Domain + Email (same rule uploads use).
+   */
+  async deduplicateMaster(actor: ActivityActor, roles: string[] = []) {
+    const isAdmin =
+      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
+    if (!isAdmin) throw new ForbiddenException('Access denied');
+
+    const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+    if (!doc) throw new NotFoundException('No master data uploaded yet');
+
+    const headers = doc.headers as string[];
+    const keyFn = (row: string[]) => contactDedupeKey(headers, row);
+
+    let scanned = 0;
+    let kept = 0;
+    let removed = 0;
+
+    if (doc.storage === 'chunked') {
+      const result = await this.rowStore.deduplicateChunks(
+        MASTER_DATA_KEY,
+        keyFn,
+        (s, k, r) => {
+          this.logger.log(
+            `Dedup progress: scanned ${s.toLocaleString()}, kept ${k.toLocaleString()}, removed ${r.toLocaleString()}`,
+          );
+        },
+      );
+      scanned = result.scanned;
+      kept = result.kept;
+      removed = result.removed;
+    } else {
+      const rows = (doc.rows as string[][]) ?? [];
+      const seen = new Set<string>();
+      const unique: string[][] = [];
+      for (const row of rows) {
+        scanned += 1;
+        const key = keyFn(row);
+        if (seen.has(key)) {
+          removed += 1;
+          continue;
+        }
+        seen.add(key);
+        unique.push(row);
+      }
+      kept = unique.length;
+      doc.rows = unique;
+    }
+
+    doc.rowCount = kept;
+    doc.fileName = doc.fileName.replace(/\s*\(\d[\d,]* rows\)\s*$/i, '');
+    doc.fileName = `${doc.fileName} (${kept.toLocaleString()} rows)`;
+    doc.markModified('rows');
+    await doc.save();
+
+    await this.activityLogs.logWithActor(actor, {
+      action: 'MASTER_DATA_DEDUP',
+      resource: 'master-data',
+      metadata: { scanned, kept, removed },
+    });
+
+    // Row indices shifted — rebuild search index from scratch and drop caches.
+    void this.bustMasterCaches({ reindex: true, wipe: true });
+
+    this.logger.log(
+      `Master dedup complete: scanned=${scanned.toLocaleString()} kept=${kept.toLocaleString()} removed=${removed.toLocaleString()}`,
+    );
+
+    return { scanned, kept, removed, totalRows: kept };
+  }
+
   async clear(user?: ActivityActor) {
     const pendingRequests = await this.uploadRequestModel.find({}, { _id: 1 }).lean().exec();
     const requestIds = pendingRequests.map((doc) => doc._id.toString());

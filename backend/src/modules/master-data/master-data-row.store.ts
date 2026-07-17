@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { createHash } from 'crypto';
 import { MASTER_DATA_KEY, MasterDataRecord } from './schemas/master-data.schema';
 import { MasterDataChunk } from './schemas/master-data-chunk.schema';
 import {
@@ -96,6 +97,89 @@ export class MasterDataRowStore {
   async deleteChunks(masterKey: string = MASTER_DATA_KEY): Promise<void> {
     // Callers that clean duplicate-hold storage pass a holdKey (≠ MASTER_DATA_KEY).
     await this.chunkModel.deleteMany({ masterKey }).exec();
+  }
+
+  /**
+   * Stream-dedupe chunked storage in place: keeps the first occurrence per key,
+   * rewrites surviving rows into fresh sequential chunks, then swaps them in.
+   * Memory-safe for millions of rows (hashed keys, chunked writes).
+   */
+  async deduplicateChunks(
+    masterKey: string,
+    keyFn: (row: string[]) => string,
+    onProgress?: (scanned: number, kept: number, removed: number) => void,
+  ): Promise<{ scanned: number; kept: number; removed: number }> {
+    const tmpKey = `${masterKey}__dedup_tmp`;
+    await this.chunkModel.deleteMany({ masterKey: tmpKey }).exec();
+
+    const seen = new Set<string>();
+    let scanned = 0;
+    let kept = 0;
+    let removed = 0;
+    let outChunkIndex = 0;
+    let buffer: string[][] = [];
+    let insertBatch: Array<{ masterKey: string; chunkIndex: number; rows: string[][] }> = [];
+
+    const flushInsertBatch = async () => {
+      if (!insertBatch.length) return;
+      await this.chunkModel.insertMany(insertBatch, { ordered: false });
+      insertBatch = [];
+      await yieldToEventLoop();
+    };
+
+    const pushChunk = async (force = false) => {
+      while (
+        buffer.length >= MASTER_DATA_CHUNK_SIZE ||
+        (force && buffer.length > 0)
+      ) {
+        const rows = buffer.slice(0, MASTER_DATA_CHUNK_SIZE);
+        buffer = buffer.slice(rows.length);
+        insertBatch.push({ masterKey: tmpKey, chunkIndex: outChunkIndex, rows });
+        outChunkIndex += 1;
+        if (insertBatch.length >= 40) await flushInsertBatch();
+        if (force && buffer.length === 0) break;
+      }
+    };
+
+    const cursor = this.chunkModel
+      .find({ masterKey })
+      .sort({ chunkIndex: 1 })
+      .select('chunkIndex rows')
+      .lean()
+      .cursor({ batchSize: 20 });
+
+    for await (const chunk of cursor) {
+      const rows = (chunk.rows as string[][]) ?? [];
+      for (const row of rows) {
+        scanned += 1;
+        const key = keyFn(row);
+        // 16-byte digest instead of full key — ~2M entries stay memory-safe.
+        const digest = createHash('md5').update(key).digest('base64').slice(0, 16);
+        if (seen.has(digest)) {
+          removed += 1;
+          continue;
+        }
+        seen.add(digest);
+        kept += 1;
+        buffer.push(row);
+      }
+      await pushChunk();
+      if (scanned % 100_000 < 1000) {
+        onProgress?.(scanned, kept, removed);
+      }
+    }
+
+    await pushChunk(true);
+    await flushInsertBatch();
+    onProgress?.(scanned, kept, removed);
+
+    // Swap: drop originals, promote tmp chunks to the real key.
+    await this.chunkModel.deleteMany({ masterKey }).exec();
+    await this.chunkModel
+      .updateMany({ masterKey: tmpKey }, { $set: { masterKey } })
+      .exec();
+
+    return { scanned, kept, removed };
   }
 
   async saveRows(

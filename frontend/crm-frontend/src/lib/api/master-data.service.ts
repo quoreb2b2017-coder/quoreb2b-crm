@@ -820,6 +820,25 @@ export const masterDataService = {
     return unwrap<MasterDataSearchIndexStatus>({ data });
   },
 
+  /** Remove duplicate contacts already in master data (keeps first copy). */
+  deduplicate: async () => {
+    const { data } = await apiClient.post(
+      '/master-data/deduplicate',
+      {},
+      { timeout: 30 * 60 * 1000 },
+    );
+    const result = unwrap<{
+      scanned: number;
+      kept: number;
+      removed: number;
+      totalRows: number;
+    }>({ data });
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('master-data-updated'));
+    }
+    return result;
+  },
+
 };
 
 export function recordToSpreadsheet(record: MasterDataRecord): SpreadsheetData {

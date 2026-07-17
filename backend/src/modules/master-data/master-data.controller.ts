@@ -435,4 +435,12 @@ export class MasterDataController {
   clear(@CurrentUser() user: Parameters<typeof actorFromJwt>[0]) {
     return this.masterDataService.clear(actorFromJwt(user));
   }
+
+  /** Remove duplicate contacts inside master data (keeps first copy of each). */
+  @Post('deduplicate')
+  @HttpCode(HttpStatus.OK)
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
+  deduplicate(@CurrentUser() user: Parameters<typeof actorFromJwt>[0]) {
+    return this.masterDataService.deduplicateMaster(actorFromJwt(user), user.roles ?? []);
+  }
 }

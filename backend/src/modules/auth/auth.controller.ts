@@ -93,7 +93,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Post('change-password')
   @HttpCode(HttpStatus.OK)
-  @Roles(SystemRole.EMPLOYEE, SystemRole.DB_ADMIN)
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.EMPLOYEE, SystemRole.DB_ADMIN)
   changePassword(
     @CurrentUser('id') userId: string,
     @Body() dto: ChangePasswordDto,

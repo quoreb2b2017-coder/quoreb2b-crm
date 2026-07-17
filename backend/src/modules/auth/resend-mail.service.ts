@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Resend } from 'resend';
 
@@ -41,7 +41,11 @@ export class ResendMailService {
 
     if (error) {
       this.logger.error(`Resend failed for ${to}: ${error.message}`);
-      throw new Error('Failed to send OTP email');
+      throw new BadRequestException(
+        error.message?.includes('testing emails')
+          ? `OTP email could not be sent to ${to}. Use the primary Super Admin inbox (${this.config.get<string>('SUPER_ADMIN_LOGIN_EMAILS')?.split(',')[0]?.trim() || 'quoreb2b2017@gmail.com'}) or verify your domain on Resend.`
+          : 'Failed to send OTP email. Check RESEND_API_KEY and RESEND_FROM_EMAIL on the server.',
+      );
     }
   }
 }

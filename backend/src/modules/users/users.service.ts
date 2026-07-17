@@ -30,7 +30,7 @@ import {
   encryptViewablePassword,
 } from './password-view.util';
 import { ResendMailService } from '../auth/resend-mail.service';
-import { isSuperAdminRole } from '../../config/super-admin-login.util';
+import { isSuperAdminRole, parseSuperAdminLoginEmails } from '../../config/super-admin-login.util';
 
 interface ActionOtpEntry {
   code: string;
@@ -383,14 +383,7 @@ export class UsersService implements OnModuleInit {
       throw new ForbiddenException('You cannot delete your own account');
     }
 
-    const email = (actor.email || '').toLowerCase().trim();
-    if (!email) {
-      const actorUser = await this.repository.findById(actor.id);
-      if (!actorUser?.email) {
-        throw new BadRequestException('Could not resolve Super Admin email for OTP');
-      }
-    }
-    const otpEmail = email || (await this.repository.findById(actor.id))!.email.toLowerCase();
+    const otpEmail = await this.resolveSuperAdminOtpEmail(actor);
 
     const code = String(Math.floor(100000 + Math.random() * 900000));
     const purpose = `delete-super-admin:${targetId}`;
@@ -449,11 +442,7 @@ export class UsersService implements OnModuleInit {
         throw new ForbiddenException('Cannot delete the last Super Admin account');
       }
 
-      let otpEmail = (actor.email || '').toLowerCase().trim();
-      if (!otpEmail) {
-        const actorUser = await this.repository.findById(actor.id);
-        otpEmail = actorUser?.email?.toLowerCase() ?? '';
-      }
+      let otpEmail = await this.resolveSuperAdminOtpEmail(actor);
       if (!otpEmail) {
         throw new BadRequestException('Could not resolve Super Admin email for OTP');
       }
@@ -571,6 +560,25 @@ export class UsersService implements OnModuleInit {
 
   private actionOtpKey(email: string, purpose: string): string {
     return `${email.toLowerCase().trim()}::${purpose}`;
+  }
+
+  /** Resend test mode only delivers to allowlisted Super Admin inbox — use that for OTP. */
+  private async resolveSuperAdminOtpEmail(actor: ActivityActor): Promise<string> {
+    const allowed = parseSuperAdminLoginEmails(
+      this.config.get<string>('SUPER_ADMIN_LOGIN_EMAILS'),
+    );
+    let actorEmail = (actor.email || '').toLowerCase().trim();
+    if (!actorEmail && actor.id) {
+      const actorUser = await this.repository.findById(actor.id);
+      actorEmail = actorUser?.email?.toLowerCase().trim() ?? '';
+    }
+    if (actorEmail && allowed.includes(actorEmail)) {
+      return actorEmail;
+    }
+    if (allowed.length > 0) {
+      return allowed[0];
+    }
+    return actorEmail;
   }
 
   private verifyActionOtp(email: string, purpose: string, otp: string): boolean {

@@ -33,6 +33,7 @@ import {
 } from '@/lib/api/master-data.service';
 import { enqueueMasterDataImport } from '@/lib/master-data/master-data-import-tracker';
 import { useMasterDataImportStore } from '@/store/master-data-import.store';
+import { useAuthStore } from '@/store/auth.store';
 import { batchesService } from '@/lib/api/batches.service';
 import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
@@ -109,6 +110,8 @@ export function MasterDatabaseExplorer({
 }: MasterDatabaseExplorerProps) {
   const isDbAdmin = variant === 'db_admin';
   const canExport = useCanExportSpreadsheet();
+  const roles = useAuthStore((s) => s.user?.roles ?? []);
+  const canDedupMaster = roles.includes('super_admin') || roles.includes('admin');
   const inputRef = useRef<HTMLInputElement>(null);
   const importPhase = useMasterDataImportStore((s) => s.uiPhase);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -141,6 +144,28 @@ export function MasterDatabaseExplorer({
   const importBusy = importPhase === 'active';
   const [clearModalOpen, setClearModalOpen] = useState(false);
   const [dedupBusy, setDedupBusy] = useState(false);
+
+  const handleDeduplicate = useCallback(async () => {
+    if (
+      !window.confirm(
+        'Remove duplicate contacts from master data?\n\nDuplicate = same First Name + Last Name + Domain + Email. First copy is kept, extra copies are permanently deleted. Search index will rebuild automatically after this.',
+      )
+    )
+      return;
+    setDedupBusy(true);
+    try {
+      const res = await masterDataService.deduplicate();
+      toast.success(
+        'Duplicates removed',
+        `${res.removed.toLocaleString('en-US')} duplicate contacts deleted — ${res.kept.toLocaleString('en-US')} unique contacts kept. Search reindex is running in the background (a few minutes).`,
+      );
+      window.dispatchEvent(new CustomEvent('master-data-updated'));
+    } catch (e) {
+      toast.error('Dedup failed', extractApiError(e));
+    } finally {
+      setDedupBusy(false);
+    }
+  }, []);
   const [batchModal, setBatchModal] = useState<{
     rows: string[][];
     headers: string[];
@@ -1081,6 +1106,28 @@ export function MasterDatabaseExplorer({
                 : 'Create campaign'
             : 'Assign to Sales'}
         </button>
+        {canDedupMaster && (
+          <>
+            <button
+              type="button"
+              className="mdb-btn"
+              disabled={dedupBusy || importBusy}
+              onClick={() => void handleDeduplicate()}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {dedupBusy ? 'Removing…' : 'Remove duplicates'}
+            </button>
+            <button
+              type="button"
+              className="mdb-btn mdb-btn--danger"
+              disabled={dedupBusy || importBusy}
+              onClick={() => setClearModalOpen(true)}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Clear
+            </button>
+          </>
+        )}
         {!embedded && (
           <div className="mdb-more-menu">
             <button type="button" className="mdb-btn" onClick={() => setMoreOpen((v) => !v)}>
@@ -1245,6 +1292,28 @@ export function MasterDatabaseExplorer({
               </div>
             </div>
             <div className="mdb-titlebar__right">
+              {canDedupMaster && (
+                <div className="mdb-titlebar__actions">
+                  <button
+                    type="button"
+                    className="mdb-titlebar__btn"
+                    disabled={dedupBusy || importBusy}
+                    onClick={() => void handleDeduplicate()}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {dedupBusy ? 'Removing…' : 'Remove duplicates'}
+                  </button>
+                  <button
+                    type="button"
+                    className="mdb-titlebar__btn mdb-titlebar__btn--danger"
+                    disabled={dedupBusy || importBusy}
+                    onClick={() => setClearModalOpen(true)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Clear
+                  </button>
+                </div>
+              )}
               {isDbAdmin && (
                 <div className="mdb-titlebar__actions">
                   <button
@@ -1317,39 +1386,23 @@ export function MasterDatabaseExplorer({
                   Template
                 </button>
               )}
-              <button
-                type="button"
-                className="mdb-btn"
-                disabled={dedupBusy || importBusy}
-                onClick={async () => {
-                  if (
-                    !window.confirm(
-                      'Remove duplicate contacts from master data?\n\nDuplicate = same First Name + Last Name + Domain + Email. First copy is kept, extra copies are permanently deleted. Search index will rebuild automatically after this.',
-                    )
-                  )
-                    return;
-                  setDedupBusy(true);
-                  try {
-                    const res = await masterDataService.deduplicate();
-                    toast.success(
-                      'Duplicates removed',
-                      `${res.removed.toLocaleString('en-US')} duplicate contacts deleted — ${res.kept.toLocaleString('en-US')} unique contacts kept. Search reindex is running in the background (a few minutes).`,
-                    );
-                    window.dispatchEvent(new CustomEvent('master-data-updated'));
-                  } catch (e) {
-                    toast.error('Dedup failed', extractApiError(e));
-                  } finally {
-                    setDedupBusy(false);
-                  }
-                }}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                {dedupBusy ? 'Removing…' : 'Remove duplicates'}
-              </button>
-              <button type="button" className="mdb-btn mdb-btn--danger" onClick={() => setClearModalOpen(true)}>
-                <Trash2 className="h-3.5 w-3.5" />
-                Clear
-              </button>
+              {canDedupMaster && (
+                <button
+                  type="button"
+                  className="mdb-btn"
+                  disabled={dedupBusy || importBusy}
+                  onClick={() => void handleDeduplicate()}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {dedupBusy ? 'Removing…' : 'Remove duplicates'}
+                </button>
+              )}
+              {canDedupMaster && (
+                <button type="button" className="mdb-btn mdb-btn--danger" onClick={() => setClearModalOpen(true)}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Clear
+                </button>
+              )}
             </div>
           </div>
         )}

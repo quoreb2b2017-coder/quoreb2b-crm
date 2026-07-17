@@ -480,9 +480,9 @@ export class ElasticsearchService implements OnModuleInit {
     const limit = Math.max(1, Math.min(size, 5000));
     const offset = Math.max(0, from);
 
-    // Optimized Engine is append-only — soft reindexes create duplicate rowIndex docs.
-    // DISTINCT keeps pagination/search from skipping unique master rows.
-    const countQuery = `SELECT COUNT(DISTINCT rowIndex) as c FROM ${index} WHERE ${where}`;
+    // Full rebuilds recreate the Optimized Engine index, so one doc equals one row.
+    // COUNT(DISTINCT ...) is approximate on this engine and over-reports large result sets.
+    const countQuery = `SELECT COUNT(*) as c FROM ${index} WHERE ${where}`;
     const pageQuery = `SELECT DISTINCT rowIndex FROM ${index} WHERE ${where} ORDER BY rowIndex LIMIT ${limit} OFFSET ${offset}`;
 
     const [countRes, pageRes] = await Promise.all([
@@ -690,7 +690,7 @@ export class ElasticsearchService implements OnModuleInit {
           method: 'POST',
           path: '/_plugins/_sql',
           body: {
-            query: `SELECT COUNT(DISTINCT rowIndex) as c FROM ${index} WHERE masterKey = '${masterKey.replace(/'/g, "''")}'`,
+            query: `SELECT COUNT(*) as c FROM ${index} WHERE masterKey = '${masterKey.replace(/'/g, "''")}'`,
           },
         });
         return Number((r as { body?: { datarows?: unknown[][] } }).body?.datarows?.[0]?.[0] ?? 0);

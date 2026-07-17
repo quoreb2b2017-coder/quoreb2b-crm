@@ -58,39 +58,66 @@ function findEmailColumnIndex(headers: string[]): number {
   return -1;
 }
 
+type ContactDedupeIndexes = {
+  first: number;
+  last: number;
+  domain: number;
+  email: number;
+};
+
+const contactDedupeIndexCache = new WeakMap<string[], ContactDedupeIndexes>();
+const contactDedupeKeyFnCache = new WeakMap<string[], (row: string[]) => string>();
+
+function resolveContactDedupeIndexes(headers: string[]): ContactDedupeIndexes {
+  const cached = contactDedupeIndexCache.get(headers);
+  if (cached) return cached;
+
+  const resolved = {
+    first: findContactColumnIndex(headers, ['firstname', 'fname', 'givenname']),
+    last: findContactColumnIndex(headers, ['lastname', 'lname', 'surname', 'familyname']),
+    domain: findContactColumnIndex(headers, [
+      'domain',
+      'companydomain',
+      'emaildomain',
+      'websitedomain',
+    ]),
+    email: findEmailColumnIndex(headers),
+  };
+  contactDedupeIndexCache.set(headers, resolved);
+  return resolved;
+}
+
+/** Compile header lookups once for high-volume imports/dedup/reindex loops. */
+export function createContactDedupeKey(headers: string[]): (row: string[]) => string {
+  const cached = contactDedupeKeyFnCache.get(headers);
+  if (cached) return cached;
+
+  const indexes = resolveContactDedupeIndexes(headers);
+  const keyFn = (row: string[]) => {
+    const first =
+      indexes.first >= 0 ? normalizeContactPart(String(row[indexes.first] ?? '')) : '';
+    const last =
+      indexes.last >= 0 ? normalizeContactPart(String(row[indexes.last] ?? '')) : '';
+    const domain =
+      indexes.domain >= 0 ? normalizeDomainPart(String(row[indexes.domain] ?? '')) : '';
+    const email =
+      indexes.email >= 0 ? normalizeContactPart(String(row[indexes.email] ?? '')) : '';
+
+    if (!first && !last && !domain && !email) {
+      return rowKey(row.map((cell) => String(cell ?? '').trim()));
+    }
+    return `${first}\u001f${last}\u001f${domain}\u001f${email}`;
+  };
+  contactDedupeKeyFnCache.set(headers, keyFn);
+  return keyFn;
+}
+
 /**
  * Duplicate identity: First Name + Last Name + Domain + Email (normalized).
  * Falls back to full-row key when those columns are missing or all empty.
  */
 export function contactDedupeKey(headers: string[], row: string[]): string {
-  const firstIdx = findContactColumnIndex(headers, [
-    'firstname',
-    'fname',
-    'givenname',
-  ]);
-  const lastIdx = findContactColumnIndex(headers, [
-    'lastname',
-    'lname',
-    'surname',
-    'familyname',
-  ]);
-  const domainIdx = findContactColumnIndex(headers, [
-    'domain',
-    'companydomain',
-    'emaildomain',
-    'websitedomain',
-  ]);
-  const emailIdx = findEmailColumnIndex(headers);
-
-  const first = firstIdx >= 0 ? normalizeContactPart(String(row[firstIdx] ?? '')) : '';
-  const last = lastIdx >= 0 ? normalizeContactPart(String(row[lastIdx] ?? '')) : '';
-  const domain = domainIdx >= 0 ? normalizeDomainPart(String(row[domainIdx] ?? '')) : '';
-  const email = emailIdx >= 0 ? normalizeContactPart(String(row[emailIdx] ?? '')) : '';
-
-  if (!first && !last && !domain && !email) {
-    return rowKey(row.map((cell) => String(cell ?? '').trim()));
-  }
-  return [first, last, domain, email].join('\u001f');
+  return createContactDedupeKey(headers)(row);
 }
 
 export function headersEqual(a: string[], b: string[]): boolean {

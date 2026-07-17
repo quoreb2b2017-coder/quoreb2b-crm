@@ -402,6 +402,73 @@ export class ElasticsearchService implements OnModuleInit {
     }
   }
 
+  /** Fast distinct filter options without scanning every MongoDB chunk. */
+  async getDistinctMasterFieldValues(
+    field: string,
+    masterKey: string,
+    query: string | undefined,
+    limit: number,
+  ): Promise<string[] | null> {
+    if (!this.enabled || !this.client || !/^f_[a-z0-9_]+$/.test(field)) return null;
+    await this.ensureMasterDataIndex();
+    if (this.engineMode === 'unknown') await this.detectEngineMode();
+
+    const safeLimit = Math.max(1, Math.min(limit, 500));
+    const needle = query?.trim().toLowerCase().replace(/[%']/g, '') ?? '';
+
+    try {
+      if (this.engineMode === 'sql') {
+        const escapedKey = masterKey.replace(/'/g, "''");
+        const filter = needle
+          ? ` AND LOWER(${field}) LIKE '%${needle}%'`
+          : '';
+        const sql =
+          `SELECT DISTINCT ${field} FROM ${this.masterDataIndexName()} ` +
+          `WHERE masterKey = '${escapedKey}' AND ${field} IS NOT NULL${filter} ` +
+          `ORDER BY ${field} LIMIT ${safeLimit}`;
+        const result = await this.client.transport.request({
+          method: 'POST',
+          path: '/_plugins/_sql',
+          body: { query: sql },
+        });
+        const rows = (result as { body?: { datarows?: unknown[][] } }).body?.datarows ?? [];
+        return rows
+          .map((row) => String(row?.[0] ?? '').trim())
+          .filter(Boolean)
+          .slice(0, safeLimit);
+      }
+
+      const include = needle ? `.*${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*` : undefined;
+      const result = await this.client.search({
+        index: this.masterDataIndexName(),
+        body: {
+          size: 0,
+          query: { term: { masterKey } },
+          aggs: {
+            values: {
+              terms: {
+                field,
+                size: safeLimit,
+                ...(include ? { include } : {}),
+              },
+            },
+          },
+        },
+      });
+      const buckets = (
+        result.body?.aggregations?.values as {
+          buckets?: Array<{ key?: string }>;
+        } | undefined
+      )?.buckets ?? [];
+      return buckets.map((bucket) => String(bucket.key ?? '').trim()).filter(Boolean);
+    } catch (error) {
+      this.logger.warn(
+        `OpenSearch distinct ${field} failed: ${error instanceof Error ? error.message : error}`,
+      );
+      return null;
+    }
+  }
+
   private async searchMasterPageSql(
     whereSql: string,
     from: number,

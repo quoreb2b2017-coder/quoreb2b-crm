@@ -17,6 +17,15 @@ export class MasterDataImportLockService {
     return this.redis.setNx(LOCK_KEY, jobId, LOCK_TTL_SECONDS);
   }
 
+  async currentOwner(): Promise<string | null> {
+    if (!this.redis) return null;
+    try {
+      return await this.redis.get(LOCK_KEY);
+    } catch {
+      return null;
+    }
+  }
+
   async release(jobId: string): Promise<void> {
     if (!this.redis) return;
     try {

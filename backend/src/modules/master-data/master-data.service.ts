@@ -40,6 +40,7 @@ import {
   alignRowWithIndex,
   buildHeaderIndexMap,
   contactDedupeKey,
+  createContactDedupeKey,
   headersEqual,
   mergeAppendSheets,
   mergeHeaders,
@@ -76,6 +77,7 @@ import { CsvImportJob } from '../csv-import/schemas/csv-import-job.schema';
 import {
   buildMasterDataOpenSearchQuery,
   buildMasterDataSqlWhere,
+  flatFieldName,
 } from './master-data-opensearch.util';
 import { ElasticsearchService } from '../../elasticsearch/elasticsearch.service';
 import type { SuppressionCheckMode } from '../delivered-data/suppression-match.util';
@@ -3774,11 +3776,20 @@ export class MasterDataService {
         const fullScanHeaders = headers.filter((h) => isFullScanSelectHeader(h));
         for (const scanHeader of fullScanHeaders) {
           try {
-            const allValues = await this.rowStore.collectDistinctColumnValues(
-              doc as Parameters<typeof this.rowStore.collectDistinctColumnValues>[0],
-              scanHeader,
-              isLeadTypeHeader(scanHeader) ? 500 : 100,
+            const distinctLimit = isLeadTypeHeader(scanHeader) ? 500 : 100;
+            const searchValues = await this.elasticsearch.getDistinctMasterFieldValues(
+              flatFieldName(scanHeader),
+              MASTER_DATA_KEY,
+              undefined,
+              distinctLimit,
             );
+            const allValues =
+              searchValues ??
+              (await this.rowStore.collectDistinctColumnValues(
+                doc as Parameters<typeof this.rowStore.collectDistinctColumnValues>[0],
+                scanHeader,
+                distinctLimit,
+              ));
             if (allValues.length > 0) {
               columns = columns.map((col) =>
                 col.header.trim().toLowerCase() === scanHeader.trim().toLowerCase()
@@ -3836,27 +3847,29 @@ export class MasterDataService {
       cacheKey,
       cacheTtlSeconds(this.config, 'short'),
       async () => {
-        if (fullScan && !q?.trim()) {
+        if (fullScan) {
+          const searchOptions = await this.elasticsearch.getDistinctMasterFieldValues(
+            flatFieldName(header),
+            MASTER_DATA_KEY,
+            q,
+            effectiveLimit,
+          );
+          if (searchOptions !== null) return { header, options: searchOptions };
+
+          const needle = q?.trim().toLowerCase();
           const options = await this.rowStore.collectDistinctColumnValues(
             doc as Parameters<typeof this.rowStore.collectDistinctColumnValues>[0],
             header,
-            effectiveLimit,
+            needle ? 500 : effectiveLimit,
           );
-          return { header, options };
-        }
-
-        if (fullScan && q?.trim()) {
-          const needle = q.trim().toLowerCase();
-          const options = (
-            await this.rowStore.collectDistinctColumnValues(
-              doc as Parameters<typeof this.rowStore.collectDistinctColumnValues>[0],
-              header,
-              500,
-            )
-          )
-            .filter((v) => v.toLowerCase().includes(needle))
-            .slice(0, effectiveLimit);
-          return { header, options };
+          return {
+            header,
+            options: needle
+              ? options
+                  .filter((value) => value.toLowerCase().includes(needle))
+                  .slice(0, effectiveLimit)
+              : options,
+          };
         }
 
         const rows = await this.rowStore.loadSampleRows(doc, 10_000);
@@ -4204,6 +4217,27 @@ export class MasterDataService {
       .exec();
     if (!doc) throw new NotFoundException('No master data uploaded yet');
 
+    const existingOwner = await this.importLock.currentOwner();
+    if (existingOwner) {
+      const existingJob = await this.importJobs.getJob(existingOwner);
+      if (existingJob?.phase === 'deduping') {
+        return { jobId: existingOwner, started: false };
+      }
+
+      const updatedAt = existingJob?.updatedAt
+        ? new Date(existingJob.updatedAt).getTime()
+        : 0;
+      const stale = !existingJob ||
+        existingJob.phase === 'done' ||
+        existingJob.phase === 'failed' ||
+        Date.now() - updatedAt > 10 * 60 * 1000;
+      if (stale) {
+        await this.importLock.release(existingOwner);
+      } else {
+        throw new ConflictException('Another master data import is already running');
+      }
+    }
+
     const jobId = this.importJobs.createJob('Remove duplicates', {
       phase: 'deduping',
       percent: 0,
@@ -4213,12 +4247,17 @@ export class MasterDataService {
 
     const acquired = await this.importLock.acquire(jobId);
     if (!acquired) {
+      const activeOwner = await this.importLock.currentOwner();
+      const activeJob = activeOwner ? await this.importJobs.getJob(activeOwner) : null;
       await this.importJobs.updateJob(jobId, {
         phase: 'failed',
         percent: 0,
         error: 'Another master data job is already running',
         message: 'Please wait — an import or dedup job is already in progress',
       });
+      if (activeOwner && activeJob?.phase === 'deduping') {
+        return { jobId: activeOwner, started: false };
+      }
       throw new ConflictException('Another master data job is already running');
     }
 
@@ -4238,7 +4277,7 @@ export class MasterDataService {
     },
   ) {
     const headers = doc.headers as string[];
-    const keyFn = (row: string[]) => contactDedupeKey(headers, row);
+    const keyFn = createContactDedupeKey(headers);
     const totalEstimate = Math.max(doc.rowCount ?? 0, 1);
 
     let scanned = 0;

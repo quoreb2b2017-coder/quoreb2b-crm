@@ -43,7 +43,7 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
   private reindexChain: Promise<void> = Promise.resolve();
   private static readonly REINDEX_SHA_CACHE_KEY = 'master:search_reindex_sha';
   private static readonly REINDEX_LOCK_KEY = 'master:search_reindex_lock';
-  private static readonly REINDEX_LOCK_TTL_SEC = 14_400; // 4h
+  private static readonly REINDEX_LOCK_TTL_SEC = 180;
   /** Observed ≈ 90–100k docs/min on Optimized Engine t3.large. */
   private static readonly ROWS_PER_MINUTE = 95_000;
 
@@ -128,7 +128,8 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
     });
     this.reindexChain = this.reindexChain
       .then(async () => {
-        const owner = `${process.pid}:${Date.now()}`;
+        const buildSha = process.env.BUILD_SHA?.trim() || 'runtime';
+        const owner = `${buildSha}:${process.pid}:${Date.now()}`;
         const gotLock = await this.acquireReindexLock(owner);
         if (!gotLock) {
           this.logger.log(
@@ -142,6 +143,9 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
           });
           return;
         }
+        const heartbeat = setInterval(() => {
+          void this.refreshReindexLock(owner);
+        }, 60_000);
         try {
           // Only wipe when explicitly requested (deploy/admin/replace). Never auto-wipe
           // on Optimized Engine for casual callers — that made uploads unsearchable for ~25m.
@@ -155,6 +159,7 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
             );
           }
         } finally {
+          clearInterval(heartbeat);
           await this.releaseReindexLock(owner);
         }
       })
@@ -461,11 +466,25 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
   private async acquireReindexLock(owner: string): Promise<boolean> {
     if (!this.redis) return true;
     try {
-      return await this.redis.setNx(
+      const acquired = await this.redis.setNx(
         MasterDataSearchIndexService.REINDEX_LOCK_KEY,
         owner,
         MasterDataSearchIndexService.REINDEX_LOCK_TTL_SEC,
       );
+      if (acquired) return true;
+
+      // Locks from a previous deployment cannot have a live owner anymore.
+      const current = await this.redis.get(MasterDataSearchIndexService.REINDEX_LOCK_KEY);
+      const currentBuild = process.env.BUILD_SHA?.trim() || 'runtime';
+      if (current && !current.startsWith(`${currentBuild}:`)) {
+        await this.redis.del(MasterDataSearchIndexService.REINDEX_LOCK_KEY);
+        return this.redis.setNx(
+          MasterDataSearchIndexService.REINDEX_LOCK_KEY,
+          owner,
+          MasterDataSearchIndexService.REINDEX_LOCK_TTL_SEC,
+        );
+      }
+      return false;
     } catch (err) {
       this.logger.warn(
         `Reindex lock acquire failed — proceeding without lock: ${
@@ -473,6 +492,22 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
         }`,
       );
       return true;
+    }
+  }
+
+  private async refreshReindexLock(owner: string): Promise<void> {
+    if (!this.redis) return;
+    try {
+      const current = await this.redis.get(MasterDataSearchIndexService.REINDEX_LOCK_KEY);
+      if (current === owner) {
+        await this.redis.set(
+          MasterDataSearchIndexService.REINDEX_LOCK_KEY,
+          owner,
+          MasterDataSearchIndexService.REINDEX_LOCK_TTL_SEC,
+        );
+      }
+    } catch {
+      /* best-effort heartbeat */
     }
   }
 

@@ -30,6 +30,7 @@ import {
   encryptViewablePassword,
 } from './password-view.util';
 import { ResendMailService } from '../auth/resend-mail.service';
+import { isSuperAdminRole } from '../../config/super-admin-login.util';
 
 interface ActionOtpEntry {
   code: string;
@@ -63,6 +64,13 @@ export class UsersService implements OnModuleInit {
     } catch (err) {
       this.logger.error(
         `Failed to wipe plain passwords: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+    try {
+      await this.backfillViewablePasswords();
+    } catch (err) {
+      this.logger.error(
+        `Failed to backfill viewable passwords: ${err instanceof Error ? err.message : err}`,
       );
     }
   }
@@ -255,7 +263,7 @@ export class UsersService implements OnModuleInit {
 
   async getPlainPassword(id: string, actor?: ActivityActor): Promise<string | null> {
     const actorRoles = actor?.roles ?? [];
-    if (!actorRoles.includes(SystemRole.SUPER_ADMIN)) {
+    if (!isSuperAdminRole(actorRoles)) {
       throw new ForbiddenException('Only Super Admin can view user passwords');
     }
 
@@ -483,6 +491,36 @@ export class UsersService implements OnModuleInit {
       this.config.get<string>('JWT_SECRET')?.trim() ||
       '';
     return secret || null;
+  }
+
+  /** Restore viewable password vault for bootstrap accounts missing passwordEnc. */
+  private async backfillViewablePasswords(): Promise<void> {
+    const secret = this.passwordViewSecret();
+    if (!secret) {
+      this.logger.warn(
+        'PASSWORD_VIEW_SECRET / JWT_SECRET missing — Super Admin password view disabled',
+      );
+      return;
+    }
+
+    const bootstrapEmail = (
+      this.config.get<string>('SUPER_ADMIN_EMAIL') ?? 'quoreb2b2017@gmail.com'
+    )
+      .toLowerCase()
+      .trim();
+    const bootstrapPassword =
+      this.config.get<string>('SEED_SUPER_ADMIN_PASSWORD')?.trim() ?? 'Quore@2026';
+
+    const user = await this.repository.findByEmail(bootstrapEmail);
+    if (!user) return;
+
+    const userId = String(user._id);
+    const existingEnc = await this.repository.findPasswordEnc(userId);
+    if (existingEnc && decryptViewablePassword(existingEnc, secret)) return;
+
+    const passwordEnc = encryptViewablePassword(bootstrapPassword, secret);
+    await this.repository.setPasswordEnc(userId, passwordEnc);
+    this.logger.log(`Backfilled viewable password for bootstrap Super Admin (${bootstrapEmail})`);
   }
 
   private isAdminAccount(user: User): boolean {

@@ -30,7 +30,8 @@ export default function AdminUsersPage() {
   const router = useRouter();
   const currentRoles = useAuthStore((s) => s.user?.roles ?? []);
   const currentUserId = useAuthStore((s) => s.user?.id ?? '');
-  const isSuperAdmin = currentRoles.includes('super_admin');
+  const isSuperAdmin =
+    currentRoles.includes('super_admin') || currentRoles.includes('admin');
 
   const roleOptions = useMemo<RoleOption[]>(
     () => (isSuperAdmin ? ['super_admin', 'db_admin', 'employee'] : ['db_admin', 'employee']),

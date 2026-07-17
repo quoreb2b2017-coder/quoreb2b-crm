@@ -41,6 +41,8 @@ export interface SearchReindexProgress {
 export class MasterDataSearchIndexService implements OnApplicationBootstrap {
   private readonly logger = new Logger(MasterDataSearchIndexService.name);
   private reindexChain: Promise<void> = Promise.resolve();
+  /** Serialize upload batches to avoid overwhelming OpenSearch on large imports. */
+  private incrementalIndexChain: Promise<void> = Promise.resolve();
   private static readonly REINDEX_SHA_CACHE_KEY = 'master:search_reindex_sha';
   private static readonly REINDEX_LOCK_KEY = 'master:search_reindex_lock';
   private static readonly REINDEX_LOCK_TTL_SEC = 180;
@@ -341,6 +343,21 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
     revision: number,
   ): Promise<void> {
     if (!this.elasticsearch.isEnabled || !rows.length) return;
+    const queued = this.incrementalIndexChain.then(() =>
+      this.indexRowBatchNow(headers, rows, startRowIndex, masterKey, revision),
+    );
+    // Keep the queue usable after a failed batch while returning the failure to its caller.
+    this.incrementalIndexChain = queued.catch(() => undefined);
+    return queued;
+  }
+
+  private async indexRowBatchNow(
+    headers: string[],
+    rows: string[][],
+    startRowIndex: number,
+    masterKey: string,
+    revision: number,
+  ): Promise<void> {
     const docs = rows.map((row, i) =>
       buildMasterRowSearchDocument(headers, row, startRowIndex + i, masterKey, revision),
     );
@@ -374,6 +391,9 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
   async refreshAfterIncremental(): Promise<void> {
     if (!this.elasticsearch.isEnabled) return;
     try {
+      // Upload writes queue indexing without blocking Mongo saves. Wait for all queued
+      // batches before announcing that the complete upload is searchable.
+      await this.incrementalIndexChain;
       await this.elasticsearch.refreshMasterIndex();
       void this.cache.delByPrefix('master:filter-idx:');
       if (!this.progress.running) {

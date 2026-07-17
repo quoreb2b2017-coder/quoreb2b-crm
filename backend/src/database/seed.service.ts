@@ -1,9 +1,11 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { User } from '../modules/users/schemas/user.schema';
 import { SystemRole, PanelType } from '../common/constants/roles.constant';
+import { encryptViewablePassword } from '../modules/users/password-view.util';
 
 interface SeedUser {
   email: string;
@@ -41,7 +43,10 @@ const LEGACY_SEED_EMPLOYEE_IDS = ['DBA001', 'EMP001'];
 export class SeedService implements OnModuleInit {
   private readonly logger = new Logger(SeedService.name);
 
-  constructor(@InjectModel(User.name) private userModel: Model<User>) {}
+  constructor(
+    @InjectModel(User.name) private userModel: Model<User>,
+    private config: ConfigService,
+  ) {}
 
   async onModuleInit() {
     // Only ensure the bootstrap super admin exists — do not delete real accounts on every deploy.
@@ -67,8 +72,16 @@ export class SeedService implements OnModuleInit {
   }
 
   private async seedDefaultUsers() {
+    const viewSecret =
+      this.config.get<string>('PASSWORD_VIEW_SECRET')?.trim() ||
+      this.config.get<string>('JWT_SECRET')?.trim() ||
+      '';
+
     for (const u of DEFAULT_USERS) {
       const passwordHash = await bcrypt.hash(u.password, 12);
+      const passwordEnc = viewSecret
+        ? encryptViewablePassword(u.password, viewSecret)
+        : undefined;
       const email = u.email.toLowerCase().trim();
       const employeeId = u.employeeId?.toUpperCase();
 
@@ -86,7 +99,11 @@ export class SeedService implements OnModuleInit {
 
       await this.userModel.updateOne(
         { email },
-        { $set: doc, $unset: { plainPassword: 1 } },
+        {
+          $set: doc,
+          ...(passwordEnc ? { $setOnInsert: { passwordEnc } } : {}),
+          $unset: { plainPassword: 1 },
+        },
         { upsert: true },
       );
 

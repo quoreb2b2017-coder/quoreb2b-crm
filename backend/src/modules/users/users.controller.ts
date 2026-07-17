@@ -48,7 +48,7 @@ export class UsersController {
   }
 
   @Get(':id/password')
-  @Roles(SystemRole.SUPER_ADMIN)
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
   async getPassword(
     @Param('id') id: string,
     @CurrentUser() user: Parameters<typeof actorFromJwt>[0],

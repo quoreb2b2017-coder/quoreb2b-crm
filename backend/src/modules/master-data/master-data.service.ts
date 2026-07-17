@@ -87,7 +87,7 @@ import {
 } from './master-data-upload.metrics';
 
 /** Soft cap for a single master file / cumulative DB — raise via MASTER_DATA_MAX_ROWS. */
-const DEFAULT_MAX_TOTAL_ROWS = 5_000_000;
+const DEFAULT_MAX_TOTAL_ROWS = 10_000_000;
 const DUPLICATE_PREVIEW_LIMIT = 100;
 /** Stream large imports in batches — rows hit MongoDB as each batch completes. */
 const LARGE_IMPORT_STREAM_THRESHOLD = 10_000;
@@ -326,6 +326,10 @@ export class MasterDataService {
       },
     );
 
+    if (this.searchIndex.isSearchEngineEnabled()) {
+      this.bustMasterCaches({ reindex: true, wipe: true });
+    }
+
     return {
       headers: mergedHeaders,
       rowCount: result.rowCount,
@@ -384,6 +388,25 @@ export class MasterDataService {
   /** First Name + Last Name + Domain + Email (normalized). */
   private rowKey(headers: string[], row: string[]) {
     return contactDedupeKey(headers, row);
+  }
+
+  /** Index newly saved master rows so search works within seconds of upload. */
+  private scheduleMasterRowBatchIndex(
+    headers: string[],
+    rows: string[][],
+    startRowIndex: number,
+    revision: number,
+  ): void {
+    if (!this.searchIndex.isSearchEngineEnabled() || !rows.length || !headers.length) {
+      return;
+    }
+    void this.searchIndex
+      .indexRowBatch(headers, rows, startRowIndex, MASTER_DATA_KEY, revision)
+      .catch((err) => {
+        this.logger.warn(
+          `OpenSearch incremental index failed: ${err instanceof Error ? err.message : err}`,
+        );
+      });
   }
 
   /** OpenSearch fingerprint batch lookup (falls back to empty when search engine off). */
@@ -603,11 +626,19 @@ export class MasterDataService {
 
     const sheetName = dto.sheetName || existing?.sheetName || 'Master Data';
     let baseRowCount = 0;
+    const masterRevision = Date.now();
 
     if (mode === 'replace' || !existing) {
       onProgress?.(0, totalIncoming, 'Replacing master data (batch insert)…');
       await this.rowStore.deleteChunks();
       baseRowCount = 0;
+      if (this.searchIndex.isSearchEngineEnabled()) {
+        await this.searchIndex.wipeSearchIndex(MASTER_DATA_KEY).catch((err) => {
+          this.logger.warn(
+            `Failed to wipe search index before replace: ${err instanceof Error ? err.message : err}`,
+          );
+        });
+      }
       await this.patchChunkedMasterMeta({
         headers: targetHeaders,
         rowCount: 0,
@@ -665,9 +696,12 @@ export class MasterDataService {
 
     const flushBatch = async (forceMeta = false) => {
       if (!pendingBatch.length) return;
-      await this.rowStore.appendRows(pendingBatch, MASTER_DATA_KEY, undefined);
-      addedRows += pendingBatch.length;
+      const batch = pendingBatch;
+      const batchStartIndex = baseRowCount + addedRows;
       pendingBatch = [];
+      await this.rowStore.appendRows(batch, MASTER_DATA_KEY, undefined);
+      addedRows += batch.length;
+      this.scheduleMasterRowBatchIndex(targetHeaders, batch, batchStartIndex, masterRevision);
       flushCount += 1;
       const totalRows = baseRowCount + addedRows;
       const shouldUpdateMeta =
@@ -770,6 +804,7 @@ export class MasterDataService {
     }
 
     void this.bustMasterCaches();
+    void this.searchIndex.refreshAfterIncremental();
     return {
       ...(await this.toResponse(doc)),
       addedRows,
@@ -805,6 +840,7 @@ export class MasterDataService {
     let streamReady = false;
     let hitRowCap = false;
     const maxRows = this.maxTotalRows();
+    const masterRevision = Date.now();
 
     const partProgress = (rowCount: number, total: number) => ({
       partIndex: Math.max(1, Math.ceil(rowCount / IMPORT_PART_ROWS)),
@@ -830,9 +866,12 @@ export class MasterDataService {
 
     const flushBatch = async (forceMeta = false) => {
       if (!pendingBatch.length) return;
-      await this.rowStore.appendRows(pendingBatch, MASTER_DATA_KEY, undefined);
-      addedRows += pendingBatch.length;
+      const batch = pendingBatch;
+      const batchStartIndex = baseRowCount + addedRows;
       pendingBatch = [];
+      await this.rowStore.appendRows(batch, MASTER_DATA_KEY, undefined);
+      addedRows += batch.length;
+      this.scheduleMasterRowBatchIndex(targetHeaders, batch, batchStartIndex, masterRevision);
       flushCount += 1;
       const totalRows = baseRowCount + addedRows;
       const shouldUpdateMeta =
@@ -862,6 +901,7 @@ export class MasterDataService {
 
     const ingestBatch = async (rows: string[][]) => {
       if (hitRowCap) return;
+      const candidates: Array<{ key: string; row: string[] }> = [];
       for (const rawRow of rows) {
         if (hitRowCap) break;
         processed += 1;
@@ -876,7 +916,20 @@ export class MasterDataService {
           formatMasterDataCell,
         );
         const key = this.rowKey(targetHeaders, aligned);
-        if (seen.has(key) || incomingSeen.has(key)) {
+        if (incomingSeen.has(key)) {
+          skippedDuplicates += 1;
+          continue;
+        }
+        candidates.push({ key, row: aligned });
+      }
+
+      const existingKeys =
+        mode === 'append' && existing && this.shouldUseOpenSearchDedup()
+          ? await this.lookupMasterRowFingerprints(candidates.map(({ key }) => key))
+          : seen;
+
+      for (const { key, row } of candidates) {
+        if (existingKeys.has(key) || incomingSeen.has(key)) {
           skippedDuplicates += 1;
           continue;
         }
@@ -891,7 +944,7 @@ export class MasterDataService {
         }
         seen.add(key);
         incomingSeen.add(key);
-        pendingBatch.push(aligned);
+        pendingBatch.push(row);
         if (pendingBatch.length >= INCOMING_FLUSH_BATCH) {
           await flushBatch();
         }
@@ -913,6 +966,13 @@ export class MasterDataService {
         if (mode === 'replace' || !existing) {
           await this.rowStore.deleteChunks();
           baseRowCount = 0;
+          if (this.searchIndex.isSearchEngineEnabled()) {
+            await this.searchIndex.wipeSearchIndex(MASTER_DATA_KEY).catch((err) => {
+              this.logger.warn(
+                `Failed to wipe search index before replace: ${err instanceof Error ? err.message : err}`,
+              );
+            });
+          }
           await this.patchChunkedMasterMeta({
             headers: targetHeaders,
             rowCount: 0,
@@ -940,8 +1000,10 @@ export class MasterDataService {
 
         seen = new Set<string>();
         if (mode === 'append' && existing) {
-          this.logger.warn(
-            'Streaming import: skipping cross-file duplicate scan (fast path for large files)',
+          this.logger.log(
+            this.shouldUseOpenSearchDedup()
+              ? 'Streaming import: checking existing duplicates in OpenSearch batches'
+              : 'Streaming import: OpenSearch unavailable; checking duplicates within incoming file only',
           );
         }
       },
@@ -1045,6 +1107,7 @@ export class MasterDataService {
     }
 
     void this.bustMasterCaches();
+    void this.searchIndex.refreshAfterIncremental();
     const saveMs = Date.now() - saveStart;
     return {
       result: {
@@ -1166,6 +1229,7 @@ export class MasterDataService {
       }
 
       void this.bustMasterCaches();
+      void this.searchIndex.refreshAfterIncremental();
       return {
         ...(await this.toResponse(doc)),
         addedRows,
@@ -1232,6 +1296,23 @@ export class MasterDataService {
     }
 
     void this.bustMasterCaches();
+    if (this.searchIndex.isSearchEngineEnabled() && rows.length) {
+      if (mode === 'replace' || !existing) {
+        void this.searchIndex
+          .wipeSearchIndex(MASTER_DATA_KEY)
+          .then(() => {
+            this.scheduleMasterRowBatchIndex(headers, rows, 0, Date.now());
+            return this.searchIndex.refreshAfterIncremental();
+          })
+          .catch((err) => {
+            this.logger.warn(
+              `Search index after replace failed: ${err instanceof Error ? err.message : err}`,
+            );
+          });
+      } else {
+        void this.searchIndex.refreshAfterIncremental();
+      }
+    }
     return {
       ...(await this.toResponse(doc)),
       addedRows,

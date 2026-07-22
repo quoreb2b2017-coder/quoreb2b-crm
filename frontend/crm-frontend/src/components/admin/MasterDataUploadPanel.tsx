@@ -16,6 +16,7 @@ import {
   masterDataService,
   recordToSpreadsheet,
   type MasterBatchCoverage,
+  type MasterDataCsvDownloadProgress,
 } from '@/lib/api/master-data.service';
 import { enqueueMasterDataImport } from '@/lib/master-data/master-data-import-tracker';
 import {
@@ -41,6 +42,62 @@ import {
 } from '@/lib/spreadsheet/master-data-format';
 
 const ACCEPT = '.csv,.xlsx,.xls';
+
+function formatDownloadBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${bytes} B`;
+}
+
+function MasterCsvDownloadSparkline({ history }: { history: number[] }) {
+  if (history.length < 2) {
+    return (
+      <div className="flex h-16 w-full items-end gap-0.5 rounded-lg bg-slate-50 px-2 py-2">
+        {Array.from({ length: 12 }).map((_, i) => (
+          <div
+            key={i}
+            className="flex-1 rounded-sm bg-[#2e7ad1]/20"
+            style={{ height: `${8 + (i % 4) * 4}px` }}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  const width = 320;
+  const height = 64;
+  const points = history.map((value, index) => {
+    const x = (index / Math.max(history.length - 1, 1)) * width;
+    const y = height - (Math.min(100, Math.max(0, value)) / 100) * (height - 8) - 4;
+    return `${x},${y}`;
+  });
+  const area = `${points.join(' ')} ${width},${height} 0,${height}`;
+
+  return (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      className="h-16 w-full rounded-lg bg-gradient-to-b from-[#e8f1fb] to-white"
+      aria-hidden
+    >
+      <polygon points={area} fill="url(#csvDownloadFill)" opacity="0.55" />
+      <polyline
+        fill="none"
+        stroke="#2e7ad1"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        points={points.join(' ')}
+      />
+      <defs>
+        <linearGradient id="csvDownloadFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#2e7ad1" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="#2e7ad1" stopOpacity="0.02" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}
 
 type MasterDataViewTab = 'total' | 'in_campaign' | 'remaining';
 
@@ -198,6 +255,10 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
     duplicateCount: number;
     totalRows: number;
   } | null>(null);
+  const [csvDownloading, setCsvDownloading] = useState(false);
+  const [csvDownloadProgress, setCsvDownloadProgress] =
+    useState<MasterDataCsvDownloadProgress | null>(null);
+  const [csvDownloadHistory, setCsvDownloadHistory] = useState<number[]>([]);
 
   const applyLargeDatasetRecord = useCallback(
     (record: Awaited<ReturnType<typeof masterDataService.getCurrent>> & { rowCount: number }) => {
@@ -500,14 +561,33 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   };
 
   const handleDownloadMasterCsv = async () => {
+    if (csvDownloading) return;
+    let exportedRows = totalRows;
     try {
-      setSavingDb(true);
-      await masterDataService.downloadMasterCsv();
-      toast.success('Download started', 'Full master database CSV export');
+      setCsvDownloading(true);
+      setCsvDownloadProgress(null);
+      setCsvDownloadHistory([]);
+      await masterDataService.downloadMasterCsv({
+        totalRowsHint: totalRows,
+        onProgress: (progress) => {
+          exportedRows = progress.totalRows || progress.rowsDownloaded || totalRows;
+          setCsvDownloadProgress(progress);
+          setCsvDownloadHistory((prev) => {
+            const next = [...prev, progress.percent];
+            return next.length > 48 ? next.slice(next.length - 48) : next;
+          });
+        },
+      });
+      toast.success(
+        'Download complete',
+        `${exportedRows.toLocaleString('en-US')} rows exported as CSV`,
+      );
     } catch (e) {
       toast.error('Download failed', extractApiError(e, 'Could not export CSV'));
     } finally {
-      setSavingDb(false);
+      setCsvDownloading(false);
+      setCsvDownloadProgress(null);
+      setCsvDownloadHistory([]);
     }
   };
 
@@ -649,6 +729,12 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
             </span>
           )}
           <AutoSaveHint status={isDbAdminView ? 'idle' : autoSaveStatus} />
+          {csvDownloading && csvDownloadProgress && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Download {Math.round(csvDownloadProgress.percent)}%
+            </span>
+          )}
           {importPhase === 'active' && importProgress && (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-[#e8f1fb] px-2.5 py-0.5 text-xs font-semibold text-[#2e7ad1]">
               <Loader2 className="h-3 w-3 animate-spin" />
@@ -691,9 +777,10 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
           {!isDbAdminView && data && canExport && (
             <>
               <button type="button" onClick={() => void handleDownloadMasterCsv()}
-                disabled={savingDb || totalRows <= 0}
+                disabled={csvDownloading || totalRows <= 0}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium shadow-sm transition-all hover:border-[#2e7ad1]/30 hover:bg-[#e8f1fb] disabled:opacity-50">
-                <Download className="h-3.5 w-3.5" />Download CSV
+                <Download className="h-3.5 w-3.5" />
+                {csvDownloading ? 'Downloading…' : 'Download CSV'}
               </button>
               <button type="button" onClick={handleDownloadFormatted}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-[#2e7ad1] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-[#2568b8]">
@@ -1049,6 +1136,54 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
                     {savingBatch ? 'Creating...' : 'Create Campaign'}
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {csvDownloading && (
+        <>
+          <div className="fixed inset-0 z-50 bg-black/35 backdrop-blur-sm" />
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+              <div className="border-b border-slate-100 px-6 py-4">
+                <p className="font-semibold text-slate-900">Downloading master database</p>
+                <p className="mt-0.5 text-sm text-slate-500">
+                  Full CSV export — no row limit for Super Admin
+                </p>
+              </div>
+              <div className="space-y-4 px-6 py-5">
+                <MasterCsvDownloadSparkline history={csvDownloadHistory} />
+                <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-[#2e7ad1] to-[#00d19e] transition-all duration-300"
+                    style={{ width: `${Math.round(csvDownloadProgress?.percent ?? 0)}%` }}
+                  />
+                </div>
+                <div className="flex items-end justify-between gap-3">
+                  <div>
+                    <p className="text-3xl font-bold tabular-nums text-[#2e7ad1]">
+                      {Math.round(csvDownloadProgress?.percent ?? 0)}%
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">Download progress</p>
+                  </div>
+                  <div className="text-right text-xs text-slate-600">
+                    <p className="font-semibold tabular-nums text-slate-800">
+                      {(csvDownloadProgress?.rowsDownloaded ?? 0).toLocaleString('en-US')}
+                      {' / '}
+                      {(csvDownloadProgress?.totalRows ?? totalRows).toLocaleString('en-US')}
+                      {' rows'}
+                    </p>
+                    <p className="mt-0.5 tabular-nums text-slate-500">
+                      {formatDownloadBytes(csvDownloadProgress?.bytesDownloaded ?? 0)} received
+                    </p>
+                  </div>
+                </div>
+                <p className="flex items-center justify-center gap-2 text-xs text-slate-500">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-[#2e7ad1]" />
+                  Streaming full database — please keep this tab open
+                </p>
               </div>
             </div>
           </div>

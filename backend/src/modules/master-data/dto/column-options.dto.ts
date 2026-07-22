@@ -14,6 +14,6 @@ export class MasterDataColumnOptionsQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(500)
+  @Max(5000)
   limit?: number;
 }

@@ -32,6 +32,7 @@ export function XlToolbarMultiSelect({
   searchable = true,
   displayMode = 'label',
   fetchOptionsOnSearch,
+  fetchOptionsOnOpen,
 }: {
   values: Set<string>;
   onChange: (values: Set<string>) => void;
@@ -45,6 +46,7 @@ export function XlToolbarMultiSelect({
   searchable?: boolean;
   displayMode?: 'label' | 'chips';
   fetchOptionsOnSearch?: (query: string) => Promise<XlSelectOption[]>;
+  fetchOptionsOnOpen?: () => Promise<XlSelectOption[]>;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -67,7 +69,10 @@ export function XlToolbarMultiSelect({
 
   const filteredOptions = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const base = fetchOptionsOnSearch && q.length >= 1 ? remoteOptions : options;
+    const useRemote =
+      (fetchOptionsOnSearch && q.length >= 1) ||
+      (fetchOptionsOnOpen && remoteOptions.length > 0);
+    const base = useRemote ? remoteOptions : options;
     let list = !q
       ? base
       : base.filter(
@@ -79,18 +84,41 @@ export function XlToolbarMultiSelect({
       list = [...list, known ?? { value, label: value }];
     }
     return list;
-  }, [fetchOptionsOnSearch, options, query, remoteOptions, values]);
+  }, [fetchOptionsOnOpen, fetchOptionsOnSearch, options, query, remoteOptions, values]);
+
+  useEffect(() => {
+    if (!fetchOptionsOnOpen || !open) return;
+    let cancelled = false;
+    setRemoteLoading(true);
+    void fetchOptionsOnOpen()
+      .then((next) => {
+        if (!cancelled) setRemoteOptions(next);
+      })
+      .catch(() => {
+        if (!cancelled) setRemoteOptions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setRemoteLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fetchOptionsOnOpen, open]);
 
   useEffect(() => {
     if (!fetchOptionsOnSearch) {
-      setRemoteOptions([]);
-      setRemoteLoading(false);
+      if (!fetchOptionsOnOpen) {
+        setRemoteOptions([]);
+        setRemoteLoading(false);
+      }
       return;
     }
     const q = query.trim();
     if (q.length < 1) {
-      setRemoteOptions([]);
-      setRemoteLoading(false);
+      if (!fetchOptionsOnOpen) {
+        setRemoteOptions([]);
+        setRemoteLoading(false);
+      }
       return;
     }
 

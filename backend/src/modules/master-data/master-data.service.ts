@@ -17,6 +17,7 @@ import {
   buildMasterDataFilterSchema,
   enrichFilterSchemaColumns,
   isFullScanSelectHeader,
+  fullScanDistinctLimit,
   isIndustryHeader,
   isLeadTypeHeader,
   isStatusHeader,
@@ -371,30 +372,35 @@ export class MasterDataService {
     return { duplicateFileId, missingRowCount };
   }
 
-  /** Stream full master database as CSV (Super Admin / Admin). */
+  /** Stream full master database as CSV (Super Admin / Admin — no row cap). */
   async streamMasterCsv(res: import('express').Response): Promise<void> {
     const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
     if (!doc?.headers?.length) {
       throw new NotFoundException('No master data to export');
     }
     const headers = (doc.headers as string[]) ?? [];
+    const totalRows = Math.max(0, Number(doc.rowCount) || 0);
     const escape = (value: string) =>
       `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const headerLine = `${headers.map(escape).join(',')}\n`;
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader(
       'Content-Disposition',
       'attachment; filename="master-database.csv"',
     );
-    res.write(`${headers.map(escape).join(',')}\n`);
+    res.setHeader('X-Total-Rows', String(totalRows));
+    res.setHeader('Cache-Control', 'no-store');
+    res.write(headerLine);
 
     const writeRows = (rows: string[][]) => {
-      for (const row of rows) {
-        const line = headers
-          .map((_, i) => escape(String(row[i] ?? '')))
-          .join(',');
-        res.write(`${line}\n`);
+      if (!rows.length) return;
+      const lines = new Array<string>(rows.length);
+      for (let i = 0; i < rows.length; i += 1) {
+        const row = rows[i] ?? [];
+        lines[i] = headers.map((_, col) => escape(String(row[col] ?? ''))).join(',');
       }
+      res.write(`${lines.join('\n')}\n`);
     };
 
     if (!this.rowStore.isChunked(doc)) {
@@ -4256,7 +4262,7 @@ export class MasterDataService {
     const revision =
       (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? rowCount;
     return this.cache.wrap(
-      `master:filter-schema:v4-status:${revision}`,
+      `master:filter-schema:v5-status:${revision}`,
       cacheTtlSeconds(this.config, 'long'),
       async () => {
         const headers = doc.headers as string[];
@@ -4266,8 +4272,7 @@ export class MasterDataService {
         const fullScanHeaders = headers.filter((h) => isFullScanSelectHeader(h));
         for (const scanHeader of fullScanHeaders) {
           try {
-            const distinctLimit =
-              isLeadTypeHeader(scanHeader) || isIndustryHeader(scanHeader) ? 500 : 100;
+            const distinctLimit = fullScanDistinctLimit(scanHeader);
             const searchValues = await this.elasticsearch.getDistinctMasterFieldValues(
               flatFieldName(scanHeader),
               MASTER_DATA_KEY,
@@ -4330,16 +4335,13 @@ export class MasterDataService {
     const fullScan = isFullScanSelectHeader(header);
     const effectiveLimit = fullScan
       ? Math.min(
-          Math.max(
-            limit || (isLeadTypeHeader(header) || isIndustryHeader(header) ? 500 : 100),
-            40,
-          ),
-          500,
+          Math.max(limit || fullScanDistinctLimit(header), 40),
+          fullScanDistinctLimit(header),
         )
       : Math.min(Math.max(limit || 40, 1), 500);
 
     const revision = this.rowStore.getRowCount(doc);
-    const cacheKey = `master:colopts:v4:${revision}:${header.toLowerCase()}:${q ?? ''}:${effectiveLimit}`;
+    const cacheKey = `master:colopts:v5:${revision}:${header.toLowerCase()}:${q ?? ''}:${effectiveLimit}`;
     return this.cache.wrap(
       cacheKey,
       cacheTtlSeconds(this.config, 'short'),
@@ -4357,7 +4359,7 @@ export class MasterDataService {
           const options = await this.rowStore.collectDistinctColumnValues(
             doc as Parameters<typeof this.rowStore.collectDistinctColumnValues>[0],
             header,
-            needle ? 500 : effectiveLimit,
+            needle ? fullScanDistinctLimit(header) : effectiveLimit,
           );
           return {
             header,

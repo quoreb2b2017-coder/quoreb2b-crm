@@ -33,8 +33,10 @@ import {
   filterAdvancedColumns,
   filterSidebarColumns,
   findExactEmployeeSizeColumn,
+  fullScanFilterOptionLimit,
   isEmployeeSizeCategoryHeader,
   isExcludedDropdownColumn,
+  isFullScanFilterHeader,
   isSizeCategoryHeader,
   pickQuickFilterColumns,
 } from './master-database-columns';
@@ -161,14 +163,14 @@ export function MasterDatabaseQuickFilters({
 
   const fetchCombinedIndustryOptions = useCallback(
     async (query: string) => {
-      const q = query.trim();
-      if (!q) return [];
       const industryField = curatedFields.find((field) => field.type === 'combinedIndustry');
       if (!industryField || industryField.type !== 'combinedIndustry') return [];
+      const q = query.trim();
+      const limit = q ? 200 : 500;
       const fetched = await Promise.all(
         industryField.columns.map(async (col) => {
           try {
-            const result = await masterDataService.getColumnOptions(col.header, q, 100);
+            const result = await masterDataService.getColumnOptions(col.header, q || undefined, limit);
             return result.options;
           } catch {
             return [] as string[];
@@ -183,6 +185,27 @@ export function MasterDatabaseQuickFilters({
       );
     },
     [curatedFields],
+  );
+
+  const fetchIndustryOptionsOnOpen = useCallback(async () => {
+    return fetchCombinedIndustryOptions('');
+  }, [fetchCombinedIndustryOptions]);
+
+  const fetchFullScanColumnOptions = useCallback(
+    async (header: string, query: string) => {
+      const q = query.trim();
+      const limit = q ? Math.min(200, fullScanFilterOptionLimit(header)) : fullScanFilterOptionLimit(header);
+      try {
+        const result = await masterDataService.getColumnOptions(header, q || undefined, limit);
+        return result.options.map((opt) => ({
+          value: opt,
+          label: opt.length > 48 ? `${opt.slice(0, 46)}…` : opt,
+        }));
+      } catch {
+        return [];
+      }
+    },
+    [],
   );
 
   const placeholder = headers.length
@@ -202,8 +225,9 @@ export function MasterDatabaseQuickFilters({
   };
 
   const multiSelectOptions = (col: MasterDataColumnFilterSchema) => {
-    const isLeadType = /^lead type$/i.test(col.header);
-    const opts = isLeadType ? col.options : col.options.slice(0, 80);
+    const opts = isFullScanFilterHeader(col.header) || /^lead type$/i.test(col.header)
+      ? col.options
+      : col.options.slice(0, 80);
     return opts.map((opt) => ({
       value: opt,
       label: opt.length > 48 ? `${opt.slice(0, 46)}…` : opt,
@@ -212,6 +236,10 @@ export function MasterDatabaseQuickFilters({
 
   const shortFilterLabel = (header: string) => {
     if (/lead type/i.test(header)) return 'Lead type';
+    if (/^job title level$/i.test(header)) return 'Job Title Level';
+    if (/^job title department$/i.test(header)) return 'Job Title Department';
+    if (/^job title$/i.test(header)) return 'Job Title';
+    if (/^last name$/i.test(header)) return 'Last Name';
     if (/employee size category/i.test(header)) return 'Employee size';
     if (/revenue size category/i.test(header)) return 'Revenue size';
     if (/industry type/i.test(header)) return 'Industry type';
@@ -223,6 +251,8 @@ export function MasterDatabaseQuickFilters({
 
   const fieldIcon = (header: string) => {
     if (/lead type/i.test(header)) return Tag;
+    if (/job title/i.test(header)) return Users;
+    if (/last name/i.test(header)) return Users;
     if (/industry/i.test(header)) return Building2;
     if (/employee size/i.test(header)) return Users;
     if (/revenue size/i.test(header)) return DollarSign;
@@ -243,9 +273,9 @@ export function MasterDatabaseQuickFilters({
     options: MasterDataColumnFilterSchema | MasterDataColumnFilterSchema['options'],
     menuMinWidth = 300,
   ) => {
-    const isLeadType = /^lead type$/i.test(header);
+    const lazy = isFullScanFilterHeader(header);
     const opts = Array.isArray(options)
-      ? (isLeadType ? options : options.slice(0, 80)).map((opt) => ({
+      ? (lazy || /^lead type$/i.test(header) ? options : options.slice(0, 80)).map((opt) => ({
           value: opt,
           label: opt.length > 48 ? `${opt.slice(0, 46)}…` : opt,
         }))
@@ -264,6 +294,12 @@ export function MasterDatabaseQuickFilters({
         onApply={(next) => {
           if (next.size > 0) onSearch();
         }}
+        fetchOptionsOnOpen={
+          lazy ? () => fetchFullScanColumnOptions(header, '') : undefined
+        }
+        fetchOptionsOnSearch={
+          lazy ? (q) => fetchFullScanColumnOptions(header, q) : undefined
+        }
         options={opts}
       />
     );
@@ -352,6 +388,7 @@ export function MasterDatabaseQuickFilters({
                       onApply={(next) => {
                         if (next.size > 0) onSearch();
                       }}
+                      fetchOptionsOnOpen={fetchIndustryOptionsOnOpen}
                       fetchOptionsOnSearch={fetchCombinedIndustryOptions}
                       options={buildCombinedIndustryOptions(field.columns)}
                     />

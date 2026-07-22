@@ -118,6 +118,7 @@ export function isAdvancedFilterColumn(col: MasterDataColumnFilterSchema): boole
   if (!isMeaningfulFilterColumn(col)) return false;
   if (isExcludedDropdownColumn(col.header)) return false;
   if (col.kind === 'email' || col.kind === 'phone') return true;
+  if (isFullScanFilterHeader(col.header)) return true;
   return col.options.length >= 2;
 }
 
@@ -157,11 +158,59 @@ const CURATED_OPTION_PATTERNS: RegExp[] = [
   /^state$/i,
   /^industry type$/i,
   /^standard industry$/i,
+  /^job title$/i,
+  /^job title level$/i,
+  /^job title department$/i,
+  /^last name$/i,
   /employee size category/i,
   /revenue size category/i,
 ];
 
+/** Strip Excel-style quotes from filter dropdown labels. */
+export function normalizeFilterOptionValue(raw: string): string {
+  let v = String(raw ?? '').trim();
+  if (!v || v === '-') return '';
+  if (
+    (v.startsWith('"') && v.endsWith('"')) ||
+    (v.startsWith("'") && v.endsWith("'"))
+  ) {
+    v = v.slice(1, -1).trim();
+  }
+  return v;
+}
+
+export function isFullScanFilterHeader(header: string): boolean {
+  const h = header.trim();
+  return (
+    /^lead type$/i.test(h) ||
+    /^status$/i.test(h) ||
+    /^industry type$/i.test(h) ||
+    /^standard industry$/i.test(h) ||
+    /^job title$/i.test(h) ||
+    /^job title level$/i.test(h) ||
+    /^job title department$/i.test(h) ||
+    /^last name$/i.test(h)
+  );
+}
+
+export function fullScanFilterOptionLimit(header: string): number {
+  const h = header.trim();
+  if (/^lead type$/i.test(h)) return 500;
+  if (/^industry type$/i.test(h) || /^standard industry$/i.test(h)) return 500;
+  if (/^status$/i.test(h)) return 100;
+  if (
+    /^job title$/i.test(h) ||
+    /^job title level$/i.test(h) ||
+    /^job title department$/i.test(h) ||
+    /^last name$/i.test(h)
+  ) {
+    return 5000;
+  }
+  return 80;
+}
+
 export function needsLazyColumnOptions(col: MasterDataColumnFilterSchema): boolean {
+  if (isFullScanFilterHeader(col.header)) return true;
   const header = col.header.trim();
   if (
     /^lead type$/i.test(header) ||
@@ -180,18 +229,31 @@ export function enrichFilterColumnOptions(
 ): MasterDataColumnFilterSchema {
   const key = col.header.trim().toLowerCase();
   const defaults = SIZE_CATEGORY_DEFAULTS[key];
-  const merged = new Set<string>([...col.options, ...(defaults ?? [])]);
+  const merged = new Set<string>();
+  for (const raw of [...col.options, ...(defaults ?? [])]) {
+    const v = normalizeFilterOptionValue(raw);
+    if (v) merged.add(v);
+  }
   const isLeadType = /^lead type$/i.test(col.header.trim());
   const isStatus = /^status$/i.test(col.header.trim());
   const isIndustry = /^industry type$/i.test(col.header.trim()) || /^standard industry$/i.test(col.header.trim());
-  const cap = isLeadType || isIndustry ? 500 : isStatus ? 100 : 80;
+  const cap = isFullScanFilterHeader(col.header)
+    ? fullScanFilterOptionLimit(col.header)
+    : isLeadType || isIndustry
+      ? 500
+      : isStatus
+        ? 100
+        : 80;
   const options = isSizeCategoryHeader(col.header)
     ? sortCategoryOptions([...merged]).slice(0, cap)
     : [...merged]
-        .filter(Boolean)
         .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
         .slice(0, cap);
-  if ((isLeadType && options.length >= 1) || (options.length >= 2 && col.kind !== 'email' && col.kind !== 'phone')) {
+  if (
+    isFullScanFilterHeader(col.header) ||
+    (isLeadType && options.length >= 1) ||
+    (options.length >= 2 && col.kind !== 'email' && col.kind !== 'phone')
+  ) {
     return {
       ...col,
       kind: col.kind === 'status' ? 'status' : 'select',
@@ -293,7 +355,14 @@ export type CuratedFilterField =
 
 const INDUSTRY_COLUMN_PATTERNS: RegExp[] = [/^industry type$/i, /^standard industry$/i];
 
-const CURATED_CHIP_MULTI_PATTERNS: RegExp[] = [/^country$/i, /^state$/i];
+const CURATED_CHIP_MULTI_PATTERNS: RegExp[] = [
+  /^country$/i,
+  /^state$/i,
+  /^job title$/i,
+  /^job title level$/i,
+  /^job title department$/i,
+  /^last name$/i,
+];
 
 const CURATED_SELECT_PATTERNS: RegExp[] = [
   /employee size category/i,
@@ -315,12 +384,15 @@ export function buildCuratedQuickFilters(
 
   const leadType = findFilterColumn(columns, /^lead type$/i);
   if (leadType) {
-    if (leadType.options.length >= 2) {
-      fields.push({ type: 'select', column: leadType, multiple: true });
-    } else {
-      fields.push({ type: 'text', column: leadType, placeholder: 'e.g. CD, CDQA, MQL…' });
-    }
+    fields.push({ type: 'select', column: leadType, multiple: true });
     used.add(leadType.header);
+  }
+
+  for (const pattern of CURATED_CHIP_MULTI_PATTERNS) {
+    const col = findFilterColumn(columns, pattern);
+    if (!col || used.has(col.header)) continue;
+    fields.push({ type: 'select', column: col, multiple: true });
+    used.add(col.header);
   }
 
   const industryCols = INDUSTRY_COLUMN_PATTERNS.map((pattern) =>
@@ -329,21 +401,6 @@ export function buildCuratedQuickFilters(
   if (industryCols.length > 0) {
     fields.push({ type: 'combinedIndustry', columns: industryCols, label: 'Industry' });
     for (const col of industryCols) used.add(col.header);
-  }
-
-  for (const pattern of CURATED_CHIP_MULTI_PATTERNS) {
-    const col = findFilterColumn(columns, pattern);
-    if (!col || used.has(col.header)) continue;
-    if (col.options.length >= 2) {
-      fields.push({ type: 'select', column: col, multiple: true });
-    } else {
-      fields.push({
-        type: 'text',
-        column: col,
-        placeholder: `Search ${col.header}…`,
-      });
-    }
-    used.add(col.header);
   }
 
   for (const pattern of CURATED_SELECT_PATTERNS) {
@@ -450,6 +507,7 @@ export function isExactMatchColumn(header: string): boolean {
 export function isMultiSelectHeader(header: string): boolean {
   const h = header.trim();
   return (
+    isFullScanFilterHeader(h) ||
     INDUSTRY_COLUMN_PATTERNS.some((p) => p.test(h)) ||
     CURATED_CHIP_MULTI_PATTERNS.some((p) => p.test(h)) ||
     /^lead type$/i.test(h)
@@ -475,7 +533,7 @@ export function buildCombinedIndustryOptions(
   const merged: string[] = [];
   for (const col of columns) {
     for (const opt of col.options) {
-      const v = opt.trim();
+      const v = normalizeFilterOptionValue(opt);
       if (!v || seen.has(v)) continue;
       seen.add(v);
       merged.push(v);

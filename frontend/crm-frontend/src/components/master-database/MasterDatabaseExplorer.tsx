@@ -52,6 +52,7 @@ import {
   canAutoSearchMasterData,
   enrichFilterColumnOptions,
   emptyDynamicMasterDbFilters,
+  fullScanFilterOptionLimit,
   hasAnyDynamicSearchCriteria,
   hasValidEmail,
   hasValidPhone,
@@ -185,12 +186,7 @@ export function MasterDatabaseExplorer({
       const fetched = await Promise.all(
         lazyHeaders.map(async (col) => {
           try {
-            const limit =
-              /^lead type$/i.test(col.header) ||
-              /^industry type$/i.test(col.header) ||
-              /^standard industry$/i.test(col.header)
-                ? 500
-                : 80;
+            const limit = fullScanFilterOptionLimit(col.header);
             const result = await masterDataService.getColumnOptions(
               col.header,
               undefined,

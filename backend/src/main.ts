@@ -65,6 +65,7 @@ async function bootstrap() {
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    exposedHeaders: ['X-Total-Rows'],
   });
 
   app.setGlobalPrefix(config.get<string>('API_PREFIX', 'api'));

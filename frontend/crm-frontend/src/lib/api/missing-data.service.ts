@@ -51,7 +51,8 @@ function unwrap<T>(response: { data: unknown }): T {
   return body as T;
 }
 
-export const MISSING_DATA_PREVIEW_BATCH = 100;
+/** Rows shown in Missing Data UI — full file via Download. */
+export const MISSING_DATA_PREVIEW_LIMIT = 10;
 
 export const missingDataService = {
   async getTree(): Promise<MissingDataTreeNode[]> {
@@ -69,7 +70,7 @@ export const missingDataService = {
       params.full = 'true';
     } else {
       params.offset = opts?.offset ?? 0;
-      params.limit = opts?.limit ?? MISSING_DATA_PREVIEW_BATCH;
+      params.limit = opts?.limit ?? MISSING_DATA_PREVIEW_LIMIT;
     }
     const res = await apiClient.get(`/missing-data/files/${id}`, { params });
     return unwrap<MissingDataFile>(res);

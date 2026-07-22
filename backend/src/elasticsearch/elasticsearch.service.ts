@@ -413,7 +413,7 @@ export class ElasticsearchService implements OnModuleInit {
     await this.ensureMasterDataIndex();
     if (this.engineMode === 'unknown') await this.detectEngineMode();
 
-    const safeLimit = Math.max(1, Math.min(limit, 500));
+    const safeLimit = Math.max(1, Math.min(limit, 5000));
     const needle = query?.trim().toLowerCase().replace(/[%']/g, '') ?? '';
 
     try {
@@ -433,7 +433,17 @@ export class ElasticsearchService implements OnModuleInit {
         });
         const rows = (result as { body?: { datarows?: unknown[][] } }).body?.datarows ?? [];
         return rows
-          .map((row) => String(row?.[0] ?? '').trim())
+          .map((row) => {
+            let v = String(row?.[0] ?? '').trim();
+            if (!v || v === '-') return '';
+            if (
+              (v.startsWith('"') && v.endsWith('"')) ||
+              (v.startsWith("'") && v.endsWith("'"))
+            ) {
+              v = v.slice(1, -1).trim();
+            }
+            return v;
+          })
           .filter(Boolean)
           .slice(0, safeLimit);
       }
@@ -460,7 +470,19 @@ export class ElasticsearchService implements OnModuleInit {
           buckets?: Array<{ key?: string }>;
         } | undefined
       )?.buckets ?? [];
-      return buckets.map((bucket) => String(bucket.key ?? '').trim()).filter(Boolean);
+      return buckets
+        .map((bucket) => {
+          let v = String(bucket.key ?? '').trim();
+          if (!v || v === '-') return '';
+          if (
+            (v.startsWith('"') && v.endsWith('"')) ||
+            (v.startsWith("'") && v.endsWith("'"))
+          ) {
+            v = v.slice(1, -1).trim();
+          }
+          return v;
+        })
+        .filter(Boolean);
     } catch (error) {
       this.logger.warn(
         `OpenSearch distinct ${field} failed: ${error instanceof Error ? error.message : error}`,

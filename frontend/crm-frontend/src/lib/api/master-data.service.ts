@@ -21,6 +21,22 @@ const MASTER_DATA_ALLOWED_EXTENSIONS = new Set(['csv', 'xlsx', 'xls']);
 
 export type MasterDataSaveMode = 'append' | 'replace';
 
+export interface MasterDataCsvDownloadProgress {
+  percent: number;
+  rowsDownloaded: number;
+  totalRows: number;
+  bytesDownloaded: number;
+}
+
+function triggerBrowserDownload(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export interface MasterDataSearchReindexProgress {
   running: boolean;
   phase: 'idle' | 'queued' | 'wiping' | 'indexing' | 'done' | 'failed';
@@ -555,7 +571,10 @@ export const masterDataService = {
     }
   },
 
-  downloadMasterCsv: async (): Promise<void> => {
+  downloadMasterCsv: async (opts?: {
+    totalRowsHint?: number;
+    onProgress?: (progress: MasterDataCsvDownloadProgress) => void;
+  }): Promise<void> => {
     const token =
       typeof window !== 'undefined'
         ? useAuthStore.getState().accessToken ?? localStorage.getItem('accessToken')
@@ -568,13 +587,72 @@ export const masterDataService = {
     if (!res.ok) {
       throw new Error(`Export failed (${res.status})`);
     }
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'master-database.csv';
-    a.click();
-    URL.revokeObjectURL(url);
+
+    const headerTotal = Number.parseInt(res.headers.get('X-Total-Rows') ?? '', 10);
+    const totalRows =
+      Number.isFinite(headerTotal) && headerTotal > 0
+        ? headerTotal
+        : Math.max(0, opts?.totalRowsHint ?? 0);
+
+    const reader = res.body?.getReader();
+    if (!reader) {
+      const blob = await res.blob();
+      opts?.onProgress?.({
+        percent: 100,
+        rowsDownloaded: totalRows,
+        totalRows,
+        bytesDownloaded: blob.size,
+      });
+      triggerBrowserDownload(blob, 'master-database.csv');
+      return;
+    }
+
+    const chunks: Uint8Array[] = [];
+    let bytesDownloaded = 0;
+    let newlineCount = 0;
+    let lastReportedPercent = -1;
+
+    const reportProgress = (force = false) => {
+      const rowsDownloaded = Math.max(0, newlineCount - 1);
+      const percent =
+        totalRows > 0
+          ? Math.min(100, Math.round((rowsDownloaded / totalRows) * 100))
+          : bytesDownloaded > 0
+            ? Math.min(99, Math.round(bytesDownloaded / (1024 * 1024)))
+            : 0;
+      if (!force && percent === lastReportedPercent) return;
+      lastReportedPercent = percent;
+      opts?.onProgress?.({
+        percent,
+        rowsDownloaded,
+        totalRows,
+        bytesDownloaded,
+      });
+    };
+
+    reportProgress(true);
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      bytesDownloaded += value.byteLength;
+      for (let i = 0; i < value.byteLength; i += 1) {
+        if (value[i] === 10) newlineCount += 1;
+      }
+      reportProgress();
+    }
+
+    reportProgress(true);
+    opts?.onProgress?.({
+      percent: 100,
+      rowsDownloaded: totalRows > 0 ? totalRows : Math.max(0, newlineCount - 1),
+      totalRows,
+      bytesDownloaded,
+    });
+
+    const blob = new Blob(chunks as BlobPart[], { type: 'text/csv;charset=utf-8' });
+    triggerBrowserDownload(blob, 'master-database.csv');
   },
 
   /** Fast chunked preview — first page only (100 rows via loadPageRows on server). */

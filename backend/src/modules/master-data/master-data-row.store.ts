@@ -17,6 +17,7 @@ import {
   rowMatchesCompiledFilter,
   hasAdvancedMasterFilters,
 } from './master-data-search.util';
+import { normalizeFilterOptionValue } from './master-data-filter-schema.util';
 import type { SearchMasterDataDto } from './dto/search-master-data.dto';
 
 export type MasterDataFilterInput = Pick<
@@ -564,17 +565,19 @@ export class MasterDataRowStore {
     return out;
   }
 
+  /** Stream chunked rows one Mongo chunk at a time (no full collection load). */
   async forEachChunkRows(
     masterKey: string,
     fn: (rows: string[][]) => void | Promise<void>,
   ): Promise<void> {
-    const chunks = await this.chunkModel
+    const cursor = this.chunkModel
       .find({ masterKey })
       .sort({ chunkIndex: 1 })
       .select('rows')
       .lean()
-      .exec();
-    for (const chunk of chunks) {
+      .cursor();
+
+    for await (const chunk of cursor) {
       await fn((chunk.rows as string[][]) ?? []);
     }
   }
@@ -693,7 +696,7 @@ export class MasterDataRowStore {
 
     const addFromRows = (rows: string[][]) => {
       for (const row of rows) {
-        const v = String(row[colIdx] ?? '').trim();
+        const v = normalizeFilterOptionValue(String(row[colIdx] ?? ''));
         if (!v) continue;
         set.add(v);
         if (set.size >= maxUnique) return true;

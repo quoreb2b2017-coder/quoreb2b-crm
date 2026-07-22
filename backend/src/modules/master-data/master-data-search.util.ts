@@ -624,7 +624,14 @@ export function distinctColumnValues(
   const needle = q?.trim().toLowerCase() ?? '';
   const set = new Set<string>();
   for (const row of rows) {
-    const v = String(row[colIdx] ?? '').trim();
+    let v = String(row[colIdx] ?? '').trim();
+    if (!v || v === '-') continue;
+    if (
+      (v.startsWith('"') && v.endsWith('"')) ||
+      (v.startsWith("'") && v.endsWith("'"))
+    ) {
+      v = v.slice(1, -1).trim();
+    }
     if (!v) continue;
     if (needle && !v.toLowerCase().includes(needle)) continue;
     set.add(v);

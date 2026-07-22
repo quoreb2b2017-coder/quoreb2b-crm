@@ -16,7 +16,7 @@ import {
 import { cn } from '@/lib/utils/cn';
 import {
   missingDataService,
-  MISSING_DATA_PREVIEW_BATCH,
+  MISSING_DATA_PREVIEW_LIMIT,
   type MissingDataFile,
   type MissingDataTreeNode,
 } from '@/lib/api/missing-data.service';
@@ -50,12 +50,9 @@ export function MissingDataWorkspace({
   const [activeFile, setActiveFile] = useState<MissingDataFile | null>(null);
   const [displayRows, setDisplayRows] = useState<string[][]>([]);
   const [loadingFile, setLoadingFile] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const hasLoadedRef = useRef(false);
-  const loadedCountRef = useRef(0);
-  const loadingMoreRef = useRef(false);
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent || !hasLoadedRef.current) setLoading(true);
@@ -114,41 +111,16 @@ export function MissingDataWorkspace({
     });
   }, []);
 
-  const loadMoreRows = useCallback(async () => {
-    if (!activeFile || loadingMoreRef.current) return;
-    if (loadedCountRef.current >= activeFile.rowCount) return;
-
-    loadingMoreRef.current = true;
-    setLoadingMore(true);
-    try {
-      const chunk = await missingDataService.getFile(activeFile.id, {
-        offset: loadedCountRef.current,
-        limit: MISSING_DATA_PREVIEW_BATCH,
-      });
-      if (chunk.rows.length) {
-        setDisplayRows((prev) => [...prev, ...chunk.rows]);
-        loadedCountRef.current += chunk.rows.length;
-      }
-    } catch (err) {
-      toast.error('Could not load more rows', extractApiError(err));
-    } finally {
-      loadingMoreRef.current = false;
-      setLoadingMore(false);
-    }
-  }, [activeFile]);
-
   const openFile = useCallback(async (fileId: string) => {
     setLoadingFile(true);
     setDisplayRows([]);
-    loadedCountRef.current = 0;
     try {
       const file = await missingDataService.getFile(fileId, {
         offset: 0,
-        limit: MISSING_DATA_PREVIEW_BATCH,
+        limit: MISSING_DATA_PREVIEW_LIMIT,
       });
       setActiveFile(file);
-      setDisplayRows(file.rows);
-      loadedCountRef.current = file.rows.length;
+      setDisplayRows(file.rows.slice(0, MISSING_DATA_PREVIEW_LIMIT));
     } catch (err) {
       toast.error('Could not open file', extractApiError(err));
       setActiveFile(null);
@@ -164,13 +136,8 @@ export function MissingDataWorkspace({
     else {
       setActiveFile(null);
       setDisplayRows([]);
-      loadedCountRef.current = 0;
     }
   };
-
-  const handleGridNearEnd = useCallback(() => {
-    void loadMoreRows();
-  }, [loadMoreRows]);
 
   const handleDownload = async () => {
     if (!activeFile || !canDownload) return;
@@ -209,7 +176,6 @@ export function MissingDataWorkspace({
       setActiveFile(null);
       setDisplayRows([]);
       setSelectedPath([]);
-      loadedCountRef.current = 0;
       await load({ silent: true });
     } catch (err) {
       toast.error('Delete failed', extractApiError(err));
@@ -220,7 +186,7 @@ export function MissingDataWorkspace({
 
   const showingCount = displayRows.length;
   const totalCount = activeFile?.rowCount ?? 0;
-  const hasMore = showingCount < totalCount;
+  const hasMore = totalCount > MISSING_DATA_PREVIEW_LIMIT;
 
   const subtitle =
     variant === 'employee'
@@ -415,8 +381,8 @@ export function MissingDataWorkspace({
           headerVariant="violet"
           hint={
             activeFile
-              ? `Showing ${showingCount.toLocaleString()} of ${totalCount.toLocaleString()} rows${
-                  hasMore ? ' — scroll down to load more' : ''
+              ? `Preview: first ${Math.min(MISSING_DATA_PREVIEW_LIMIT, totalCount)} of ${totalCount.toLocaleString()} rows${
+                  hasMore ? ' — use Download all for the full file' : ''
                 } · Missing: ${(activeFile.missingFields ?? []).join(', ') || 'critical fields'}${
                   activeFile.uploadedByName ? ` · ${activeFile.uploadedByName}` : ''
                 }`
@@ -435,22 +401,20 @@ export function MissingDataWorkspace({
                 dataResetKey={`${activeFile.id}-${activeFile.updatedAt}-${showingCount}`}
                 fillHeight
                 enableDragScroll
-                onScrollNearEnd={hasMore ? handleGridNearEnd : undefined}
               />
-              {loadingMore && (
-                <p className="shrink-0 border-t border-slate-100 bg-slate-50 py-2 text-center text-xs text-slate-500">
-                  Loading more rows…
+              {hasMore && canDownload && (
+                <p className="shrink-0 border-t border-slate-100 bg-amber-50 px-3 py-2 text-center text-xs text-amber-900">
+                  Showing {MISSING_DATA_PREVIEW_LIMIT} of {totalCount.toLocaleString()} rows —{' '}
+                  <button
+                    type="button"
+                    disabled={downloading}
+                    onClick={() => void handleDownload()}
+                    className="font-semibold text-[#2e7ad1] hover:underline disabled:opacity-60"
+                  >
+                    Download all
+                  </button>{' '}
+                  to view the complete file
                 </p>
-              )}
-              {hasMore && !loadingMore && (
-                <button
-                  type="button"
-                  onClick={() => void loadMoreRows()}
-                  className="shrink-0 border-t border-slate-100 bg-slate-50 py-2 text-center text-xs text-[#2e7ad1] hover:bg-slate-100 hover:underline"
-                >
-                  Load next {MISSING_DATA_PREVIEW_BATCH} rows ({showingCount.toLocaleString()} of{' '}
-                  {totalCount.toLocaleString()})
-                </button>
               )}
             </div>
           ) : (

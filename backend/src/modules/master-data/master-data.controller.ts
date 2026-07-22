@@ -11,6 +11,7 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -157,6 +158,12 @@ export class MasterDataController {
   @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
   getCurrent(@CurrentUser() user: Parameters<typeof actorFromJwt>[0]) {
     return this.masterDataService.getCurrentForUser(user.id, user.roles ?? []);
+  }
+
+  @Get('export.csv')
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
+  async exportCsv(@Res({ passthrough: false }) res: import('express').Response) {
+    await this.masterDataService.streamMasterCsv(res);
   }
 
   @Get('preview')

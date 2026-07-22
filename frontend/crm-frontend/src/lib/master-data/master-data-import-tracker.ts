@@ -5,7 +5,6 @@ import {
 } from '@/lib/api/csv-import.service';
 import { useMasterDataImportStore } from '@/store/master-data-import.store';
 import { toast } from '@/stores/toast.store';
-import { emitMasterDataDuplicatePopup } from '@/lib/master-data/master-data-duplicate-popup';
 
 const STORAGE_KEY = 'quoreb2b-master-import-job';
 
@@ -143,10 +142,11 @@ async function pollCsvImportUntilDone(
           toast.success(
             mode === 'append' ? 'Master data import complete' : 'Master data replaced',
             rowCount > 0
-              ? `${rowCount.toLocaleString()} rows in database`
+              ? `${rowCount.toLocaleString()} rows in database · search indexed`
               : 'Import finished successfully',
           );
           window.dispatchEvent(new CustomEvent('master-data-updated'));
+          window.dispatchEvent(new CustomEvent('upload-request-deleted', { detail: { id: 'refresh' } }));
           setTimeout(() => useMasterDataImportStore.getState().reset(), 8000);
         }
         return;
@@ -229,18 +229,18 @@ async function pollImportUntilDone(
               ? status.result.rowCount
               : status.rowsProcessed;
           const skipped = status.result.skippedDuplicates ?? 0;
-          if (skipped > 0) {
-            emitMasterDataDuplicatePopup({
-              fileName: status.result.fileName || fileName,
-              duplicateCount: skipped,
-              addedRows: status.result.addedRows ?? 0,
-              totalRows: status.result.rowCount ?? rowCount ?? 0,
-              headers: status.result.headers ?? [],
-              duplicateRows: [],
-            });
+          const missingRowCount = status.result.missingRowCount ?? 0;
+          const duplicateFileSaved = Boolean(status.result.duplicateFileSaved);
+          if (duplicateFileSaved || skipped > 0) {
             toast.info(
-              'Duplicates skipped',
-              `${skipped.toLocaleString('en-US')} duplicate contact(s) were not added`,
+              'Duplicates saved to folder',
+              `${skipped.toLocaleString('en-US')} duplicate contact(s) saved under Admin → Duplicates`,
+            );
+          }
+          if (missingRowCount > 0) {
+            toast.info(
+              'Missing data saved',
+              `${missingRowCount.toLocaleString('en-US')} incomplete row(s) saved under Admin → Missing data`,
             );
           }
           const partial =
@@ -253,10 +253,11 @@ async function pollImportUntilDone(
                 : 'Master data replaced',
             status.message ||
               (rowCount != null
-                ? `${rowCount.toLocaleString()} rows in database`
+                ? `${rowCount.toLocaleString()} rows in database · search indexed`
                 : 'Import finished successfully'),
           );
           window.dispatchEvent(new CustomEvent('master-data-updated'));
+          window.dispatchEvent(new CustomEvent('upload-request-deleted', { detail: { id: 'refresh' } }));
           setTimeout(() => useMasterDataImportStore.getState().reset(), 8000);
         }
         return status.result;

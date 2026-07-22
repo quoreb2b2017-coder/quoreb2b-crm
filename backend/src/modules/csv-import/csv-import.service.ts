@@ -70,6 +70,7 @@ export class CsvImportService {
       batchSize,
       uploadedBy: new Types.ObjectId(actor.userId),
       uploadedByEmail: actor.email,
+      uploadSourceRole: actor.uploadSourceRole ?? 'db_admin',
     });
 
     const { uploadUrl, expiresIn } = await this.s3.createPresignedUploadUrl(
@@ -123,6 +124,7 @@ export class CsvImportService {
       batchSize: normalizedBatch,
       uploadedBy: new Types.ObjectId(actor.userId),
       uploadedByEmail: actor.email,
+      uploadSourceRole: actor.uploadSourceRole ?? 'db_admin',
     });
 
     await this.jobs.updateProgress(jobId, {

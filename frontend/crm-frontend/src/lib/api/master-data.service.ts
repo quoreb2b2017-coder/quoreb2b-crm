@@ -3,6 +3,7 @@ import apiClient from './client';
 import { directUploadClient } from './direct-upload-client';
 import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
 import { getApiBaseUrl, getDirectUploadApiBaseUrl } from '@/lib/constants/api-url';
+import { useAuthStore } from '@/store/auth.store';
 
 /** Upload timeout for large XLSX files (up to ~500MB). */
 const MASTER_DATA_UPLOAD_TIMEOUT_MS = 7_200_000;
@@ -115,6 +116,10 @@ export interface MasterDataRecord {
   createdAt?: string;
   addedRows?: number;
   skippedDuplicates?: number;
+  skippedIncomplete?: number;
+  missingRowCount?: number;
+  duplicateFileId?: string | null;
+  duplicateFileSaved?: boolean;
   mode?: MasterDataSaveMode;
   /** Import hit MASTER_DATA_MAX_ROWS before finishing the file */
   hitRowCap?: boolean;
@@ -548,6 +553,28 @@ export const masterDataService = {
       if (status === 404 || status === 403) return null;
       throw err;
     }
+  },
+
+  downloadMasterCsv: async (): Promise<void> => {
+    const token =
+      typeof window !== 'undefined'
+        ? useAuthStore.getState().accessToken ?? localStorage.getItem('accessToken')
+        : null;
+    const base = getApiBaseUrl().replace(/\/$/, '');
+    const res = await fetch(`${base}/master-data/export.csv`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      throw new Error(`Export failed (${res.status})`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'master-database.csv';
+    a.click();
+    URL.revokeObjectURL(url);
   },
 
   /** Fast chunked preview — first page only (100 rows via loadPageRows on server). */

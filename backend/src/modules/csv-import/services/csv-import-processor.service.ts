@@ -36,6 +36,8 @@ import {
   resolveMasterDataHeaders,
   rowHasSourceData,
 } from '../../master-data/master-data-format.util';
+import { rowHasCriticalMissing } from '../../missing-data/missing-data.util';
+import { MissingDataService } from '../../missing-data/missing-data.service';
 import {
   alignRowWithIndex,
   buildHeaderIndexMap,
@@ -67,6 +69,7 @@ export class CsvImportProcessorService {
     @InjectModel(MasterDataChunk.name)
     private readonly chunkModel: Model<MasterDataChunk>,
     private readonly searchIndex: MasterDataSearchIndexService,
+    private readonly missingData: MissingDataService,
   ) {}
 
   async runOrchestrator(jobId: string): Promise<void> {
@@ -187,6 +190,8 @@ export class CsvImportProcessorService {
     let holdRequestId = job.duplicateHoldRequestId || '';
     let duplicateRowsHeld = job.duplicateRowsHeld || 0;
     let dupBuffer: string[][] = [];
+    const incompleteRows: string[][] = [];
+    const incomingSeen = new Set<string>();
     /** Locked after first CSV header row — same schema used for master + duplicate hold. */
     let targetHeaders: string[] = [];
     let fileHeaders: string[] = [];
@@ -205,7 +210,7 @@ export class CsvImportProcessorService {
     }
 
     const flushDupBuffer = async () => {
-      if (!dupBuffer.length || !seen || !targetHeaders.length) return;
+      if (!dupBuffer.length || !targetHeaders.length) return;
       if (!holdRequestId) {
         const hold = await this.duplicateHold.ensureHold(job, targetHeaders);
         holdKey = hold.holdKey;
@@ -266,14 +271,17 @@ export class CsvImportProcessorService {
         try {
           if (!rowHasSourceData(raw, sourceHeaders)) continue;
           const aligned = alignRowWithIndex(raw, sourceIdx, targetHeaders, formatMasterDataCell);
-          if (seen) {
-            const key = contactDedupeKey(targetHeaders, aligned);
-            if (seen.has(key)) {
-              dupBuffer.push(aligned);
-              continue;
-            }
-            seen.add(key);
+          if (rowHasCriticalMissing(targetHeaders, aligned)) {
+            incompleteRows.push(aligned);
+            continue;
           }
+          const key = contactDedupeKey(targetHeaders, aligned);
+          if (seen?.has(key) || incomingSeen.has(key)) {
+            dupBuffer.push(aligned);
+            continue;
+          }
+          incomingSeen.add(key);
+          if (seen) seen.add(key);
           validRows.push(aligned);
         } catch (err) {
           failedBuffer.push({
@@ -370,6 +378,31 @@ export class CsvImportProcessorService {
     }
 
     await this.jobs.setTotalBatches(job.jobId, batchNumber);
+
+    if (incompleteRows.length && targetHeaders.length && job.uploadedBy) {
+      const sourceRole =
+        job.uploadSourceRole === 'super_admin' ||
+        job.uploadSourceRole === 'admin' ||
+        job.uploadSourceRole === 'master'
+          ? job.uploadSourceRole
+          : 'master';
+      try {
+        await this.missingData.ingest({
+          sourceKey: `csv_import:${job.jobId}`,
+          sourceType: 'master_import',
+          fileName: job.fileName,
+          headers: targetHeaders,
+          rows: incompleteRows,
+          uploadedBy: String(job.uploadedBy),
+          uploadedByEmail: job.uploadedByEmail,
+          sourceRole: sourceRole as 'master' | 'super_admin' | 'admin' | 'db_admin',
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Missing-data capture failed for CSV import ${job.jobId}: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
   }
 
   private async persistBatch(

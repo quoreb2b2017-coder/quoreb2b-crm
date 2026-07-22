@@ -564,6 +564,21 @@ export class MasterDataRowStore {
     return out;
   }
 
+  async forEachChunkRows(
+    masterKey: string,
+    fn: (rows: string[][]) => void | Promise<void>,
+  ): Promise<void> {
+    const chunks = await this.chunkModel
+      .find({ masterKey })
+      .sort({ chunkIndex: 1 })
+      .select('rows')
+      .lean()
+      .exec();
+    for (const chunk of chunks) {
+      await fn((chunk.rows as string[][]) ?? []);
+    }
+  }
+
   async getRowsByIndices(
     doc: Pick<MasterDataRecord, 'key' | 'rows' | 'storage'>,
     indices: number[],

@@ -38,6 +38,14 @@ export interface CsvImportActor {
   userId: string;
   email: string;
   role?: string;
+  uploadSourceRole?: string;
+}
+
+export function resolveCsvUploadSourceRole(roles?: string[]): string {
+  if (roles?.includes('super_admin')) return 'super_admin';
+  if (roles?.includes('admin')) return 'admin';
+  if (roles?.includes('db_admin')) return 'db_admin';
+  return 'db_admin';
 }
 
 export interface PresignedUploadResult {

@@ -105,6 +105,7 @@ const SKIP_EXISTING_DEDUP_ABOVE = 100_000;
 const META_UPDATE_EVERY_FLUSHES = 5;
 /** Progress UI + save segments (10L rows → 20 parts). */
 const IMPORT_PART_ROWS = 50_000;
+const SIDECAR_FLUSH_BATCH = 5_000;
 
 const UPLOAD_REQUEST_LIST_PROJECTION =
   '-rows -workRows';
@@ -297,6 +298,115 @@ export class MasterDataService {
           `Missing-data capture failed: ${err instanceof Error ? err.message : err}`,
         );
       });
+  }
+
+  private masterImportSourceRole(actor: ActivityActor): MissingDataSourceRole {
+    if (actor.roles?.includes(SystemRole.SUPER_ADMIN)) return 'super_admin';
+    if (actor.roles?.includes(SystemRole.ADMIN)) return 'admin';
+    return 'master';
+  }
+
+  private duplicateUploadSourceRole(
+    actor: ActivityActor,
+  ): 'employee' | 'db_admin' | 'super_admin' | 'admin' {
+    if (actor.roles?.includes(SystemRole.SUPER_ADMIN)) return 'super_admin';
+    if (actor.roles?.includes(SystemRole.ADMIN)) return 'admin';
+    if (actor.roles?.includes(SystemRole.DB_ADMIN)) return 'db_admin';
+    return 'employee';
+  }
+
+  private async finalizeMasterImportSidecars(params: {
+    actor: ActivityActor;
+    fileName: string;
+    sheetName: string;
+    headers: string[];
+    incompleteRows: string[][];
+    duplicateRows: string[][];
+    duplicateHoldKey?: string;
+    duplicateCount: number;
+  }): Promise<{ duplicateFileId: string | null; missingRowCount: number }> {
+    const missingRowCount = params.incompleteRows.length;
+    if (missingRowCount > 0 && params.headers.length) {
+      this.captureMissingData({
+        sourceKey: this.missingDataSourceKey({
+          sourceType: 'master_import',
+          fileName: params.fileName,
+          actorId: params.actor.id,
+        }),
+        sourceType: 'master_import',
+        fileName: params.fileName,
+        sheetName: params.sheetName,
+        headers: params.headers,
+        rows: params.incompleteRows,
+        actor: params.actor,
+        sourceRole: this.masterImportSourceRole(params.actor),
+      });
+    }
+
+    let duplicateFileId: string | null = null;
+    const dupTotal = Math.max(params.duplicateCount, params.duplicateRows.length);
+    if (dupTotal > 0 && params.headers.length) {
+      let holdKey = params.duplicateHoldKey;
+      let previewRows = [...params.duplicateRows];
+      if (holdKey && !previewRows.length) {
+        previewRows = await this.rowStore.loadRowsByHoldKey(
+          holdKey,
+          DUPLICATE_PREVIEW_LIMIT,
+        );
+      }
+      const stem = params.fileName.replace(/\.(xlsx|xls|csv)$/i, '');
+      const dupFile = await this.createSuppressionDuplicateFile(params.actor, {
+        fileName: `${stem}-duplicates.xlsx`,
+        sheetName: 'Duplicates',
+        headers: params.headers,
+        rows: previewRows,
+        rowCount: dupTotal,
+        sourceRole: this.duplicateUploadSourceRole(params.actor),
+        campaignName: stem,
+        existingHoldKey: holdKey,
+      });
+      duplicateFileId = dupFile?.id ?? null;
+    }
+
+    return { duplicateFileId, missingRowCount };
+  }
+
+  /** Stream full master database as CSV (Super Admin / Admin). */
+  async streamMasterCsv(res: import('express').Response): Promise<void> {
+    const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+    if (!doc?.headers?.length) {
+      throw new NotFoundException('No master data to export');
+    }
+    const headers = (doc.headers as string[]) ?? [];
+    const escape = (value: string) =>
+      `"${String(value ?? '').replace(/"/g, '""')}"`;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="master-database.csv"',
+    );
+    res.write(`${headers.map(escape).join(',')}\n`);
+
+    const writeRows = (rows: string[][]) => {
+      for (const row of rows) {
+        const line = headers
+          .map((_, i) => escape(String(row[i] ?? '')))
+          .join(',');
+        res.write(`${line}\n`);
+      }
+    };
+
+    if (!this.rowStore.isChunked(doc)) {
+      writeRows((doc.rows as string[][]) ?? []);
+      res.end();
+      return;
+    }
+
+    await this.rowStore.forEachChunkRows(MASTER_DATA_KEY, async (rows) => {
+      writeRows(rows);
+    });
+    res.end();
   }
 
   private maxTotalRows(): number {
@@ -666,9 +776,10 @@ export class MasterDataService {
     baseFileName: string,
     headers: string[],
     duplicateRows: string[][],
-    sourceRole: 'employee' | 'db_admin',
+    sourceRole: 'employee' | 'db_admin' | 'super_admin' | 'admin',
     duplicateCount?: number,
     campaignName?: string,
+    existingHoldKey?: string,
   ) {
     const totalDuplicates = duplicateCount ?? duplicateRows.length;
     if (totalDuplicates <= 0) return null;
@@ -681,6 +792,7 @@ export class MasterDataService {
       rowCount: totalDuplicates,
       sourceRole,
       campaignName: campaignName ?? stem,
+      existingHoldKey,
     });
   }
 
@@ -803,6 +915,9 @@ export class MasterDataService {
     let skippedDuplicates = 0;
     let skippedIncomplete = 0;
     const incompleteBatch: string[][] = [];
+    let duplicateBatch: string[][] = [];
+    let duplicateHoldKey: string | undefined;
+    let trackedDuplicateCount = 0;
     let pendingBatch: string[][] = [];
     let processed = 0;
     let flushCount = 0;
@@ -842,6 +957,16 @@ export class MasterDataService {
       await new Promise<void>((resolve) => setImmediate(resolve));
     };
 
+    const flushDuplicateSidecar = async () => {
+      if (!duplicateBatch.length) return;
+      if (!duplicateHoldKey) {
+        duplicateHoldKey = `upload_dup_${new Types.ObjectId().toString()}`;
+      }
+      await this.rowStore.appendRows(duplicateBatch, duplicateHoldKey);
+      trackedDuplicateCount += duplicateBatch.length;
+      duplicateBatch = [];
+    };
+
     for (const rawRow of dto.rows) {
       processed += 1;
       if (!rowHasSourceData(rawRow, sourceHeaders)) {
@@ -862,6 +987,10 @@ export class MasterDataService {
       const key = this.rowKey(targetHeaders, aligned);
       if (seen!.has(key) || incomingSeen.has(key)) {
         skippedDuplicates += 1;
+        duplicateBatch.push(aligned);
+        if (duplicateBatch.length >= SIDECAR_FLUSH_BATCH) {
+          await flushDuplicateSidecar();
+        }
         continue;
       }
       seen!.add(key);
@@ -897,9 +1026,21 @@ export class MasterDataService {
         headers: targetHeaders,
         rows: incompleteBatch,
         actor,
-        sourceRole: 'master',
+        sourceRole: this.masterImportSourceRole(actor),
       });
     }
+
+    await flushDuplicateSidecar();
+    const sidecars = await this.finalizeMasterImportSidecars({
+      actor,
+      fileName: dto.fileName,
+      sheetName: dto.sheetName || existing?.sheetName || 'Master Data',
+      headers: targetHeaders,
+      incompleteRows: [],
+      duplicateRows: duplicateBatch,
+      duplicateHoldKey,
+      duplicateCount: trackedDuplicateCount + duplicateBatch.length,
+    });
 
     const finalRowCount = baseRowCount + addedRows;
     const doc = await this.patchChunkedMasterMeta({
@@ -945,6 +1086,10 @@ export class MasterDataService {
       ...(await this.toResponse(doc)),
       addedRows,
       skippedDuplicates,
+      skippedIncomplete,
+      missingRowCount: incompleteBatch.length,
+      duplicateFileId: sidecars.duplicateFileId,
+      duplicateFileSaved: Boolean(sidecars.duplicateFileId),
       mode,
     };
   }
@@ -969,6 +1114,11 @@ export class MasterDataService {
     let incomingSeen = new Set<string>();
     let addedRows = 0;
     let skippedDuplicates = 0;
+    let skippedIncomplete = 0;
+    const incompleteRows: string[][] = [];
+    let duplicateBatch: string[][] = [];
+    let duplicateHoldKey: string | undefined;
+    let trackedDuplicateCount = 0;
     let pendingBatch: string[][] = [];
     let processed = 0;
     let flushCount = 0;
@@ -1035,6 +1185,16 @@ export class MasterDataService {
       await new Promise<void>((resolve) => setImmediate(resolve));
     };
 
+    const flushDuplicateSidecar = async () => {
+      if (!duplicateBatch.length) return;
+      if (!duplicateHoldKey) {
+        duplicateHoldKey = `upload_dup_${new Types.ObjectId().toString()}`;
+      }
+      await this.rowStore.appendRows(duplicateBatch, duplicateHoldKey);
+      trackedDuplicateCount += duplicateBatch.length;
+      duplicateBatch = [];
+    };
+
     const ingestBatch = async (rows: string[][]) => {
       if (hitRowCap) return;
       const candidates: Array<{ key: string; row: string[] }> = [];
@@ -1051,9 +1211,18 @@ export class MasterDataService {
           targetHeaders,
           formatMasterDataCell,
         );
+        if (rowHasCriticalMissing(targetHeaders, aligned)) {
+          skippedIncomplete += 1;
+          incompleteRows.push(aligned);
+          continue;
+        }
         const key = this.rowKey(targetHeaders, aligned);
         if (incomingSeen.has(key)) {
           skippedDuplicates += 1;
+          duplicateBatch.push(aligned);
+          if (duplicateBatch.length >= SIDECAR_FLUSH_BATCH) {
+            await flushDuplicateSidecar();
+          }
           continue;
         }
         candidates.push({ key, row: aligned });
@@ -1067,6 +1236,10 @@ export class MasterDataService {
       for (const { key, row } of candidates) {
         if (existingKeys.has(key) || incomingSeen.has(key)) {
           skippedDuplicates += 1;
+          duplicateBatch.push(row);
+          if (duplicateBatch.length >= SIDECAR_FLUSH_BATCH) {
+            await flushDuplicateSidecar();
+          }
           continue;
         }
         // Stop before writing past the configured master cap (keep already-saved rows).
@@ -1193,6 +1366,18 @@ export class MasterDataService {
 
     const saveStart = Date.now();
     await flushBatch(true);
+    await flushDuplicateSidecar();
+
+    const sidecars = await this.finalizeMasterImportSidecars({
+      actor,
+      fileName,
+      sheetName,
+      headers: targetHeaders,
+      incompleteRows,
+      duplicateRows: duplicateBatch,
+      duplicateHoldKey,
+      duplicateCount: trackedDuplicateCount + duplicateBatch.length,
+    });
 
     const finalRowCount = baseRowCount + addedRows;
     if (finalRowCount <= 0 && totalIncoming > 0) {
@@ -1226,6 +1411,10 @@ export class MasterDataService {
           sheetName,
           addedRows,
           skippedDuplicates,
+          skippedIncomplete,
+          missingRowCount: sidecars.missingRowCount,
+          duplicateFileId: sidecars.duplicateFileId,
+          duplicateFileSaved: Boolean(sidecars.duplicateFileId),
           totalRows: finalRowCount,
           columnCount: targetHeaders.length,
           mode,
@@ -1250,6 +1439,10 @@ export class MasterDataService {
         ...(await this.toResponse(doc)),
         addedRows,
         skippedDuplicates,
+        skippedIncomplete,
+        missingRowCount: sidecars.missingRowCount,
+        duplicateFileId: sidecars.duplicateFileId,
+        duplicateFileSaved: Boolean(sidecars.duplicateFileId),
         mode,
         hitRowCap,
         fileRowCount: totalIncoming,
@@ -1300,7 +1493,7 @@ export class MasterDataService {
       fileName: dto.fileName,
       sheetName: dto.sheetName || existing?.sheetName || 'Master Data',
       actor,
-      sourceRole: 'master' as MissingDataSourceRole,
+      sourceRole: this.masterImportSourceRole(actor),
     };
     const completeRows = this.partitionForMaster(
       prepared.headers,
@@ -2823,12 +3016,13 @@ export class MasterDataService {
       sheetName: string;
       headers: string[];
       rows: string[][];
-      sourceRole: 'employee' | 'db_admin';
+      sourceRole: 'employee' | 'db_admin' | 'super_admin' | 'admin';
       rowCount?: number;
       campaignName?: string;
       dbName?: string;
       adminName?: string;
       employeeName?: string;
+      existingHoldKey?: string;
     },
   ) {
     if (!params.headers.length) {
@@ -2838,14 +3032,18 @@ export class MasterDataService {
     if (rowCount <= 0) {
       throw new BadRequestException('No duplicate rows to save');
     }
-    // Prefer real rows; large sets go to chunk hold so open never hits Mongo 16MB / empty docs.
     const INLINE_DUP_CAP = 800;
+    let rowsHoldKey = params.existingHoldKey;
     let rowsToStore = params.rows.length > 0 ? params.rows : [];
-    let rowsHoldKey: string | undefined;
-    if (rowsToStore.length > INLINE_DUP_CAP) {
+    if (!rowsHoldKey && rowsToStore.length > INLINE_DUP_CAP) {
       rowsHoldKey = `upload_dup_${new Types.ObjectId().toString()}`;
       await this.rowStore.appendRows(rowsToStore, rowsHoldKey);
       rowsToStore = rowsToStore.slice(0, DUPLICATE_PREVIEW_LIMIT);
+    } else if (rowsHoldKey && !rowsToStore.length) {
+      rowsToStore = await this.rowStore.loadRowsByHoldKey(
+        rowsHoldKey,
+        DUPLICATE_PREVIEW_LIMIT,
+      );
     }
 
     const resolved = await this.resolveDuplicateFileMeta(actor);

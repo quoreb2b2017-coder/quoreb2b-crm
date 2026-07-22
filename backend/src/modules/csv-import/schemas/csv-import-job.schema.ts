@@ -118,6 +118,10 @@ export class CsvImportJob extends Document {
   @Prop({ default: '' })
   uploadedByEmail: string;
 
+  /** super_admin | admin | db_admin — drives duplicate/missing folder routing. */
+  @Prop({ default: 'db_admin' })
+  uploadSourceRole: string;
+
   @Prop({ default: false })
   pauseRequested: boolean;
 

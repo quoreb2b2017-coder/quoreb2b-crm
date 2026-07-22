@@ -294,15 +294,10 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
           toast.success('Added to master database', `+${record.addedRows} contacts · ${record.rowCount} total${skipped}`);
           window.dispatchEvent(new CustomEvent('master-data-updated'));
           if ((record.skippedDuplicates ?? 0) > 0) {
-            emitMasterDataDuplicatePopup({
-              fileName: payload.fileName,
-              headers: duplicatePreview?.headers ?? payload.headers,
-              duplicateRows: duplicatePreview?.duplicateRows ?? [],
-              addedRows: record.addedRows ?? 0,
-              duplicateCount:
-                record.skippedDuplicates ?? duplicatePreview?.duplicateRows.length ?? 0,
-              totalRows: record.rowCount,
-            });
+            toast.info(
+              'Duplicates saved to folder',
+              `${record.skippedDuplicates?.toLocaleString()} duplicate(s) saved under Admin → Duplicates`,
+            );
           }
         } else {
           toast.success('Saved to database', `${record.rowCount} contacts in master data`);
@@ -504,6 +499,18 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
     } catch { toast.error('Export failed', 'Could not create Excel file'); }
   };
 
+  const handleDownloadMasterCsv = async () => {
+    try {
+      setSavingDb(true);
+      await masterDataService.downloadMasterCsv();
+      toast.success('Download started', 'Full master database CSV export');
+    } catch (e) {
+      toast.error('Download failed', extractApiError(e, 'Could not export CSV'));
+    } finally {
+      setSavingDb(false);
+    }
+  };
+
   const handleDownloadDuplicates = async () => {
     if (!duplicateModal) return;
     try {
@@ -660,7 +667,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
             <>
               <button type="button" onClick={() => inputRef.current?.click()} disabled={busy}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium shadow-sm transition-all hover:border-[#2e7ad1]/30 hover:bg-[#e8f1fb] disabled:opacity-50">
-                <Upload className="h-3.5 w-3.5" />{data ? 'Open file' : 'Upload'}
+                <Upload className="h-3.5 w-3.5" />{data ? 'Upload file' : 'Upload'}
               </button>
               {canExport && (
                 <button type="button" onClick={handleSampleTemplate}
@@ -682,10 +689,17 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
             </button>
           )}
           {!isDbAdminView && data && canExport && (
-            <button type="button" onClick={handleDownloadFormatted}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[#2e7ad1] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-[#2568b8]">
-              <Download className="h-3.5 w-3.5" />Export Excel
-            </button>
+            <>
+              <button type="button" onClick={() => void handleDownloadMasterCsv()}
+                disabled={savingDb || totalRows <= 0}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium shadow-sm transition-all hover:border-[#2e7ad1]/30 hover:bg-[#e8f1fb] disabled:opacity-50">
+                <Download className="h-3.5 w-3.5" />Download CSV
+              </button>
+              <button type="button" onClick={handleDownloadFormatted}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-[#2e7ad1] px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all hover:bg-[#2568b8]">
+                <Download className="h-3.5 w-3.5" />Export Excel
+              </button>
+            </>
           )}
         </div>
       </div>

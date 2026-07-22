@@ -81,7 +81,7 @@ export class CsvImportDuplicateHoldService {
       adminName: job.uploadedByEmail || 'Super Admin',
       isDuplicateFile: true,
       rowsHoldKey: holdKey,
-      sourceRole: 'db_admin',
+      sourceRole: job.uploadSourceRole || 'db_admin',
       status: 'active',
     });
 
@@ -235,7 +235,7 @@ export class CsvImportDuplicateHoldService {
       submittedBy: job.uploadedBy,
       submittedByEmail: job.uploadedByEmail || '',
       submittedByName: job.uploadedByEmail || 'Admin',
-      sourceRole: 'db_admin',
+      sourceRole: job.uploadSourceRole || 'db_admin',
       status: 'approved',
       mergedAddedRows: addedRows,
       mergedTotalRows: undefined,

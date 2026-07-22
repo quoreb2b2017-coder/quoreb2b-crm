@@ -19,6 +19,7 @@ import { CsvImportService } from './csv-import.service';
 import { InitiateCsvImportDto, StartCsvImportDto } from './dto/initiate-csv-import.dto';
 import { CsvImportControlDto } from './dto/csv-import-control.dto';
 import { actorFromJwt } from '../activity-logs/activity-user.util';
+import { resolveCsvUploadSourceRole } from './csv-import.types';
 
 const uploadDir = join(process.cwd(), 'uploads', 'csv-imports', 'staging');
 mkdirSync(uploadDir, { recursive: true });
@@ -37,6 +38,7 @@ export class CsvImportController {
     return this.csvImport.initiatePresignedUpload(dto, {
       userId: actor.id,
       email: actor.email ?? '',
+      uploadSourceRole: resolveCsvUploadSourceRole(user.roles),
     });
   }
 
@@ -80,7 +82,11 @@ export class CsvImportController {
       file.originalname,
       file.size,
       mode,
-      { userId: actor.id, email: actor.email ?? '' },
+      {
+        userId: actor.id,
+        email: actor.email ?? '',
+        uploadSourceRole: resolveCsvUploadSourceRole(user.roles),
+      },
       batchSize ? parseInt(batchSize, 10) : undefined,
     );
   }

@@ -30,6 +30,7 @@ import {
 import {
   buildSuppressionKeySet,
   extractRowCheckKey,
+  findSuppressionColumnIndex,
   parseManualCheckValues,
   type SuppressionCheckMode,
 } from './suppression-match.util';
@@ -73,20 +74,53 @@ export class SuppressionDataService {
     void this.cache.delByPrefix('batch:');
   }
 
-  private async loadSuppressionKeySet(
+  /** Prefer Redis key cache — only hydrate full campaign rows when needed. */
+  private async resolveSuppressionKeys(
     campaignId: string,
-    versionKey: string,
-    headers: string[],
-    rows: string[][],
     mode: SuppressionCheckMode,
-  ): Promise<Set<string>> {
+  ): Promise<{
+    keys: Set<string>;
+    name: string;
+    headers: string[];
+    versionKey: string;
+    loadRows: () => Promise<{ headers: string[]; rows: string[][] }>;
+  }> {
+    const meta = await this.batchesService.getSuppressionCampaignMeta(campaignId);
+    if (!meta.rowCount) {
+      throw new BadRequestException('Selected suppression campaign has no delivered data yet');
+    }
+    const versionKey = `${meta.id}:${meta.rowCount}:${meta.updatedAt}`;
     const cacheKey = `suppression:keys:${campaignId}:${mode}:${versionKey}`;
-    const keys = await this.cache.wrap(
-      cacheKey,
-      cacheTtlSeconds(this.config, 'long'),
-      async () => [...buildSuppressionKeySet(headers, rows, mode)],
-    );
-    return new Set(keys);
+
+    let cached = await this.cache.getJson<string[]>(cacheKey);
+    let rowsHolder: { headers: string[]; rows: string[][] } | null = null;
+
+    const loadRows = async () => {
+      if (rowsHolder) return rowsHolder;
+      const campaign = await this.batchesService.getSuppressionCampaignById(campaignId);
+      rowsHolder = {
+        headers: (campaign.headers as string[]) ?? meta.headers,
+        rows: (campaign.rows as string[][]) ?? [],
+      };
+      return rowsHolder;
+    };
+
+    if (!cached?.length) {
+      const sheet = await loadRows();
+      if (!sheet.rows.length) {
+        throw new BadRequestException('Selected suppression campaign has no delivered data yet');
+      }
+      cached = [...buildSuppressionKeySet(sheet.headers, sheet.rows, mode)];
+      await this.cache.setJson(cacheKey, cached, cacheTtlSeconds(this.config, 'long'));
+    }
+
+    return {
+      keys: new Set(cached),
+      name: meta.name,
+      headers: meta.headers,
+      versionKey,
+      loadRows,
+    };
   }
 
   async listSuppressionCampaigns() {
@@ -302,18 +336,14 @@ export class SuppressionDataService {
       );
     }
 
-    const campaign = await this.batchesService.getSuppressionCampaignById(
+    const resolved = await this.resolveSuppressionKeys(
       dto.suppressionCampaignId,
+      dto.checkMode,
     );
-    const supHeaders = (campaign.headers as string[]) ?? [];
-    const supRows = (campaign.rows as string[][]) ?? [];
-    if (!supRows.length) {
-      throw new BadRequestException('Selected suppression campaign has no delivered data yet');
-    }
+    const suppressionKeys = resolved.keys;
+    const campaignName = resolved.name;
 
-    const versionKey = `${String(campaign._id)}:${campaign.rowCount ?? supRows.length}`;
-
-    // Manual email/domain check — single pass over suppression rows (no double scan).
+    // Manual email/domain check — Set.has is O(1); only load full rows if matches need export.
     const manualValues = dto.manualInput?.trim()
       ? parseManualCheckValues(dto.manualInput, dto.checkMode)
       : [];
@@ -323,35 +353,18 @@ export class SuppressionDataService {
       !dto.sourceBatchId &&
       !hasInlineSource;
 
-    let suppressionKeys: Set<string>;
+    const matchedManual = manualValues.filter((value) => suppressionKeys.has(value));
     const matchedManualRowsRaw: string[][] = [];
 
-    if (manualOnly) {
-      const want = new Set(manualValues);
-      suppressionKeys = new Set<string>();
-      for (const row of supRows) {
+    if (matchedManual.length > 0) {
+      const want = new Set(matchedManual);
+      const sheet = await resolved.loadRows();
+      const colIdx = findSuppressionColumnIndex(sheet.headers, dto.checkMode);
+      for (const row of sheet.rows) {
         if (matchedManualRowsRaw.length >= MANUAL_MATCH_ROW_LIMIT) break;
-        const key = extractRowCheckKey(row, supHeaders, dto.checkMode);
+        const key = extractRowCheckKey(row, sheet.headers, dto.checkMode, colIdx);
         if (!key || !want.has(key)) continue;
-        suppressionKeys.add(key);
         matchedManualRowsRaw.push(row);
-      }
-    } else {
-      suppressionKeys = await this.loadSuppressionKeySet(
-        dto.suppressionCampaignId,
-        versionKey,
-        supHeaders,
-        supRows,
-        dto.checkMode,
-      );
-      if (manualValues.length > 0) {
-        const want = new Set(manualValues);
-        for (const row of supRows) {
-          if (matchedManualRowsRaw.length >= MANUAL_MATCH_ROW_LIMIT) break;
-          const key = extractRowCheckKey(row, supHeaders, dto.checkMode);
-          if (!key || !want.has(key)) continue;
-          matchedManualRowsRaw.push(row);
-        }
       }
     }
 
@@ -369,9 +382,10 @@ export class SuppressionDataService {
       indexForRow: (rowOffset: number) => number,
     ) => {
       sourceHeaders = headers;
+      const colIdx = findSuppressionColumnIndex(headers, dto.checkMode);
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
-        const key = extractRowCheckKey(row, headers, dto.checkMode);
+        const key = extractRowCheckKey(row, headers, dto.checkMode, colIdx);
         if (key && suppressionKeys.has(key)) {
           matchingRows.push(row);
           duplicateSourceIndices.push(indexForRow(i));
@@ -379,53 +393,57 @@ export class SuppressionDataService {
       }
     };
 
-    if (dto.sourceRequestId) {
-      const request = await this.masterDataService.getUploadRequest(
-        dto.sourceRequestId,
-        actor.id,
-        roles,
-      );
-      sourceHeaders = request.headers ?? [];
-      sourceRows = request.workRows?.length ? request.workRows : request.rows ?? [];
-      baseFileName = request.fileName ?? baseFileName;
-      duplicateSourceRole =
-        request.sourceRole === 'db_admin' ? 'db_admin' : 'employee';
-      collectMatches(sourceHeaders, sourceRows, (i) => i);
-    } else if (dto.sourceBatchId) {
-      const batch = await this.batchesService.findOne(dto.sourceBatchId, actor.id);
-      sourceHeaders = (batch.headers as string[]) ?? [];
-      sourceRows = (batch.rows as string[][]) ?? [];
-      baseFileName = String(batch.sourceFileName ?? batch.name ?? baseFileName);
-      duplicateSourceRole = isDbAdmin ? 'db_admin' : 'employee';
-      collectMatches(sourceHeaders, sourceRows, (i) => i);
-    } else if (hasInlineRows) {
-      sourceHeaders = dto.sourceHeaders!;
-      sourceRows = dto.sourceRows!;
-      baseFileName = dto.baseFileName ?? baseFileName;
-      duplicateSourceRole = isDbAdmin ? 'db_admin' : 'employee';
-      collectMatches(sourceHeaders, sourceRows, (i) => i);
-    } else if (hasMasterResolve) {
-      baseFileName = dto.baseFileName ?? baseFileName;
-      duplicateSourceRole = isDbAdmin ? 'db_admin' : 'employee';
-      await this.masterDataService.scanMasterForSuppressionCheck(
-        actor.id,
-        {
-          ...(dto.masterSourceRowIndices?.length
-            ? { subsetIndices: dto.masterSourceRowIndices }
-            : { filter: dto.masterSearchFilter }),
-          suppressionKeys,
-          checkMode: dto.checkMode,
-        },
-        (chunk) => {
-          collectMatches(chunk.headers, chunk.rows, (i) => chunk.sourceIndices[i] ?? i);
-        },
-      );
+    if (!manualOnly) {
+      if (dto.sourceRequestId) {
+        const request = await this.masterDataService.getUploadRequest(
+          dto.sourceRequestId,
+          actor.id,
+          roles,
+        );
+        sourceHeaders = request.headers ?? [];
+        sourceRows = request.workRows?.length ? request.workRows : request.rows ?? [];
+        baseFileName = request.fileName ?? baseFileName;
+        duplicateSourceRole =
+          request.sourceRole === 'db_admin' ? 'db_admin' : 'employee';
+        collectMatches(sourceHeaders, sourceRows, (i) => i);
+      } else if (dto.sourceBatchId) {
+        const batch = await this.batchesService.findOne(dto.sourceBatchId, actor.id);
+        sourceHeaders = (batch.headers as string[]) ?? [];
+        sourceRows = (batch.rows as string[][]) ?? [];
+        baseFileName = String(batch.sourceFileName ?? batch.name ?? baseFileName);
+        duplicateSourceRole = isDbAdmin ? 'db_admin' : 'employee';
+        collectMatches(sourceHeaders, sourceRows, (i) => i);
+      } else if (hasInlineRows) {
+        sourceHeaders = dto.sourceHeaders!;
+        sourceRows = dto.sourceRows!;
+        baseFileName = dto.baseFileName ?? baseFileName;
+        duplicateSourceRole = isDbAdmin ? 'db_admin' : 'employee';
+        collectMatches(sourceHeaders, sourceRows, (i) => i);
+      } else if (hasMasterResolve) {
+        baseFileName = dto.baseFileName ?? baseFileName;
+        duplicateSourceRole = isDbAdmin ? 'db_admin' : 'employee';
+        await this.masterDataService.scanMasterForSuppressionCheck(
+          actor.id,
+          {
+            ...(dto.masterSourceRowIndices?.length
+              ? { subsetIndices: dto.masterSourceRowIndices }
+              : { filter: dto.masterSearchFilter }),
+            suppressionKeys,
+            checkMode: dto.checkMode,
+          },
+          (chunk) => {
+            collectMatches(chunk.headers, chunk.rows, (i) => chunk.sourceIndices[i] ?? i);
+          },
+        );
+      }
     }
 
-    const matchedManual = manualValues.filter((value) => suppressionKeys.has(value));
     const templateAlignedManual =
       matchedManualRowsRaw.length > 0
-        ? alignRowsToMasterTemplate(supHeaders, matchedManualRowsRaw)
+        ? alignRowsToMasterTemplate(
+            (await resolved.loadRows()).headers,
+            matchedManualRowsRaw,
+          )
         : { headers: [...MASTER_DATA_TEMPLATE_HEADERS], rows: [] as string[][] };
 
     let duplicateFile: Awaited<
@@ -441,7 +459,7 @@ export class SuppressionDataService {
         headers: alignedSource.headers,
         rows: alignedSource.rows,
         sourceRole: duplicateSourceRole,
-        campaignName: String(campaign.name ?? 'Suppression campaign'),
+        campaignName,
       });
     } else if (templateAlignedManual.rows.length > 0) {
       // Manual email/domain check — save matched suppression rows in official template format.
@@ -455,7 +473,7 @@ export class SuppressionDataService {
         headers: templateAlignedManual.headers,
         rows: templateAlignedManual.rows,
         sourceRole: isDbAdmin ? 'db_admin' : duplicateSourceRole,
-        campaignName: String(campaign.name ?? 'Suppression campaign'),
+        campaignName,
       });
     }
 
@@ -479,7 +497,7 @@ export class SuppressionDataService {
       );
     }
 
-    this.bustCaches();
+    // Do NOT bust suppression key caches on check — that forced a full Mongo reload every time.
     return {
       duplicateCount: matchingRows.length + matchedManual.length,
       fileDuplicateCount: matchingRows.length,

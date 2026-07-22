@@ -55,12 +55,15 @@ export default function EmployeeBatchViewPage() {
     };
   }, [router]);
 
-  // Employee can edit if they are owner or batch is shared with them
+  // Shared campaign: employee who can open it can fully edit (cells, columns, rows)
   const canEdit = Boolean(
     user?.id &&
-    batch &&
-    (batch.createdBy === user.id || batch.sharedWith?.includes(user.id)),
+      batch &&
+      (String(batch.createdBy ?? '') === String(user.id) ||
+        (batch.sharedWith ?? []).some((id) => String(id) === String(user.id))),
   );
+  // Existing rows/columns cannot be deleted — only newly added ones can
+  const protectSharedStructure = canEdit;
 
   if (loading) {
     return (
@@ -102,6 +105,11 @@ export default function EmployeeBatchViewPage() {
       createdByEmail={batch?.createdByEmail}
       data={data}
       editable={canEdit}
+      protectSharedStructure={protectSharedStructure}
+      structureLock={batch?.structureLock ?? null}
+      onStructureLockChange={(lock) =>
+        setBatch((prev) => (prev ? { ...prev, structureLock: lock } : prev))
+      }
       onDataChange={canEdit ? setData : undefined}
       onClose={() => router.push('/employee/batches')}
       enableCheckSuppression

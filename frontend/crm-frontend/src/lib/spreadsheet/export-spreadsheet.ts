@@ -5,11 +5,20 @@ import { useAuthStore } from '@/store/auth.store';
 export async function downloadSpreadsheetXlsx(
   data: SpreadsheetData,
   downloadName?: string,
+  options?: { allowMissingDataDownload?: boolean },
 ): Promise<void> {
   const roles =
     typeof window !== 'undefined' ? useAuthStore.getState().user?.roles : undefined;
   const panel = typeof window !== 'undefined' ? useAuthStore.getState().panel : undefined;
-  if (!canExportSpreadsheet(roles, panel)) {
+  const missingDataAllowed =
+    options?.allowMissingDataDownload &&
+    Boolean(
+      roles?.some(
+        (r) =>
+          r === 'super_admin' || r === 'admin' || r === 'db_admin' || r === 'employee',
+      ),
+    );
+  if (!missingDataAllowed && !canExportSpreadsheet(roles, panel)) {
     throw new Error('Download is restricted to Super Admin');
   }
   const XLSX = await import('xlsx');

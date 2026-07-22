@@ -24,7 +24,6 @@ import type {
   MasterDataColumnFilterSchema,
 } from './master-database-columns';
 import {
-  buildCombinedIndustryOptions,
   buildCuratedQuickFilters,
   buildEffectiveFilterColumns,
   COMBINED_INDUSTRY_FILTER_KEY,
@@ -283,33 +282,25 @@ export function MasterDatabaseQuickFilters({
       {curatedFields.length > 0 ? (
         <div className="mdb-quick__curated">
           {curatedFields.map((field) => {
-            if (field.type === 'combinedIndustry') {
-              const selected =
-                filters.columnValues[COMBINED_INDUSTRY_FILTER_KEY] ?? new Set<string>();
+            if (field.type === 'combinedIndustryText') {
+              const value = filters.columnText[COMBINED_INDUSTRY_FILTER_KEY] ?? '';
               return (
                 <div
                   key={COMBINED_INDUSTRY_FILTER_KEY}
-                  className="mdb-filter-block mdb-filter-block--multi"
+                  className="mdb-filter-block"
                 >
                   <span className="mdb-filter-block__label">
                     <Building2 className="h-3 w-3" />
                     {field.label}
-                    {selected.size > 0 && (
-                      <span className="mdb-filter-block__count">{selected.size}</span>
-                    )}
                   </span>
-                  <XlToolbarMultiSelect
-                    tone="light"
-                    displayMode="chips"
-                    className="mdb-filter-block__select"
-                    menuMinWidth={300}
-                    values={selected}
-                    placeholder="All"
-                    onChange={(next) => setColumnMultiValues(COMBINED_INDUSTRY_FILTER_KEY, next)}
-                    onApply={(next) => {
-                      if (next.size > 0) onSearch();
-                    }}
-                    options={buildCombinedIndustryOptions(field.columns)}
+                  <input
+                    type="text"
+                    className="mdb-filter-block__input"
+                    placeholder="e.g. financial, software, healthcare…"
+                    value={value}
+                    onChange={(e) => setColumnText(COMBINED_INDUSTRY_FILTER_KEY, e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && onSearch()}
+                    onBlur={() => value.trim() && onSearch()}
                   />
                 </div>
               );

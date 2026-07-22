@@ -10,6 +10,7 @@ export const employeeNav: EmployeeNavItem[] = [
   { label: 'My campaign', href: '/employee/batches', section: 'Workspace' },
   { label: 'My QC', href: '/employee/qc', section: 'Workspace' },
   { label: 'My data', href: '/employee/my-data', section: 'Workspace' },
+  { label: 'Missing data', href: '/employee/missing-data', section: 'Workspace' },
   { label: 'Chat', href: '/employee/chat', section: 'Workspace' },
   { label: 'Personal notes', href: '/employee/personal-notes', section: 'Workspace' },
   { label: 'Attendance', href: '/employee/attendance', section: 'Operations' },

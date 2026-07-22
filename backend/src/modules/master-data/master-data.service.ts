@@ -43,7 +43,6 @@ import {
   createContactDedupeKey,
   headersEqual,
   mergeAppendSheets,
-  mergeHeaders,
 } from './master-data-merge.util';
 import {
   formatMasterDataCell,
@@ -74,6 +73,9 @@ import { MASTER_DATA_TEMPLATE_HEADERS } from './master-data-template.constants';
 import { MasterDataImportLockService } from './master-data-import-lock.service';
 import { MasterDataSearchIndexService } from './master-data-search-index.service';
 import { CsvImportJob } from '../csv-import/schemas/csv-import-job.schema';
+import { MissingDataService } from '../missing-data/missing-data.service';
+import type { MissingDataSourceRole } from '../missing-data/missing-data.constants';
+import { splitRowsByCriticalCompleteness, rowHasCriticalMissing } from '../missing-data/missing-data.util';
 import {
   buildMasterDataOpenSearchQuery,
   buildMasterDataSqlWhere,
@@ -118,6 +120,7 @@ const CRM_OPERATIONAL_COLLECTIONS = [
   'refreshtokens',
   'personal_notes',
   'suppression_data',
+  'missing_data_files',
   'leads',
   'campaigns',
   'companies',
@@ -200,7 +203,96 @@ export class MasterDataService {
     private importLock: MasterDataImportLockService,
     private searchIndex: MasterDataSearchIndexService,
     private elasticsearch: ElasticsearchService,
+    @Inject(forwardRef(() => MissingDataService))
+    private missingData: MissingDataService,
   ) {}
+
+  /** Stable key so re-upload of the same file replaces one Missing Data entry. */
+  private missingDataSourceKey(params: {
+    sourceType: 'upload_request' | 'master_import';
+    sourceRequestId?: string;
+    fileName: string;
+    actorId: string;
+  }): string {
+    if (params.sourceType === 'upload_request' && params.sourceRequestId) {
+      return `upload_request:${params.sourceRequestId}`;
+    }
+    const stem =
+      params.fileName.replace(/\.(xlsx|xls|csv)$/i, '').trim().toLowerCase() || 'upload';
+    if (params.sourceType === 'upload_request') {
+      return `upload_pending:${params.actorId}:${stem}`;
+    }
+    return `master_import:${params.actorId}:${stem}`;
+  }
+
+  private missingDataSheetLabel(fileName: string): string {
+    const stem = fileName.replace(/\.(xlsx|xls|csv)$/i, '').trim() || fileName;
+    return `${stem} — Missing Data`;
+  }
+
+  /** Incomplete rows → Missing Data only; never stored in master. */
+  private partitionForMaster(
+    headers: string[],
+    rows: string[][],
+    capture: {
+      sourceKey: string;
+      sourceType: 'upload_request' | 'master_import';
+      sourceRequestId?: string;
+      fileName: string;
+      sheetName?: string;
+      actor: ActivityActor;
+      sourceRole: MissingDataSourceRole;
+    },
+  ): string[][] {
+    const { completeRows, incompleteRows } = splitRowsByCriticalCompleteness(
+      headers,
+      rows,
+    );
+    if (incompleteRows.length) {
+      this.captureMissingData({
+        ...capture,
+        headers,
+        rows: incompleteRows,
+      });
+    }
+    return completeRows;
+  }
+
+  /** Copy incomplete critical-field rows into Missing Data (does not block upload). */
+  private captureMissingData(input: {
+    sourceKey: string;
+    sourceType: 'upload_request' | 'master_import';
+    sourceRequestId?: string;
+    fileName: string;
+    sheetName?: string;
+    headers: string[];
+    rows: string[][];
+    actor: ActivityActor;
+    sourceRole: MissingDataSourceRole;
+    fallbackDate?: Date;
+  }): void {
+    if (!input.rows.length || !input.headers.length) return;
+    void this.missingData
+      .ingest({
+        sourceKey: input.sourceKey,
+        sourceType: input.sourceType,
+        sourceRequestId: input.sourceRequestId,
+        fileName: input.fileName,
+        sheetName: input.sheetName || this.missingDataSheetLabel(input.fileName),
+        headers: input.headers,
+        rows: input.rows,
+        uploadedBy: input.actor.id,
+        uploadedByEmail: input.actor.email,
+        uploadedByName: displayName(input.actor),
+        sourceRole: input.sourceRole,
+        fallbackDate: input.fallbackDate ?? new Date(),
+      })
+      .catch((err) => {
+        this.logger.warn(
+          `Missing-data capture failed: ${err instanceof Error ? err.message : err}`,
+        );
+      });
+  }
 
   private maxTotalRows(): number {
     const configured = Number(this.config.get<string>('MASTER_DATA_MAX_ROWS'));
@@ -227,7 +319,8 @@ export class MasterDataService {
     addedRows: number;
     skippedDuplicates: number;
   }> {
-    const mergedHeaders = mergeHeaders(existing.headers, incoming.headers);
+    // Always append into official RPF template columns (realign existing if needed).
+    const mergedHeaders = [...MASTER_DATA_TEMPLATE_HEADERS];
     const headersUnchanged = headersEqual(mergedHeaders, existing.headers);
     const beforeCount = this.rowStore.getRowCount(existing);
 
@@ -486,6 +579,7 @@ export class MasterDataService {
 
     const incomingSeen = new Set<string>();
     const rows: string[][] = [];
+    const incompleteRows: string[][] = [];
     const duplicateRows: string[][] = [];
     let duplicateCount = 0;
     let missingValueCount = 0;
@@ -497,6 +591,10 @@ export class MasterDataService {
       for (const rawRow of slice) {
         const normalized = this.normalizeRowToHeaders(rawRow, dto.headers, headers);
         missingValueCount += normalized.filter((cell) => cell === '-').length;
+        if (splitRowsByCriticalCompleteness(headers, [normalized]).incompleteRows.length) {
+          incompleteRows.push(normalized);
+          continue;
+        }
         normalizedBatch.push({ key: this.rowKey(headers, normalized), row: normalized });
       }
 
@@ -516,7 +614,15 @@ export class MasterDataService {
     }
 
     const duplicatePreviewRows = duplicateRows.slice(0, DUPLICATE_PREVIEW_LIMIT);
-    return { headers, rows, duplicateCount, duplicatePreviewRows, duplicateRows, missingValueCount };
+    return {
+      headers,
+      rows,
+      incompleteRows,
+      duplicateCount,
+      duplicatePreviewRows,
+      duplicateRows,
+      missingValueCount,
+    };
   }
 
   private async resolveDuplicateFileMeta(actor: ActivityActor): Promise<{
@@ -690,6 +796,8 @@ export class MasterDataService {
     const incomingSeen = new Set<string>();
     let addedRows = 0;
     let skippedDuplicates = 0;
+    let skippedIncomplete = 0;
+    const incompleteBatch: string[][] = [];
     let pendingBatch: string[][] = [];
     let processed = 0;
     let flushCount = 0;
@@ -741,6 +849,11 @@ export class MasterDataService {
         targetHeaders,
         formatMasterDataCell,
       );
+      if (rowHasCriticalMissing(targetHeaders, aligned)) {
+        skippedIncomplete += 1;
+        incompleteBatch.push(aligned);
+        continue;
+      }
       const key = this.rowKey(targetHeaders, aligned);
       if (seen!.has(key) || incomingSeen.has(key)) {
         skippedDuplicates += 1;
@@ -766,6 +879,23 @@ export class MasterDataService {
 
     await flushBatch(true);
 
+    if (incompleteBatch.length) {
+      this.captureMissingData({
+        sourceKey: this.missingDataSourceKey({
+          sourceType: 'master_import',
+          fileName: dto.fileName,
+          actorId: actor.id,
+        }),
+        sourceType: 'master_import',
+        fileName: dto.fileName,
+        sheetName: dto.sheetName || existing?.sheetName || 'Master Data',
+        headers: targetHeaders,
+        rows: incompleteBatch,
+        actor,
+        sourceRole: 'master',
+      });
+    }
+
     const finalRowCount = baseRowCount + addedRows;
     const doc = await this.patchChunkedMasterMeta({
       headers: targetHeaders,
@@ -790,6 +920,7 @@ export class MasterDataService {
           sheetName: dto.sheetName,
           addedRows,
           skippedDuplicates,
+          skippedIncomplete,
           totalRows: finalRowCount,
           columnCount: targetHeaders.length,
           mode,
@@ -1154,13 +1285,45 @@ export class MasterDataService {
       replace: mode === 'replace' || !existing,
     });
 
+    const masterCapture = {
+      sourceKey: this.missingDataSourceKey({
+        sourceType: 'master_import',
+        fileName: dto.fileName,
+        actorId: actor.id,
+      }),
+      sourceType: 'master_import' as const,
+      fileName: dto.fileName,
+      sheetName: dto.sheetName || existing?.sheetName || 'Master Data',
+      actor,
+      sourceRole: 'master' as MissingDataSourceRole,
+    };
+    const completeRows = this.partitionForMaster(
+      prepared.headers,
+      prepared.rows,
+      masterCapture,
+    );
     const incoming = {
       headers: prepared.headers,
-      rows: prepared.rows,
+      rows: completeRows,
     };
 
     if (!incoming.rows.length) {
-      throw new BadRequestException('No data rows to add');
+      void this.bustMasterCaches();
+      return {
+        ...(existing
+          ? await this.toResponse(existing)
+          : {
+              fileName: dto.fileName,
+              sheetName: dto.sheetName || 'Master Data',
+              headers: prepared.headers,
+              rows: [],
+              rowCount: 0,
+            }),
+        addedRows: 0,
+        skippedDuplicates: 0,
+        mode,
+        sentToMissingData: prepared.rows.length,
+      };
     }
 
     let headers: string[];
@@ -1240,9 +1403,14 @@ export class MasterDataService {
       onProgress?.(0, incoming.rows.length, 'Merging with existing master data…');
       const existingRows = await this.loadExistingRows(existing);
       const beforeCount = existingRows.length;
+      const templateHeaders = [...MASTER_DATA_TEMPLATE_HEADERS];
+      const existingIdx = buildHeaderIndexMap(existing.headers);
+      const existingAligned = existingRows.map((row) =>
+        alignRowWithIndex(row, existingIdx, templateHeaders, formatMasterDataCell),
+      );
       const merged = mergeAppendSheets(
-        { headers: existing.headers, rows: existingRows },
-        incoming,
+        { headers: templateHeaders, rows: existingAligned },
+        { headers: templateHeaders, rows: incoming.rows },
         formatMasterDataCell,
       );
       headers = merged.headers;
@@ -1680,6 +1848,7 @@ export class MasterDataService {
     const {
       headers,
       rows,
+      incompleteRows,
       duplicateCount,
       duplicatePreviewRows,
       duplicateRows,
@@ -1708,7 +1877,7 @@ export class MasterDataService {
 
       const merged = await this.mergeUploadRequestToMaster(request, actor);
       mergedAddedRows = merged.addedRows ?? rows.length;
-    } else if (duplicateCount > 0 || dto.rows.length > 0) {
+    } else if (duplicateCount > 0 || incompleteRows.length > 0 || dto.rows.length > 0) {
       // Keep "Your uploads" receipt so uploads + duplicates both appear.
       request = await this.uploadRequestModel.create({
         fileName: dto.fileName,
@@ -1743,6 +1912,25 @@ export class MasterDataService {
       duplicateCount,
     );
 
+    if (incompleteRows.length) {
+      this.captureMissingData({
+        sourceKey: this.missingDataSourceKey({
+          sourceType: 'upload_request',
+          sourceRequestId: request ? String(request._id) : undefined,
+          fileName: dto.fileName,
+          actorId: actor.id,
+        }),
+        sourceType: 'upload_request',
+        sourceRequestId: request ? String(request._id) : undefined,
+        fileName: dto.fileName,
+        sheetName: dto.sheetName,
+        headers,
+        rows: incompleteRows,
+        actor,
+        sourceRole: 'db_admin',
+      });
+    }
+
     try {
       await this.activityLogs.logWithActor(actor, {
         action: 'MASTER_DATA_UPLOAD_REQUEST',
@@ -1753,6 +1941,7 @@ export class MasterDataService {
           sheetName: dto.sheetName,
           submittedRows: dto.rows.length,
           pendingRows: rows.length,
+          incompleteRows: incompleteRows.length,
           duplicateCount,
           missingValueCount,
           requestCreated: Boolean(request),
@@ -1798,6 +1987,7 @@ export class MasterDataService {
     const {
       headers,
       rows,
+      incompleteRows,
       duplicateCount,
       duplicatePreviewRows,
       duplicateRows,
@@ -1829,7 +2019,7 @@ export class MasterDataService {
 
       const merged = await this.mergeUploadRequestToMaster(request, actor);
       mergedAddedRows = merged.addedRows ?? rows.length;
-    } else if (duplicateCount > 0 || dto.rows.length > 0) {
+    } else if (duplicateCount > 0 || incompleteRows.length > 0 || dto.rows.length > 0) {
       // Keep openable rows on the receipt (preview of submitted / duplicates) — empty rows → 0 contacts UI.
       const receiptRows =
         duplicateRows.length > 0
@@ -1869,6 +2059,25 @@ export class MasterDataService {
       duplicateCount,
     );
 
+    if (incompleteRows.length) {
+      this.captureMissingData({
+        sourceKey: this.missingDataSourceKey({
+          sourceType: 'upload_request',
+          sourceRequestId: request ? String(request._id) : undefined,
+          fileName: dto.fileName,
+          actorId: actor.id,
+        }),
+        sourceType: 'upload_request',
+        sourceRequestId: request ? String(request._id) : undefined,
+        fileName: dto.fileName,
+        sheetName: dto.sheetName || 'Uploaded',
+        headers,
+        rows: incompleteRows,
+        actor,
+        sourceRole: 'employee',
+      });
+    }
+
     try {
       await this.activityLogs.logWithActor(actor, {
         action: 'EMPLOYEE_DATA_UPLOAD_REQUEST',
@@ -1878,6 +2087,7 @@ export class MasterDataService {
           fileName: dto.fileName,
           submittedRows: dto.rows.length,
           pendingRows: rows.length,
+          incompleteRows: incompleteRows.length,
           duplicateCount,
           requestCreated: Boolean(request),
           duplicateFileId: duplicateFile?.id ?? null,
@@ -1905,12 +2115,7 @@ export class MasterDataService {
   }
 
   async getEmployeeUploadTemplate() {
-    const masterDoc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
-    const headers =
-      masterDoc?.headers?.length && masterDoc.headers.length > 0
-        ? masterDoc.headers
-        : [...MASTER_DATA_TEMPLATE_HEADERS];
-    return { headers };
+    return { headers: [...MASTER_DATA_TEMPLATE_HEADERS] };
   }
 
   async initiateEmployeePresignedUpload(
@@ -4211,7 +4416,15 @@ export class MasterDataService {
       opts.checkMode &&
       (filterInput || scopeIndices);
 
-    if (canUseSearch) {
+    // When the selected master subset is much smaller than the suppression list,
+    // loading those rows + Set.has is far cheaper than shipping all keys to OpenSearch.
+    const scopeSize = scopeIndices?.length ?? 0;
+    const preferInMemory =
+      scopeSize > 0 &&
+      scopeSize <= 8_000 &&
+      keyList.length > Math.max(scopeSize * 2, 2_000);
+
+    if (canUseSearch && !preferInMemory) {
       const osQuery = buildMasterDataOpenSearchQuery(headers, filterInput ?? {});
       const sqlWhere = buildMasterDataSqlWhere(headers, filterInput ?? {}, MASTER_DATA_KEY);
       const field = opts.checkMode === 'email' ? 'suppEmail' : 'suppDomain';
@@ -4700,6 +4913,11 @@ export class MasterDataService {
       rows,
       workRows,
     };
+  }
+
+  /** Invalidate master caches and optionally enqueue a full search reindex. */
+  invalidateMasterCaches(opts?: { reindex?: boolean; wipe?: boolean }): void {
+    this.bustMasterCaches(opts);
   }
 
   private bustMasterCaches(opts?: { reindex?: boolean; wipe?: boolean }): void {

@@ -549,6 +549,71 @@ export class NotificationTriggerService {
   }
 
   /**
+   * Notify recipient of a new chat message (toast + bell), including unread total.
+   */
+  async notifyChatMessage(params: {
+    recipientId: string;
+    senderName: string;
+    preview: string;
+    conversationId: string;
+    unreadCount: number;
+    actionUrl: string;
+  }) {
+    try {
+      const recipientOid = this.userObjectId(params.recipientId);
+      // Keep one live alert per conversation so the bell shows current unread count.
+      await this.notificationModel
+        .deleteMany({
+          userId: recipientOid,
+          type: 'chat_message',
+          'metadata.conversationId': params.conversationId,
+        })
+        .exec();
+
+      const unread = Math.max(1, params.unreadCount);
+      const snippet = (params.preview || 'New message').slice(0, 140);
+      await this.notifyUser(params.recipientId, {
+        type: 'chat_message',
+        title: `💬 ${params.senderName}`,
+        message:
+          unread > 1
+            ? `${unread} unread messages · ${snippet}`
+            : snippet,
+        priority: 'medium',
+        actionUrl: params.actionUrl,
+        actionLabel: 'Open chat',
+        metadata: {
+          conversationId: params.conversationId,
+          unreadCount: unread,
+        },
+        category: 'activityAlerts',
+      });
+    } catch (error) {
+      console.error('Error sending chat notification:', error);
+    }
+  }
+
+  /** Drop chat alerts for a conversation after the user opens/reads it. */
+  async clearChatNotifications(userId: string, conversationId: string) {
+    try {
+      const result = await this.notificationModel
+        .deleteMany({
+          userId: this.userObjectId(userId),
+          type: 'chat_message',
+          'metadata.conversationId': conversationId,
+        })
+        .exec();
+      if ((result.deletedCount ?? 0) > 0) {
+        await this.emitUnreadCount(userId);
+      }
+      return result.deletedCount ?? 0;
+    } catch (error) {
+      console.error('Error clearing chat notifications:', error);
+      return 0;
+    }
+  }
+
+  /**
    * Notify system alert to all admins
    */
   async notifySystemAlert(message: string, severity: 'low' | 'medium' | 'high' | 'critical' = 'high') {

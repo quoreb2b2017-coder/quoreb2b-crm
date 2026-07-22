@@ -8,18 +8,26 @@ export const dbAdminNav = [
   { label: 'Leave apply', href: '/db-admin/leave-apply', section: 'Operations' },
   { label: 'Activity logs', href: '/db-admin/activity-logs', section: 'Operations' },
   {
-    label: 'Disposition',
-    href: '/db-admin/disposition',
+    label: 'Follow up',
+    href: '/db-admin/disposition/3m',
     section: 'Operations',
     children: [
-      { label: 'DNC', href: '/db-admin/disposition' },
       { label: '3M', href: '/db-admin/disposition/3m' },
       { label: '6M', href: '/db-admin/disposition/6m' },
     ],
   },
   { label: 'My data', href: '/db-admin/master-data', section: 'Data' },
   { label: 'Employee data', href: '/db-admin/master-data?tab=employee', section: 'Data' },
-  { label: 'Suppression', href: '/db-admin/suppression', section: 'Data' },
+  { label: 'Missing data', href: '/db-admin/missing-data', section: 'Data' },
+  {
+    label: 'Suppression',
+    href: '/db-admin/suppression',
+    section: 'Data',
+    children: [
+      { label: 'Check', href: '/db-admin/suppression' },
+      { label: 'DNC', href: '/db-admin/disposition' },
+    ],
+  },
   { label: 'Email verification', href: '/db-admin/bulk-email-verification', section: 'Data' },
   { label: 'Settings', href: '/db-admin/settings' },
 ];

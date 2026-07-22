@@ -38,6 +38,8 @@ export function notificationTypeToCategory(type: string): keyof NotificationPref
       return 'systemAlerts';
     case 'activity_alert':
       return 'activityAlerts';
+    case 'chat_message':
+      return 'activityAlerts';
     default:
       return 'activityAlerts';
   }

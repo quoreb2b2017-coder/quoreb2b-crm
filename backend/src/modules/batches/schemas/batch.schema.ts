@@ -74,6 +74,18 @@ export class Batch extends Document {
   /** standard campaign vs admin-merged ready QC output */
   @Prop({ default: 'standard' })
   batchKind?: string;
+
+  /**
+   * Existing rows/columns cannot be deleted — only newly added ones can.
+   * columnLocks[i] / rowLocks[i] === true → locked.
+   * lockedRowCount kept for older clients (count of locked rows).
+   */
+  @Prop({ type: Object })
+  structureLock?: {
+    columnLocks: boolean[];
+    rowLocks?: boolean[];
+    lockedRowCount: number;
+  };
 }
 
 export const BatchSchema = SchemaFactory.createForClass(Batch);

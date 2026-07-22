@@ -278,7 +278,7 @@ export type CuratedFilterField =
   | { type: 'dateRange'; column: MasterDataColumnFilterSchema }
   | { type: 'text'; column: MasterDataColumnFilterSchema; placeholder: string }
   | { type: 'select'; column: MasterDataColumnFilterSchema; multiple?: boolean }
-  | { type: 'combinedIndustry'; columns: MasterDataColumnFilterSchema[]; label: string };
+  | { type: 'combinedIndustryText'; columns: MasterDataColumnFilterSchema[]; label: string };
 
 const INDUSTRY_COLUMN_PATTERNS: RegExp[] = [/^industry type$/i, /^standard industry$/i];
 
@@ -304,11 +304,7 @@ export function buildCuratedQuickFilters(
 
   const leadType = findFilterColumn(columns, /^lead type$/i);
   if (leadType) {
-    if (leadType.options.length > 0) {
-      fields.push({ type: 'select', column: leadType, multiple: true });
-    } else {
-      fields.push({ type: 'text', column: leadType, placeholder: 'e.g. CDQA, MQL…' });
-    }
+    fields.push({ type: 'text', column: leadType, placeholder: 'e.g. CD, CDQA, MQL…' });
     used.add(leadType.header);
   }
 
@@ -316,7 +312,7 @@ export function buildCuratedQuickFilters(
     findFilterColumn(columns, pattern),
   ).filter((col): col is MasterDataColumnFilterSchema => Boolean(col));
   if (industryCols.length > 0) {
-    fields.push({ type: 'combinedIndustry', columns: industryCols, label: 'Industry' });
+    fields.push({ type: 'combinedIndustryText', columns: industryCols, label: 'Industry' });
     for (const col of industryCols) used.add(col.header);
   }
 
@@ -359,7 +355,7 @@ export function buildCuratedQuickFilters(
   const exactEmployee = findFilterColumn(columns, /^exact employee size$/i);
   const hasEmployeeCategoryField = fields.some(
     (field) =>
-      field.type !== 'combinedIndustry' &&
+      field.type !== 'combinedIndustryText' &&
       isEmployeeSizeCategoryHeader(field.column.header),
   );
   if (exactEmployee && !used.has(exactEmployee.header) && !hasEmployeeCategoryField) {
@@ -448,7 +444,7 @@ export function isMultiSelectHeader(header: string): boolean {
 export function curatedFilterHeaders(fields: CuratedFilterField[]): Set<string> {
   const headers = new Set<string>();
   for (const field of fields) {
-    if (field.type === 'combinedIndustry') {
+    if (field.type === 'combinedIndustryText') {
       for (const col of field.columns) headers.add(col.header);
     } else {
       headers.add(field.column.header);
@@ -530,7 +526,7 @@ export function pickQuickFilterColumns(
 
 export function canAutoSearchMasterData(filters: DynamicMasterDbFilters): boolean {
   const q = filters.globalQuery.trim();
-  if (q.length >= 3) return true;
+  if (q.length >= 2) return true;
   if (Object.values(filters.columnText).some((v) => v.trim().length >= 2)) return true;
   if (Object.values(filters.columnValues).some((s) => s.size > 0)) return true;
   if (Object.values(filters.columnDateRanges).some((r) => r.from?.trim() || r.to?.trim())) {
@@ -557,6 +553,7 @@ export function serializeDynamicSearchPayload(
     ...(filters.columnValues[COMBINED_INDUSTRY_FILTER_KEY] ?? []),
   ];
   const industryHeaders = resolveCombinedIndustryHeaders(headers);
+  const industryText = (filters.columnText[COMBINED_INDUSTRY_FILTER_KEY] ?? '').trim();
 
   const columnValueFilters = headers
     .map((header) => ({
@@ -565,10 +562,16 @@ export function serializeDynamicSearchPayload(
     }))
     .filter((f) => f.values.length > 0);
 
-  const columnValueOrFilters =
-    combinedIndustryValues.length > 0 && industryHeaders.length > 0
-      ? [{ headers: industryHeaders, values: combinedIndustryValues }]
-      : undefined;
+  let columnValueOrFilters: Array<{ headers: string[]; values: string[] }> | undefined;
+  if (combinedIndustryValues.length > 0 && industryHeaders.length > 0) {
+    columnValueOrFilters = [{ headers: industryHeaders, values: combinedIndustryValues }];
+  }
+  if (industryText && industryHeaders.length > 0) {
+    const textFilter = { headers: industryHeaders, values: [industryText] };
+    columnValueOrFilters = columnValueOrFilters
+      ? [...columnValueOrFilters, textFilter]
+      : [textFilter];
+  }
 
   const mustExistColumns = [...filters.mustExist];
 
@@ -602,7 +605,12 @@ export function activeDynamicFilterTags(
     tags.push({ key: 'global', label: `Search: ${filters.globalQuery.trim()}` });
   }
   for (const [header, value] of Object.entries(filters.columnText)) {
-    if (value.trim()) tags.push({ key: `text:${header}`, label: `${header}: ${value.trim()}` });
+    if (!value.trim()) continue;
+    const label =
+      header === COMBINED_INDUSTRY_FILTER_KEY
+        ? `Industry: ${value.trim()}`
+        : `${header}: ${value.trim()}`;
+    tags.push({ key: `text:${header}`, label });
   }
   for (const [header, range] of Object.entries(filters.columnDateRanges)) {
     const from = range.from?.trim();

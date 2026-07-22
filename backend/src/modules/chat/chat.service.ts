@@ -13,6 +13,7 @@ import { EventsGateway } from '../../events/events.gateway';
 import { SystemRole } from '../../common/constants/roles.constant';
 import { ChatAttachmentStorageService } from './chat-attachment-storage.service';
 import type { ChatAttachmentMetaDto } from './dto/chat.dto';
+import { NotificationTriggerService } from '../notifications/notification-trigger.service';
 
 function pairKey(a: string, b: string): string {
   return [a, b].sort().join(':');
@@ -20,6 +21,16 @@ function pairKey(a: string, b: string): string {
 
 function isOversight(roles: string[] = []): boolean {
   return roles.includes(SystemRole.ADMIN) || roles.includes(SystemRole.SUPER_ADMIN);
+}
+
+function chatPathForRoles(roles: string[] = []): string {
+  if (roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN)) {
+    return '/admin/chat';
+  }
+  if (roles.includes(SystemRole.DB_ADMIN)) {
+    return '/db-admin/chat';
+  }
+  return '/employee/chat';
 }
 
 @Injectable()
@@ -30,6 +41,7 @@ export class ChatService {
     private readonly usersService: UsersService,
     private readonly events: EventsGateway,
     private readonly storage: ChatAttachmentStorageService,
+    private readonly notifications: NotificationTriggerService,
   ) {}
 
   /** All active CRM users appear automatically as chat contacts (by name). */
@@ -257,6 +269,40 @@ export class ChatService {
     });
     this.events.emitToRoom('chat:oversight', 'chat:message', eventBody);
 
+    // Bell + toast so recipient sees unread count even outside Chat
+    void (async () => {
+      try {
+        // Skip if peer already opened/read the thread (race with live chat view)
+        const fresh = await this.conversations
+          .findById(conversation._id)
+          .select('unreadCounts')
+          .lean()
+          .exec();
+        const unreadNow = Number(
+          (fresh?.unreadCounts as Record<string, number> | undefined)?.[peerId] ?? 0,
+        );
+        if (unreadNow <= 0) return;
+
+        const [sender, peer] = await Promise.all([
+          this.usersService.findByIdSafe(userId),
+          this.usersService.findByIdSafe(peerId),
+        ]);
+        const senderName = sender
+          ? `${sender.firstName} ${sender.lastName}`.trim() || sender.email
+          : 'Someone';
+        await this.notifications.notifyChatMessage({
+          recipientId: peerId,
+          senderName,
+          preview,
+          conversationId: String(conversation._id),
+          unreadCount: unreadNow,
+          actionUrl: chatPathForRoles(peer?.roles ?? []),
+        });
+      } catch {
+        /* notifications must not block chat delivery */
+      }
+    })();
+
     return payload;
   }
 
@@ -286,6 +332,11 @@ export class ChatService {
     this.events.emitToUser(userId, 'chat:conversation-updated', {
       conversationId: String(conversation._id),
     });
+
+    // Clear chat bell alerts for this thread once the user has read it
+    void this.notifications
+      .clearChatNotifications(userId, String(conversation._id))
+      .catch(() => undefined);
 
     return { ok: true };
   }

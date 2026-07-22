@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useState, useCallback, useEffect, memo } from 'react';
+import { useState, useCallback, useEffect, useLayoutEffect, useMemo, memo, useRef } from 'react';
 import { cn } from '@/lib/utils/cn';
 import { useAuthStore } from '@/store/auth.store';
 import { useAdminProductStore } from '@/store/admin-product.store';
 import { useIdleLogout } from '@/hooks/useIdleLogout';
 import { useGlobalSpreadsheetCopyGuard } from '@/hooks/useSpreadsheetCopyGuard';
+import { useChatUnreadCount } from '@/hooks/useChatUnreadCount';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
 import { MasterDataImportHeaderChip } from '@/components/master-data/MasterDataImportHeaderChip';
 import { MeetingRequestBell } from '@/components/dashboard/MeetingRequestBell';
@@ -325,6 +326,7 @@ const iconMap: Record<string, React.ReactNode> = {
   'ready qc':           Icons.leads,
   'dnc':                Icons.leads,
   'disposition':        Icons.leads,
+  'follow up':          Icons.leads,
   '3m':                 Icons.logs,
   '6m':                 Icons.logs,
   'attendance':         Icons.attendance,
@@ -358,6 +360,17 @@ const roleLabel: Record<DashboardVariant, string> = {
   db_admin: 'DB Administrator',
   employee: 'Employee',
 };
+
+/** Persists sidebar nav scroll across route changes (SidebarContent remounts on navigate). */
+let sidebarNavScrollTop = 0;
+
+function isNavChildActive(pathname: string, href: string, pendingHref: string | null): boolean {
+  if (pendingHref === href) return true;
+  if (pathname === href) return true;
+  // DNC lives at /disposition — do not highlight it on /disposition/3m or /disposition/6m.
+  if (/\/disposition$/i.test(href)) return false;
+  return pathname.startsWith(`${href}/`);
+}
 
 function parseNavHref(href: string): { path: string; tab: string | null } {
   const qIndex = href.indexOf('?');
@@ -462,7 +475,7 @@ function NavFolderItem({
   theme: (typeof themes)[DashboardVariant];
   onNavigate: (href: string, event?: React.MouseEvent) => void;
 }) {
-  const childActive = item.children?.some((c) => pathname === c.href || pendingHref === c.href) ?? false;
+  const childActive = item.children?.some((c) => isNavChildActive(pathname, c.href, pendingHref)) ?? false;
 
   return (
     <div className="mb-1">
@@ -492,7 +505,7 @@ function NavFolderItem({
       {!isCollapsed && item.children ? (
         <div className="ml-3 mt-1 mb-1 pl-2.5 border-l border-slate-200/90 space-y-1">
           {item.children.map((child) => {
-            const cActive = pathname === child.href;
+            const cActive = isNavChildActive(pathname, child.href, pendingHref);
             const cPending = pendingHref === child.href && !cActive;
             if (child.external) {
               return (
@@ -808,6 +821,22 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
   const t = themes[variant];
   const portalTracking =
     variant === 'employee' || variant === 'db_admin' || variant === 'admin';
+  const chatUnreadCount = useChatUnreadCount();
+  const navItemsWithChatBadge = useMemo(
+    () =>
+      navItems.map((item) => {
+        const isPersonalChat =
+          item.href === '/employee/chat' ||
+          item.href === '/db-admin/chat' ||
+          item.href === '/admin/chat';
+        if (!isPersonalChat) return item;
+        return {
+          ...item,
+          badgeCount: Math.max(item.badgeCount ?? 0, chatUnreadCount),
+        };
+      }),
+    [navItems, chatUnreadCount],
+  );
 
   const onIdleWarn = useCallback(() => setIdleWarn(true), []);
   const onDismissIdleWarn = useCallback(() => setIdleWarn(false), []);
@@ -836,8 +865,8 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
     : user?.email ?? 'User';
 
   const currentNavLabel =
-    navItems.find((n) => n.href === pendingHref)?.label ??
-    navItems.find((n) => isNavItemActive(pathname, n.href, search))?.label ??
+    navItemsWithChatBadge.find((n) => n.href === pendingHref)?.label ??
+    navItemsWithChatBadge.find((n) => isNavItemActive(pathname, n.href, search))?.label ??
     'Overview';
 
   const handleNavClick = useCallback(
@@ -854,6 +883,14 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
   // ── Sidebar content ──────────────────────────────────────────────────────
   const SidebarContent = memo(({ isMobile = false }: { isMobile?: boolean }) => {
     const isCollapsed = isMobile ? false : collapsed;
+    const navRef = useRef<HTMLElement | null>(null);
+
+    useLayoutEffect(() => {
+      if (navRef.current) {
+        navRef.current.scrollTop = sidebarNavScrollTop;
+      }
+    });
+
     return (
       <div className={cn(
         'flex flex-col h-full bg-[#f0f4f8] border-r border-slate-200/80 transition-all duration-300 overflow-hidden',
@@ -906,8 +943,14 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
         )}
 
         {/* ── Nav items ── */}
-        <nav className={cn('flex-1 overflow-y-auto overflow-x-hidden py-2', isCollapsed ? 'px-1.5' : 'px-2')}>
-          {groupNavBySection(navItems).map((group, groupIdx) => {
+        <nav
+          ref={navRef}
+          onScroll={(e) => {
+            sidebarNavScrollTop = e.currentTarget.scrollTop;
+          }}
+          className={cn('flex-1 overflow-y-auto overflow-x-hidden py-2', isCollapsed ? 'px-1.5' : 'px-2')}
+        >
+          {groupNavBySection(navItemsWithChatBadge).map((group, groupIdx) => {
             return (
             <NavSectionGroup
               key={group.label ?? `nav-group-${groupIdx}`}

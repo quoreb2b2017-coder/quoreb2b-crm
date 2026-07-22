@@ -41,10 +41,15 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     const message = flattenExceptionMessage(raw);
 
-    this.logger.error(
-      `${request.method} ${request.url} - ${status}`,
-      exception instanceof Error ? exception.stack : undefined,
-    );
+    // 401/403 are expected (expired session) — don't dump full stacks as ERROR spam
+    if (status === HttpStatus.UNAUTHORIZED || status === HttpStatus.FORBIDDEN) {
+      this.logger.warn(`${request.method} ${request.url} - ${status}`);
+    } else {
+      this.logger.error(
+        `${request.method} ${request.url} - ${status}`,
+        exception instanceof Error ? exception.stack : undefined,
+      );
+    }
 
     response.status(status).json({
       success: false,

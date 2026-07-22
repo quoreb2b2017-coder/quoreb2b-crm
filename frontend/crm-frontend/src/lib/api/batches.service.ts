@@ -23,6 +23,11 @@ export interface BatchRecord {
   sourceBatchId?: string;
   campaignChannel?: 'voip' | 'gps' | 'email' | 'other' | string;
   batchKind?: string;
+  structureLock?: {
+    columnLocks: boolean[];
+    rowLocks?: boolean[];
+    lockedRowCount: number;
+  } | null;
 }
 
 /** Server may split large masterSearchFilter extracts into multiple ≤50K campaigns. */
@@ -240,6 +245,9 @@ export const batchesService = {
       rows?: string[][];
       name?: string;
       campaignChannel?: string;
+      columnLocks?: boolean[];
+      rowLocks?: boolean[];
+      lockedRowCount?: number;
     },
   ) =>
     apiClient.patch(`/batches/${id}`, payload).then(r => {

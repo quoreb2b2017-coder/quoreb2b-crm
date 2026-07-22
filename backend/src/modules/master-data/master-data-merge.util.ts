@@ -154,8 +154,43 @@ export function buildHeaderIndexMap(headers: string[]): Map<string, number> {
   headers.forEach((header, index) => {
     const key = normalizeHeaderKey(header);
     if (key && !map.has(key)) map.set(key, index);
+    const token = headerToken(header);
+    if (token && !map.has(`$${token}`)) map.set(`$${token}`, index);
   });
   return map;
+}
+
+/** Common upload header aliases → official RPF column name. */
+const HEADER_ALIASES: Record<string, string[]> = {
+  emailid: ['email', 'emailaddress', 'workemail', 'businessemail', 'e-mail'],
+  timezone: ['tz', 'timezones', 'time zone'],
+  campaignvertical: ['vertical', 'campaignverticals'],
+  phonenumber: ['phone', 'mobile', 'mobilephone', 'cellphone'],
+  directnumber: ['direct', 'directphone', 'directdial'],
+  zipcode: ['zip', 'postalcode', 'postal'],
+  companyname: ['company', 'organization', 'organisation'],
+  firstname: ['fname', 'givenname', 'first'],
+  lastname: ['lname', 'surname', 'familyname', 'last'],
+  website: ['web', 'url', 'companywebsite', 'websiteurl'],
+  siccode: ['sic'],
+  naicscode: ['naics'],
+};
+
+function lookupHeaderIndex(
+  sourceIdx: Map<string, number>,
+  header: string,
+): number | undefined {
+  const key = normalizeHeaderKey(header);
+  let idx = sourceIdx.get(key);
+  if (idx !== undefined) return idx;
+  const token = headerToken(header);
+  idx = sourceIdx.get(`$${token}`);
+  if (idx !== undefined) return idx;
+  for (const alias of HEADER_ALIASES[token] ?? []) {
+    idx = sourceIdx.get(normalizeHeaderKey(alias)) ?? sourceIdx.get(`$${headerToken(alias)}`);
+    if (idx !== undefined) return idx;
+  }
+  return undefined;
 }
 
 export function alignRowToHeaders(
@@ -174,7 +209,7 @@ export function alignRowWithIndex(
   formatCell: (value: string) => string = (value) => value,
 ): string[] {
   return targetHeaders.map((header) => {
-    const idx = sourceIdx.get(normalizeHeaderKey(header));
+    const idx = lookupHeaderIndex(sourceIdx, header);
     const raw = idx !== undefined ? String(row[idx] ?? '').trim() : '';
     return formatCell(raw);
   });

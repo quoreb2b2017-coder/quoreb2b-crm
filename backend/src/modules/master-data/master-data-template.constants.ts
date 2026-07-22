@@ -1,16 +1,15 @@
-/** Official master-data template column order (matches master-data-template.xlsx). */
+/** Official RPF master-data template column order (matches master-data-template.xlsx / RPF.xlsx). */
 export const MASTER_DATA_TEMPLATE_HEADERS: readonly string[] = [
   'Date',
   'Lead Type',
   'Client Name',
+  'Campaign Vertical',
   'Campaign Code',
   'Asset Title',
-  'Disposition',
   'Salutation',
   'First Name',
   'Last Name',
   'Email ID',
-  'Status',
   'Domain',
   'Job Title',
   'Job Title Level',
@@ -23,6 +22,7 @@ export const MASTER_DATA_TEMPLATE_HEADERS: readonly string[] = [
   'State',
   'Zip Code',
   'Country',
+  'TimeZone',
   'SIC Code',
   'NAICS Code',
   'Address Type',
@@ -37,4 +37,5 @@ export const MASTER_DATA_TEMPLATE_HEADERS: readonly string[] = [
   'Employee Size Link',
   'Revenue Size Link',
   'Website',
+  'Disposition',
 ] as const;

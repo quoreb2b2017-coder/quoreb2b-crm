@@ -23,6 +23,7 @@ import {
   buildMasterBatchCoverage,
   type MasterBatchCoverageResult,
 } from './master-batch-coverage.util';
+import { applyCampaignCreationDate } from './batch-campaign-date.util';
 import {
   buildDeliveredBatchCoverage,
   type DeliveredBatchCoverageResult,
@@ -210,6 +211,10 @@ export class BatchesService {
     const campaignChannel =
       dto.campaignChannel ?? parentChannel ?? detectCampaignChannel(dto.name);
 
+    const createdAt = new Date();
+    const headers = dto.headers ?? [];
+    const rows = applyCampaignCreationDate(headers, dto.rows ?? [], createdAt);
+
     // Super Admin / DB Admin share one library — auto-share root campaigns both ways.
     let autoSharedPeers: Types.ObjectId[] = [];
     const isDbAdmin = roles.includes(SystemRole.DB_ADMIN);
@@ -230,10 +235,10 @@ export class BatchesService {
     const batch = await this.model.create({
       name: dto.name,
       description: dto.description,
-      headers: dto.headers,
-      rows: dto.rows,
-      rowCount: dto.rows.length,
-      columnCount: dto.headers.length,
+      headers,
+      rows,
+      rowCount: rows.length,
+      columnCount: headers.length,
       sourceFileName: dto.sourceFileName,
       sourceBatchId: sourceId,
       batchMonth: period.batchMonth,
@@ -250,6 +255,11 @@ export class BatchesService {
       createdByEmail: actor.email,
       createdByName: actor.name,
       sharedWith: autoSharedPeers,
+      structureLock: {
+        columnLocks: headers.map(() => true),
+        rowLocks: rows.map(() => true),
+        lockedRowCount: rows.length,
+      },
     });
 
     const rootBatchId = sourceId
@@ -650,6 +660,12 @@ export class BatchesService {
             createdByEmail: sharer?.email,
             createdByName: sharerName,
             sharedWith: [empOid],
+            // Recipient may edit cells / add rows & columns, but cannot delete shared structure
+            structureLock: {
+              columnLocks: slice.headers.map(() => true),
+              rowLocks: slice.rows.map(() => true),
+              lockedRowCount: slice.rows.length,
+            },
           });
 
           distributed.push({
@@ -778,6 +794,67 @@ export class BatchesService {
 
     const oldHeaders = [...((batch.headers as string[]) ?? [])];
     const oldRows = (batch.rows as string[][])?.map((r) => [...r]) ?? [];
+    const existingLock = (batch as Batch & {
+      structureLock?: {
+        columnLocks?: boolean[];
+        rowLocks?: boolean[];
+        lockedRowCount?: number;
+      };
+    }).structureLock;
+    const prevColumnLocks = [...(existingLock?.columnLocks ?? [])];
+    if (existingLock) {
+      while (prevColumnLocks.length < oldHeaders.length) prevColumnLocks.push(true);
+    }
+    const prevRowLocks = [...(existingLock?.rowLocks ?? [])];
+    if (existingLock) {
+      if (prevRowLocks.length === 0 && existingLock.lockedRowCount) {
+        for (let i = 0; i < oldRows.length; i++) {
+          prevRowLocks.push(i < Number(existingLock.lockedRowCount));
+        }
+      } else {
+        while (prevRowLocks.length < oldRows.length) prevRowLocks.push(true);
+      }
+    }
+    const prevLockedColCount = prevColumnLocks.filter(Boolean).length;
+    const prevLockedRowCount = prevRowLocks.length
+      ? prevRowLocks.filter(Boolean).length
+      : Number(existingLock?.lockedRowCount ?? 0);
+
+    // Existing rows/columns cannot be deleted — only newly added ones can.
+    const hasLockTracking =
+      Boolean(existingLock) ||
+      dto.columnLocks != null ||
+      dto.rowLocks != null ||
+      dto.lockedRowCount != null;
+    if (hasLockTracking) {
+      const minLockedRows = existingLock ? prevLockedRowCount : oldRows.length;
+      const minLockedCols = existingLock ? prevLockedColCount : oldHeaders.length;
+
+      if (dto.rowLocks?.length === (dto.rows?.length ?? oldRows.length)) {
+        if (dto.rowLocks.filter(Boolean).length < minLockedRows) {
+          throw new ForbiddenException(
+            'Cannot delete existing rows. Only newly added rows can be deleted.',
+          );
+        }
+      } else if (dto.rows != null && dto.rows.length < minLockedRows) {
+        throw new ForbiddenException(
+          'Cannot delete existing rows. Only newly added rows can be deleted.',
+        );
+      }
+      if (dto.headers != null) {
+        if (dto.columnLocks?.length === dto.headers.length) {
+          if (dto.columnLocks.filter(Boolean).length < minLockedCols) {
+            throw new ForbiddenException(
+              'Cannot delete existing columns. Only newly added columns can be deleted.',
+            );
+          }
+        } else if (dto.headers.length < oldHeaders.length) {
+          throw new ForbiddenException(
+            'Cannot delete existing columns. Only newly added columns can be deleted.',
+          );
+        }
+      }
+    }
 
     if (dto.name != null && (isOwner || isAdmin)) batch.name = dto.name;
     if (dto.campaignChannel != null && (isOwner || isAdmin)) {
@@ -811,6 +888,59 @@ export class BatchesService {
       batch.columnCount = newHeaders.length ?? 0;
     } else if (dto.headers != null) {
       batch.columnCount = dto.headers.length;
+    }
+
+    // Persist structure lock whenever client tracks it (existing rows/cols stay locked)
+    const shouldPersistLock =
+      Boolean(existingLock) ||
+      dto.columnLocks != null ||
+      dto.rowLocks != null ||
+      dto.lockedRowCount != null;
+    if (
+      shouldPersistLock &&
+      (dto.headers != null ||
+        dto.columnLocks != null ||
+        dto.rowLocks != null ||
+        dto.lockedRowCount != null ||
+        dto.rows != null)
+    ) {
+      const headerLen = ((batch.headers as string[]) ?? []).length;
+      const rowLen = ((batch.rows as string[][]) ?? []).length;
+      let nextColLocks: boolean[];
+      if (dto.columnLocks?.length === headerLen) {
+        nextColLocks = [...dto.columnLocks];
+      } else if (existingLock) {
+        nextColLocks = prevColumnLocks.slice(0, headerLen);
+        while (nextColLocks.length < headerLen) nextColLocks.push(false);
+      } else {
+        nextColLocks = oldHeaders.map(() => true);
+        while (nextColLocks.length < headerLen) nextColLocks.push(false);
+      }
+      nextColLocks = nextColLocks.slice(0, headerLen);
+
+      let nextRowLocks: boolean[];
+      if (dto.rowLocks?.length === rowLen) {
+        nextRowLocks = [...dto.rowLocks];
+      } else if (existingLock) {
+        nextRowLocks = prevRowLocks.slice(0, rowLen);
+        while (nextRowLocks.length < rowLen) nextRowLocks.push(false);
+      } else {
+        nextRowLocks = oldRows.map(() => true);
+        while (nextRowLocks.length < rowLen) nextRowLocks.push(false);
+      }
+      nextRowLocks = nextRowLocks.slice(0, rowLen);
+
+      (batch as Batch & {
+        structureLock?: {
+          columnLocks: boolean[];
+          rowLocks: boolean[];
+          lockedRowCount: number;
+        };
+      }).structureLock = {
+        columnLocks: nextColLocks,
+        rowLocks: nextRowLocks,
+        lockedRowCount: nextRowLocks.filter(Boolean).length,
+      };
     }
 
     await batch.save();
@@ -1132,6 +1262,33 @@ export class BatchesService {
       throw new BadRequestException('Not a suppression campaign');
     }
     return batch;
+  }
+
+  /** Lightweight meta for cache keying — avoids loading 50k rows when keys are cached. */
+  async getSuppressionCampaignMeta(campaignId: string) {
+    if (!Types.ObjectId.isValid(campaignId)) {
+      throw new NotFoundException('Suppression campaign not found');
+    }
+    const batch = await this.model
+      .findById(campaignId)
+      .select('name headers rowCount batchKind updatedAt')
+      .lean()
+      .exec();
+    if (!batch) {
+      throw new NotFoundException('Suppression campaign not found');
+    }
+    const kind = batch.batchKind ?? 'standard';
+    if (!SUPPRESSION_BATCH_KINDS.includes(kind as (typeof SUPPRESSION_BATCH_KINDS)[number])) {
+      throw new BadRequestException('Not a suppression campaign');
+    }
+    const updatedAtRaw = (batch as unknown as { updatedAt?: Date | string }).updatedAt;
+    return {
+      id: String(batch._id),
+      name: String(batch.name ?? 'Suppression campaign'),
+      headers: (batch.headers as string[]) ?? [],
+      rowCount: Number(batch.rowCount ?? 0),
+      updatedAt: updatedAtRaw ? new Date(updatedAtRaw).getTime() : 0,
+    };
   }
 
   async updateSuppressionCampaignRows(
@@ -1472,6 +1629,23 @@ export class BatchesService {
       sourceBatchId: doc.sourceBatchId?.toString?.() ?? (doc.sourceBatchId as string | undefined),
       campaignChannel: doc.campaignChannel,
       batchKind: doc.batchKind ?? 'standard',
+      structureLock: doc.structureLock
+        ? {
+            columnLocks: [
+              ...(((doc.structureLock as { columnLocks?: boolean[] }).columnLocks ??
+                []) as boolean[]),
+            ],
+            rowLocks: [
+              ...(((doc.structureLock as { rowLocks?: boolean[] }).rowLocks ??
+                []) as boolean[]),
+            ],
+            lockedRowCount: Number(
+              (doc.structureLock as { lockedRowCount?: number }).lockedRowCount ??
+                ((doc.structureLock as { rowLocks?: boolean[] }).rowLocks ?? []).filter(Boolean)
+                  .length,
+            ),
+          }
+        : null,
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
       ...period,

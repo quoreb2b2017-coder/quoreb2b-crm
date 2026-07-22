@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { Loader2, X } from 'lucide-react';
+import axios from 'axios';
 import {
   masterDataService,
   type MasterDataSearchIndexStatus,
 } from '@/lib/api/master-data.service';
 import { useMasterDataImportStore } from '@/store/master-data-import.store';
+import { useAuthStore } from '@/store/auth.store';
 
 function formatEta(seconds: number | null | undefined, fallbackMinutes: number | null | undefined) {
   if (typeof seconds === 'number' && Number.isFinite(seconds) && seconds >= 0) {
@@ -27,6 +29,8 @@ export function MasterDataImportBanner() {
   const jobId = useMasterDataImportStore((s) => s.jobId);
   const progress = useMasterDataImportStore((s) => s.progress);
   const fileName = useMasterDataImportStore((s) => s.fileName);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const accessToken = useAuthStore((s) => s.accessToken);
   const reindexRunning = Boolean(searchStatus?.reindex?.running);
 
   useEffect(() => {
@@ -35,22 +39,46 @@ export function MasterDataImportBanner() {
   }, [uiPhase, jobId, reindexRunning]);
 
   useEffect(() => {
+    if (!isAuthenticated || !accessToken) {
+      setSearchStatus(null);
+      return;
+    }
+
     let cancelled = false;
+    let intervalId: number | undefined;
+
+    const stop = () => {
+      if (intervalId != null) {
+        window.clearInterval(intervalId);
+        intervalId = undefined;
+      }
+    };
+
     const poll = async () => {
+      const token = useAuthStore.getState().accessToken;
+      if (!token || !useAuthStore.getState().isAuthenticated) {
+        stop();
+        return;
+      }
       try {
         const status = await masterDataService.getSearchIndexStatus();
         if (!cancelled) setSearchStatus(status);
-      } catch {
-        /* non-blocking */
+      } catch (err) {
+        const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+        // Expired / logged-out — stop hammering the API
+        if (status === 401 || status === 403) {
+          stop();
+        }
       }
     };
+
     void poll();
-    const id = window.setInterval(poll, 4000);
+    intervalId = window.setInterval(poll, 4000);
     return () => {
       cancelled = true;
-      window.clearInterval(id);
+      stop();
     };
-  }, []);
+  }, [isAuthenticated, accessToken]);
 
   const showImport = Boolean(progress) && (uiPhase === 'active' || uiPhase === 'done');
   const showReindexOnly = !showImport && reindexRunning;

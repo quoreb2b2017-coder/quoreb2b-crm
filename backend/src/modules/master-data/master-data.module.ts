@@ -27,12 +27,14 @@ import { MasterDataSearchIndexService } from './master-data-search-index.service
 import { ActivityLogsModule } from '../activity-logs/activity-logs.module';
 import { BatchesModule } from '../batches/batches.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { MissingDataModule } from '../missing-data/missing-data.module';
 
 @Module({
   imports: [
     ActivityLogsModule,
     forwardRef(() => BatchesModule),
     NotificationsModule,
+    forwardRef(() => MissingDataModule),
     MongooseModule.forFeature([
       { name: MasterDataRecord.name, schema: MasterDataSchema },
       { name: MasterDataUploadRequest.name, schema: MasterDataUploadRequestSchema },

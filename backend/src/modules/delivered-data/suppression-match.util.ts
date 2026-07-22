@@ -53,8 +53,10 @@ export function extractRowCheckKey(
   row: string[],
   headers: string[],
   mode: SuppressionCheckMode,
+  columnIndex?: number,
 ): string {
-  const idx = findSuppressionColumnIndex(headers, mode);
+  const idx =
+    typeof columnIndex === 'number' ? columnIndex : findSuppressionColumnIndex(headers, mode);
   if (idx >= 0) {
     const cell = String(row[idx] ?? '').trim();
     if (cell) return normalizeCheckValue(cell, mode);
@@ -85,8 +87,9 @@ export function buildSuppressionKeySet(
   mode: SuppressionCheckMode,
 ): Set<string> {
   const keys = new Set<string>();
+  const colIdx = findSuppressionColumnIndex(headers, mode);
   for (const row of rows) {
-    const key = extractRowCheckKey(row, headers, mode);
+    const key = extractRowCheckKey(row, headers, mode, colIdx);
     if (key) keys.add(key);
   }
   return keys;

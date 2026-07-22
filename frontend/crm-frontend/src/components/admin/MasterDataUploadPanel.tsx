@@ -36,8 +36,8 @@ import { MasterDatabaseExplorer, type MasterBatchCreatePayload } from '@/compone
 
 import {
   alignRowToMasterHeaders,
-  mergeMasterDataHeaders,
   prepareMasterDataSheet,
+  resolveMasterDataHeaders,
 } from '@/lib/spreadsheet/master-data-format';
 
 const ACCEPT = '.csv,.xlsx,.xls';
@@ -104,7 +104,7 @@ function collectDuplicateRows(
   existing: SpreadsheetData | null,
   incoming: SpreadsheetData,
 ) {
-  const headers = mergeMasterDataHeaders(existing?.headers ?? [], incoming.headers);
+  const headers = resolveMasterDataHeaders();
   const seen = new Set(
     (existing?.rows ?? []).map((row) =>
       rowKey(alignRowToMasterHeaders(row, existing?.headers ?? [], headers)),
@@ -114,7 +114,7 @@ function collectDuplicateRows(
 
   for (const row of incoming.rows) {
     const aligned = alignRowToMasterHeaders(row, incoming.headers, headers);
-    if (!aligned.some((cell) => cell.length > 0)) continue;
+    if (!aligned.some((cell) => cell.length > 0 && cell !== '-')) continue;
     const key = rowKey(aligned);
     if (seen.has(key)) {
       duplicateRows.push(aligned);

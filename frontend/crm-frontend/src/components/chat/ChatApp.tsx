@@ -20,7 +20,9 @@ import { chatService } from '@/lib/api/chat.service';
 import { extractApiError } from '@/lib/api/errors';
 import { connectSocket } from '@/lib/socket/socket.client';
 import { useAuthStore } from '@/store/auth.store';
+import { useNotificationStore } from '@/store/notification.store';
 import type { ChatContact, ChatConversation, ChatMessage } from '@/types/chat';
+import { linkifyText } from '@/components/chat/linkifyText';
 import './chat.css';
 
 type SideTab = 'chats' | 'contacts';
@@ -76,6 +78,18 @@ function roleTone(roles: string[] = []) {
   if (roles.includes('admin')) return 'admin';
   if (roles.includes('db_admin')) return 'db';
   return 'employee';
+}
+
+function clearLocalChatNotifications(conversationId: string) {
+  const store = useNotificationStore.getState();
+  for (const n of store.notifications) {
+    if (
+      n.type === 'chat_message' &&
+      String(n.metadata?.conversationId ?? '') === conversationId
+    ) {
+      store.removeNotification(n.id);
+    }
+  }
 }
 
 function initials(name: string) {
@@ -200,6 +214,7 @@ export function ChatApp({ mode = 'mine' }: { mode?: 'mine' | 'oversight' }) {
       setMessages(rows);
       if (!observe) {
         await chatService.markRead(conversationId);
+        clearLocalChatNotifications(conversationId);
         setConversations((prev) =>
           prev.map((c) => (c.id === conversationId ? { ...c, unread: 0 } : c)),
         );
@@ -259,7 +274,9 @@ export function ChatApp({ mode = 'mine' }: { mode?: 'mine' | 'oversight' }) {
           return [...prev, payload.message];
         });
         if (!activeObserverRef.current) {
-          void chatService.markRead(payload.conversationId);
+          void chatService.markRead(payload.conversationId).then(() => {
+            clearLocalChatNotifications(payload.conversationId);
+          });
         }
       }
       void refreshConversations();
@@ -756,7 +773,7 @@ export function ChatApp({ mode = 'mine' }: { mode?: 'mine' | 'oversight' }) {
                     key={m.id}
                     className={`wa-chat__bubble${mine ? ' is-mine' : ' is-theirs'}${pending ? ' is-pending' : ''}`}
                   >
-                    {m.text ? <p>{m.text}</p> : null}
+                    {m.text ? <p>{linkifyText(m.text)}</p> : null}
                     {(m.attachments?.length ?? 0) > 0 && (
                       <div className="wa-chat__files">
                         {m.attachments!.map((att, idx) => (

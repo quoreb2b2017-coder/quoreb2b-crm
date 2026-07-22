@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Filter, ChevronDown, ArrowUpAZ, ArrowDownAZ, X, Plus, Rows3, Columns3 } from 'lucide-react';
+import { Filter, ChevronDown, ArrowUpAZ, ArrowDownAZ, X, Plus, Rows3, Columns3, Trash2, GripVertical } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
 import {
@@ -12,7 +12,7 @@ import {
   hasActiveFilters,
   type ColumnFilterState,
 } from '@/lib/spreadsheet/filter-rows';
-import { useEditableSpreadsheet } from '@/hooks/useEditableSpreadsheet';
+import { useEditableSpreadsheet, type StructureLockState } from '@/hooks/useEditableSpreadsheet';
 import { useExcelTableNavigation } from '@/hooks/useExcelTableNavigation';
 import { useCanExportSpreadsheet, useShowSpreadsheetRestrictionHint } from '@/hooks/useSpreadsheetCopyGuard';
 import { spreadsheetGuardProps } from '@/lib/spreadsheet/spreadsheet-access';
@@ -38,6 +38,38 @@ function colLetter(index: number): string {
 
 const emptyFilter = (): ColumnFilterState => ({ selected: null, sort: null, contains: null });
 
+function remapFiltersAfterColumnDelete(
+  filters: Record<number, ColumnFilterState>,
+  deletedCol: number,
+): Record<number, ColumnFilterState> {
+  const next: Record<number, ColumnFilterState> = {};
+  for (const [key, value] of Object.entries(filters)) {
+    const col = Number(key);
+    if (!Number.isFinite(col) || col === deletedCol) continue;
+    next[col > deletedCol ? col - 1 : col] = value;
+  }
+  return next;
+}
+
+function remapFiltersAfterColumnMove(
+  filters: Record<number, ColumnFilterState>,
+  from: number,
+  to: number,
+): Record<number, ColumnFilterState> {
+  if (from === to) return filters;
+  const next: Record<number, ColumnFilterState> = {};
+  for (const [key, value] of Object.entries(filters)) {
+    const col = Number(key);
+    if (!Number.isFinite(col)) continue;
+    let nextCol = col;
+    if (col === from) nextCol = to;
+    else if (from < to && col > from && col <= to) nextCol = col - 1;
+    else if (from > to && col >= to && col < from) nextCol = col + 1;
+    next[nextCol] = value;
+  }
+  return next;
+}
+
 type EditTarget =
   | { kind: 'cell'; sourceRow: number; col: number }
   | { kind: 'header'; col: number }
@@ -55,8 +87,15 @@ interface ExcelPreviewGridProps {
     hasActiveViewFilter: boolean;
   }) => void;
   /** When set, grid is editable (click/double-click cells, arrow keys, add row/column) */
-  onDataChange?: (data: { headers: string[]; rows: string[][] }) => void;
+  onDataChange?: (
+    data: { headers: string[]; rows: string[][] },
+    structureLock?: StructureLockState,
+  ) => void;
   editable?: boolean;
+  /** Shared campaign lock — recipients can only delete rows/columns they added */
+  structureLock?: StructureLockState | null;
+  /** If no structureLock yet, lock the loaded snapshot (shared recipient) */
+  protectSharedStructure?: boolean;
   /** Rows already used in a batch (master row index → batch names) */
   batchedByRow?: Record<string, Array<{ id: string; name: string }>>;
   /** When set, controls which rows appear (replaces hide-batched checkbox) */
@@ -109,6 +148,8 @@ interface ExcelPreviewGridProps {
    * instead of filtering only the current page. Return true if handled.
    */
   onColumnContainsApply?: (header: string, query: string) => boolean | void;
+  /** Fired when user scrolls near the bottom (infinite load) */
+  onScrollNearEnd?: () => void;
 }
 
 export function ExcelPreviewGrid({
@@ -118,6 +159,8 @@ export function ExcelPreviewGrid({
   onFilteredViewChange,
   onDataChange,
   editable: editableProp,
+  structureLock,
+  protectSharedStructure = false,
   batchedByRow,
   campaignRowFilter,
   hideBatchedRows = false,
@@ -143,6 +186,7 @@ export function ExcelPreviewGrid({
   dispositionSelectOptions,
   onDispositionSelect,
   onColumnContainsApply,
+  onScrollNearEnd,
 }: ExcelPreviewGridProps) {
   const editable = editableProp ?? Boolean(onDataChange);
   const canExport = useCanExportSpreadsheet();
@@ -151,6 +195,8 @@ export function ExcelPreviewGrid({
     { headers: data.headers ?? [], rows: data.rows ?? [] },
     editable ? onDataChange : undefined,
     dataResetKey,
+    structureLock,
+    protectSharedStructure,
   );
 
   const headers = editable ? (sheet.headers ?? []) : (data.headers ?? []);
@@ -162,6 +208,10 @@ export function ExcelPreviewGrid({
   const [search, setSearch] = useState('');
   const [editTarget, setEditTarget] = useState<EditTarget>(null);
   const [editDraft, setEditDraft] = useState('');
+  const [dragColIndex, setDragColIndex] = useState<number | null>(null);
+  const [dropColIndex, setDropColIndex] = useState<number | null>(null);
+  const [dragRowIndex, setDragRowIndex] = useState<number | null>(null);
+  const [dropRowIndex, setDropRowIndex] = useState<number | null>(null);
   const editTargetRef = useRef<EditTarget>(null);
   const editDraftRef = useRef('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -280,8 +330,8 @@ export function ExcelPreviewGrid({
     },
   });
 
-  const dragScrollEnabled = enableDragScroll ?? false;
-  const scrollRailsEnabled = showScrollRails ?? false;
+  const dragScrollEnabled = enableDragScroll ?? !editable;
+  const scrollRailsEnabled = showScrollRails ?? Boolean(fillHeight);
   useDragToScroll(containerRef, dragScrollEnabled);
 
   const VIRTUAL_ROW_THRESHOLD = 40;
@@ -402,6 +452,88 @@ export function ExcelPreviewGrid({
     setSearch('');
   };
 
+  const handleDeleteColumn = (colIndex: number) => {
+    if (!editable) return;
+    if (!sheet.canDeleteColumn(colIndex)) {
+      window.alert('Existing columns cannot be deleted. Only columns you add can be deleted.');
+      return;
+    }
+    if (headers.length <= 1) {
+      window.alert('Keep at least one column.');
+      return;
+    }
+    const label = headers[colIndex] || `Column ${colIndex + 1}`;
+    if (!window.confirm(`Delete column "${label}"? This cannot be undone.`)) return;
+    if (editTargetRef.current) {
+      setEditTarget(null);
+      setEditDraft('');
+    }
+    setOpenFilterCol(null);
+    sheet.deleteColumn(colIndex);
+    setFilters((prev) => remapFiltersAfterColumnDelete(prev, colIndex));
+    let nextCol = activeCell.col;
+    if (activeCell.col === colIndex) nextCol = Math.max(0, colIndex - 1);
+    else if (activeCell.col > colIndex) nextCol = activeCell.col - 1;
+    setCell({
+      row: activeCell.row,
+      col: Math.max(0, Math.min(Math.max(headers.length - 2, 0), nextCol)),
+    });
+  };
+
+  const handleMoveColumn = (fromIndex: number, toIndex: number) => {
+    if (!editable || fromIndex === toIndex) return;
+    if (!sheet.canDragColumn(fromIndex)) {
+      window.alert('Only newly added columns can be moved.');
+      return;
+    }
+    if (editTargetRef.current) {
+      setEditTarget(null);
+      setEditDraft('');
+    }
+    setOpenFilterCol(null);
+    sheet.moveColumn(fromIndex, toIndex);
+    setFilters((prev) => remapFiltersAfterColumnMove(prev, fromIndex, toIndex));
+    let nextCol = activeCell.col;
+    if (activeCell.col === fromIndex) nextCol = toIndex;
+    else if (fromIndex < toIndex && activeCell.col > fromIndex && activeCell.col <= toIndex) {
+      nextCol = activeCell.col - 1;
+    } else if (fromIndex > toIndex && activeCell.col >= toIndex && activeCell.col < fromIndex) {
+      nextCol = activeCell.col + 1;
+    }
+    setCell({ row: activeCell.row, col: nextCol });
+  };
+
+  const handleMoveRow = (fromSource: number, toSource: number) => {
+    if (!editable || fromSource === toSource) return;
+    if (!sheet.canDragRow(fromSource)) {
+      window.alert('Only newly added rows can be moved.');
+      return;
+    }
+    if (editTargetRef.current) {
+      setEditTarget(null);
+      setEditDraft('');
+    }
+    sheet.moveRow(fromSource, toSource);
+  };
+
+  const handleDeleteRow = (sourceRowIndex: number) => {
+    if (!editable) return;
+    if (!sheet.canDeleteRow(sourceRowIndex)) {
+      window.alert('Existing rows cannot be deleted. Only rows you add can be deleted.');
+      return;
+    }
+    if (!window.confirm('Delete this row? This cannot be undone.')) return;
+    if (editTargetRef.current) {
+      setEditTarget(null);
+      setEditDraft('');
+    }
+    sheet.deleteRow(sourceRowIndex);
+    setCell({
+      row: Math.max(0, activeCell.row - 1),
+      col: activeCell.col,
+    });
+  };
+
   const isColumnFiltered = (col: number) => {
     const f = filters[col];
     if (!f) return false;
@@ -418,6 +550,18 @@ export function ExcelPreviewGrid({
     el.scrollTop = 0;
     el.scrollLeft = 0;
   }, [containerRef]);
+
+  useEffect(() => {
+    if (!onScrollNearEnd || !fillHeight) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const raf = requestAnimationFrame(() => {
+      if (el.scrollHeight <= el.clientHeight + 24) {
+        onScrollNearEnd();
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [sourceRows.length, onScrollNearEnd, fillHeight, containerRef]);
 
   const openFilterMenu = (colIndex: number, el: HTMLElement) => {
     const rect = el.getBoundingClientRect();
@@ -587,7 +731,7 @@ export function ExcelPreviewGrid({
       {...spreadsheetGuardProps}
       className={cn(
         'flex flex-col bg-white',
-        fillHeight ? 'h-full min-h-0 border-0' : 'border border-[#b4b4b4]',
+        fillHeight ? 'flex min-h-0 flex-1 flex-col border-0' : 'border border-[#b4b4b4]',
         !canExport && 'select-none',
       )}
     >
@@ -720,7 +864,7 @@ export function ExcelPreviewGrid({
                 <span className="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1.5 py-px font-medium text-slate-500">
                   ↑ ↓ ← →
                 </span>
-                Navigate · double-click to edit · auto-save
+                Edit cells · drag/delete only newly added rows & columns · auto-save
               </span>
             )}
             {showRestrictionHint && (
@@ -733,15 +877,14 @@ export function ExcelPreviewGrid({
       <div
         ref={containerRef}
         className={cn(
-          'xl-scroll overflow-auto scroll-smooth',
+          'xl-scroll overflow-auto overscroll-contain',
           dragScrollEnabled && 'xl-drag-scroll',
           fillHeight ? 'min-h-0 flex-1' : '',
         )}
         style={
           fillHeight
-            ? { scrollBehavior: 'smooth' }
+            ? undefined
             : {
-                scrollBehavior: 'smooth',
                 maxHeight: 'calc(100vh - 120px)',
                 minHeight: 360,
               }
@@ -787,6 +930,13 @@ export function ExcelPreviewGrid({
           setCell({ row, col });
           requestAnimationFrame(() => focusCell({ row, col }));
         }}
+        onScroll={(e) => {
+          if (!onScrollNearEnd) return;
+          const el = e.currentTarget;
+          if (el.scrollHeight - el.scrollTop - el.clientHeight < 240) {
+            onScrollNearEnd();
+          }
+        }}
       >
         <table className="w-max min-w-full border-collapse text-[13px]">
           <thead className="sticky top-0 z-20">
@@ -822,15 +972,66 @@ export function ExcelPreviewGrid({
               {headers.map((header, colIndex) => {
                 const editingHeader =
                   editTarget?.kind === 'header' && editTarget.col === colIndex;
+                const colDraggable = editable && !editingHeader && sheet.canDragColumn(colIndex);
+                const isDropTarget =
+                  dropColIndex === colIndex &&
+                  dragColIndex !== null &&
+                  dragColIndex !== colIndex;
                 return (
                   <th
                     key={`h-${colIndex}`}
+                    data-no-drag-scroll
+                    draggable={colDraggable}
+                    onDragStart={(e) => {
+                      if (!colDraggable) {
+                        e.preventDefault();
+                        return;
+                      }
+                      setDragColIndex(colIndex);
+                      e.dataTransfer.effectAllowed = 'move';
+                      e.dataTransfer.setData('text/plain', `col:${colIndex}`);
+                    }}
+                    onDragOver={(e) => {
+                      if (!editable || dragColIndex == null) return;
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                      if (dropColIndex !== colIndex) setDropColIndex(colIndex);
+                    }}
+                    onDragLeave={() => {
+                      if (dropColIndex === colIndex) setDropColIndex(null);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const raw = e.dataTransfer.getData('text/plain');
+                      const from =
+                        dragColIndex ??
+                        Number(raw.startsWith('col:') ? raw.slice(4) : raw);
+                      setDragColIndex(null);
+                      setDropColIndex(null);
+                      if (!Number.isFinite(from)) return;
+                      handleMoveColumn(from, colIndex);
+                    }}
+                    onDragEnd={() => {
+                      setDragColIndex(null);
+                      setDropColIndex(null);
+                    }}
                     className={cn(
                       'relative min-w-[140px] border border-[#c6c6c6] bg-[#f2f2f2] p-0 font-semibold text-slate-800',
                       isColumnFiltered(colIndex) && 'bg-[#dce6f1]',
+                      dragColIndex === colIndex && 'opacity-50',
+                      isDropTarget && 'ring-2 ring-inset ring-[#2e7ad1]',
                     )}
                   >
                     <div className="flex min-h-[28px] items-stretch">
+                      {colDraggable && (
+                        <span
+                          className="flex w-5 shrink-0 cursor-grab items-center justify-center text-slate-400 active:cursor-grabbing"
+                          title="Drag to move this new column (data moves with it)"
+                          aria-hidden
+                        >
+                          <GripVertical className="h-3.5 w-3.5" />
+                        </span>
+                      )}
                       {editingHeader ? (
                         <input
                           ref={inputRef}
@@ -858,13 +1059,41 @@ export function ExcelPreviewGrid({
                             'flex-1 cursor-default truncate border-r border-[#d8d8d8] px-2 py-1.5 text-xs leading-tight',
                             editable && 'hover:bg-[#e7f3ff]',
                           )}
-                          title={editable ? 'Double-click to rename column' : header}
+                          title={
+                            colDraggable
+                              ? 'New column — drag to reorder · double-click to rename'
+                              : editable
+                                ? 'Existing column — double-click to rename (cannot delete/move)'
+                                : header
+                          }
                         >
                           {header}
                         </span>
                       )}
+                      {editable && sheet.canDeleteColumn(colIndex) && (
+                        <button
+                          type="button"
+                          data-no-drag-scroll
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteColumn(colIndex);
+                          }}
+                          className="flex w-6 shrink-0 items-center justify-center text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                          title="Delete this new column"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      )}
+                      {editable && !sheet.canDeleteColumn(colIndex) && (
+                        <span
+                          className="flex w-6 shrink-0 items-center justify-center text-slate-300"
+                          title="Existing column — cannot delete"
+                          aria-hidden
+                        />
+                      )}
                       <button
                         type="button"
+                        data-no-drag-scroll
                         onClick={(e) => {
                           e.stopPropagation();
                           openFilterMenu(colIndex, e.currentTarget);
@@ -971,15 +1200,106 @@ export function ExcelPreviewGrid({
                     }
                   >
                     <td
+                      data-no-drag-scroll
+                      draggable={
+                        Boolean(
+                          editable && sourceRow != null && sheet.canDragRow(sourceRow),
+                        )
+                      }
+                      onDragStart={(e) => {
+                        if (
+                          !editable ||
+                          sourceRow == null ||
+                          !sheet.canDragRow(sourceRow)
+                        ) {
+                          e.preventDefault();
+                          return;
+                        }
+                        setDragRowIndex(sourceRow);
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', `row:${sourceRow}`);
+                      }}
+                      onDragOver={(e) => {
+                        if (!editable || dragRowIndex == null || sourceRow == null) return;
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        if (dropRowIndex !== sourceRow) setDropRowIndex(sourceRow);
+                      }}
+                      onDragLeave={() => {
+                        if (sourceRow != null && dropRowIndex === sourceRow) {
+                          setDropRowIndex(null);
+                        }
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (sourceRow == null) return;
+                        const raw = e.dataTransfer.getData('text/plain');
+                        const from =
+                          dragRowIndex ??
+                          Number(raw.startsWith('row:') ? raw.slice(4) : NaN);
+                        setDragRowIndex(null);
+                        setDropRowIndex(null);
+                        if (!Number.isFinite(from)) return;
+                        handleMoveRow(from, sourceRow);
+                      }}
+                      onDragEnd={() => {
+                        setDragRowIndex(null);
+                        setDropRowIndex(null);
+                      }}
                       className={cn(
-                        'sticky left-0 z-10 w-10 border border-[#e0e0e0] text-center text-[11px]',
+                        'group/rownum sticky left-0 z-10 w-10 border border-[#e0e0e0] text-center text-[11px]',
                         isDuplicate && 'bg-red-200 text-red-900',
                         !isDuplicate && isMarked && 'bg-[#c6e0b4] text-[#2e7ad1] font-semibold',
                         !isDuplicate && !isMarked && inBatch && 'bg-[#ffefb8] text-amber-900',
                         !isDuplicate && !isMarked && !inBatch && 'bg-[#f2f2f2] text-slate-500',
+                        dragRowIndex != null &&
+                          sourceRow === dragRowIndex &&
+                          'opacity-50',
+                        dropRowIndex != null &&
+                          sourceRow === dropRowIndex &&
+                          dragRowIndex !== sourceRow &&
+                          'ring-2 ring-inset ring-[#2e7ad1]',
+                        editable &&
+                          sourceRow != null &&
+                          sheet.canDragRow(sourceRow) &&
+                          'cursor-grab active:cursor-grabbing',
                       )}
+                      title={
+                        editable && sourceRow != null && sheet.canDragRow(sourceRow)
+                          ? 'New row — drag to move (data moves with it) · hover to delete'
+                          : editable && sourceRow != null
+                            ? 'Existing row — cannot delete or move'
+                            : undefined
+                      }
                     >
-                      <span className="block leading-tight">{displayRowIndex + 1}</span>
+                      <span
+                        className={cn(
+                          'flex flex-col items-center justify-center leading-tight',
+                          editable &&
+                            sourceRow != null &&
+                            sheet.canDeleteRow(sourceRow) &&
+                            'group-hover/rownum:hidden',
+                        )}
+                      >
+                        {editable && sourceRow != null && sheet.canDragRow(sourceRow) && (
+                          <GripVertical className="h-3 w-3 text-slate-400" />
+                        )}
+                        <span>{displayRowIndex + 1}</span>
+                      </span>
+                      {editable && sourceRow != null && sheet.canDeleteRow(sourceRow) && (
+                        <button
+                          type="button"
+                          data-no-drag-scroll
+                          className="mx-auto hidden h-full w-full items-center justify-center text-red-500 hover:bg-red-50 group-hover/rownum:flex"
+                          title="Delete this new row"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteRow(sourceRow);
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      )}
                       {isDuplicate && (
                         <span className="block text-[8px] font-bold uppercase text-red-800">Dup</span>
                       )}

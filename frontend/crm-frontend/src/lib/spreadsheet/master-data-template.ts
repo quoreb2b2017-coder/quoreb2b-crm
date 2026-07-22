@@ -1,5 +1,5 @@
 export const MASTER_DATA_TEMPLATE_PATH = '/templates/master-data-template.xlsx';
-export const MASTER_DATA_TEMPLATE_FILENAME = 'master-data-template.xlsx';
+export const MASTER_DATA_TEMPLATE_FILENAME = 'RPF.xlsx';
 
 /** Download the official QuoreB2B master data template (static XLSX). */
 export function downloadMasterDataTemplate(): void {

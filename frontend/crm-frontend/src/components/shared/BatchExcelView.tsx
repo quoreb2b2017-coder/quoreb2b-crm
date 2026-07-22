@@ -19,6 +19,7 @@ import { handleSuppressionCheckComplete } from '@/lib/master-data/handle-suppres
 import { EMPLOYEE_DISPOSITION_OPTIONS, isCallbackDisposition } from '@/lib/disposition/disposition-values';
 import { CallbackReminderSetupModal } from '@/components/disposition/CallbackReminderSetupModal';
 import { dispositionService } from '@/lib/api/disposition.service';
+import type { StructureLockState } from '@/hooks/useEditableSpreadsheet';
 
 export interface BatchExcelViewProps {
   batchId?: string;
@@ -29,8 +30,16 @@ export interface BatchExcelViewProps {
   createdByName?: string;
   createdByEmail?: string;
   data: SpreadsheetData | null;
-  /** Edit & save this batch (owner only) */
+  /** Edit & save this batch (owner or shared employee/db-admin) */
   editable?: boolean;
+  /**
+   * Lock rows/columns that already exist on load.
+   * Only newly added rows/columns can be deleted.
+   * Defaults to true when editable.
+   */
+  protectSharedStructure?: boolean;
+  structureLock?: StructureLockState | null;
+  onStructureLockChange?: (lock: StructureLockState) => void;
   /** Create a new batch from filtered rows (db admin: admin-shared batch only) */
   allowCreateSubBatch?: boolean;
   /** Admin batch id when creating sub-batch */
@@ -58,6 +67,9 @@ export function BatchExcelView({
   createdByEmail,
   data,
   editable = false,
+  protectSharedStructure,
+  structureLock = null,
+  onStructureLockChange,
   allowCreateSubBatch = false,
   sourceBatchId,
   onDataChange,
@@ -70,6 +82,8 @@ export function BatchExcelView({
   enableDispositionDropdown = false,
 }: BatchExcelViewProps) {
   const router = useRouter();
+  /** Existing rows/columns stay; only newly added ones are deletable */
+  const lockExisting = protectSharedStructure ?? editable;
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [batchModal, setBatchModal] = useState<{
@@ -90,6 +104,21 @@ export function BatchExcelView({
   } | null>(null);
   const sharedBy = createdByName ?? createdByEmail;
   const { trackBatchOpen, trackLeadTouch } = useLeadActivityTracker(batchId, name);
+  const structureLockRef = useRef<StructureLockState | null>(structureLock);
+
+  useEffect(() => {
+    if (structureLock) {
+      structureLockRef.current = structureLock;
+      return;
+    }
+    if (lockExisting && data?.headers) {
+      structureLockRef.current = {
+        columnLocks: data.headers.map(() => true),
+        rowLocks: data.rows.map(() => true),
+        lockedRowCount: data.rows.length,
+      };
+    }
+  }, [structureLock, lockExisting, batchId]);
 
   useEffect(() => {
     if (editable && batchId) trackBatchOpen();
@@ -106,11 +135,23 @@ export function BatchExcelView({
     async () => {
       const payload = dataRef.current;
       if (!batchId || !payload) return;
+      const lock = structureLockRef.current;
       const updated = await batchesService.update(batchId, {
         headers: payload.headers,
         rows: payload.rows,
+        ...(lock
+          ? {
+              columnLocks: lock.columnLocks,
+              rowLocks: lock.rowLocks ?? [],
+              lockedRowCount: lock.lockedRowCount,
+            }
+          : {}),
       });
       setDirty(false);
+      if (updated.structureLock) {
+        structureLockRef.current = updated.structureLock;
+        onStructureLockChange?.(updated.structureLock);
+      }
       onDataChange?.({
         fileName: updated.sourceFileName ?? payload.fileName,
         sheetName: updated.name,
@@ -122,9 +163,13 @@ export function BatchExcelView({
   );
 
   const handleDataChange = useCallback(
-    (next: { headers: string[]; rows: string[][] }) => {
+    (next: { headers: string[]; rows: string[][] }, lock?: StructureLockState) => {
       setDirty(true);
       markAutoSave();
+      if (lock) {
+        structureLockRef.current = lock;
+        onStructureLockChange?.(lock);
+      }
       onDataChange?.({
         fileName: data?.fileName ?? name,
         sheetName: data?.sheetName ?? name,
@@ -132,18 +177,30 @@ export function BatchExcelView({
         rows: next.rows,
       });
     },
-    [data, name, onDataChange, markAutoSave],
+    [data, name, onDataChange, markAutoSave, onStructureLockChange],
   );
 
   const saveBatch = async () => {
     if (!batchId || !data) return;
     setSaving(true);
     try {
+      const lock = structureLockRef.current;
       const updated = await batchesService.update(batchId, {
         headers: data.headers,
         rows: data.rows,
+        ...(lock
+          ? {
+              columnLocks: lock.columnLocks,
+              rowLocks: lock.rowLocks ?? [],
+              lockedRowCount: lock.lockedRowCount,
+            }
+          : {}),
       });
       setDirty(false);
+      if (updated.structureLock) {
+        structureLockRef.current = updated.structureLock;
+        onStructureLockChange?.(updated.structureLock);
+      }
       onDataChange?.({
         fileName: updated.sourceFileName ?? data.fileName,
         sheetName: updated.name,
@@ -285,6 +342,8 @@ export function BatchExcelView({
             dataResetKey={batchId ? `batch-${batchId}` : undefined}
             fillHeight
             editable={editable}
+            structureLock={structureLock}
+            protectSharedStructure={lockExisting}
             onDataChange={editable ? handleDataChange : undefined}
             onCreateBatch={allowCreateSubBatch ? openCreateModal : undefined}
             onLeadCellFocus={

@@ -11,7 +11,8 @@ export type NotificationType =
   | 'data_uploaded'
   | 'system_alert'
   | 'activity_alert'
-  | 'bulk_email_verification';
+  | 'bulk_email_verification'
+  | 'chat_message';
 
 export interface Notification {
   id: string;
@@ -75,6 +76,11 @@ export const NOTIFICATION_COLORS: Record<NotificationType, { bg: string; border:
     bg: 'bg-emerald-50',
     border: 'border-emerald-200',
     icon: '✉',
+  },
+  chat_message: {
+    bg: 'bg-sky-50',
+    border: 'border-sky-200',
+    icon: '💬',
   },
 };
 

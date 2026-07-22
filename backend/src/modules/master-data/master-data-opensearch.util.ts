@@ -1,4 +1,5 @@
 import type { MasterDataFilterInput } from './master-data-search.util';
+import { isSizeCategoryHeader } from './master-data-search.util';
 import {
   hasAdvancedMasterFilters,
   hasMasterDataSearchCriteria,
@@ -195,6 +196,36 @@ function buildColumnClause(
   };
 }
 
+function buildColumnValuesClause(
+  header: string,
+  values: string[],
+): Record<string, unknown> {
+  const trimmed = values.map((v) => v.trim()).filter(Boolean);
+  if (!trimmed.length) return { match_all: {} };
+  const exactOnly = isSizeCategoryHeader(header);
+  const should = trimmed.map((v) =>
+    exactOnly ? buildColumnClause(header, v, 'equals') : buildColumnClause(header, v, 'contains'),
+  );
+  return should.length === 1 ? should[0]! : { bool: { should, minimum_should_match: 1 } };
+}
+
+function buildColumnValuesOrClause(
+  headers: string[],
+  values: string[],
+): Record<string, unknown> {
+  const trimmed = values.map((v) => v.trim()).filter(Boolean);
+  if (!trimmed.length || !headers.length) return { match_all: {} };
+  const should = headers.flatMap((header) => {
+    if (!header?.trim()) return [];
+    const exactOnly = isSizeCategoryHeader(header);
+    return trimmed.map((v) =>
+      exactOnly ? buildColumnClause(header, v, 'equals') : buildColumnClause(header, v, 'contains'),
+    );
+  });
+  if (!should.length) return { match_all: {} };
+  return { bool: { should, minimum_should_match: 1 } };
+}
+
 function buildGlobalQueryDsl(headers: string[], query: string): Record<string, unknown> {
   const q = query.trim();
   if (!q) return { match_all: {} };
@@ -204,13 +235,32 @@ function buildGlobalQueryDsl(headers: string[], query: string): Record<string, u
     return buildEmailDslClause(headers, q, looksLikeEmail(q) ? 'equals' : 'contains');
   }
 
+  const wildcard = q.length >= 2
+    ? {
+        wildcard: {
+          searchText: {
+            value: `*${escapeWildcard(q.toLowerCase())}*`,
+            case_insensitive: true,
+          },
+        },
+      }
+    : null;
+
   return {
-    multi_match: {
-      query: q,
-      type: 'best_fields',
-      fields: ['searchText^2'],
-      operator: 'and',
-      fuzziness: 'AUTO',
+    bool: {
+      should: [
+        {
+          multi_match: {
+            query: q,
+            type: 'best_fields',
+            fields: ['searchText^2'],
+            operator: 'or',
+            fuzziness: 'AUTO',
+          },
+        },
+        ...(wildcard ? [wildcard] : []),
+      ],
+      minimum_should_match: 1,
     },
   };
 }
@@ -220,6 +270,10 @@ function buildGlobalQuerySql(headers: string[], query: string): string {
   if (!q) return '1 = 1';
   if (q.includes('@') || looksLikeEmail(q)) {
     return buildEmailSqlClause(headers, q, looksLikeEmail(q) ? 'equals' : 'contains');
+  }
+  const safe = sanitizeSqlLikeInput(q);
+  if (safe.length >= 2) {
+    return `(MATCH(searchText, ${sqlQuote(q)}) OR searchText LIKE ${sqlQuote(`%${safe}%`)})`;
   }
   return `MATCH(searchText, ${sqlQuote(q)})`;
 }
@@ -290,26 +344,12 @@ export function buildMasterDataOpenSearchQuery(
 
   for (const f of input.columnValueFilters ?? []) {
     if (!f.header?.trim() || !f.values?.length) continue;
-    const field = flatFieldName(f.header);
-    const values = f.values.map((v) => v.trim()).filter(Boolean);
-    if (!values.length) continue;
-    filter.push({ terms: { [field]: values } });
+    filter.push(buildColumnValuesClause(f.header, f.values));
   }
 
   for (const f of input.columnValueOrFilters ?? []) {
     if (!f.headers?.length || !f.values?.length) continue;
-    const values = f.values.map((v) => v.trim()).filter(Boolean);
-    if (!values.length) continue;
-    const should = f.headers
-      .map((header) => {
-        if (!header?.trim()) return null;
-        const field = flatFieldName(header);
-        return { terms: { [field]: values } };
-      })
-      .filter(Boolean);
-    if (should.length) {
-      filter.push({ bool: { should, minimum_should_match: 1 } });
-    }
+    filter.push(buildColumnValuesOrClause(f.headers, f.values));
   }
 
   for (const f of input.columnDateRangeFilters ?? []) {
@@ -426,11 +466,18 @@ export function buildMasterDataSqlWhere(
     const field = flatFieldName(f.header);
     const values = f.values.map((v) => v.trim()).filter(Boolean);
     if (!values.length) continue;
-    if (values.length === 1) {
-      parts.push(sqlCiEquals(field, values[0]));
+    const exactOnly = isSizeCategoryHeader(f.header);
+    if (exactOnly) {
+      if (values.length === 1) {
+        parts.push(sqlCiEquals(field, values[0]));
+      } else {
+        parts.push(`(${values.map((v) => sqlCiEquals(field, v)).join(' OR ')})`);
+      }
+    } else if (values.length === 1) {
+      parts.push(sqlCiLike(field, `%${sanitizeSqlLikeInput(values[0])}%`));
     } else {
       parts.push(
-        `(${values.map((v) => sqlCiEquals(field, v)).join(' OR ')})`,
+        `(${values.map((v) => sqlCiLike(field, `%${sanitizeSqlLikeInput(v)}%`)).join(' OR ')})`,
       );
     }
   }
@@ -443,8 +490,15 @@ export function buildMasterDataSqlWhere(
       .map((header) => {
         if (!header?.trim()) return null;
         const field = flatFieldName(header);
-        if (values.length === 1) return sqlCiEquals(field, values[0]);
-        return `(${values.map((v) => sqlCiEquals(field, v)).join(' OR ')})`;
+        const exactOnly = isSizeCategoryHeader(header);
+        if (exactOnly) {
+          if (values.length === 1) return sqlCiEquals(field, values[0]);
+          return `(${values.map((v) => sqlCiEquals(field, v)).join(' OR ')})`;
+        }
+        if (values.length === 1) {
+          return sqlCiLike(field, `%${sanitizeSqlLikeInput(values[0])}%`);
+        }
+        return `(${values.map((v) => sqlCiLike(field, `%${sanitizeSqlLikeInput(v)}%`)).join(' OR ')})`;
       })
       .filter(Boolean);
     if (orParts.length) {

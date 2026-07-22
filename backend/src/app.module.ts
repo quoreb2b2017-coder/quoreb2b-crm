@@ -44,6 +44,7 @@ import { PersonalNotesModule } from './modules/personal-notes/personal-notes.mod
 import { BreakPunchesModule } from './modules/break-punches/break-punches.module';
 import { QcModule } from './modules/qc/qc.module';
 import { DispositionModule } from './modules/disposition/disposition.module';
+import { MissingDataModule } from './modules/missing-data/missing-data.module';
 import { CsvImportModule } from './modules/csv-import/csv-import.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { PayrollModule } from './modules/payroll/payroll.module';
@@ -118,6 +119,7 @@ export class AppModule {
         BreakPunchesModule,
         QcModule,
         DispositionModule,
+        MissingDataModule,
         BulkEmailVerificationModule.register(),
         CsvImportModule.register(),
         EventsModule,

@@ -90,6 +90,11 @@ export default function DbAdminBatchViewPage() {
       sourceBatchId={fromAdmin ? id : undefined}
       allowCreateSubBatch={fromAdmin}
       editable={canEdit}
+      protectSharedStructure={canEdit}
+      structureLock={batch?.structureLock ?? null}
+      onStructureLockChange={(lock) =>
+        setBatch((prev) => (prev ? { ...prev, structureLock: lock } : prev))
+      }
       name={batch?.name ?? 'Campaign'}
       rowCount={data?.rows.length ?? batch?.rowCount}
       columnCount={data?.headers.length ?? batch?.columnCount}

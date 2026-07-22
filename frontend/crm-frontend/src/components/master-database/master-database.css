@@ -708,10 +708,11 @@
 
 .mdb-xl-grid {
   flex: 1;
-  min-height: 420px;
+  min-height: 0;
   max-height: calc(100vh - 260px);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   border-top: 1px solid #e2e8f0;
 }
 

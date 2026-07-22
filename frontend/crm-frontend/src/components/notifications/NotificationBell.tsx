@@ -9,6 +9,7 @@ import {
   Info,
   AlertCircle,
   AlertTriangle,
+  MessageCircle,
   Trash2,
   X,
   Clock,
@@ -34,6 +35,7 @@ const NOTIFICATION_COLORS: Record<NotificationType, { icon: LucideIcon; bg: stri
   system_alert: { icon: AlertTriangle, bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-l-rose-500' },
   activity_alert: { icon: Info, bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-l-amber-500' },
   bulk_email_verification: { icon: CheckCircle2, bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-l-teal-500' },
+  chat_message: { icon: MessageCircle, bg: 'bg-sky-50', text: 'text-sky-700', border: 'border-l-sky-500' },
 };
 
 const DEFAULT_COLORS = NOTIFICATION_COLORS.info;

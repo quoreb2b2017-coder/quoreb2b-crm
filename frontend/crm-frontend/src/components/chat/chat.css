@@ -519,6 +519,17 @@
   color: var(--wa-text);
 }
 
+.wa-chat__link {
+  color: #027eb5;
+  text-decoration: underline;
+  word-break: break-all;
+  cursor: pointer;
+}
+
+.wa-chat__bubble.is-mine .wa-chat__link {
+  color: #056162;
+}
+
 .wa-chat__meta {
   display: flex;
   align-items: center;

@@ -64,6 +64,11 @@ export default function AdminBatchViewPage() {
     <BatchExcelView
       batchId={id}
       editable
+      protectSharedStructure
+      structureLock={batch?.structureLock ?? null}
+      onStructureLockChange={(lock) =>
+        setBatch((prev) => (prev ? { ...prev, structureLock: lock } : prev))
+      }
       name={batch?.name ?? 'Campaign'}
       rowCount={data?.rows.length ?? batch?.rowCount}
       columnCount={data?.headers.length ?? batch?.columnCount}

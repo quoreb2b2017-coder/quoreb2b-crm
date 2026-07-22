@@ -81,7 +81,7 @@ function rowMatchesDateRangeFilter(
   return true;
 }
 
-function isSizeCategoryHeader(header: string): boolean {
+export function isSizeCategoryHeader(header: string): boolean {
   return /employee size category|revenue size category/i.test(header.trim());
 }
 

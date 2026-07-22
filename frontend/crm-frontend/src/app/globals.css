@@ -314,7 +314,9 @@ html {
   .xl-scroll {
     overflow-x: auto;
     overflow-y: auto;
-    scroll-behavior: smooth;
+    scroll-behavior: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
     scrollbar-width: thin;
     scrollbar-color: #2e7ad155 #f3f3f3;
   }

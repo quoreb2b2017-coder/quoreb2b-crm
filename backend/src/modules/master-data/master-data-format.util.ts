@@ -2,7 +2,6 @@ import { MASTER_DATA_TEMPLATE_HEADERS } from './master-data-template.constants';
 import {
   alignRowWithIndex,
   buildHeaderIndexMap,
-  mergeHeaders,
 } from './master-data-merge.util';
 
 /** Empty / missing master-data cells are stored as a dash. */
@@ -22,17 +21,15 @@ export function normalizeMasterDataHeaders(headers: string[]): string[] {
     .filter((h) => h.length > 0);
 }
 
-/** Template order first; extra columns from upload are appended at the end. */
+/**
+ * Always use the official RPF template column order.
+ * Extra upload columns are dropped; missing cells become "-" via formatMasterDataCell.
+ */
 export function resolveMasterDataHeaders(
-  existingHeaders: string[] | null | undefined,
-  incomingHeaders: string[],
+  _existingHeaders?: string[] | null,
+  _incomingHeaders?: string[],
 ): string[] {
-  const incoming = normalizeMasterDataHeaders(incomingHeaders);
-  const base =
-    existingHeaders?.length && normalizeMasterDataHeaders(existingHeaders).length
-      ? normalizeMasterDataHeaders(existingHeaders)
-      : [...MASTER_DATA_TEMPLATE_HEADERS];
-  return mergeHeaders(base, incoming);
+  return [...MASTER_DATA_TEMPLATE_HEADERS];
 }
 
 export function rowHasSourceData(row: string[], sourceHeaders: string[]): boolean {
@@ -62,12 +59,9 @@ export function normalizeMasterDataSheet(
 export function prepareMasterDataIncoming(
   sourceHeaders: string[],
   sourceRows: string[][],
-  options: { existingHeaders?: string[] | null; replace: boolean },
+  _options?: { existingHeaders?: string[] | null; replace?: boolean },
 ): { headers: string[]; rows: string[][] } {
-  const targetHeaders =
-    options.replace || !options.existingHeaders?.length
-      ? resolveMasterDataHeaders(null, sourceHeaders)
-      : resolveMasterDataHeaders(options.existingHeaders, sourceHeaders);
+  const targetHeaders = resolveMasterDataHeaders();
   const rows = normalizeMasterDataSheet(sourceHeaders, sourceRows, targetHeaders);
   return { headers: targetHeaders, rows };
 }

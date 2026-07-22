@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsMongoId,
@@ -84,4 +85,22 @@ export class UpdateBatchDto {
   @IsString()
   @MaxLength(64)
   campaignChannel?: string;
+
+  /** Parallel to headers — true = existing/locked column */
+  @IsOptional()
+  @IsArray()
+  @IsBoolean({ each: true })
+  columnLocks?: boolean[];
+
+  /** Parallel to rows — true = existing/locked row */
+  @IsOptional()
+  @IsArray()
+  @IsBoolean({ each: true })
+  rowLocks?: boolean[];
+
+  /** First N / count of locked rows (compat) */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  lockedRowCount?: number;
 }

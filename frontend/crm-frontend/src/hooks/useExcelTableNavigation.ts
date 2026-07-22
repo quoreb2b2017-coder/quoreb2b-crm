@@ -66,7 +66,7 @@ export function useExcelTableNavigation({
 
     if (nextLeft === root.scrollLeft && nextTop === root.scrollTop) return;
 
-    root.scrollTo({ left: nextLeft, top: nextTop, behavior: 'smooth' });
+    root.scrollTo({ left: nextLeft, top: nextTop, behavior: 'auto' });
   }, []);
 
   const focusCell = useCallback(
@@ -91,7 +91,7 @@ export function useExcelTableNavigation({
     setActiveCell((prev) => clamp(prev));
   }, [rowCount, colCount, enabled, clamp]);
 
-  // Only focus cell when NOT editing (don't steal focus from input/select)
+  // Keep keyboard/click focus from fighting wheel scroll on every render
   useEffect(() => {
     if (!enabled || rowCount === 0 || isEditing) return;
     const active = document.activeElement as HTMLElement | null;
@@ -104,6 +104,21 @@ export function useExcelTableNavigation({
     ) {
       return;
     }
+    // Only nudge into view when the active cell is outside the viewport
+    const root = containerRef.current;
+    if (!root) return;
+    const el = root.querySelector<HTMLElement>(
+      `tbody td[data-grid-row="${activeCell.row}"][data-grid-col="${activeCell.col}"]`,
+    );
+    if (!el) return;
+    const cellRect = el.getBoundingClientRect();
+    const parentRect = root.getBoundingClientRect();
+    const fullyVisible =
+      cellRect.top >= parentRect.top &&
+      cellRect.bottom <= parentRect.bottom &&
+      cellRect.left >= parentRect.left &&
+      cellRect.right <= parentRect.right;
+    if (fullyVisible) return;
     focusCell(activeCell);
   }, [activeCell, enabled, rowCount, isEditing, focusCell]);
 

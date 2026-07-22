@@ -64,6 +64,20 @@ export class MasterDataColumnDateRangeFilterDto {
   to?: string;
 }
 
+export class MasterDataColumnNumericRangeFilterDto {
+  @IsString()
+  @IsNotEmpty()
+  header: string;
+
+  @IsOptional()
+  @IsString()
+  from?: string;
+
+  @IsOptional()
+  @IsString()
+  to?: string;
+}
+
 export class MasterDataAdvancedFiltersDto {
   @IsOptional()
   @IsString()
@@ -190,6 +204,13 @@ export class SearchMasterDataDto {
   @ValidateNested({ each: true })
   @Type(() => MasterDataColumnDateRangeFilterDto)
   columnDateRangeFilters?: MasterDataColumnDateRangeFilterDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => MasterDataColumnNumericRangeFilterDto)
+  columnNumericRangeFilters?: MasterDataColumnNumericRangeFilterDto[];
 
   @IsOptional()
   @IsArray()

@@ -31,6 +31,7 @@ export function XlToolbarMultiSelect({
   onApply,
   searchable = true,
   displayMode = 'label',
+  fetchOptionsOnSearch,
 }: {
   values: Set<string>;
   onChange: (values: Set<string>) => void;
@@ -43,13 +44,17 @@ export function XlToolbarMultiSelect({
   onApply?: (values: Set<string>) => void;
   searchable?: boolean;
   displayMode?: 'label' | 'chips';
+  fetchOptionsOnSearch?: (query: string) => Promise<XlSelectOption[]>;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [menuStyle, setMenuStyle] = useState<MenuStyle | null>(null);
+  const [remoteOptions, setRemoteOptions] = useState<XlSelectOption[]>([]);
+  const [remoteLoading, setRemoteLoading] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const fetchSeqRef = useRef(0);
 
   const displayLabel = (() => {
     if (values.size === 0) return placeholder;
@@ -62,11 +67,53 @@ export function XlToolbarMultiSelect({
 
   const filteredOptions = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return options;
-    return options.filter(
-      (o) => o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q),
-    );
-  }, [options, query]);
+    const base = fetchOptionsOnSearch && q.length >= 1 ? remoteOptions : options;
+    let list = !q
+      ? base
+      : base.filter(
+          (o) => o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q),
+        );
+    for (const value of values) {
+      if (list.some((o) => o.value === value)) continue;
+      const known = options.find((o) => o.value === value);
+      list = [...list, known ?? { value, label: value }];
+    }
+    return list;
+  }, [fetchOptionsOnSearch, options, query, remoteOptions, values]);
+
+  useEffect(() => {
+    if (!fetchOptionsOnSearch) {
+      setRemoteOptions([]);
+      setRemoteLoading(false);
+      return;
+    }
+    const q = query.trim();
+    if (q.length < 1) {
+      setRemoteOptions([]);
+      setRemoteLoading(false);
+      return;
+    }
+
+    const seq = ++fetchSeqRef.current;
+    setRemoteLoading(true);
+    const timer = window.setTimeout(() => {
+      void fetchOptionsOnSearch(q)
+        .then((next) => {
+          if (fetchSeqRef.current !== seq) return;
+          setRemoteOptions(next);
+        })
+        .catch(() => {
+          if (fetchSeqRef.current !== seq) return;
+          setRemoteOptions([]);
+        })
+        .finally(() => {
+          if (fetchSeqRef.current !== seq) return;
+          setRemoteLoading(false);
+        });
+    }, 200);
+
+    return () => window.clearTimeout(timer);
+  }, [fetchOptionsOnSearch, query]);
 
   const updateMenuPosition = useCallback(() => {
     const btn = buttonRef.current;
@@ -105,6 +152,8 @@ export function XlToolbarMultiSelect({
   const closeMenu = useCallback(() => {
     setOpen(false);
     setQuery('');
+    setRemoteOptions([]);
+    setRemoteLoading(false);
     onApply?.(values);
   }, [onApply, values]);
 
@@ -158,7 +207,7 @@ export function XlToolbarMultiSelect({
   const isChipBox = displayMode === 'chips';
   const showChips = isChipBox && values.size > 0;
 
-  const listMaxHeight = menuStyle ? menuStyle.maxHeight - (searchable && options.length > 5 ? 88 : 44) : 200;
+  const listMaxHeight = menuStyle ? menuStyle.maxHeight - (searchable ? 88 : 44) : 200;
 
   const menu =
     open && menuStyle && typeof document !== 'undefined'
@@ -178,7 +227,7 @@ export function XlToolbarMultiSelect({
             }}
             className="xl-multi-select-menu flex flex-col overflow-hidden rounded-xl border border-slate-200/90 bg-white shadow-2xl ring-1 ring-slate-900/5"
           >
-            {searchable && options.length > 5 && (
+            {searchable && (
               <div className="border-b border-slate-100 px-2 py-2">
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
@@ -198,7 +247,9 @@ export function XlToolbarMultiSelect({
               style={{ maxHeight: listMaxHeight }}
             >
               {filteredOptions.length === 0 ? (
-                <li className="px-3 py-3 text-center text-xs text-slate-400">No matches</li>
+                <li className="px-3 py-3 text-center text-xs text-slate-400">
+                  {remoteLoading ? 'Searching…' : 'No matches'}
+                </li>
               ) : (
                 filteredOptions.map((opt) => {
                   const active = values.has(opt.value);

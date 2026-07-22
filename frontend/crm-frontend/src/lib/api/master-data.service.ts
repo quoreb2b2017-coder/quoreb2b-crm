@@ -143,6 +143,7 @@ export interface MasterDataSearchParams {
   columnValueFilters?: Array<{ header: string; values: string[] }>;
   columnValueOrFilters?: Array<{ headers: string[]; values: string[] }>;
   columnDateRangeFilters?: Array<{ header: string; from?: string; to?: string }>;
+  columnNumericRangeFilters?: Array<{ header: string; from?: string; to?: string }>;
   mustExistColumns?: string[];
   page?: number;
   limit?: number;

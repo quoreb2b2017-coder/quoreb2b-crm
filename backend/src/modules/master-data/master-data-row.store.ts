@@ -26,6 +26,7 @@ export type MasterDataFilterInput = Pick<
   | 'columnValueFilters'
   | 'columnValueOrFilters'
   | 'columnDateRangeFilters'
+  | 'columnNumericRangeFilters'
   | 'mustExistColumns'
   | 'filters'
   | 'availabilityFilter'

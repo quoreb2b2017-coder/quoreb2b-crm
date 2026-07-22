@@ -17,6 +17,7 @@ import {
   buildMasterDataFilterSchema,
   enrichFilterSchemaColumns,
   isFullScanSelectHeader,
+  isIndustryHeader,
   isLeadTypeHeader,
   isStatusHeader,
 } from './master-data-filter-schema.util';
@@ -3886,6 +3887,7 @@ export class MasterDataService {
       columnValueFilters: dto.columnValueFilters,
       columnValueOrFilters: dto.columnValueOrFilters,
       columnDateRangeFilters: dto.columnDateRangeFilters,
+      columnNumericRangeFilters: dto.columnNumericRangeFilters,
       mustExistColumns: dto.mustExistColumns,
       filters: dto.filters,
       availabilityFilter: dto.availabilityFilter,
@@ -4062,7 +4064,8 @@ export class MasterDataService {
         const fullScanHeaders = headers.filter((h) => isFullScanSelectHeader(h));
         for (const scanHeader of fullScanHeaders) {
           try {
-            const distinctLimit = isLeadTypeHeader(scanHeader) ? 500 : 100;
+            const distinctLimit =
+              isLeadTypeHeader(scanHeader) || isIndustryHeader(scanHeader) ? 500 : 100;
             const searchValues = await this.elasticsearch.getDistinctMasterFieldValues(
               flatFieldName(scanHeader),
               MASTER_DATA_KEY,
@@ -4124,7 +4127,13 @@ export class MasterDataService {
 
     const fullScan = isFullScanSelectHeader(header);
     const effectiveLimit = fullScan
-      ? Math.min(Math.max(limit || (isLeadTypeHeader(header) ? 500 : 100), 40), 500)
+      ? Math.min(
+          Math.max(
+            limit || (isLeadTypeHeader(header) || isIndustryHeader(header) ? 500 : 100),
+            40,
+          ),
+          500,
+        )
       : Math.min(Math.max(limit || 40, 1), 500);
 
     const revision = this.rowStore.getRowCount(doc);
@@ -4224,6 +4233,7 @@ export class MasterDataService {
       columnValueFilters: filter.columnValueFilters,
       columnValueOrFilters: filter.columnValueOrFilters,
       columnDateRangeFilters: filter.columnDateRangeFilters,
+      columnNumericRangeFilters: filter.columnNumericRangeFilters,
       mustExistColumns: filter.mustExistColumns,
       filters: filter.filters,
       availabilityFilter: filter.availabilityFilter,
@@ -4375,6 +4385,7 @@ export class MasterDataService {
           columnValueFilters: opts.filter.columnValueFilters,
           columnValueOrFilters: opts.filter.columnValueOrFilters,
           columnDateRangeFilters: opts.filter.columnDateRangeFilters,
+          columnNumericRangeFilters: opts.filter.columnNumericRangeFilters,
           mustExistColumns: opts.filter.mustExistColumns,
           filters: opts.filter.filters,
           availabilityFilter: opts.filter.availabilityFilter,

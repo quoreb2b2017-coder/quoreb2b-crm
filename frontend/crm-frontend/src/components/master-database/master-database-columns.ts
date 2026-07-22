@@ -81,6 +81,8 @@ export interface DynamicMasterDbFilters {
   columnValues: Record<string, Set<string>>;
   /** date range per column header (ISO yyyy-mm-dd from date inputs) */
   columnDateRanges: Record<string, { from?: string; to?: string }>;
+  /** numeric range per column header (e.g. Exact Employee Size 100–500) */
+  columnNumericRanges: Record<string, { from?: string; to?: string }>;
   /** column must have any value */
   mustExist: Set<string>;
 }
@@ -91,6 +93,7 @@ export function emptyDynamicMasterDbFilters(): DynamicMasterDbFilters {
     columnText: {},
     columnValues: {},
     columnDateRanges: {},
+    columnNumericRanges: {},
     mustExist: new Set(),
   };
 }
@@ -159,10 +162,17 @@ const CURATED_OPTION_PATTERNS: RegExp[] = [
 ];
 
 export function needsLazyColumnOptions(col: MasterDataColumnFilterSchema): boolean {
-  // Always refresh Lead Type / Status so every distinct value appears (not just schema sample).
-  if (/^lead type$/i.test(col.header.trim()) || /^status$/i.test(col.header.trim())) return true;
+  const header = col.header.trim();
+  if (
+    /^lead type$/i.test(header) ||
+    /^status$/i.test(header) ||
+    /^industry type$/i.test(header) ||
+    /^standard industry$/i.test(header)
+  ) {
+    return true;
+  }
   if (col.options.length >= 2) return false;
-  return CURATED_OPTION_PATTERNS.some((p) => p.test(col.header.trim()));
+  return CURATED_OPTION_PATTERNS.some((p) => p.test(header));
 }
 
 export function enrichFilterColumnOptions(
@@ -173,7 +183,8 @@ export function enrichFilterColumnOptions(
   const merged = new Set<string>([...col.options, ...(defaults ?? [])]);
   const isLeadType = /^lead type$/i.test(col.header.trim());
   const isStatus = /^status$/i.test(col.header.trim());
-  const cap = isLeadType ? 500 : isStatus ? 100 : 80;
+  const isIndustry = /^industry type$/i.test(col.header.trim()) || /^standard industry$/i.test(col.header.trim());
+  const cap = isLeadType || isIndustry ? 500 : isStatus ? 100 : 80;
   const options = isSizeCategoryHeader(col.header)
     ? sortCategoryOptions([...merged]).slice(0, cap)
     : [...merged]
@@ -278,7 +289,7 @@ export type CuratedFilterField =
   | { type: 'dateRange'; column: MasterDataColumnFilterSchema }
   | { type: 'text'; column: MasterDataColumnFilterSchema; placeholder: string }
   | { type: 'select'; column: MasterDataColumnFilterSchema; multiple?: boolean }
-  | { type: 'combinedIndustryText'; columns: MasterDataColumnFilterSchema[]; label: string };
+  | { type: 'combinedIndustry'; columns: MasterDataColumnFilterSchema[]; label: string };
 
 const INDUSTRY_COLUMN_PATTERNS: RegExp[] = [/^industry type$/i, /^standard industry$/i];
 
@@ -304,7 +315,11 @@ export function buildCuratedQuickFilters(
 
   const leadType = findFilterColumn(columns, /^lead type$/i);
   if (leadType) {
-    fields.push({ type: 'text', column: leadType, placeholder: 'e.g. CD, CDQA, MQL…' });
+    if (leadType.options.length >= 2) {
+      fields.push({ type: 'select', column: leadType, multiple: true });
+    } else {
+      fields.push({ type: 'text', column: leadType, placeholder: 'e.g. CD, CDQA, MQL…' });
+    }
     used.add(leadType.header);
   }
 
@@ -312,7 +327,7 @@ export function buildCuratedQuickFilters(
     findFilterColumn(columns, pattern),
   ).filter((col): col is MasterDataColumnFilterSchema => Boolean(col));
   if (industryCols.length > 0) {
-    fields.push({ type: 'combinedIndustryText', columns: industryCols, label: 'Industry' });
+    fields.push({ type: 'combinedIndustry', columns: industryCols, label: 'Industry' });
     for (const col of industryCols) used.add(col.header);
   }
 
@@ -355,7 +370,7 @@ export function buildCuratedQuickFilters(
   const exactEmployee = findFilterColumn(columns, /^exact employee size$/i);
   const hasEmployeeCategoryField = fields.some(
     (field) =>
-      field.type !== 'combinedIndustryText' &&
+      field.type !== 'combinedIndustry' &&
       isEmployeeSizeCategoryHeader(field.column.header),
   );
   if (exactEmployee && !used.has(exactEmployee.header) && !hasEmployeeCategoryField) {
@@ -444,7 +459,7 @@ export function isMultiSelectHeader(header: string): boolean {
 export function curatedFilterHeaders(fields: CuratedFilterField[]): Set<string> {
   const headers = new Set<string>();
   for (const field of fields) {
-    if (field.type === 'combinedIndustryText') {
+    if (field.type === 'combinedIndustry') {
       for (const col of field.columns) headers.add(col.header);
     } else {
       headers.add(field.column.header);
@@ -491,6 +506,11 @@ export function hasAnyDynamicSearchCriteria(filters: DynamicMasterDbFilters): bo
   ) {
     return true;
   }
+  if (
+    Object.values(filters.columnNumericRanges).some((r) => r.from?.trim() || r.to?.trim())
+  ) {
+    return true;
+  }
   if (filters.mustExist.size > 0) return true;
   return false;
 }
@@ -532,6 +552,9 @@ export function canAutoSearchMasterData(filters: DynamicMasterDbFilters): boolea
   if (Object.values(filters.columnDateRanges).some((r) => r.from?.trim() || r.to?.trim())) {
     return true;
   }
+  if (Object.values(filters.columnNumericRanges).some((r) => r.from?.trim() || r.to?.trim())) {
+    return true;
+  }
   if (filters.mustExist.size > 0) return true;
   return false;
 }
@@ -553,7 +576,6 @@ export function serializeDynamicSearchPayload(
     ...(filters.columnValues[COMBINED_INDUSTRY_FILTER_KEY] ?? []),
   ];
   const industryHeaders = resolveCombinedIndustryHeaders(headers);
-  const industryText = (filters.columnText[COMBINED_INDUSTRY_FILTER_KEY] ?? '').trim();
 
   const columnValueFilters = headers
     .map((header) => ({
@@ -566,16 +588,18 @@ export function serializeDynamicSearchPayload(
   if (combinedIndustryValues.length > 0 && industryHeaders.length > 0) {
     columnValueOrFilters = [{ headers: industryHeaders, values: combinedIndustryValues }];
   }
-  if (industryText && industryHeaders.length > 0) {
-    const textFilter = { headers: industryHeaders, values: [industryText] };
-    columnValueOrFilters = columnValueOrFilters
-      ? [...columnValueOrFilters, textFilter]
-      : [textFilter];
-  }
 
   const mustExistColumns = [...filters.mustExist];
 
   const columnDateRangeFilters = Object.entries(filters.columnDateRanges)
+    .map(([header, range]) => ({
+      header,
+      from: range.from?.trim() || undefined,
+      to: range.to?.trim() || undefined,
+    }))
+    .filter((f) => f.from || f.to);
+
+  const columnNumericRangeFilters = Object.entries(filters.columnNumericRanges)
     .map(([header, range]) => ({
       header,
       from: range.from?.trim() || undefined,
@@ -589,6 +613,7 @@ export function serializeDynamicSearchPayload(
     columnValueFilters: columnValueFilters.length ? columnValueFilters : undefined,
     columnValueOrFilters,
     columnDateRangeFilters: columnDateRangeFilters.length ? columnDateRangeFilters : undefined,
+    columnNumericRangeFilters: columnNumericRangeFilters.length ? columnNumericRangeFilters : undefined,
     mustExistColumns: mustExistColumns.length ? mustExistColumns : undefined,
     availabilityFilter:
       options?.availabilityFilter && options.availabilityFilter !== 'all'
@@ -618,6 +643,14 @@ export function activeDynamicFilterTags(
     if (from || to) {
       const label = from && to ? `${from} → ${to}` : from ? `from ${from}` : `until ${to}`;
       tags.push({ key: `date:${header}`, label: `${header}: ${label}` });
+    }
+  }
+  for (const [header, range] of Object.entries(filters.columnNumericRanges)) {
+    const from = range.from?.trim();
+    const to = range.to?.trim();
+    if (from || to) {
+      const label = from && to ? `${from} → ${to}` : from ? `from ${from}` : `up to ${to}`;
+      tags.push({ key: `num:${header}`, label: `${header}: ${label}` });
     }
   }
   for (const [header, values] of Object.entries(filters.columnValues)) {
@@ -679,6 +712,27 @@ export function applyDynamicFiltersClient(
         return f.values.some((v) => cell === v.toLowerCase() || cell.includes(v.toLowerCase()));
       });
       if (!matched) {
+        ok = false;
+        break;
+      }
+    }
+    if (!ok) continue;
+
+    for (const f of payload.columnNumericRangeFilters ?? []) {
+      const raw = cellByHeader(row, headers, f.header).replace(/,/g, '');
+      const m = raw.trim().match(/^(\d+(?:\.\d+)?)/);
+      const n = m ? Number(m[1]) : NaN;
+      if (!Number.isFinite(n)) {
+        ok = false;
+        break;
+      }
+      const from = f.from ? Number(String(f.from).replace(/,/g, '')) : NaN;
+      const to = f.to ? Number(String(f.to).replace(/,/g, '')) : NaN;
+      if (Number.isFinite(from) && n < from) {
+        ok = false;
+        break;
+      }
+      if (Number.isFinite(to) && n > to) {
         ok = false;
         break;
       }

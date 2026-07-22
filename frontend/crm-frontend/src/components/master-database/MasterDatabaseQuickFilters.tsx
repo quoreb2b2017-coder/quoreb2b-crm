@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { masterDataService } from '@/lib/api/master-data.service';
 import {
   Building2,
   Calendar,
@@ -24,6 +25,7 @@ import type {
   MasterDataColumnFilterSchema,
 } from './master-database-columns';
 import {
+  buildCombinedIndustryOptions,
   buildCuratedQuickFilters,
   buildEffectiveFilterColumns,
   COMBINED_INDUSTRY_FILTER_KEY,
@@ -107,21 +109,32 @@ export function MasterDatabaseQuickFilters({
     onChange({ ...filters, columnValues });
   };
 
-  const setEmployeeExactNumeric = (categoryHeader: string, value: string) => {
-    const columnText = { ...filters.columnText };
+  const setEmployeeNumericRange = (categoryHeader: string, from: string, to: string) => {
+    const columnNumericRanges = { ...filters.columnNumericRanges };
     const columnValues = { ...filters.columnValues };
-    if (value.trim()) {
-      delete columnValues[categoryHeader];
-      if (exactEmployeeCol) columnText[exactEmployeeCol.header] = value.trim();
-    } else if (exactEmployeeCol) {
+    const columnText = { ...filters.columnText };
+    delete columnValues[categoryHeader];
+    if (exactEmployeeCol) {
       delete columnText[exactEmployeeCol.header];
+      const nextRange = {
+        ...(from.trim() ? { from: from.trim() } : {}),
+        ...(to.trim() ? { to: to.trim() } : {}),
+      };
+      if (Object.keys(nextRange).length) {
+        columnNumericRanges[exactEmployeeCol.header] = nextRange;
+      } else {
+        delete columnNumericRanges[exactEmployeeCol.header];
+      }
     }
-    onChange({ ...filters, columnText, columnValues });
+    onChange({ ...filters, columnNumericRanges, columnValues, columnText });
   };
 
   const exactEmployeeCol = useMemo(() => findExactEmployeeSizeColumn(columns), [columns]);
-  const employeeExactNumericValue = exactEmployeeCol
-    ? (filters.columnText[exactEmployeeCol.header] ?? '')
+  const employeeNumericFrom = exactEmployeeCol
+    ? (filters.columnNumericRanges[exactEmployeeCol.header]?.from ?? '')
+    : '';
+  const employeeNumericTo = exactEmployeeCol
+    ? (filters.columnNumericRanges[exactEmployeeCol.header]?.to ?? '')
     : '';
 
   const setColumnText = (header: string, value: string) => {
@@ -145,6 +158,32 @@ export function MasterDatabaseQuickFilters({
     else mustExist.delete(header);
     onChange({ ...filters, mustExist });
   };
+
+  const fetchCombinedIndustryOptions = useCallback(
+    async (query: string) => {
+      const q = query.trim();
+      if (!q) return [];
+      const industryField = curatedFields.find((field) => field.type === 'combinedIndustry');
+      if (!industryField || industryField.type !== 'combinedIndustry') return [];
+      const fetched = await Promise.all(
+        industryField.columns.map(async (col) => {
+          try {
+            const result = await masterDataService.getColumnOptions(col.header, q, 100);
+            return result.options;
+          } catch {
+            return [] as string[];
+          }
+        }),
+      );
+      return buildCombinedIndustryOptions(
+        industryField.columns.map((col, index) => ({
+          ...col,
+          options: fetched[index] ?? [],
+        })),
+      );
+    },
+    [curatedFields],
+  );
 
   const placeholder = headers.length
     ? `Search company, email, name…`
@@ -220,6 +259,7 @@ export function MasterDatabaseQuickFilters({
         menuMinWidth={menuMinWidth}
         values={selected}
         placeholder="All"
+        searchable
         onChange={(next) => setColumnMultiValues(header, next)}
         onApply={(next) => {
           if (next.size > 0) onSearch();
@@ -282,26 +322,40 @@ export function MasterDatabaseQuickFilters({
       {curatedFields.length > 0 ? (
         <div className="mdb-quick__curated">
           {curatedFields.map((field) => {
-            if (field.type === 'combinedIndustryText') {
-              const value = filters.columnText[COMBINED_INDUSTRY_FILTER_KEY] ?? '';
+            if (field.type === 'combinedIndustry') {
+              const selected =
+                filters.columnValues[COMBINED_INDUSTRY_FILTER_KEY] ?? new Set<string>();
               return (
                 <div
                   key={COMBINED_INDUSTRY_FILTER_KEY}
-                  className="mdb-filter-block"
+                  className="mdb-filter-block mdb-filter-block--multi"
                 >
                   <span className="mdb-filter-block__label">
                     <Building2 className="h-3 w-3" />
                     {field.label}
+                    {selected.size > 0 && (
+                      <span className="mdb-filter-block__count">{selected.size}</span>
+                    )}
                   </span>
-                  <input
-                    type="text"
-                    className="mdb-filter-block__input"
-                    placeholder="e.g. financial, software, healthcare…"
-                    value={value}
-                    onChange={(e) => setColumnText(COMBINED_INDUSTRY_FILTER_KEY, e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && onSearch()}
-                    onBlur={() => value.trim() && onSearch()}
-                  />
+                  <div className="mdb-filter-block__select-wrap">
+                    <XlToolbarMultiSelect
+                      tone="light"
+                      displayMode="chips"
+                      className="mdb-filter-block__select"
+                      menuMinWidth={320}
+                      values={selected}
+                      placeholder="All"
+                      searchable
+                      onChange={(next) =>
+                        setColumnMultiValues(COMBINED_INDUSTRY_FILTER_KEY, next)
+                      }
+                      onApply={(next) => {
+                        if (next.size > 0) onSearch();
+                      }}
+                      fetchOptionsOnSearch={fetchCombinedIndustryOptions}
+                      options={buildCombinedIndustryOptions(field.columns)}
+                    />
+                  </div>
                 </div>
               );
             }
@@ -383,19 +437,20 @@ export function MasterDatabaseQuickFilters({
                     options={column.options}
                     selected={selected}
                     onChange={(values) => {
-                      if (isEmployeeSizeCategoryHeader(column.header)) {
-                        setEmployeeExactNumeric(column.header, '');
-                      }
+                      setEmployeeNumericRange(column.header, '', '');
                       setColumnRangeValues(column.header, values);
                     }}
                     onCommit={onSearch}
                     exactOnly={isEmployeeSizeCategoryHeader(column.header)}
-                    exactNumericValue={
-                      isEmployeeSizeCategoryHeader(column.header) ? employeeExactNumericValue : ''
+                    exactNumericFrom={
+                      isEmployeeSizeCategoryHeader(column.header) ? employeeNumericFrom : ''
                     }
-                    onExactNumeric={
+                    exactNumericTo={
+                      isEmployeeSizeCategoryHeader(column.header) ? employeeNumericTo : ''
+                    }
+                    onExactNumericRange={
                       isEmployeeSizeCategoryHeader(column.header)
-                        ? (value) => setEmployeeExactNumeric(column.header, value)
+                        ? (from, to) => setEmployeeNumericRange(column.header, from, to)
                         : undefined
                     }
                   />
@@ -566,19 +621,20 @@ export function MasterDatabaseQuickFilters({
                           options={col.options}
                           selected={selected}
                           onChange={(values) => {
-                            if (isEmployeeSizeCategoryHeader(col.header)) {
-                              setEmployeeExactNumeric(col.header, '');
-                            }
+                            setEmployeeNumericRange(col.header, '', '');
                             setColumnRangeValues(col.header, values);
                           }}
                           onCommit={onSearch}
                           exactOnly={isEmployeeSizeCategoryHeader(col.header)}
-                          exactNumericValue={
-                            isEmployeeSizeCategoryHeader(col.header) ? employeeExactNumericValue : ''
+                          exactNumericFrom={
+                            isEmployeeSizeCategoryHeader(col.header) ? employeeNumericFrom : ''
                           }
-                          onExactNumeric={
+                          exactNumericTo={
+                            isEmployeeSizeCategoryHeader(col.header) ? employeeNumericTo : ''
+                          }
+                          onExactNumericRange={
                             isEmployeeSizeCategoryHeader(col.header)
-                              ? (value) => setEmployeeExactNumeric(col.header, value)
+                              ? (from, to) => setEmployeeNumericRange(col.header, from, to)
                               : undefined
                           }
                         />

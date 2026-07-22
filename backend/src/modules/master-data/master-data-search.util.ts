@@ -2,6 +2,7 @@ import type {
   MasterDataAdvancedFiltersDto,
   MasterDataColumnDateRangeFilterDto,
   MasterDataColumnFilterDto,
+  MasterDataColumnNumericRangeFilterDto,
   MasterDataColumnValuesFilterDto,
   MasterDataColumnValuesOrFilterDto,
 } from './dto/search-master-data.dto';
@@ -45,6 +46,39 @@ function parseFlexibleDate(raw: string): number | null {
   if (year < 100) year += year >= 70 ? 1900 : 2000;
   if (mon == null || Number.isNaN(day)) return null;
   return new Date(year, mon, day).getTime();
+}
+
+function parseNumericCell(raw: string): number | null {
+  const s = raw.trim().replace(/,/g, '');
+  if (!s) return null;
+  const m = s.match(/^(\d+(?:\.\d+)?)/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseNumericBound(raw?: string): number | null {
+  if (!raw?.trim()) return null;
+  const n = Number(raw.trim().replace(/,/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
+function rowMatchesNumericRangeFilter(
+  row: string[],
+  headers: string[],
+  filter: MasterDataColumnNumericRangeFilterDto,
+): boolean {
+  const colIdx = colIndex(headers, filter.header);
+  if (colIdx < 0) return false;
+  const n = parseNumericCell(String(row[colIdx] ?? ''));
+  if (n == null) return false;
+
+  const from = parseNumericBound(filter.from);
+  const to = parseNumericBound(filter.to);
+  if (from == null && to == null) return true;
+  if (from != null && n < from) return false;
+  if (to != null && n > to) return false;
+  return true;
 }
 
 function rowMatchesDateRangeFilter(
@@ -161,6 +195,7 @@ export function hasMasterDataSearchCriteria(input: {
   columnValueFilters?: MasterDataColumnValuesFilterDto[];
   columnValueOrFilters?: MasterDataColumnValuesOrFilterDto[];
   columnDateRangeFilters?: MasterDataColumnDateRangeFilterDto[];
+  columnNumericRangeFilters?: MasterDataColumnNumericRangeFilterDto[];
   mustExistColumns?: string[];
   filters?: MasterDataAdvancedFiltersDto;
 }): boolean {
@@ -169,6 +204,7 @@ export function hasMasterDataSearchCriteria(input: {
   if (input.columnValueFilters?.some((f) => f.values?.length)) return true;
   if (input.columnValueOrFilters?.some((f) => f.values?.length)) return true;
   if (input.columnDateRangeFilters?.some((f) => f.from?.trim() || f.to?.trim())) return true;
+  if (input.columnNumericRangeFilters?.some((f) => f.from?.trim() || f.to?.trim())) return true;
   if (input.mustExistColumns?.length) return true;
 
   const f = input.filters;
@@ -206,6 +242,7 @@ export type MasterDataFilterInput = {
   columnValueFilters?: MasterDataColumnValuesFilterDto[];
   columnValueOrFilters?: MasterDataColumnValuesOrFilterDto[];
   columnDateRangeFilters?: MasterDataColumnDateRangeFilterDto[];
+  columnNumericRangeFilters?: MasterDataColumnNumericRangeFilterDto[];
   mustExistColumns?: string[];
   filters?: MasterDataAdvancedFiltersDto;
   availabilityFilter?: 'all' | 'remaining' | 'in_campaign';
@@ -227,6 +264,11 @@ export type CompiledMasterDataFilter = {
     toTime: number | null;
     fromStr?: string;
     toStr?: string;
+  }>;
+  numericRanges: Array<{
+    colIdx: number;
+    from: number | null;
+    to: number | null;
   }>;
   mustExist: Array<{
     colIdx: number;
@@ -306,6 +348,14 @@ export function compileMasterDataFilter(
         };
       })
       .filter((f) => f.colIdx >= 0),
+    numericRanges: (input.columnNumericRangeFilters ?? [])
+      .filter((f) => f.from?.trim() || f.to?.trim())
+      .map((f) => ({
+        colIdx: idx(f.header),
+        from: parseNumericBound(f.from),
+        to: parseNumericBound(f.to),
+      }))
+      .filter((f) => f.colIdx >= 0),
     mustExist: (input.mustExistColumns ?? [])
       .map((header) => {
         const h = header.toLowerCase();
@@ -380,6 +430,13 @@ export function rowMatchesCompiledFilter(
     }
   }
 
+  for (const f of compiled.numericRanges) {
+    const n = parseNumericCell(String(row[f.colIdx] ?? ''));
+    if (n == null) return false;
+    if (f.from != null && n < f.from) return false;
+    if (f.to != null && n > f.to) return false;
+  }
+
   for (const m of compiled.mustExist) {
     if (m.kind === 'email' && !hasValidEmail(row, compiled.headers)) return false;
     if (m.kind === 'phone' && !hasValidPhone(row, compiled.headers)) return false;
@@ -410,6 +467,7 @@ export function rowMatchesMasterDataFilters(
   const columnFilters = input.columnFilters ?? [];
   const columnValueFilters = input.columnValueFilters ?? [];
   const columnDateRangeFilters = input.columnDateRangeFilters ?? [];
+  const columnNumericRangeFilters = input.columnNumericRangeFilters ?? [];
   const mustExistColumns = input.mustExistColumns ?? [];
   const f = input.filters ?? {};
 
@@ -427,6 +485,10 @@ export function rowMatchesMasterDataFilters(
   for (const filter of columnDateRangeFilters) {
     if (!filter.from?.trim() && !filter.to?.trim()) continue;
     if (!rowMatchesDateRangeFilter(row, headers, filter)) return false;
+  }
+  for (const filter of columnNumericRangeFilters) {
+    if (!filter.from?.trim() && !filter.to?.trim()) continue;
+    if (!rowMatchesNumericRangeFilter(row, headers, filter)) return false;
   }
   for (const header of mustExistColumns) {
     const colIdx = colIndex(headers, header);
@@ -534,6 +596,11 @@ export function hashMasterDataFilterInput(input: MasterDataFilterInput): string 
       values: [...(f.values ?? [])].sort(),
     })),
     columnDateRangeFilters: (input.columnDateRangeFilters ?? []).map((f) => ({
+      header: f.header,
+      from: f.from ?? '',
+      to: f.to ?? '',
+    })),
+    columnNumericRangeFilters: (input.columnNumericRangeFilters ?? []).map((f) => ({
       header: f.header,
       from: f.from ?? '',
       to: f.to ?? '',

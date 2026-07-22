@@ -226,6 +226,36 @@ function buildColumnValuesOrClause(
   return { bool: { should, minimum_should_match: 1 } };
 }
 
+function buildSqlNumericRangeFilter(
+  header: string,
+  from?: string,
+  to?: string,
+): string | null {
+  const field = flatFieldName(header);
+  const castField = `CAST(REPLACE(${field}, ',', '') AS DOUBLE)`;
+  const parts: string[] = [];
+  const fromN = from?.trim() ? Number(from.trim().replace(/,/g, '')) : NaN;
+  const toN = to?.trim() ? Number(to.trim().replace(/,/g, '')) : NaN;
+  if (Number.isFinite(fromN)) parts.push(`${castField} >= ${fromN}`);
+  if (Number.isFinite(toN)) parts.push(`${castField} <= ${toN}`);
+  return parts.length ? parts.join(' AND ') : null;
+}
+
+function buildNumericRangeDsl(
+  header: string,
+  from?: string,
+  to?: string,
+): Record<string, unknown> | null {
+  const field = flatFieldName(header);
+  const fromN = from?.trim() ? Number(from.trim().replace(/,/g, '')) : NaN;
+  const toN = to?.trim() ? Number(to.trim().replace(/,/g, '')) : NaN;
+  if (!Number.isFinite(fromN) && !Number.isFinite(toN)) return null;
+  const range: Record<string, number> = {};
+  if (Number.isFinite(fromN)) range.gte = fromN;
+  if (Number.isFinite(toN)) range.lte = toN;
+  return { range: { [field]: range } };
+}
+
 function buildGlobalQueryDsl(headers: string[], query: string): Record<string, unknown> {
   const q = query.trim();
   if (!q) return { match_all: {} };
@@ -361,6 +391,12 @@ export function buildMasterDataOpenSearchQuery(
     if (Object.keys(range).length) {
       filter.push({ range: { [field]: range } });
     }
+  }
+
+  for (const f of input.columnNumericRangeFilters ?? []) {
+    if (!f.header?.trim()) continue;
+    const clause = buildNumericRangeDsl(f.header, f.from, f.to);
+    if (clause) filter.push(clause);
   }
 
   for (const header of input.mustExistColumns ?? []) {
@@ -511,6 +547,12 @@ export function buildMasterDataSqlWhere(
     const field = flatFieldName(f.header);
     if (f.from?.trim()) parts.push(`${field} >= ${sqlQuote(f.from.trim())}`);
     if (f.to?.trim()) parts.push(`${field} <= ${sqlQuote(f.to.trim())}`);
+  }
+
+  for (const f of input.columnNumericRangeFilters ?? []) {
+    if (!f.header?.trim()) continue;
+    const clause = buildSqlNumericRangeFilter(f.header, f.from, f.to);
+    if (clause) parts.push(clause);
   }
 
   for (const header of input.mustExistColumns ?? []) {

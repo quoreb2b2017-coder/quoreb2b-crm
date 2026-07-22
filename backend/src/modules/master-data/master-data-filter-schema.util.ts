@@ -38,6 +38,11 @@ export function isLeadTypeHeader(header: string): boolean {
   return /^lead type$/i.test(header.trim());
 }
 
+export function isIndustryHeader(header: string): boolean {
+  const h = header.trim();
+  return /^industry type$/i.test(h) || /^standard industry$/i.test(h);
+}
+
 /** Exact Status column — full distinct scan so Valid/Invalid/etc. appear in filters. */
 export function isStatusHeader(header: string): boolean {
   return /^status$/i.test(header.trim());
@@ -45,7 +50,7 @@ export function isStatusHeader(header: string): boolean {
 
 /** Columns that must scan all chunks (not just the first N sample rows). */
 export function isFullScanSelectHeader(header: string): boolean {
-  return isLeadTypeHeader(header) || isStatusHeader(header);
+  return isLeadTypeHeader(header) || isStatusHeader(header) || isIndustryHeader(header);
 }
 
 export function enrichFilterSchemaColumns(
@@ -57,9 +62,11 @@ export function enrichFilterSchemaColumns(
     const merged = new Set<string>([...col.options, ...(defaults ?? [])]);
     const cap = isLeadTypeHeader(col.header)
       ? MAX_LEAD_TYPE_OPTIONS
-      : isStatusHeader(col.header)
-        ? MAX_STATUS_OPTIONS
-        : MAX_OPTIONS;
+      : isIndustryHeader(col.header)
+        ? MAX_LEAD_TYPE_OPTIONS
+        : isStatusHeader(col.header)
+          ? MAX_STATUS_OPTIONS
+          : MAX_OPTIONS;
     const options = [...merged]
       .filter(Boolean)
       .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))

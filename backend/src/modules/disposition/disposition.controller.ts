@@ -15,6 +15,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { SystemRole } from '../../common/constants/roles.constant';
 import {
   CreateCallbackReminderDto,
+  DeleteDispositionCampaignDto,
   DispositionListQueryDto,
 } from './dto/disposition.dto';
 
@@ -51,6 +52,15 @@ export class DispositionController {
   @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)
   getAllTree(@CurrentUser() user: JwtUser) {
     return this.dispositionService.getAllTree(user.roles ?? []);
+  }
+
+  @Post('campaign/delete')
+  @Roles(SystemRole.SUPER_ADMIN)
+  deleteCampaign(
+    @CurrentUser() user: JwtUser,
+    @Body() dto: DeleteDispositionCampaignDto,
+  ) {
+    return this.dispositionService.deleteCampaignArchive(user.roles ?? [], dto);
   }
 
   @Post('callback-reminders')

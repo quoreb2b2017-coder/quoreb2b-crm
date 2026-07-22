@@ -5,7 +5,7 @@ import { DispositionWorkspace } from '@/components/disposition/DispositionWorksp
 export default function AdminDisposition3mPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <DispositionWorkspace kinds={['call_after_3_months']} />
+      <DispositionWorkspace kinds={['call_after_3_months']} allowDelete allowDownload />
     </div>
   );
 }

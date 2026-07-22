@@ -115,4 +115,14 @@ export const dispositionService = {
   async dismissReminder(id: string): Promise<void> {
     await apiClient.post(`/disposition/callback-reminders/${id}/dismiss`);
   },
+
+  async deleteCampaign(payload: {
+    kind: DispositionKind;
+    campaignKey: string;
+    year?: number;
+    month?: number;
+  }): Promise<{ deletedCount: number }> {
+    const res = await apiClient.post('/disposition/campaign/delete', payload);
+    return unwrap<{ deletedCount: number }>(res);
+  },
 };

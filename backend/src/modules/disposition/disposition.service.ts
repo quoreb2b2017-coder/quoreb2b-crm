@@ -28,6 +28,7 @@ import {
 import { QcCampaignChannel, QC_CHANNEL_LABELS } from '../qc/qc.constants';
 import type {
   CreateCallbackReminderDto,
+  DeleteDispositionCampaignDto,
   DispositionListQueryDto,
 } from './dto/disposition.dto';
 import { SystemRole } from '../../common/constants/roles.constant';
@@ -229,6 +230,32 @@ export class DispositionService {
     this.assertViewer(roles);
     const entries = await this.listTreeEntries();
     return this.buildTree(entries);
+  }
+
+  async deleteCampaignArchive(
+    roles: string[],
+    dto: DeleteDispositionCampaignDto,
+  ): Promise<{ deletedCount: number }> {
+    if (!roles.includes(SystemRole.SUPER_ADMIN)) {
+      throw new ForbiddenException('Only Super Admin can delete disposition archives');
+    }
+
+    const filter: Record<string, unknown> = {
+      dispositionKind: dto.kind,
+    };
+    if (dto.year != null) filter.batchYear = dto.year;
+    if (dto.month != null) filter.batchMonth = dto.month;
+
+    const campaignKey = dto.campaignKey.trim();
+    const campaignMatchers: Record<string, unknown>[] = [];
+    if (Types.ObjectId.isValid(campaignKey)) {
+      campaignMatchers.push({ rootBatchId: new Types.ObjectId(campaignKey) });
+    }
+    campaignMatchers.push({ campaignName: campaignKey });
+    filter.$or = campaignMatchers;
+
+    const result = await this.dispositionEntryModel.deleteMany(filter).exec();
+    return { deletedCount: result.deletedCount ?? 0 };
   }
 
   private assertViewer(roles: string[]): void {

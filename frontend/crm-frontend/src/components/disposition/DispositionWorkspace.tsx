@@ -7,11 +7,14 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import {
   ChevronRight,
   ClipboardList,
+  Download,
   Folder,
   FolderOpen,
   Layers,
+  Loader2,
   PhoneOff,
   CalendarClock,
+  Trash2,
   Voicemail,
   UserRound,
 } from 'lucide-react';
@@ -27,8 +30,12 @@ import { CALENDAR_MONTHS, currentCalendarPeriod } from '@/lib/batches/month-stru
 import { DispositionExcelSheet } from '@/components/disposition/DispositionExcelSheet';
 import {
   collectDispositionEntries,
+  dispositionEntriesToSpreadsheet,
   flattenDispositionTree,
 } from '@/lib/disposition/disposition-entries-to-sheet';
+import { downloadSpreadsheetXlsx } from '@/lib/spreadsheet/export-spreadsheet';
+import { extractApiError } from '@/lib/api/errors';
+import { useAuthStore } from '@/store/auth.store';
 import {
   DISPOSITION_KIND_LABELS,
   DISPOSITION_KIND_TITLES,
@@ -73,12 +80,24 @@ const KIND_PAGE_META: Record<
 
 export function DispositionWorkspace({
   kinds,
+  allowDelete = false,
+  allowDownload = false,
 }: {
   /** Show only these archive kinds (separate sidebar folders). */
   kinds: DispositionKind[];
+  /** Super Admin can delete per-campaign archives (admin portal). */
+  allowDelete?: boolean;
+  /** Super Admin + DB Admin can download visible records. */
+  allowDownload?: boolean;
 }) {
+  const isSuperAdmin = useAuthStore((s) => s.hasRole('super_admin'));
+  const canDelete = allowDelete && isSuperAdmin;
+  const canDownload = allowDownload;
+
   const [rawTree, setRawTree] = useState<DispositionTreeNode[]>([]);
   const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string[]>([]);
   const [showAll, setShowAll] = useState(true);
   const [filterEmployeeId, setFilterEmployeeId] = useState<string | null>(null);
@@ -184,6 +203,91 @@ export function DispositionWorkspace({
     }
     return selectedNode?.label ?? `${pageMeta.title} records`;
   }, [showAll, selectedPath, selectedNode, pageMeta.title]);
+
+  const campaignFolderKey = useMemo(
+    () => selectedPath.find((key) => key.startsWith('camp-')),
+    [selectedPath],
+  );
+
+  const campaignDeleteContext = useMemo(() => {
+    if (!campaignFolderKey || !primaryKind) return null;
+    const yearKey = selectedPath.find((key) => key.startsWith('y-'));
+    const monthKey = selectedPath.find((key) => key.startsWith('m-'));
+    const campaignKey = campaignFolderKey.replace(/^camp-/, '');
+    const deleteYear = yearKey ? Number(yearKey.slice(2)) : year;
+    const deleteMonth = monthKey ? Number(monthKey.slice(2)) : undefined;
+    const campaignLabel =
+      selectedNode?.kind === 'campaign'
+        ? selectedNode.label
+        : tree
+            .flatMap((k) => k.children ?? [])
+            .flatMap((y) => y.children ?? [])
+            .flatMap((m) => m.children ?? [])
+            .find((c) => c.key === campaignFolderKey)?.label ?? campaignKey;
+    return {
+      kind: primaryKind,
+      campaignKey,
+      year: deleteYear,
+      month: deleteMonth,
+      label: campaignLabel,
+    };
+  }, [campaignFolderKey, primaryKind, selectedPath, selectedNode, tree, year]);
+
+  const handleDownload = async () => {
+    if (!canDownload || displayEntries.length === 0) return;
+    setDownloading(true);
+    try {
+      const sheet = dispositionEntriesToSpreadsheet(displayEntries);
+      const safeTitle = sheetTitle.replace(/[^\w\s-]+/g, '').trim() || pageMeta.title;
+      await downloadSpreadsheetXlsx(
+        {
+          fileName: `${safeTitle}.xlsx`,
+          sheetName: pageMeta.title,
+          headers: sheet.headers,
+          rows: sheet.rows,
+        },
+        `${pageMeta.title}-${safeTitle}.xlsx`.replace(/\s+/g, '-'),
+        { allowDispositionDownload: true },
+      );
+      toast.success('Download started');
+    } catch (err) {
+      toast.error('Download failed', extractApiError(err, 'Could not download'));
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const handleDeleteCampaign = async () => {
+    if (!canDelete || !campaignDeleteContext) return;
+    const { label, kind, campaignKey, year: deleteYear, month: deleteMonth } =
+      campaignDeleteContext;
+    const ok = window.confirm(
+      `Delete all ${pageMeta.title} records for campaign "${label}"? This cannot be undone.`,
+    );
+    if (!ok) return;
+
+    setDeleting(true);
+    try {
+      const result = await dispositionService.deleteCampaign({
+        kind,
+        campaignKey,
+        year: deleteYear,
+        month: deleteMonth,
+      });
+      toast.success(
+        'Campaign archive deleted',
+        `${result.deletedCount.toLocaleString()} record(s) removed`,
+      );
+      setSelectedPath([]);
+      setShowAll(true);
+      setFilterEmployeeId(null);
+      await load({ silent: true });
+    } catch (err) {
+      toast.error('Delete failed', extractApiError(err));
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const activeKindKey = selectedPath[0] ?? tree[0]?.key ?? '';
   const activeKindNode = tree.find((n) => n.key === activeKindKey) ?? tree[0];
@@ -417,22 +521,56 @@ export function DispositionWorkspace({
 
         <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden p-1.5 lg:p-2">
           <div className="qc-toolbar-bar flex-shrink-0 rounded-lg px-2.5 py-1.5">
-            <button
-              type="button"
-              onClick={() => {
-                setShowAll(true);
-                setSelectedPath([]);
-                setFilterEmployeeId(null);
-              }}
-              className={cn(
-                'rounded-md px-2.5 py-1 text-xs font-bold shadow-sm transition-colors',
-                showAll || selectedPath.length === 0
-                  ? 'bg-[#2e7ad1] text-white'
-                  : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50',
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAll(true);
+                  setSelectedPath([]);
+                  setFilterEmployeeId(null);
+                }}
+                className={cn(
+                  'rounded-md px-2.5 py-1 text-xs font-bold shadow-sm transition-colors',
+                  showAll || selectedPath.length === 0
+                    ? 'bg-[#2e7ad1] text-white'
+                    : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50',
+                )}
+              >
+                Show all ({allEntries.length})
+              </button>
+
+              {canDownload && displayEntries.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void handleDownload()}
+                  disabled={downloading}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-white px-2.5 py-1 text-xs font-bold text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {downloading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Download className="h-3.5 w-3.5" />
+                  )}
+                  Download ({displayEntries.length})
+                </button>
               )}
-            >
-              Show all ({allEntries.length})
-            </button>
+
+              {canDelete && campaignDeleteContext && (
+                <button
+                  type="button"
+                  onClick={() => void handleDeleteCampaign()}
+                  disabled={deleting}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-white px-2.5 py-1 text-xs font-bold text-red-600 ring-1 ring-red-200 transition hover:bg-red-50 disabled:opacity-50"
+                >
+                  {deleting ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-3.5 w-3.5" />
+                  )}
+                  Delete campaign
+                </button>
+              )}
+            </div>
           </div>
 
           {employeeGroups.length > 0 && (

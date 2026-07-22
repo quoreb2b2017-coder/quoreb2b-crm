@@ -5,7 +5,7 @@ import { DispositionWorkspace } from '@/components/disposition/DispositionWorksp
 export default function DbAdminDisposition6mPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <DispositionWorkspace kinds={['call_after_6_months']} />
+      <DispositionWorkspace kinds={['call_after_6_months']} allowDownload />
     </div>
   );
 }

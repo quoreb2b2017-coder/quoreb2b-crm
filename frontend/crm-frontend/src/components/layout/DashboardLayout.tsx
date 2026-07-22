@@ -814,7 +814,7 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
   const chatPage = isChatPath(pathname);
   const edgeToEdge = isAdminEdgeToEdgePath(pathname) || attendancePage;
   const contentLocked = isAdminContentLockedPath(pathname) || personalNotesPage || chatPage;
-  const { user, clearAuth } = useAuthStore();
+  const { user, clearAuth, panel } = useAuthStore();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [idleWarn, setIdleWarn] = useState(false);
@@ -863,6 +863,8 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
   const displayName = user?.firstName && user?.lastName
     ? `${user.firstName} ${user.lastName}`
     : user?.email ?? 'User';
+
+  const hideLogout = variant === 'db_admin' && panel === 'db_admin';
 
   const currentNavLabel =
     navItemsWithChatBadge.find((n) => n.href === pendingHref)?.label ??
@@ -1040,27 +1042,31 @@ export function DashboardLayout({ children, title, variant, navItems }: Dashboar
                   <p className="text-[10px] text-slate-500 truncate">{user?.employeeId ?? user?.email}</p>
                 </div>
               </div>
-              <button
-                onClick={handleLogout}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-slate-500 hover:text-red-400 hover:bg-red-500/[0.08] transition-all duration-150 group"
-              >
-                <span className="w-[18px] h-[18px] flex-shrink-0 group-hover:text-red-400 transition-colors">{Icons.logout}</span>
-                <span>Sign out</span>
-              </button>
+              {!hideLogout && (
+                <button
+                  onClick={handleLogout}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[13px] text-slate-500 hover:text-red-400 hover:bg-red-500/[0.08] transition-all duration-150 group"
+                >
+                  <span className="w-[18px] h-[18px] flex-shrink-0 group-hover:text-red-400 transition-colors">{Icons.logout}</span>
+                  <span>Sign out</span>
+                </button>
+              )}
             </>
           ) : (
             <div className="flex flex-col items-center gap-1.5">
               <Tip label={displayName} collapsed>
                 <Avatar name={displayName} collapsed variant={variant} />
               </Tip>
-              <Tip label="Sign out" collapsed>
-                <button
-                  onClick={handleLogout}
-                  className="w-10 h-10 flex items-center justify-center rounded-xl text-slate-500 hover:text-red-400 hover:bg-red-500/[0.08] transition-all"
-                >
-                  <span className="w-[18px] h-[18px]">{Icons.logout}</span>
-                </button>
-              </Tip>
+              {!hideLogout && (
+                <Tip label="Sign out" collapsed>
+                  <button
+                    onClick={handleLogout}
+                    className="w-10 h-10 flex items-center justify-center rounded-xl text-slate-500 hover:text-red-400 hover:bg-red-500/[0.08] transition-all"
+                  >
+                    <span className="w-[18px] h-[18px]">{Icons.logout}</span>
+                  </button>
+                </Tip>
+              )}
             </div>
           )}
         </div>

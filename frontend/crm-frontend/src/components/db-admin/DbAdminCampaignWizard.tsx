@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { CampaignExtractPreview } from '@/components/db-admin/CampaignExtractPreview';
+import { ExcelPreviewGrid } from '@/components/admin/ExcelPreviewGrid';
+import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
 import { handleSuppressionCheckComplete } from '@/lib/master-data/handle-suppression-result';
 import { batchesService } from '@/lib/api/batches.service';
 import { suppressionDataService } from '@/lib/api/suppression-data.service';
@@ -81,6 +83,8 @@ export function DbAdminCampaignWizard({
   const [usersLoading, setUsersLoading] = useState(false);
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
+  const [draftHeaders, setDraftHeaders] = useState<string[]>(headers);
+  const [draftRows, setDraftRows] = useState<string[][]>(rows);
 
   const selectedCampaign = useMemo(
     () => campaigns.find((c) => c.id === suppressionCampaignId),
@@ -91,10 +95,29 @@ export function DbAdminCampaignWizard({
     () => ({
       fileName: sourceFileName ?? 'master-extract.xlsx',
       sheetName: batchName || 'Campaign',
-      headers,
-      rows,
+      headers: draftHeaders,
+      rows: draftRows,
     }),
-    [batchName, headers, rows, sourceFileName],
+    [batchName, draftHeaders, draftRows, sourceFileName],
+  );
+
+  const extractGridData = useMemo<SpreadsheetData>(
+    () => ({
+      fileName: previewData.fileName,
+      sheetName: previewData.sheetName,
+      headers: draftHeaders,
+      rows: draftRows,
+    }),
+    [previewData.fileName, previewData.sheetName, draftHeaders, draftRows],
+  );
+
+  const handleExtractDataChange = useCallback(
+    (data: { headers: string[]; rows: string[][] }) => {
+      setDraftHeaders(data.headers);
+      setDraftRows(data.rows);
+      setSuppressionDone(false);
+    },
+    [],
   );
 
   const modalWidth =
@@ -107,6 +130,8 @@ export function DbAdminCampaignWizard({
     setDuplicateCount(0);
     setCampaignsError(null);
     setSelectedUserIds(new Set());
+    setDraftHeaders(headers);
+    setDraftRows(rows.map((row) => [...row]));
     const now = new Date().toLocaleDateString('en-US', {
       day: '2-digit',
       month: 'short',
@@ -114,7 +139,7 @@ export function DbAdminCampaignWizard({
     });
     setBatchName(`Campaign ${now}`);
     setBatchDesc('');
-  }, [open]);
+  }, [open, headers, rows]);
 
   const loadCampaigns = useCallback(async () => {
     setLoadingCampaigns(true);
@@ -169,7 +194,7 @@ export function DbAdminCampaignWizard({
 
   const runSuppressionCheck = async () => {
     if (!suppressionCampaignId) return;
-    const hasInlineRows = rows.length > 0 && headers.length > 0;
+    const hasInlineRows = draftRows.length > 0 && draftHeaders.length > 0;
     const hasSelectedIndices = (sourceRowIndices?.length ?? 0) > 0;
     const hasFilterSelection = Boolean(masterSearchFilter);
     const preferFilterForLargeScan =
@@ -192,7 +217,7 @@ export function DbAdminCampaignWizard({
           : hasSelectedIndices
             ? { masterSourceRowIndices: sourceRowIndices }
             : hasInlineRows
-              ? { sourceHeaders: headers, sourceRows: rows }
+              ? { sourceHeaders: draftHeaders, sourceRows: draftRows }
               : { masterSearchFilter }),
         baseFileName: batchName || sourceFileName,
       });
@@ -224,7 +249,7 @@ export function DbAdminCampaignWizard({
   const handleCreateAndDistribute = async () => {
     if (!batchName.trim()) return;
     const contactCount =
-      estimatedCount ?? (sourceRowIndices.length || rows.length);
+      estimatedCount ?? (sourceRowIndices.length || draftRows.length);
     const willAutoSplit =
       Boolean(masterSearchFilter) &&
       !sourceRowIndices.length &&
@@ -241,8 +266,8 @@ export function DbAdminCampaignWizard({
       const result = await batchesService.create({
         name: batchName.trim(),
         description: batchDesc.trim() || undefined,
-        headers,
-        rows,
+        headers: draftHeaders,
+        rows: draftRows,
         sourceFileName,
         masterSourceRowIndices: sourceRowIndices.length ? sourceRowIndices : undefined,
         masterSearchFilter: sourceRowIndices.length ? undefined : masterSearchFilter,
@@ -360,7 +385,7 @@ export function DbAdminCampaignWizard({
                       Contacts
                     </p>
                     <p className="mt-1 text-2xl font-black tabular-nums text-violet-900">
-                      {rows.length.toLocaleString()}
+                      {draftRows.length.toLocaleString()}
                     </p>
                     <p className="mt-0.5 text-[11px] text-violet-700">Ready for campaign</p>
                   </div>
@@ -369,7 +394,7 @@ export function DbAdminCampaignWizard({
                       Columns
                     </p>
                     <p className="mt-1 text-2xl font-black tabular-nums text-slate-900">
-                      {headers.length}
+                      {draftHeaders.length}
                     </p>
                     <p className="mt-0.5 text-[11px] text-slate-500">From master file</p>
                   </div>
@@ -413,7 +438,26 @@ export function DbAdminCampaignWizard({
                   </div>
                 </div>
 
-                <CampaignExtractPreview headers={headers} rows={rows} />
+                {draftRows.length > 0 ? (
+                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                    <div className="border-b border-slate-100 bg-gradient-to-r from-violet-50/60 to-white px-3 py-2.5 sm:px-4">
+                      <p className="text-sm font-semibold text-slate-900">Edit extract</p>
+                      <p className="text-[11px] text-slate-500">
+                        Click cells to edit contacts before running suppression
+                      </p>
+                    </div>
+                    <div className="h-[min(360px,42vh)]">
+                      <ExcelPreviewGrid
+                        data={extractGridData}
+                        onDataChange={handleExtractDataChange}
+                        editable
+                        fillHeight
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <CampaignExtractPreview headers={headers} rows={rows} />
+                )}
               </div>
             )}
 
@@ -427,7 +471,7 @@ export function DbAdminCampaignWizard({
                     <div>
                       <p className="text-sm font-semibold text-slate-900">Suppression check</p>
                       <p className="mt-1 text-xs leading-relaxed text-slate-600">
-                        Compare {(estimatedCount ?? rows.length).toLocaleString()} extracted
+                        Compare {(estimatedCount ?? draftRows.length).toLocaleString()} extracted
                         contacts against admin suppression lists. Duplicates are saved separately —
                         your extract stays unchanged.
                       </p>
@@ -551,7 +595,7 @@ export function DbAdminCampaignWizard({
                       checking ||
                       !suppressionCampaignId ||
                       loadingCampaigns ||
-                      (!(estimatedCount ?? rows.length) &&
+                      (!(estimatedCount ?? draftRows.length) &&
                         !sourceRowIndices.length &&
                         !masterSearchFilter)
                     }
@@ -597,7 +641,7 @@ export function DbAdminCampaignWizard({
                                   as <strong>{duplicateFileName}</strong>
                                 </>
                               ) : null}
-                              . All {rows.length.toLocaleString()} contacts remain in your
+                              . All {draftRows.length.toLocaleString()} contacts remain in your
                               campaign extract.
                             </p>
                           </>
@@ -621,7 +665,7 @@ export function DbAdminCampaignWizard({
                 <div className="rounded-xl border border-violet-100 bg-gradient-to-br from-violet-50/80 to-white p-4">
                   <p className="font-semibold text-violet-900">{batchName}</p>
                   <p className="mt-1 text-sm text-violet-700">
-                    {rows.length.toLocaleString()} contacts
+                    {(estimatedCount ?? draftRows.length).toLocaleString()} contacts
                     {suppressionDone && duplicateCount > 0
                       ? ` · ${duplicateCount} suppression duplicate(s) saved separately`
                       : suppressionDone

@@ -171,7 +171,10 @@ export function DbAdminCampaignWizard({
     if (!suppressionCampaignId) return;
     const hasInlineRows = rows.length > 0 && headers.length > 0;
     const hasSelectedIndices = (sourceRowIndices?.length ?? 0) > 0;
-    const hasFilterSelection = Boolean(masterSearchFilter) && !hasSelectedIndices;
+    const hasFilterSelection = Boolean(masterSearchFilter);
+    const preferFilterForLargeScan =
+      hasFilterSelection &&
+      (sourceRowIndices?.length ?? 0) >= 5000;
     if (!hasInlineRows && !hasSelectedIndices && !hasFilterSelection) {
       toast.error(
         'No contacts to check',
@@ -184,11 +187,13 @@ export function DbAdminCampaignWizard({
       const result = await suppressionDataService.checkSuppression({
         suppressionCampaignId,
         checkMode,
-        ...(hasSelectedIndices
-          ? { masterSourceRowIndices: sourceRowIndices }
-          : hasInlineRows
-            ? { sourceHeaders: headers, sourceRows: rows }
-            : { masterSearchFilter }),
+        ...(preferFilterForLargeScan || (hasFilterSelection && !hasSelectedIndices)
+          ? { masterSearchFilter }
+          : hasSelectedIndices
+            ? { masterSourceRowIndices: sourceRowIndices }
+            : hasInlineRows
+              ? { sourceHeaders: headers, sourceRows: rows }
+              : { masterSearchFilter }),
         baseFileName: batchName || sourceFileName,
       });
       setDuplicateCount(result.duplicateCount);

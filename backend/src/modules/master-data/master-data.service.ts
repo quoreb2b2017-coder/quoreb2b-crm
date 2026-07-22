@@ -84,6 +84,10 @@ import {
 } from './master-data-opensearch.util';
 import { ElasticsearchService } from '../../elasticsearch/elasticsearch.service';
 import type { SuppressionCheckMode } from '../delivered-data/suppression-match.util';
+import {
+  extractRowCheckKey,
+  findSuppressionColumnIndex,
+} from '../delivered-data/suppression-match.util';
 import { unlink } from 'fs/promises';
 import {
   formatMemoryUsage,
@@ -4285,6 +4289,26 @@ export class MasterDataService {
     void this.searchIndex.refreshAfterIncremental();
   }
 
+  private async getFilteredIndicesViaOpenSearch(
+    headers: string[],
+    filterInput: MasterDataFilterInput,
+    maxIndices = 2_000_000,
+  ): Promise<number[]> {
+    const osQuery = buildMasterDataOpenSearchQuery(headers, filterInput);
+    const sqlWhere = buildMasterDataSqlWhere(headers, filterInput, MASTER_DATA_KEY);
+    const indices: number[] = [];
+    let from = 0;
+    const PAGE = 10_000;
+    while (indices.length < maxIndices) {
+      const page = await this.elasticsearch.searchMasterPage(osQuery, from, PAGE, sqlWhere);
+      if (!page.rowIndices.length) break;
+      indices.push(...page.rowIndices);
+      if (page.rowIndices.length < PAGE) break;
+      from += PAGE;
+    }
+    return indices;
+  }
+
   private async getFilteredIndicesCached(
     doc: Parameters<MasterDataRowStore['filterChunkedRowIndices']>[0],
     headers: string[],
@@ -4294,6 +4318,16 @@ export class MasterDataService {
     const filterHash = hashMasterDataFilterInput(filterInput);
     const cacheKey = `master:filter-idx:v1:${revision}:${filterHash}`;
     return this.cache.wrap(cacheKey, MASTER_FILTER_INDEX_CACHE_TTL_SEC, async () => {
+      if (this.elasticsearch.isEnabled) {
+        try {
+          const raw = await this.getFilteredIndicesViaOpenSearch(headers, filterInput);
+          return this.applyAvailabilityFilter(raw, filterInput.availabilityFilter, revision);
+        } catch (err) {
+          this.logger.warn(
+            `OpenSearch filter-index failed, falling back to Mongo scan: ${err instanceof Error ? err.message : err}`,
+          );
+        }
+      }
       const raw = await this.rowStore.filterChunkedRowIndices(doc, headers, filterInput);
       return this.applyAvailabilityFilter(raw, filterInput.availabilityFilter, revision);
     });
@@ -4351,8 +4385,25 @@ export class MasterDataService {
     };
   }
 
+  /** Load master rows by absolute indices (used after fast suppression scan). */
+  async loadMasterRowsForIndices(indices: number[]): Promise<{
+    headers: string[];
+    rows: string[][];
+  }> {
+    if (!indices.length) {
+      return { headers: [], rows: [] };
+    }
+    const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
+    if (!doc) {
+      throw new NotFoundException('No master data uploaded yet');
+    }
+    const headers = [...(doc.headers as string[])];
+    const rows = await this.rowStore.getRowsByIndices(doc, indices);
+    return { headers, rows };
+  }
+
   /**
-   * Scan master rows for suppression — OpenSearch finds duplicates first (fast), then loads only matches from Mongo.
+   * Scan master rows for suppression — OpenSearch finds duplicates first (fast), optional row load for export.
    */
   async scanMasterForSuppressionCheck(
     actorId: string,
@@ -4362,12 +4413,12 @@ export class MasterDataService {
       suppressionKeys?: Set<string>;
       checkMode?: SuppressionCheckMode;
     },
-    onChunk: (chunk: {
+    onChunk?: (chunk: {
       headers: string[];
       rows: string[][];
       sourceIndices: number[];
     }) => void | Promise<void>,
-  ): Promise<{ headers: string[]; totalScanned: number }> {
+  ): Promise<{ headers: string[]; totalScanned: number; duplicateIndices: number[] }> {
     await this.assertBatchCreatorAccess(actorId);
     const doc = await this.masterDataModel.findOne({ key: MASTER_DATA_KEY }).exec();
     if (!doc) {
@@ -4396,83 +4447,115 @@ export class MasterDataService {
     if (opts.subsetIndices?.length) {
       const seen = new Set<number>();
       scopeIndices = [];
+      const largeSet = opts.subsetIndices.length > 50_000;
       for (const raw of opts.subsetIndices) {
         const idx = Number(raw);
         if (!Number.isInteger(idx) || seen.has(idx)) continue;
         if (idx < 0 || idx >= rowCount) {
-          throw new BadRequestException(`Invalid master row selection (row ${idx + 1})`);
+          if (!largeSet) {
+            throw new BadRequestException(`Invalid master row selection (row ${idx + 1})`);
+          }
+          continue;
         }
         seen.add(idx);
         scopeIndices.push(idx);
       }
-    } else if (filterInput) {
+    }
+
+    let totalScanned = scopeIndices?.length ?? 0;
+    const keySet = opts.suppressionKeys ?? new Set<string>();
+    const keyList = [...keySet].filter(Boolean);
+    const canUseSearch =
+      this.elasticsearch.isEnabled &&
+      keyList.length > 0 &&
+      Boolean(opts.checkMode) &&
+      (Boolean(filterInput) || Boolean(scopeIndices?.length));
+
+    if (canUseSearch && opts.checkMode) {
+      const field = opts.checkMode === 'email' ? 'suppEmail' : 'suppDomain';
+      let duplicateIndices: number[] = [];
+
+      if (scopeIndices?.length) {
+        duplicateIndices = await this.elasticsearch.findSuppressionMatchesInScope(
+          field,
+          scopeIndices,
+          keySet,
+        );
+      } else if (filterInput) {
+        const osQuery = buildMasterDataOpenSearchQuery(headers, filterInput);
+        const sqlWhere = buildMasterDataSqlWhere(headers, filterInput, MASTER_DATA_KEY);
+        totalScanned = await this.elasticsearch.countMasterMatches(osQuery, sqlWhere);
+        if (!totalScanned) {
+          throw new BadRequestException('No contacts match the current filters');
+        }
+        duplicateIndices = await this.elasticsearch.findMasterSuppressionDuplicateIndices(
+          field,
+          keyList,
+          osQuery,
+          sqlWhere,
+        );
+      }
+
+      if (onChunk && duplicateIndices.length > 0) {
+        for (let offset = 0; offset < duplicateIndices.length; offset += SUPPRESSION_SCAN_CHUNK) {
+          const sourceIndices = duplicateIndices.slice(offset, offset + SUPPRESSION_SCAN_CHUNK);
+          const rows = await this.rowStore.getRowsByIndices(doc, sourceIndices);
+          await onChunk({ headers, rows, sourceIndices });
+        }
+      }
+
+      return { headers, totalScanned, duplicateIndices };
+    }
+
+    if (!scopeIndices?.length) {
+      if (!filterInput) {
+        throw new BadRequestException('No contacts selected for suppression check');
+      }
       scopeIndices = await this.getFilteredIndicesCached(
         doc,
         headers,
         filterInput,
         masterRevision,
       );
+      totalScanned = scopeIndices.length;
     }
 
-    if (scopeIndices && !scopeIndices.length) {
+    if (!scopeIndices.length) {
       throw new BadRequestException('No contacts match the current filters');
     }
 
-    const totalScanned = scopeIndices?.length ?? rowCount;
-
-    const keyList = opts.suppressionKeys ? [...opts.suppressionKeys].filter(Boolean) : [];
-    const canUseSearch =
-      this.elasticsearch.isEnabled &&
-      keyList.length > 0 &&
-      opts.checkMode &&
-      (filterInput || scopeIndices);
-
-    // When the selected master subset is much smaller than the suppression list,
-    // loading those rows + Set.has is far cheaper than shipping all keys to OpenSearch.
-    const scopeSize = scopeIndices?.length ?? 0;
-    const preferInMemory =
-      scopeSize > 0 &&
-      scopeSize <= 8_000 &&
-      keyList.length > Math.max(scopeSize * 2, 2_000);
-
-    if (canUseSearch && !preferInMemory) {
-      const osQuery = buildMasterDataOpenSearchQuery(headers, filterInput ?? {});
-      const sqlWhere = buildMasterDataSqlWhere(headers, filterInput ?? {}, MASTER_DATA_KEY);
-      const field = opts.checkMode === 'email' ? 'suppEmail' : 'suppDomain';
-      let duplicateIndices = await this.elasticsearch.findMasterSuppressionDuplicateIndices(
-        field,
-        keyList,
-        osQuery,
-        sqlWhere,
-      );
-
-      if (scopeIndices) {
-        const allowed = new Set(scopeIndices);
-        duplicateIndices = duplicateIndices.filter((idx) => allowed.has(idx));
-      }
-
-      for (let offset = 0; offset < duplicateIndices.length; offset += SUPPRESSION_SCAN_CHUNK) {
-        const sourceIndices = duplicateIndices.slice(offset, offset + SUPPRESSION_SCAN_CHUNK);
+    const duplicateIndices: number[] = [];
+    if (keySet.size > 0 && opts.checkMode) {
+      const colIdx = findSuppressionColumnIndex(headers, opts.checkMode);
+      for (let offset = 0; offset < scopeIndices.length; offset += SUPPRESSION_SCAN_CHUNK) {
+        const sourceIndices = scopeIndices.slice(offset, offset + SUPPRESSION_SCAN_CHUNK);
         const rows = await this.rowStore.getRowsByIndices(doc, sourceIndices);
-        await onChunk({ headers, rows, sourceIndices });
+        for (let i = 0; i < rows.length; i += 1) {
+          const key = extractRowCheckKey(rows[i], headers, opts.checkMode, colIdx);
+          if (key && keySet.has(key)) {
+            duplicateIndices.push(sourceIndices[i] ?? offset + i);
+          }
+        }
+        if (onChunk) {
+          const matchingRows = rows.filter((row) => {
+            const key = extractRowCheckKey(row, headers, opts.checkMode!, colIdx);
+            return Boolean(key && keySet.has(key));
+          });
+          if (matchingRows.length) {
+            await onChunk({
+              headers,
+              rows: matchingRows,
+              sourceIndices: sourceIndices.filter((_, i) => {
+                const key = extractRowCheckKey(rows[i], headers, opts.checkMode!, colIdx);
+                return Boolean(key && keySet.has(key));
+              }),
+            });
+          }
+        }
       }
-
-      return { headers, totalScanned };
     }
 
-    // Fallback: load scope rows from Mongo and compare in memory
-    let indices = scopeIndices;
-    if (!indices) {
-      throw new BadRequestException('No contacts selected for suppression check');
-    }
-
-    for (let offset = 0; offset < indices.length; offset += SUPPRESSION_SCAN_CHUNK) {
-      const sourceIndices = indices.slice(offset, offset + SUPPRESSION_SCAN_CHUNK);
-      const rows = await this.rowStore.getRowsByIndices(doc, sourceIndices);
-      await onChunk({ headers, rows, sourceIndices });
-    }
-
-    return { headers, totalScanned: indices.length };
+    return { headers, totalScanned, duplicateIndices };
   }
 
   /** @deprecated use resolveMasterBatchCreate — kept for tests/callers */

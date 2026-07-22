@@ -422,7 +422,7 @@ export class SuppressionDataService {
       } else if (hasMasterResolve) {
         baseFileName = dto.baseFileName ?? baseFileName;
         duplicateSourceRole = isDbAdmin ? 'db_admin' : 'employee';
-        await this.masterDataService.scanMasterForSuppressionCheck(
+        const scan = await this.masterDataService.scanMasterForSuppressionCheck(
           actor.id,
           {
             ...(dto.masterSourceRowIndices?.length
@@ -431,10 +431,18 @@ export class SuppressionDataService {
             suppressionKeys,
             checkMode: dto.checkMode,
           },
-          (chunk) => {
-            collectMatches(chunk.headers, chunk.rows, (i) => chunk.sourceIndices[i] ?? i);
-          },
         );
+        sourceHeaders = scan.headers;
+        duplicateSourceIndices.push(...scan.duplicateIndices);
+        if (scan.duplicateIndices.length > 0) {
+          const LOAD_CAP = 800;
+          const loaded = await this.masterDataService.loadMasterRowsForIndices(
+            scan.duplicateIndices.slice(0, LOAD_CAP),
+          );
+          sourceHeaders = loaded.headers.length ? loaded.headers : scan.headers;
+          sourceRows = loaded.rows;
+          matchingRows.push(...loaded.rows);
+        }
       }
     }
 
@@ -450,7 +458,7 @@ export class SuppressionDataService {
       ReturnType<MasterDataService['createSuppressionDuplicateFile']>
     > | null = null;
 
-    if (matchingRows.length > 0 && sourceHeaders.length) {
+    if (duplicateSourceIndices.length > 0 && sourceHeaders.length) {
       const stem = baseFileName.replace(/\.(xlsx|xls|csv)$/i, '');
       const alignedSource = alignRowsToMasterTemplate(sourceHeaders, matchingRows);
       duplicateFile = await this.masterDataService.createSuppressionDuplicateFile(actor, {
@@ -458,6 +466,7 @@ export class SuppressionDataService {
         sheetName: 'Duplicates',
         headers: alignedSource.headers,
         rows: alignedSource.rows,
+        rowCount: duplicateSourceIndices.length,
         sourceRole: duplicateSourceRole,
         campaignName,
       });
@@ -485,7 +494,7 @@ export class SuppressionDataService {
         metadata: {
           suppressionCampaignId: dto.suppressionCampaignId,
           checkMode: dto.checkMode,
-          fileDuplicateCount: matchingRows.length,
+          fileDuplicateCount: duplicateSourceIndices.length,
           manualDuplicateCount: matchedManual.length,
           manualMatchedRows: templateAlignedManual.rows.length,
           duplicateFileId: duplicateFile?.id ?? null,
@@ -499,8 +508,8 @@ export class SuppressionDataService {
 
     // Do NOT bust suppression key caches on check — that forced a full Mongo reload every time.
     return {
-      duplicateCount: matchingRows.length + matchedManual.length,
-      fileDuplicateCount: matchingRows.length,
+      duplicateCount: duplicateSourceIndices.length + matchedManual.length,
+      fileDuplicateCount: duplicateSourceIndices.length,
       manualDuplicateCount: matchedManual.length,
       matchedManualValues: matchedManual,
       matchedManualHeaders: templateAlignedManual.headers,

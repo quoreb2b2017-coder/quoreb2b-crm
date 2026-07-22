@@ -531,35 +531,223 @@ export class ElasticsearchService implements OnModuleInit {
     const uniqueKeys = [...new Set(keys.filter((k) => k.length > 0))];
     const out: number[] = [];
     const seen = new Set<number>();
-    const KEY_CHUNK = 2000;
-    const PAGE = 5000;
-
+    const KEY_CHUNK = 5000;
+    const PARALLEL = 8;
+    const keyChunks: string[][] = [];
     for (let k = 0; k < uniqueKeys.length; k += KEY_CHUNK) {
-      const keySlice = uniqueKeys.slice(k, k + KEY_CHUNK);
-      let from = 0;
-      while (true) {
-        const page = await this.searchMasterSuppressionPage(
-          field,
-          keySlice,
-          baseOsQuery,
-          sqlWhere,
-          from,
-          PAGE,
-        );
-        if (!page.rowIndices.length) break;
-        for (const idx of page.rowIndices) {
+      keyChunks.push(uniqueKeys.slice(k, k + KEY_CHUNK));
+    }
+
+    for (let b = 0; b < keyChunks.length; b += PARALLEL) {
+      const batch = keyChunks.slice(b, b + PARALLEL);
+      const pages = await Promise.all(
+        batch.map(async (keySlice) => {
+          const sliceMatches: number[] = [];
+          const sliceSeen = new Set<number>();
+          let from = 0;
+          const PAGE = 10_000;
+          while (true) {
+            const page = await this.searchMasterSuppressionPage(
+              field,
+              keySlice,
+              baseOsQuery,
+              sqlWhere,
+              from,
+              PAGE,
+            );
+            if (!page.rowIndices.length) break;
+            for (const idx of page.rowIndices) {
+              if (!sliceSeen.has(idx)) {
+                sliceSeen.add(idx);
+                sliceMatches.push(idx);
+              }
+            }
+            if (page.rowIndices.length < PAGE) break;
+            from += PAGE;
+            if (from > 2_000_000) break;
+          }
+          return sliceMatches;
+        }),
+      );
+      for (const batchMatches of pages) {
+        for (const idx of batchMatches) {
           if (!seen.has(idx)) {
             seen.add(idx);
             out.push(idx);
           }
         }
-        if (page.rowIndices.length < PAGE) break;
-        from += PAGE;
-        if (from > 2_000_000) break;
       }
     }
 
     return out;
+  }
+
+  /** Count master rows matching a filter (OpenSearch only). */
+  async countMasterMatches(
+    baseOsQuery: Record<string, unknown>,
+    sqlWhere: string,
+  ): Promise<number> {
+    if (!this.enabled || !this.client) return 0;
+    await this.ensureMasterDataIndex();
+    if (this.engineMode === 'unknown') await this.detectEngineMode();
+
+    if (this.engineMode === 'sql') {
+      const index = this.masterDataIndexName();
+      const where = sqlWhere?.trim() || '1 = 1';
+      const countQuery = `SELECT COUNT(*) as c FROM ${index} WHERE ${where}`;
+      try {
+        const countRes = await this.client.transport.request({
+          method: 'POST',
+          path: '/_plugins/_sql',
+          body: { query: countQuery },
+        });
+        const countBody = (countRes as { body?: { datarows?: unknown[][] } }).body;
+        return Number(countBody?.datarows?.[0]?.[0] ?? 0);
+      } catch (error) {
+        this.logger.error(
+          `Suppression count SQL failed: ${error instanceof Error ? error.message : error}`,
+        );
+        return 0;
+      }
+    }
+
+    try {
+      const result = await this.client.search({
+        index: this.masterDataIndexName(),
+        body: {
+          size: 0,
+          track_total_hits: true,
+          ...baseOsQuery,
+        },
+      });
+      const totalRaw = result.body?.hits?.total;
+      return typeof totalRaw === 'number'
+        ? totalRaw
+        : Number((totalRaw as { value?: number })?.value ?? 0);
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * Scan a known scope of row indices — fetch only suppEmail/suppDomain per chunk and match in memory.
+   * Avoids shipping huge suppression key lists into SQL and post-filtering the whole master index.
+   */
+  async findSuppressionMatchesInScope(
+    field: 'suppEmail' | 'suppDomain',
+    scopeIndices: number[],
+    suppressionKeys: Set<string>,
+  ): Promise<number[]> {
+    if (!this.enabled || !this.client || !scopeIndices.length || !suppressionKeys.size) {
+      return [];
+    }
+    await this.ensureMasterDataIndex();
+    if (this.engineMode === 'unknown') await this.detectEngineMode();
+
+    const SCOPE_CHUNK = 8000;
+    const PARALLEL = 6;
+    const chunks: number[][] = [];
+    for (let i = 0; i < scopeIndices.length; i += SCOPE_CHUNK) {
+      chunks.push(scopeIndices.slice(i, i + SCOPE_CHUNK));
+    }
+
+    const duplicates: number[] = [];
+    const seen = new Set<number>();
+
+    for (let b = 0; b < chunks.length; b += PARALLEL) {
+      const batch = chunks.slice(b, b + PARALLEL);
+      const batchResults = await Promise.all(
+        batch.map((indices) =>
+          this.fetchSuppressionMatchesInIndexChunk(field, indices, suppressionKeys),
+        ),
+      );
+      for (const matches of batchResults) {
+        for (const idx of matches) {
+          if (!seen.has(idx)) {
+            seen.add(idx);
+            duplicates.push(idx);
+          }
+        }
+      }
+    }
+
+    return duplicates;
+  }
+
+  private async fetchSuppressionMatchesInIndexChunk(
+    field: 'suppEmail' | 'suppDomain',
+    indices: number[],
+    suppressionKeys: Set<string>,
+  ): Promise<number[]> {
+    if (!this.client || !indices.length) return [];
+
+    const index = this.masterDataIndexName();
+    const matches: number[] = [];
+
+    if (this.engineMode === 'sql') {
+      const idList = indices.join(', ');
+      const query =
+        `SELECT rowIndex, ${field} FROM ${index} ` +
+        `WHERE masterKey = 'master_upload' AND rowIndex IN (${idList})`;
+      try {
+        const res = await this.client.transport.request({
+          method: 'POST',
+          path: '/_plugins/_sql',
+          body: { query },
+        });
+        const rows = (res as { body?: { datarows?: unknown[][] } }).body?.datarows ?? [];
+        for (const row of rows) {
+          const rowIndex = Number(row?.[0]);
+          const key = String(row?.[1] ?? '').trim().toLowerCase();
+          if (!Number.isFinite(rowIndex) || rowIndex < 0 || !key) continue;
+          if (suppressionKeys.has(key)) matches.push(rowIndex);
+        }
+        return matches;
+      } catch (error) {
+        this.logger.error(
+          `Scope suppression SQL failed: ${error instanceof Error ? error.message : error}`,
+        );
+        return [];
+      }
+    }
+
+    try {
+      const result = await this.client.search({
+        index,
+        body: {
+          size: indices.length,
+          track_total_hits: false,
+          _source: ['rowIndex', field],
+          query: {
+            bool: {
+              filter: [
+                { term: { masterKey: 'master_upload' } },
+                { terms: { rowIndex: indices } },
+              ],
+            },
+          },
+        },
+      });
+      const hits = (result.body?.hits?.hits ?? []) as Array<{
+        _source?: { rowIndex?: number; suppEmail?: string; suppDomain?: string };
+      }>;
+      for (const hit of hits) {
+        const rowIndex = hit._source?.rowIndex;
+        const key = String(
+          field === 'suppEmail' ? hit._source?.suppEmail : hit._source?.suppDomain ?? '',
+        )
+          .trim()
+          .toLowerCase();
+        if (typeof rowIndex !== 'number' || rowIndex < 0 || !key) continue;
+        if (suppressionKeys.has(key)) matches.push(rowIndex);
+      }
+      return matches;
+    } catch (error) {
+      this.logger.error(
+        `Scope suppression DSL failed: ${error instanceof Error ? error.message : error}`,
+      );
+      return [];
+    }
   }
 
   private async searchMasterSuppressionPage(

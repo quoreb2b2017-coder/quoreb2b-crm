@@ -91,20 +91,9 @@ export function useExcelTableNavigation({
     setActiveCell((prev) => clamp(prev));
   }, [rowCount, colCount, enabled, clamp]);
 
-  // Keep keyboard/click focus from fighting wheel scroll on every render
+  // Only nudge into view after keyboard navigation — not on every render / data refresh
   useEffect(() => {
     if (!enabled || rowCount === 0 || isEditing) return;
-    const active = document.activeElement as HTMLElement | null;
-    if (
-      active &&
-      (active.tagName === 'SELECT' ||
-        active.tagName === 'INPUT' ||
-        active.tagName === 'TEXTAREA' ||
-        active.isContentEditable)
-    ) {
-      return;
-    }
-    // Only nudge into view when the active cell is outside the viewport
     const root = containerRef.current;
     if (!root) return;
     const el = root.querySelector<HTMLElement>(
@@ -120,7 +109,7 @@ export function useExcelTableNavigation({
       cellRect.right <= parentRect.right;
     if (fullyVisible) return;
     focusCell(activeCell);
-  }, [activeCell, enabled, rowCount, isEditing, focusCell]);
+  }, [activeCell.row, activeCell.col, enabled, rowCount, isEditing, focusCell]);
 
   useEffect(() => {
     if (!enabled || rowCount === 0) return;

@@ -1,7 +1,30 @@
 /** Column helpers + dynamic filter state for master database */
 
 export function colIndex(headers: string[], header: string): number {
-  return headers.findIndex((h) => h.toLowerCase() === header.toLowerCase());
+  const exact = headers.findIndex(
+    (h) => h.toLowerCase() === header.toLowerCase(),
+  );
+  if (exact >= 0) return exact;
+
+  const norm = headerNormKey(header);
+  if (!norm) return -1;
+  const normMatch = headers.findIndex((h) => headerNormKey(h) === norm);
+  if (normMatch >= 0) return normMatch;
+
+  if (columnMatchesFilterField(header, 'jobTitleDepartment')) {
+    const idx = headers.findIndex((h) => columnMatchesFilterField(h, 'jobTitleDepartment'));
+    if (idx >= 0) return idx;
+  }
+  if (columnMatchesFilterField(header, 'jobTitleLevel')) {
+    const idx = headers.findIndex((h) => columnMatchesFilterField(h, 'jobTitleLevel'));
+    if (idx >= 0) return idx;
+  }
+  if (columnMatchesFilterField(header, 'jobTitle')) {
+    const idx = headers.findIndex((h) => columnMatchesFilterField(h, 'jobTitle'));
+    if (idx >= 0) return idx;
+  }
+
+  return -1;
 }
 
 export function cellAt(row: string[], headers: string[], ...needles: string[]): string {
@@ -103,9 +126,158 @@ export function isGenericColumnHeader(header: string): boolean {
   return /^column\s+\d+$/i.test(header.trim());
 }
 
+export function normalizeFilterHeaderName(header: string): string {
+  return String(header ?? '')
+    .replace(/^\uFEFF/, '')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+export function headerNormKey(header: string): string {
+  return normalizeFilterHeaderName(header).toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+export type MasterFilterFieldKey =
+  | 'jobTitle'
+  | 'jobTitleLevel'
+  | 'jobTitleDepartment'
+  | 'lastName'
+  | 'leadType'
+  | 'industryType'
+  | 'standardIndustry'
+  | 'country'
+  | 'state';
+
+const MASTER_FILTER_CANONICAL_HEADERS: Record<MasterFilterFieldKey, string> = {
+  jobTitle: 'Job Title',
+  jobTitleLevel: 'Job Title Level',
+  jobTitleDepartment: 'Job Title Department',
+  lastName: 'Last Name',
+  leadType: 'Lead Type',
+  industryType: 'Industry Type',
+  standardIndustry: 'Standard Industry',
+  country: 'Country',
+  state: 'State',
+};
+
+const FILTER_FIELD_NORM_KEYS: Record<MasterFilterFieldKey, string[]> = {
+  jobTitle: ['jobtitle'],
+  jobTitleLevel: ['jobtitlelevel'],
+  jobTitleDepartment: [
+    'jobtitledepartment',
+    'jobtitledept',
+    'jobtitledepartement',
+    'jobtitledeperment',
+  ],
+  lastName: ['lastname'],
+  leadType: ['leadtype'],
+  industryType: ['industrytype'],
+  standardIndustry: ['standardindustry'],
+  country: ['country'],
+  state: ['state'],
+};
+
+function isJobTitleLinkHeader(header: string): boolean {
+  return /link$/i.test(normalizeFilterHeaderName(header));
+}
+
+function columnMatchesFilterField(
+  header: string,
+  field: MasterFilterFieldKey,
+): boolean {
+  const normalized = normalizeFilterHeaderName(header);
+  const canonical = MASTER_FILTER_CANONICAL_HEADERS[field];
+  if (normalized.toLowerCase() === canonical.toLowerCase()) return true;
+
+  const norm = headerNormKey(normalized);
+  if (isJobTitleLinkHeader(normalized)) return false;
+
+  if (field === 'jobTitleDepartment') {
+    return (
+      FILTER_FIELD_NORM_KEYS.jobTitleDepartment.some((k) => norm === k) ||
+      (norm.includes('jobtitle') &&
+        (norm.includes('department') || norm.includes('dept')))
+    );
+  }
+  if (field === 'jobTitleLevel') {
+    return (
+      FILTER_FIELD_NORM_KEYS.jobTitleLevel.some((k) => norm === k) ||
+      (norm.includes('jobtitle') && norm.includes('level'))
+    );
+  }
+  if (field === 'jobTitle') {
+    if (!FILTER_FIELD_NORM_KEYS.jobTitle.some((k) => norm === k)) return false;
+    return !/level|department|dept|link/i.test(normalized);
+  }
+
+  const keys = FILTER_FIELD_NORM_KEYS[field];
+  return keys.some((k) => norm === k);
+}
+
+export function masterFilterFieldKeyForHeader(
+  header: string,
+): MasterFilterFieldKey | null {
+  const fields = Object.keys(MASTER_FILTER_CANONICAL_HEADERS) as MasterFilterFieldKey[];
+  for (const field of fields) {
+    if (columnMatchesFilterField(header, field)) return field;
+  }
+  return null;
+}
+
+function filterFieldPresentInHeaders(
+  headers: string[],
+  field: MasterFilterFieldKey,
+): boolean {
+  return headers.some((header) => columnMatchesFilterField(header, field));
+}
+
+export function resolveFilterColumnByField(
+  columns: MasterDataColumnFilterSchema[],
+  field: MasterFilterFieldKey,
+): MasterDataColumnFilterSchema | undefined {
+  const found = columns.find(
+    (c) =>
+      columnMatchesFilterField(c.header, field) &&
+      !isExcludedDropdownColumn(c.header),
+  );
+  if (!found) return undefined;
+
+  return enrichFilterColumnOptions({
+    ...found,
+    header: normalizeFilterHeaderName(found.header),
+    filledCount: Math.max(found.filledCount, 1),
+  });
+}
+
+export function mergeFilterHeaders(...sources: string[][]): string[] {
+  const byNorm = new Map<string, string>();
+  const add = (raw: string) => {
+    const header = normalizeFilterHeaderName(raw);
+    const norm = headerNormKey(header);
+    if (!norm || isGenericColumnHeader(header)) return;
+    if (!byNorm.has(norm)) byNorm.set(norm, header);
+  };
+
+  for (const list of sources) {
+    for (const header of list) add(header);
+  }
+
+  const present = [...byNorm.values()];
+  for (const field of Object.keys(
+    MASTER_FILTER_CANONICAL_HEADERS,
+  ) as MasterFilterFieldKey[]) {
+    if (!filterFieldPresentInHeaders(present, field)) {
+      add(MASTER_FILTER_CANONICAL_HEADERS[field]);
+    }
+  }
+
+  return [...byNorm.values()];
+}
+
 /** Column has a real header name and at least some data */
 export function isMeaningfulFilterColumn(col: MasterDataColumnFilterSchema): boolean {
   if (isGenericColumnHeader(col.header)) return false;
+  if (isFullScanFilterHeader(col.header)) return true;
   if (col.filledCount <= 0) return false;
   return true;
 }
@@ -180,30 +352,25 @@ export function normalizeFilterOptionValue(raw: string): string {
 }
 
 export function isFullScanFilterHeader(header: string): boolean {
-  const h = header.trim();
-  return (
-    /^lead type$/i.test(h) ||
-    /^status$/i.test(h) ||
-    /^industry type$/i.test(h) ||
-    /^standard industry$/i.test(h) ||
-    /^job title$/i.test(h) ||
-    /^job title level$/i.test(h) ||
-    /^job title department$/i.test(h) ||
-    /^last name$/i.test(h)
-  );
+  const normalized = normalizeFilterHeaderName(header);
+  if (isJobTitleLinkHeader(normalized)) return false;
+  if (columnMatchesFilterField(header, 'leadType')) return true;
+  if (columnMatchesFilterField(header, 'industryType')) return true;
+  if (columnMatchesFilterField(header, 'standardIndustry')) return true;
+  if (columnMatchesFilterField(header, 'jobTitle')) return true;
+  if (columnMatchesFilterField(header, 'jobTitleLevel')) return true;
+  if (columnMatchesFilterField(header, 'jobTitleDepartment')) return true;
+  if (columnMatchesFilterField(header, 'lastName')) return true;
+  return headerNormKey(header) === 'status';
 }
 
 export function fullScanFilterOptionLimit(header: string): number {
-  const h = header.trim();
-  if (/^lead type$/i.test(h)) return 500;
-  if (/^industry type$/i.test(h) || /^standard industry$/i.test(h)) return 500;
-  if (/^status$/i.test(h)) return 100;
-  if (
-    /^job title$/i.test(h) ||
-    /^job title level$/i.test(h) ||
-    /^job title department$/i.test(h) ||
-    /^last name$/i.test(h)
-  ) {
+  if (isFullScanFilterHeader(header)) {
+    const norm = headerNormKey(header);
+    if (norm === 'leadtype' || norm === 'industrytype' || norm === 'standardindustry') {
+      return 500;
+    }
+    if (norm === 'status') return 100;
     return 5000;
   }
   return 80;
@@ -211,17 +378,8 @@ export function fullScanFilterOptionLimit(header: string): number {
 
 export function needsLazyColumnOptions(col: MasterDataColumnFilterSchema): boolean {
   if (isFullScanFilterHeader(col.header)) return true;
-  const header = col.header.trim();
-  if (
-    /^lead type$/i.test(header) ||
-    /^status$/i.test(header) ||
-    /^industry type$/i.test(header) ||
-    /^standard industry$/i.test(header)
-  ) {
-    return true;
-  }
   if (col.options.length >= 2) return false;
-  return CURATED_OPTION_PATTERNS.some((p) => p.test(header));
+  return CURATED_OPTION_PATTERNS.some((p) => p.test(col.header.trim()));
 }
 
 export function enrichFilterColumnOptions(
@@ -273,30 +431,36 @@ export function buildEffectiveFilterColumns(
   schemaColumns: MasterDataColumnFilterSchema[],
 ): MasterDataColumnFilterSchema[] {
   const schemaByHeader = new Map(
-    schemaColumns.map((c) => [c.header.trim().toLowerCase(), c]),
+    schemaColumns.map((c) => [headerNormKey(c.header), c]),
   );
-  const orderedHeaders =
-    headers.length > 0
-      ? headers
-      : schemaColumns.map((c) => c.header);
+  const orderedHeaders = mergeFilterHeaders(
+    headers.length > 0 ? headers : [],
+    schemaColumns.map((c) => c.header),
+  );
 
   return orderedHeaders
     .filter((h) => h.trim().length > 0 && !isGenericColumnHeader(h))
     .map((header) => {
-      const existing = schemaByHeader.get(header.trim().toLowerCase());
+      const existing = schemaByHeader.get(headerNormKey(header));
       const base: MasterDataColumnFilterSchema = existing
         ? {
             ...existing,
-            header,
+            header: normalizeFilterHeaderName(header),
             filledCount: Math.max(existing.filledCount, 1),
           }
         : {
-            header,
+            header: normalizeFilterHeaderName(header),
             kind: inferMasterColumnKind(header),
             options: [],
             filledCount: 1,
           };
       return enrichFilterColumnOptions(base);
+    })
+    .filter((col, _idx, all) => {
+      const field = masterFilterFieldKeyForHeader(col.header);
+      if (!field) return true;
+      const firstIdx = all.findIndex((c) => masterFilterFieldKeyForHeader(c.header) === field);
+      return all.indexOf(col) === firstIdx;
     });
 }
 
@@ -355,13 +519,13 @@ export type CuratedFilterField =
 
 const INDUSTRY_COLUMN_PATTERNS: RegExp[] = [/^industry type$/i, /^standard industry$/i];
 
-const CURATED_CHIP_MULTI_PATTERNS: RegExp[] = [
-  /^country$/i,
-  /^state$/i,
-  /^job title$/i,
-  /^job title level$/i,
-  /^job title department$/i,
-  /^last name$/i,
+const CURATED_CHIP_MULTI_FIELDS: MasterFilterFieldKey[] = [
+  'country',
+  'state',
+  'jobTitle',
+  'jobTitleLevel',
+  'jobTitleDepartment',
+  'lastName',
 ];
 
 const CURATED_SELECT_PATTERNS: RegExp[] = [
@@ -382,22 +546,23 @@ export function buildCuratedQuickFilters(
     used.add(dateCol.header);
   }
 
-  const leadType = findFilterColumn(columns, /^lead type$/i);
+  const leadType = resolveFilterColumnByField(columns, 'leadType');
   if (leadType) {
     fields.push({ type: 'select', column: leadType, multiple: true });
     used.add(leadType.header);
   }
 
-  for (const pattern of CURATED_CHIP_MULTI_PATTERNS) {
-    const col = findFilterColumn(columns, pattern);
+  for (const field of CURATED_CHIP_MULTI_FIELDS) {
+    const col = resolveFilterColumnByField(columns, field);
     if (!col || used.has(col.header)) continue;
     fields.push({ type: 'select', column: col, multiple: true });
     used.add(col.header);
   }
 
-  const industryCols = INDUSTRY_COLUMN_PATTERNS.map((pattern) =>
-    findFilterColumn(columns, pattern),
-  ).filter((col): col is MasterDataColumnFilterSchema => Boolean(col));
+  const industryCols = [
+    resolveFilterColumnByField(columns, 'industryType'),
+    resolveFilterColumnByField(columns, 'standardIndustry'),
+  ].filter((col): col is MasterDataColumnFilterSchema => Boolean(col));
   if (industryCols.length > 0) {
     fields.push({ type: 'combinedIndustry', columns: industryCols, label: 'Industry' });
     for (const col of industryCols) used.add(col.header);
@@ -493,6 +658,21 @@ export function isEmployeeSizeCategoryHeader(header: string): boolean {
   return /employee size category/i.test(header.trim());
 }
 
+export function quickFilterLabel(header: string): string {
+  if (columnMatchesFilterField(header, 'leadType')) return 'Lead type';
+  if (columnMatchesFilterField(header, 'jobTitleLevel')) return 'Job Title Level';
+  if (columnMatchesFilterField(header, 'jobTitleDepartment')) return 'Job Title Department';
+  if (columnMatchesFilterField(header, 'jobTitle')) return 'Job Title';
+  if (columnMatchesFilterField(header, 'lastName')) return 'Last Name';
+  if (/employee size category/i.test(header)) return 'Employee size';
+  if (/revenue size category/i.test(header)) return 'Revenue size';
+  if (columnMatchesFilterField(header, 'industryType')) return 'Industry type';
+  if (columnMatchesFilterField(header, 'standardIndustry')) return 'Standard industry';
+  if (columnMatchesFilterField(header, 'country')) return 'Country';
+  if (columnMatchesFilterField(header, 'state')) return 'State';
+  return header;
+}
+
 export function findExactEmployeeSizeColumn(
   columns: MasterDataColumnFilterSchema[],
 ): MasterDataColumnFilterSchema | undefined {
@@ -506,11 +686,11 @@ export function isExactMatchColumn(header: string): boolean {
 
 export function isMultiSelectHeader(header: string): boolean {
   const h = header.trim();
-  return (
-    isFullScanFilterHeader(h) ||
-    INDUSTRY_COLUMN_PATTERNS.some((p) => p.test(h)) ||
-    CURATED_CHIP_MULTI_PATTERNS.some((p) => p.test(h)) ||
-    /^lead type$/i.test(h)
+  if (isFullScanFilterHeader(h)) return true;
+  if (INDUSTRY_COLUMN_PATTERNS.some((p) => p.test(h))) return true;
+  if (/^lead type$/i.test(h)) return true;
+  return CURATED_CHIP_MULTI_FIELDS.some((field) =>
+    columnMatchesFilterField(h, field),
   );
 }
 

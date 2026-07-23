@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 
 interface ScrollMetrics {
@@ -22,6 +23,10 @@ interface GridScrollRailsProps {
   datasetRowOffset?: number;
   /** Jump to a global row index (pagination / large datasets) */
   onDatasetRowSeek?: (globalRowIndex: number) => void;
+  /** Scroll to a display row index (virtualized or DOM) */
+  onScrollToDisplayRow?: (displayRow: number) => void;
+  /** Estimated row height for scroll position math when rows are virtualized */
+  rowEstimatePx?: number;
   className?: string;
 }
 
@@ -84,6 +89,8 @@ export function GridScrollRails({
   datasetRowCount,
   datasetRowOffset = 0,
   onDatasetRowSeek,
+  onScrollToDisplayRow,
+  rowEstimatePx = 32,
   className,
 }: GridScrollRailsProps) {
   const rowTrackRef = useRef<HTMLDivElement>(null);
@@ -102,8 +109,14 @@ export function GridScrollRails({
 
   const scrollToDisplayRow = useCallback(
     (displayRow: number) => {
+      if (displayRowCount <= 0) return;
+      if (onScrollToDisplayRow) {
+        onScrollToDisplayRow(displayRow);
+        setLocalRowIndex(Math.max(0, Math.min(displayRowCount - 1, displayRow)));
+        return;
+      }
       const el = containerRef.current;
-      if (!el || displayRowCount <= 0) return;
+      if (!el) return;
       const row = Math.max(0, Math.min(displayRowCount - 1, displayRow));
       const cell = el.querySelector<HTMLElement>(`tbody td[data-grid-row="${row}"]`);
       if (!cell) return;
@@ -112,7 +125,7 @@ export function GridScrollRails({
       el.scrollTop = Math.max(0, cell.offsetTop - headerHeight);
       setLocalRowIndex(row);
     },
-    [containerRef, displayRowCount],
+    [containerRef, displayRowCount, onScrollToDisplayRow],
   );
 
   const seekGlobalRow = useCallback(
@@ -155,11 +168,9 @@ export function GridScrollRails({
         return;
       }
 
-      const sample = el.querySelector<HTMLElement>('tbody td[data-grid-row="0"]');
-      const rowHeight = sample?.offsetHeight || 28;
       const thead = el.querySelector('thead');
       const headerHeight = thead?.offsetHeight ?? 0;
-      const approx = Math.round((el.scrollTop - headerHeight) / rowHeight);
+      const approx = Math.round((el.scrollTop - headerHeight) / rowEstimatePx);
       setLocalRowIndex(Math.max(0, Math.min(displayRowCount - 1, approx)));
     };
 
@@ -172,7 +183,7 @@ export function GridScrollRails({
       el.removeEventListener('scroll', update);
       ro.disconnect();
     };
-  }, [containerRef, displayRowCount, datasetRowOffset, totalRows]);
+  }, [containerRef, displayRowCount, datasetRowOffset, rowEstimatePx, totalRows]);
 
   const globalRow = totalRows > 0 ? datasetRowOffset + localRowIndex : 0;
   const rowRatio = totalRows > 1 ? globalRow / (totalRows - 1) : 0;
@@ -196,6 +207,15 @@ export function GridScrollRails({
       el.scrollLeft = ratio * maxScrollLeft;
     },
     [containerRef, maxScrollLeft],
+  );
+
+  const scrollColumnsBy = useCallback(
+    (delta: number) => {
+      const el = containerRef.current;
+      if (!el) return;
+      el.scrollBy({ left: delta, behavior: 'smooth' });
+    },
+    [containerRef],
   );
 
   useTrackPointer(rowTrackRef, onRowRatio);
@@ -236,6 +256,15 @@ export function GridScrollRails({
       {showColRail && (
         <div className="xl-scroll-rail xl-scroll-rail--cols">
           <span className="xl-scroll-rail__label">Columns</span>
+          <button
+            type="button"
+            className="xl-scroll-rail__arrow"
+            aria-label="Scroll columns left"
+            disabled={metrics.scrollLeft <= 1}
+            onClick={() => scrollColumnsBy(-180)}
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </button>
           <div
             ref={colTrackRef}
             className="xl-scroll-rail__track"
@@ -250,7 +279,15 @@ export function GridScrollRails({
               style={{ left: `calc(${colRatio * 100}% - 7px)` }}
             />
           </div>
-          <span className="xl-scroll-rail__hint">Drag ↔</span>
+          <button
+            type="button"
+            className="xl-scroll-rail__arrow"
+            aria-label="Scroll columns right"
+            disabled={metrics.scrollLeft >= maxScrollLeft - 1}
+            onClick={() => scrollColumnsBy(180)}
+          >
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
         </div>
       )}
     </div>

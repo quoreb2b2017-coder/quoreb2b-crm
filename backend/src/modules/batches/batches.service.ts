@@ -23,7 +23,7 @@ import {
   buildMasterBatchCoverage,
   type MasterBatchCoverageResult,
 } from './master-batch-coverage.util';
-import { applyCampaignCreationDate } from './batch-campaign-date.util';
+import { applyCampaignCreationDate, applyCampaignVertical } from './batch-campaign-date.util';
 import {
   buildDeliveredBatchCoverage,
   type DeliveredBatchCoverageResult,
@@ -212,8 +212,13 @@ export class BatchesService {
       dto.campaignChannel ?? parentChannel ?? detectCampaignChannel(dto.name);
 
     const createdAt = new Date();
-    const headers = dto.headers ?? [];
-    const rows = applyCampaignCreationDate(headers, dto.rows ?? [], createdAt);
+    const verticalStamp = applyCampaignVertical(
+      dto.headers ?? [],
+      dto.rows ?? [],
+      dto.name,
+    );
+    const headers = verticalStamp.headers;
+    const rows = applyCampaignCreationDate(headers, verticalStamp.rows, createdAt);
 
     // Super Admin / DB Admin share one library — auto-share root campaigns both ways.
     let autoSharedPeers: Types.ObjectId[] = [];

@@ -39,6 +39,7 @@ import {
   isFullScanFilterHeader,
   isSizeCategoryHeader,
   pickQuickFilterColumns,
+  quickFilterLabel,
 } from './master-database-columns';
 import { CategoryRangeSlider } from './CategoryRangeSlider';
 
@@ -234,20 +235,7 @@ export function MasterDatabaseQuickFilters({
     }));
   };
 
-  const shortFilterLabel = (header: string) => {
-    if (/lead type/i.test(header)) return 'Lead type';
-    if (/^job title level$/i.test(header)) return 'Job Title Level';
-    if (/^job title department$/i.test(header)) return 'Job Title Department';
-    if (/^job title$/i.test(header)) return 'Job Title';
-    if (/^last name$/i.test(header)) return 'Last Name';
-    if (/employee size category/i.test(header)) return 'Employee size';
-    if (/revenue size category/i.test(header)) return 'Revenue size';
-    if (/industry type/i.test(header)) return 'Industry type';
-    if (/standard industry/i.test(header)) return 'Standard industry';
-    if (/^country$/i.test(header)) return 'Country';
-    if (/^state$/i.test(header)) return 'State';
-    return header;
-  };
+  const shortFilterLabel = quickFilterLabel;
 
   const fieldIcon = (header: string) => {
     if (/lead type/i.test(header)) return Tag;

@@ -21,6 +21,9 @@ import {
   isIndustryHeader,
   isLeadTypeHeader,
   isStatusHeader,
+  headerNormKey,
+  resolveMasterDataColumnHeader,
+  masterDataHeadersMatchFilterIntent,
 } from './master-data-filter-schema.util';
 import {
   distinctColumnValues,
@@ -4262,7 +4265,7 @@ export class MasterDataService {
     const revision =
       (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? rowCount;
     return this.cache.wrap(
-      `master:filter-schema:v5-status:${revision}`,
+      `master:filter-schema:v7-status:${revision}`,
       cacheTtlSeconds(this.config, 'long'),
       async () => {
         const headers = doc.headers as string[];
@@ -4287,16 +4290,32 @@ export class MasterDataService {
                 distinctLimit,
               ));
             if (allValues.length > 0) {
-              columns = columns.map((col) =>
-                col.header.trim().toLowerCase() === scanHeader.trim().toLowerCase()
-                  ? {
-                      ...col,
-                      kind: isStatusHeader(col.header) ? ('status' as const) : ('select' as const),
-                      options: allValues,
-                      filledCount: Math.max(col.filledCount, 1),
-                    }
-                  : col,
+              const colNorm = headerNormKey(scanHeader);
+              const existingIdx = columns.findIndex(
+                (col) => headerNormKey(col.header) === colNorm,
               );
+              if (existingIdx >= 0) {
+                columns = columns.map((col, idx) =>
+                  idx === existingIdx
+                    ? {
+                        ...col,
+                        header: scanHeader,
+                        kind: isStatusHeader(col.header)
+                          ? ('status' as const)
+                          : ('select' as const),
+                        options: allValues,
+                        filledCount: Math.max(col.filledCount, 1),
+                      }
+                    : col,
+                );
+              } else {
+                columns.push({
+                  header: scanHeader,
+                  kind: isStatusHeader(scanHeader) ? ('status' as const) : ('select' as const),
+                  options: allValues,
+                  filledCount: 1,
+                });
+              }
             }
           } catch (err) {
             this.logger.warn(
@@ -4328,41 +4347,42 @@ export class MasterDataService {
     }
 
     const headers = doc.headers as string[];
-    if (!headers.some((h) => h.toLowerCase() === header.toLowerCase())) {
-      throw new BadRequestException('Unknown column');
+    const resolvedHeader = resolveMasterDataColumnHeader(headers, header);
+    if (!resolvedHeader || !masterDataHeadersMatchFilterIntent(header, resolvedHeader)) {
+      return { header, options: [] as string[] };
     }
 
-    const fullScan = isFullScanSelectHeader(header);
+    const fullScan = isFullScanSelectHeader(resolvedHeader);
     const effectiveLimit = fullScan
       ? Math.min(
-          Math.max(limit || fullScanDistinctLimit(header), 40),
-          fullScanDistinctLimit(header),
+          Math.max(limit || fullScanDistinctLimit(resolvedHeader), 40),
+          fullScanDistinctLimit(resolvedHeader),
         )
       : Math.min(Math.max(limit || 40, 1), 500);
 
     const revision = this.rowStore.getRowCount(doc);
-    const cacheKey = `master:colopts:v5:${revision}:${header.toLowerCase()}:${q ?? ''}:${effectiveLimit}`;
+    const cacheKey = `master:colopts:v7:${revision}:${headerNormKey(resolvedHeader)}:${headerNormKey(header)}:${q ?? ''}:${effectiveLimit}`;
     return this.cache.wrap(
       cacheKey,
       cacheTtlSeconds(this.config, 'short'),
       async () => {
         if (fullScan) {
           const searchOptions = await this.elasticsearch.getDistinctMasterFieldValues(
-            flatFieldName(header),
+            flatFieldName(resolvedHeader),
             MASTER_DATA_KEY,
             q,
             effectiveLimit,
           );
-          if (searchOptions !== null) return { header, options: searchOptions };
+          if (searchOptions !== null) return { header: resolvedHeader, options: searchOptions };
 
           const needle = q?.trim().toLowerCase();
           const options = await this.rowStore.collectDistinctColumnValues(
             doc as Parameters<typeof this.rowStore.collectDistinctColumnValues>[0],
-            header,
-            needle ? fullScanDistinctLimit(header) : effectiveLimit,
+            resolvedHeader,
+            needle ? fullScanDistinctLimit(resolvedHeader) : effectiveLimit,
           );
           return {
-            header,
+            header: resolvedHeader,
             options: needle
               ? options
                   .filter((value) => value.toLowerCase().includes(needle))
@@ -4373,8 +4393,8 @@ export class MasterDataService {
 
         const rows = await this.rowStore.loadSampleRows(doc, 10_000);
         return {
-          header,
-          options: distinctColumnValues(headers, rows, header, q, effectiveLimit),
+          header: resolvedHeader,
+          options: distinctColumnValues(headers, rows, resolvedHeader, q, effectiveLimit),
         };
       },
     );

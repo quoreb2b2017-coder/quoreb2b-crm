@@ -1043,6 +1043,10 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
                     placeholder="e.g. IT Companies - May 2025"
                     className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-500"
                   />
+                  <p className="mt-1.5 text-[11px] text-slate-500">
+                    Auto-fills <strong>Campaign Vertical</strong> on every row (overwrites existing
+                    values).
+                  </p>
                 </div>
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">

@@ -6,6 +6,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Building2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Database,
   Download,
   Filter,
@@ -56,7 +58,9 @@ import {
   hasAnyDynamicSearchCriteria,
   hasValidEmail,
   hasValidPhone,
+  headerNormKey,
   needsLazyColumnOptions,
+  normalizeFilterHeaderName,
   primaryDisplayHeader,
   serializeDynamicSearchPayload,
   type DynamicMasterDbFilters,
@@ -192,21 +196,31 @@ export function MasterDatabaseExplorer({
               undefined,
               limit,
             );
-            return { header: col.header, options: result.options };
+            return {
+              requestHeader: col.header,
+              header: result.header,
+              options: result.options,
+            };
           } catch {
-            return { header: col.header, options: [] as string[] };
+            return {
+              requestHeader: col.header,
+              header: col.header,
+              options: [] as string[],
+            };
           }
         }),
       );
-      const optionsByHeader = new Map(
-        fetched.map((row) => [row.header.trim().toLowerCase(), row.options]),
+      const optionsByRequest = new Map(
+        fetched.map((row) => [headerNormKey(row.requestHeader), row]),
       );
       columns = columns.map((col) => {
-        const extra = optionsByHeader.get(col.header.trim().toLowerCase());
-        if (!extra?.length) return col;
+        const row = optionsByRequest.get(headerNormKey(col.header));
+        if (!row?.options.length) return col;
+        const resolvedHeader = normalizeFilterHeaderName(row.header);
         return enrichFilterColumnOptions({
           ...col,
-          options: [...new Set([...col.options, ...extra])],
+          header: resolvedHeader,
+          options: [...new Set([...col.options, ...row.options])],
         });
       });
       setFilterColumns(columns);
@@ -642,15 +656,27 @@ export function MasterDatabaseExplorer({
 
   const goToPage = (p: number) => {
     if (isDbAdminPreview) return;
-    setPage(p);
-    if (useServerSearch && hasSearched && isFilteredView) void fetchFilteredPage(p, pageSize);
+    const clamped = Math.max(1, Math.min(totalPages, p));
+    if (clamped === page) return;
+    setPage(clamped);
+    if (!useServerSearch || !hasSearched) return;
+    if (isFilteredView) {
+      void fetchFilteredPage(clamped, pageSize);
+    } else {
+      void loadBrowsePage(clamped, pageSize, { resetSelection: false });
+    }
   };
 
   const changePageSize = (size: number) => {
     if (isDbAdminPreview) return;
     setPageSize(size);
     setPage(1);
-    if (useServerSearch && hasSearched && isFilteredView) void fetchFilteredPage(1, size);
+    if (!useServerSearch || !hasSearched) return;
+    if (isFilteredView) {
+      void fetchFilteredPage(1, size);
+    } else {
+      void loadBrowsePage(1, size, { resetSelection: false });
+    }
   };
 
   const toggleSelectAllPage = () => {
@@ -976,7 +1002,15 @@ export function MasterDatabaseExplorer({
                 )}
               </p>
               <div className="mdb-pagination__pages">
-                <button type="button" className="mdb-page-btn" disabled={page <= 1 || searching} onClick={() => goToPage(page - 1)}>‹</button>
+                <button
+                  type="button"
+                  className="mdb-page-btn"
+                  disabled={page <= 1 || searching}
+                  onClick={() => goToPage(page - 1)}
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
                 {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                   const p = i + 1;
                   return (
@@ -992,7 +1026,15 @@ export function MasterDatabaseExplorer({
                   );
                 })}
                 {totalPages > 5 && <span>…</span>}
-                <button type="button" className="mdb-page-btn" disabled={page >= totalPages || searching} onClick={() => goToPage(page + 1)}>›</button>
+                <button
+                  type="button"
+                  className="mdb-page-btn"
+                  disabled={page >= totalPages || searching}
+                  onClick={() => goToPage(page + 1)}
+                  aria-label="Next page"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
               </div>
               <label className="mdb-page-size">
                 <span className="mdb-page-size__label">Rows</span>
@@ -1427,6 +1469,9 @@ export function MasterDatabaseExplorer({
                 <div>
                   <label className="text-xs font-medium text-slate-600">Campaign name</label>
                   <input className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" value={batchName} onChange={(e) => setBatchName(e.target.value)} />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Auto-fills Campaign Vertical for all contacts (overwrites existing).
+                  </p>
                 </div>
                 <div>
                   <label className="text-xs font-medium text-slate-600">Description</label>

@@ -648,12 +648,29 @@
   align-items: center;
   justify-content: center;
   border-radius: 6px;
-  font-size: 12px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  font-size: 14px;
+  font-weight: 600;
   color: #475569;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.mdb-page-btn:hover:not(:disabled) {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #1e293b;
+}
+
+.mdb-page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .mdb-page-btn.is-active {
   background: var(--mdb-green);
+  border-color: var(--mdb-green);
   color: #fff;
 }
 
@@ -1625,28 +1642,42 @@
 
 .mdb-scroll-chips {
   position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.25rem;
   min-width: 0;
+}
+
+.mdb-scroll-chips__arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #475569;
+  cursor: pointer;
+  z-index: 2;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.mdb-scroll-chips__arrow:hover:not(:disabled) {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.mdb-scroll-chips__arrow:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 .mdb-scroll-chips::before,
 .mdb-scroll-chips::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 1.25rem;
-  z-index: 1;
-  pointer-events: none;
-}
-
-.mdb-scroll-chips::before {
-  left: 0;
-  background: linear-gradient(90deg, #f6f9fc 30%, transparent);
-}
-
-.mdb-scroll-chips::after {
-  right: 0;
-  background: linear-gradient(270deg, #f6f9fc 30%, transparent);
+  content: none;
 }
 
 .mdb-scroll-chips__track {
@@ -1719,6 +1750,7 @@
 }
 
 .mdb-scroll-chips__meta {
+  grid-column: 1 / -1;
   margin: 0.1rem 0 0;
   padding: 0 0.15rem;
   font-size: 9px;

@@ -320,7 +320,7 @@ export function ExcelPreviewGrid({
   const { containerRef, isActive, setCell, activeCell, focusCell } = useExcelTableNavigation({
     rowCount: displayRows.length,
     colCount: headers.length,
-    enabled: headers.length > 0,
+    enabled: editable && headers.length > 0,
     isEditing,
     onEnter: (pos, seed) => {
       if (!editable) return;
@@ -339,9 +339,10 @@ export function ExcelPreviewGrid({
     displayRows.length > VIRTUAL_ROW_THRESHOLD && !isEditing && !editable;
   const rowVirtualizer = useVirtualizer({
     count: displayRows.length,
+    enabled: enableVirtualRows,
     getScrollElement: () => containerRef.current,
     estimateSize: () => 32,
-    overscan: 12,
+    overscan: 16,
   });
   const virtualRows = enableVirtualRows ? rowVirtualizer.getVirtualItems() : null;
   const paddingTop = virtualRows?.[0]?.start ?? 0;
@@ -350,16 +351,35 @@ export function ExcelPreviewGrid({
       ? rowVirtualizer.getTotalSize() - virtualRows[virtualRows.length - 1].end
       : 0;
 
+  const scrollToDisplayRowIndex = useCallback(
+    (displayRow: number) => {
+      const row = Math.max(0, Math.min(displayRows.length - 1, displayRow));
+      if (enableVirtualRows) {
+        rowVirtualizer.scrollToIndex(row, { align: 'start' });
+        return;
+      }
+      const el = containerRef.current;
+      if (!el) return;
+      const cell = el.querySelector<HTMLElement>(`tbody td[data-grid-row="${row}"]`);
+      if (!cell) return;
+      const thead = el.querySelector('thead');
+      const headerHeight = thead?.getBoundingClientRect().height ?? 0;
+      el.scrollTop = Math.max(0, cell.offsetTop - headerHeight);
+    },
+    [containerRef, displayRows.length, enableVirtualRows, rowVirtualizer],
+  );
+
   useEffect(() => {
-    if (focusDisplayRow == null || !containerRef.current) return;
+    if (focusDisplayRow != null) return;
     const el = containerRef.current;
-    const row = Math.max(0, focusDisplayRow);
-    const cell = el.querySelector<HTMLElement>(`tbody td[data-grid-row="${row}"]`);
-    if (!cell) return;
-    const thead = el.querySelector('thead');
-    const headerHeight = thead?.getBoundingClientRect().height ?? 0;
-    el.scrollTop = Math.max(0, cell.offsetTop - headerHeight);
-  }, [focusDisplayRow, dataResetKey, displayRows.length]);
+    if (!el) return;
+    el.scrollTop = 0;
+  }, [dataResetKey, focusDisplayRow, containerRef]);
+
+  useEffect(() => {
+    if (focusDisplayRow == null) return;
+    scrollToDisplayRowIndex(focusDisplayRow);
+  }, [focusDisplayRow, dataResetKey, scrollToDisplayRowIndex]);
 
   const startEdit = useCallback((target: EditTarget, seed?: string) => {
     if (!editable || !target) return;
@@ -1440,6 +1460,8 @@ export function ExcelPreviewGrid({
           datasetRowCount={datasetRowCount}
           datasetRowOffset={datasetRowOffset}
           onDatasetRowSeek={onDatasetRowSeek}
+          onScrollToDisplayRow={scrollToDisplayRowIndex}
+          rowEstimatePx={32}
         />
       )}
 

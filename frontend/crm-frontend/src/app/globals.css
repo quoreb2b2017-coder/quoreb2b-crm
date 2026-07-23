@@ -316,6 +316,7 @@ html {
     overflow-y: auto;
     scroll-behavior: auto;
     overscroll-behavior: contain;
+    overflow-anchor: none;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: thin;
     scrollbar-color: #2e7ad155 #f3f3f3;
@@ -391,6 +392,32 @@ html {
     flex-shrink: 0;
     font-size: 10px;
     color: #94a3b8;
+  }
+
+  .xl-scroll-rail__arrow {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    color: #475569;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+
+  .xl-scroll-rail__arrow:hover:not(:disabled) {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+    color: #1e293b;
+  }
+
+  .xl-scroll-rail__arrow:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
   }
 
   .xl-scroll-rail__track {

@@ -50,31 +50,150 @@ export function normalizeFilterOptionValue(raw: string): string {
   return v;
 }
 
+export function normalizeFilterHeaderName(header: string): string {
+  return String(header ?? '')
+    .replace(/^\uFEFF/, '')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+export function headerNormKey(header: string): string {
+  return normalizeFilterHeaderName(header).toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function isJobTitleLinkHeader(header: string): boolean {
+  return /link$/i.test(normalizeFilterHeaderName(header));
+}
+
 export function isLeadTypeHeader(header: string): boolean {
-  return /^lead type$/i.test(header.trim());
+  return headerNormKey(header) === 'leadtype';
 }
 
 export function isIndustryHeader(header: string): boolean {
-  const h = header.trim();
-  return /^industry type$/i.test(h) || /^standard industry$/i.test(h);
+  const norm = headerNormKey(header);
+  return norm === 'industrytype' || norm === 'standardindustry';
+}
+
+export function isJobTitleDepartmentHeader(header: string): boolean {
+  const normalized = normalizeFilterHeaderName(header);
+  if (isJobTitleLinkHeader(normalized)) return false;
+  const norm = headerNormKey(normalized);
+  return (
+    norm === 'jobtitledepartment' ||
+    norm === 'jobtitledept' ||
+    norm === 'jobtitledepartement' ||
+    norm === 'jobtitledeperment' ||
+    (norm.includes('jobtitle') &&
+      (norm.includes('department') || norm.includes('dept')))
+  );
+}
+
+export function isJobTitleLevelHeader(header: string): boolean {
+  const normalized = normalizeFilterHeaderName(header);
+  if (isJobTitleLinkHeader(normalized)) return false;
+  const norm = headerNormKey(normalized);
+  return norm === 'jobtitlelevel' || (norm.includes('jobtitle') && norm.includes('level'));
+}
+
+export function isJobTitleOnlyHeader(header: string): boolean {
+  const normalized = normalizeFilterHeaderName(header);
+  if (isJobTitleLinkHeader(normalized)) return false;
+  const norm = headerNormKey(normalized);
+  if (norm !== 'jobtitle') return false;
+  return !/level|department|dept|link/i.test(normalized);
 }
 
 export function isJobTitleHeader(header: string): boolean {
-  const h = header.trim();
   return (
-    /^job title$/i.test(h) ||
-    /^job title level$/i.test(h) ||
-    /^job title department$/i.test(h)
+    isJobTitleOnlyHeader(header) ||
+    isJobTitleLevelHeader(header) ||
+    isJobTitleDepartmentHeader(header)
   );
 }
 
 export function isLastNameHeader(header: string): boolean {
-  return /^last name$/i.test(header.trim());
+  return headerNormKey(header) === 'lastname';
 }
 
 /** Exact Status column — full distinct scan so Valid/Invalid/etc. appear in filters. */
 export function isStatusHeader(header: string): boolean {
-  return /^status$/i.test(header.trim());
+  return headerNormKey(header) === 'status';
+}
+
+export function resolveMasterDataColumnHeader(
+  headers: string[],
+  requestedHeader: string,
+): string | null {
+  const normalized = normalizeFilterHeaderName(requestedHeader);
+  if (!normalized) return null;
+
+  const exact = headers.find(
+    (h) =>
+      normalizeFilterHeaderName(h).toLowerCase() === normalized.toLowerCase(),
+  );
+  if (exact) return exact;
+
+  const reqNorm = headerNormKey(normalized);
+  const normMatch = headers.find((h) => headerNormKey(h) === reqNorm);
+  if (normMatch) return normMatch;
+
+  if (isJobTitleDepartmentHeader(normalized)) {
+    return headers.find((h) => isJobTitleDepartmentHeader(h)) ?? null;
+  }
+  if (isJobTitleLevelHeader(normalized)) {
+    return headers.find((h) => isJobTitleLevelHeader(h)) ?? null;
+  }
+  if (isJobTitleOnlyHeader(normalized)) {
+    return headers.find((h) => isJobTitleOnlyHeader(h)) ?? null;
+  }
+  if (isLeadTypeHeader(normalized)) {
+    return headers.find((h) => isLeadTypeHeader(h)) ?? null;
+  }
+  if (isLastNameHeader(normalized)) {
+    return headers.find((h) => isLastNameHeader(h)) ?? null;
+  }
+  if (isIndustryHeader(normalized)) {
+    const wantStandard = headerNormKey(normalized) === 'standardindustry';
+    return (
+      headers.find((h) =>
+        wantStandard
+          ? isIndustryHeader(h) && headerNormKey(h) === 'standardindustry'
+          : isIndustryHeader(h) && headerNormKey(h) === 'industrytype',
+      ) ?? headers.find((h) => isIndustryHeader(h)) ?? null
+    );
+  }
+  if (isStatusHeader(normalized)) {
+    return headers.find((h) => isStatusHeader(h)) ?? null;
+  }
+
+  return null;
+}
+
+/** Ensure resolved column belongs to the same CRM filter field as requested. */
+export function masterDataHeadersMatchFilterIntent(
+  requestedHeader: string,
+  resolvedHeader: string,
+): boolean {
+  const requested = normalizeFilterHeaderName(requestedHeader);
+  const resolved = normalizeFilterHeaderName(resolvedHeader);
+  if (requested.toLowerCase() === resolved.toLowerCase()) return true;
+  if (headerNormKey(requested) === headerNormKey(resolved)) return true;
+
+  if (isJobTitleDepartmentHeader(requested)) {
+    return isJobTitleDepartmentHeader(resolved);
+  }
+  if (isJobTitleLevelHeader(requested)) {
+    return isJobTitleLevelHeader(resolved);
+  }
+  if (isJobTitleOnlyHeader(requested)) {
+    return isJobTitleOnlyHeader(resolved);
+  }
+  if (isLeadTypeHeader(requested)) return isLeadTypeHeader(resolved);
+  if (isLastNameHeader(requested)) return isLastNameHeader(resolved);
+  if (isIndustryHeader(requested)) return isIndustryHeader(resolved);
+  if (isStatusHeader(requested)) return isStatusHeader(resolved);
+
+  return false;
 }
 
 /** Columns that must scan all chunks (not just the first N sample rows). */
@@ -193,6 +312,11 @@ export function buildMasterDataFilterSchema(
     })
     .filter((col) => {
       if (/^column\s+\d+$/i.test(col.header.trim())) return false;
-      return col.filledCount > 0 || col.kind === 'email' || col.kind === 'phone';
+      return (
+        col.filledCount > 0 ||
+        col.kind === 'email' ||
+        col.kind === 'phone' ||
+        isFullScanSelectHeader(col.header)
+      );
     });
 }

@@ -28,6 +28,7 @@ import { extractApiError } from '@/lib/api/errors';
 import { toastBatchShareResult } from '@/lib/batches/share-result-toast';
 import { toast } from '@/stores/toast.store';
 import { cn } from '@/lib/utils/cn';
+import { applyCampaignVertical } from '@/lib/spreadsheet/campaign-vertical.util';
 
 type WizardStep = 'extract' | 'suppression' | 'distribute';
 
@@ -91,24 +92,29 @@ export function DbAdminCampaignWizard({
     [campaigns, suppressionCampaignId],
   );
 
+  const stampedExtract = useMemo(
+    () => applyCampaignVertical(draftHeaders, draftRows, batchName),
+    [batchName, draftHeaders, draftRows],
+  );
+
   const previewData = useMemo(
     () => ({
       fileName: sourceFileName ?? 'master-extract.xlsx',
       sheetName: batchName || 'Campaign',
-      headers: draftHeaders,
-      rows: draftRows,
+      headers: stampedExtract.headers,
+      rows: stampedExtract.rows,
     }),
-    [batchName, draftHeaders, draftRows, sourceFileName],
+    [batchName, sourceFileName, stampedExtract.headers, stampedExtract.rows],
   );
 
   const extractGridData = useMemo<SpreadsheetData>(
     () => ({
       fileName: previewData.fileName,
       sheetName: previewData.sheetName,
-      headers: draftHeaders,
-      rows: draftRows,
+      headers: stampedExtract.headers,
+      rows: stampedExtract.rows,
     }),
-    [previewData.fileName, previewData.sheetName, draftHeaders, draftRows],
+    [previewData.fileName, previewData.sheetName, stampedExtract.headers, stampedExtract.rows],
   );
 
   const handleExtractDataChange = useCallback(
@@ -217,7 +223,10 @@ export function DbAdminCampaignWizard({
           : hasSelectedIndices
             ? { masterSourceRowIndices: sourceRowIndices }
             : hasInlineRows
-              ? { sourceHeaders: draftHeaders, sourceRows: draftRows }
+              ? {
+                  sourceHeaders: stampedExtract.headers,
+                  sourceRows: stampedExtract.rows,
+                }
               : { masterSearchFilter }),
         baseFileName: batchName || sourceFileName,
       });
@@ -266,8 +275,8 @@ export function DbAdminCampaignWizard({
       const result = await batchesService.create({
         name: batchName.trim(),
         description: batchDesc.trim() || undefined,
-        headers: draftHeaders,
-        rows: draftRows,
+        headers: stampedExtract.headers,
+        rows: stampedExtract.rows,
         sourceFileName,
         masterSourceRowIndices: sourceRowIndices.length ? sourceRowIndices : undefined,
         masterSearchFilter: sourceRowIndices.length ? undefined : masterSearchFilter,
@@ -423,6 +432,10 @@ export function DbAdminCampaignWizard({
                       placeholder="e.g. VOIP June campaign"
                       className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
                     />
+                    <p className="mt-1.5 text-[11px] text-slate-500">
+                      Fills <strong>Campaign Vertical</strong> on every contact (overwrites existing
+                      values).
+                    </p>
                   </div>
                   <div>
                     <label className="mb-1.5 block text-sm font-medium text-slate-700">

@@ -1,4 +1,4 @@
-import type {
+import {
   MasterDataAdvancedFiltersDto,
   MasterDataColumnDateRangeFilterDto,
   MasterDataColumnFilterDto,
@@ -6,8 +6,11 @@ import type {
   MasterDataColumnValuesFilterDto,
   MasterDataColumnValuesOrFilterDto,
 } from './dto/search-master-data.dto';
+import { resolveMasterDataColumnIndex } from './master-data-filter-schema.util';
 
 function colIndex(headers: string[], header: string): number {
+  const resolved = resolveMasterDataColumnIndex(headers, header);
+  if (resolved >= 0) return resolved;
   const target = header.toLowerCase();
   return headers.findIndex((h) => h.toLowerCase() === target);
 }
@@ -619,7 +622,7 @@ export function distinctColumnValues(
   q?: string,
   limit = 40,
 ): string[] {
-  const colIdx = colIndex(headers, header);
+  const colIdx = resolveMasterDataColumnIndex(headers, header);
   if (colIdx < 0) return [];
   const needle = q?.trim().toLowerCase() ?? '';
   const set = new Set<string>();

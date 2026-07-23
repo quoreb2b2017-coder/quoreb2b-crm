@@ -71,7 +71,10 @@ export function MasterDatabaseQuickFilters({
   const [moreOpen, setMoreOpen] = useState(variant === 'sidebar');
   const [moreQuery, setMoreQuery] = useState('');
 
-  const curatedFields = useMemo(() => buildCuratedQuickFilters(columns), [columns]);
+  const curatedFields = useMemo(
+    () => buildCuratedQuickFilters(columns, headers),
+    [columns, headers],
+  );
   const fallbackColumns = useMemo(
     () => (curatedFields.length > 0 ? [] : pickQuickFilterColumns(columns, 8)),
     [columns, curatedFields.length],

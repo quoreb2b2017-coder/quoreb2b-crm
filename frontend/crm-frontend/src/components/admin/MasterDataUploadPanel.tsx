@@ -964,6 +964,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
             campaignRowFilter={!isDbAdminView ? activeViewTab.filter : undefined}
             onCreateBatch={openBatchModal}
             fillHeight
+            enableDragScroll
             datasetRowCount={totalRows > 0 ? totalRows : undefined}
             externalSourceIndices={
               (previewSourceIndices?.length ?? 0) > 0 ? previewSourceIndices : undefined

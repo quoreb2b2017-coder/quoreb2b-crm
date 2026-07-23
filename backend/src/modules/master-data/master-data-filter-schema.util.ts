@@ -78,6 +78,9 @@ export function isJobTitleDepartmentHeader(header: string): boolean {
   const normalized = normalizeFilterHeaderName(header);
   if (isJobTitleLinkHeader(normalized)) return false;
   const norm = headerNormKey(normalized);
+  if (norm.includes('level') && !norm.includes('department') && !norm.includes('dept')) {
+    return false;
+  }
   return (
     norm === 'jobtitledepartment' ||
     norm === 'jobtitledept' ||
@@ -92,6 +95,7 @@ export function isJobTitleLevelHeader(header: string): boolean {
   const normalized = normalizeFilterHeaderName(header);
   if (isJobTitleLinkHeader(normalized)) return false;
   const norm = headerNormKey(normalized);
+  if (norm.includes('department') || norm.includes('dept')) return false;
   return norm === 'jobtitlelevel' || (norm.includes('jobtitle') && norm.includes('level'));
 }
 
@@ -118,6 +122,18 @@ export function isLastNameHeader(header: string): boolean {
 /** Exact Status column — full distinct scan so Valid/Invalid/etc. appear in filters. */
 export function isStatusHeader(header: string): boolean {
   return headerNormKey(header) === 'status';
+}
+
+export function resolveMasterDataColumnIndex(
+  headers: string[],
+  requestedHeader: string,
+): number {
+  const resolved = resolveMasterDataColumnHeader(headers, requestedHeader);
+  if (!resolved) return -1;
+  const normalized = normalizeFilterHeaderName(resolved).toLowerCase();
+  return headers.findIndex(
+    (h) => normalizeFilterHeaderName(h).toLowerCase() === normalized,
+  );
 }
 
 export function resolveMasterDataColumnHeader(

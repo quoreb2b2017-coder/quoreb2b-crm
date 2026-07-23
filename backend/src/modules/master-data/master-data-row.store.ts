@@ -17,7 +17,10 @@ import {
   rowMatchesCompiledFilter,
   hasAdvancedMasterFilters,
 } from './master-data-search.util';
-import { normalizeFilterOptionValue } from './master-data-filter-schema.util';
+import {
+  normalizeFilterOptionValue,
+  resolveMasterDataColumnIndex,
+} from './master-data-filter-schema.util';
 import type { SearchMasterDataDto } from './dto/search-master-data.dto';
 
 export type MasterDataFilterInput = Pick<
@@ -687,9 +690,7 @@ export class MasterDataRowStore {
     maxUnique = 500,
   ): Promise<string[]> {
     const headers = (doc.headers as string[]) ?? [];
-    const colIdx = headers.findIndex(
-      (h) => h.trim().toLowerCase() === header.trim().toLowerCase(),
-    );
+    const colIdx = resolveMasterDataColumnIndex(headers, header);
     if (colIdx < 0) return [];
 
     const set = new Set<string>();

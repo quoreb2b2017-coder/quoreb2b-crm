@@ -193,6 +193,9 @@ function columnMatchesFilterField(
   if (isJobTitleLinkHeader(normalized)) return false;
 
   if (field === 'jobTitleDepartment') {
+    if (norm.includes('level') && !norm.includes('department') && !norm.includes('dept')) {
+      return false;
+    }
     return (
       FILTER_FIELD_NORM_KEYS.jobTitleDepartment.some((k) => norm === k) ||
       (norm.includes('jobtitle') &&
@@ -200,6 +203,7 @@ function columnMatchesFilterField(
     );
   }
   if (field === 'jobTitleLevel') {
+    if (norm.includes('department') || norm.includes('dept')) return false;
     return (
       FILTER_FIELD_NORM_KEYS.jobTitleLevel.some((k) => norm === k) ||
       (norm.includes('jobtitle') && norm.includes('level'))
@@ -214,14 +218,52 @@ function columnMatchesFilterField(
   return keys.some((k) => norm === k);
 }
 
+const MASTER_FILTER_FIELD_ORDER: MasterFilterFieldKey[] = [
+  'jobTitleDepartment',
+  'jobTitleLevel',
+  'jobTitle',
+  'lastName',
+  'leadType',
+  'industryType',
+  'standardIndustry',
+  'country',
+  'state',
+];
+
 export function masterFilterFieldKeyForHeader(
   header: string,
 ): MasterFilterFieldKey | null {
-  const fields = Object.keys(MASTER_FILTER_CANONICAL_HEADERS) as MasterFilterFieldKey[];
-  for (const field of fields) {
+  for (const field of MASTER_FILTER_FIELD_ORDER) {
     if (columnMatchesFilterField(header, field)) return field;
   }
   return null;
+}
+
+function filterColumnMatchScore(
+  header: string,
+  field: MasterFilterFieldKey,
+  knownHeaders: string[],
+): number {
+  const norm = headerNormKey(header);
+  const canonical = MASTER_FILTER_CANONICAL_HEADERS[field];
+  let score = 0;
+  if (knownHeaders.some((h) => headerNormKey(h) === norm)) score += 200;
+  if (FILTER_FIELD_NORM_KEYS[field].some((k) => norm === k)) score += 120;
+  if (normalizeFilterHeaderName(header).toLowerCase() === canonical.toLowerCase()) {
+    score += 80;
+  }
+  if (columnMatchesFilterField(header, field)) score += 40;
+  return score;
+}
+
+export function filterHeadersMatchIntent(
+  requestedHeader: string,
+  resolvedHeader: string,
+): boolean {
+  const requestedField = masterFilterFieldKeyForHeader(requestedHeader);
+  const resolvedField = masterFilterFieldKeyForHeader(resolvedHeader);
+  if (requestedField && resolvedField) return requestedField === resolvedField;
+  return headerNormKey(requestedHeader) === headerNormKey(resolvedHeader);
 }
 
 function filterFieldPresentInHeaders(
@@ -234,13 +276,20 @@ function filterFieldPresentInHeaders(
 export function resolveFilterColumnByField(
   columns: MasterDataColumnFilterSchema[],
   field: MasterFilterFieldKey,
+  knownHeaders: string[] = [],
 ): MasterDataColumnFilterSchema | undefined {
-  const found = columns.find(
+  const matches = columns.filter(
     (c) =>
       columnMatchesFilterField(c.header, field) &&
       !isExcludedDropdownColumn(c.header),
   );
-  if (!found) return undefined;
+  if (!matches.length) return undefined;
+
+  const found = [...matches].sort(
+    (a, b) =>
+      filterColumnMatchScore(b.header, field, knownHeaders) -
+      filterColumnMatchScore(a.header, field, knownHeaders),
+  )[0];
 
   return enrichFilterColumnOptions({
     ...found,
@@ -263,9 +312,7 @@ export function mergeFilterHeaders(...sources: string[][]): string[] {
   }
 
   const present = [...byNorm.values()];
-  for (const field of Object.keys(
-    MASTER_FILTER_CANONICAL_HEADERS,
-  ) as MasterFilterFieldKey[]) {
+  for (const field of MASTER_FILTER_FIELD_ORDER) {
     if (!filterFieldPresentInHeaders(present, field)) {
       add(MASTER_FILTER_CANONICAL_HEADERS[field]);
     }
@@ -536,6 +583,7 @@ const CURATED_SELECT_PATTERNS: RegExp[] = [
 /** Fixed CRM quick filters: date range, lead type text, 5–6 dropdowns */
 export function buildCuratedQuickFilters(
   columns: MasterDataColumnFilterSchema[],
+  knownHeaders: string[] = [],
 ): CuratedFilterField[] {
   const fields: CuratedFilterField[] = [];
   const used = new Set<string>();
@@ -546,22 +594,22 @@ export function buildCuratedQuickFilters(
     used.add(dateCol.header);
   }
 
-  const leadType = resolveFilterColumnByField(columns, 'leadType');
+  const leadType = resolveFilterColumnByField(columns, 'leadType', knownHeaders);
   if (leadType) {
     fields.push({ type: 'select', column: leadType, multiple: true });
     used.add(leadType.header);
   }
 
   for (const field of CURATED_CHIP_MULTI_FIELDS) {
-    const col = resolveFilterColumnByField(columns, field);
+    const col = resolveFilterColumnByField(columns, field, knownHeaders);
     if (!col || used.has(col.header)) continue;
     fields.push({ type: 'select', column: col, multiple: true });
     used.add(col.header);
   }
 
   const industryCols = [
-    resolveFilterColumnByField(columns, 'industryType'),
-    resolveFilterColumnByField(columns, 'standardIndustry'),
+    resolveFilterColumnByField(columns, 'industryType', knownHeaders),
+    resolveFilterColumnByField(columns, 'standardIndustry', knownHeaders),
   ].filter((col): col is MasterDataColumnFilterSchema => Boolean(col));
   if (industryCols.length > 0) {
     fields.push({ type: 'combinedIndustry', columns: industryCols, label: 'Industry' });

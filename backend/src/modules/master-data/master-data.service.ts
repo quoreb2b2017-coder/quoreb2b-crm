@@ -4265,7 +4265,7 @@ export class MasterDataService {
     const revision =
       (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? rowCount;
     return this.cache.wrap(
-      `master:filter-schema:v7-status:${revision}`,
+      `master:filter-schema:v8-status:${revision}`,
       cacheTtlSeconds(this.config, 'long'),
       async () => {
         const headers = doc.headers as string[];
@@ -4361,7 +4361,7 @@ export class MasterDataService {
       : Math.min(Math.max(limit || 40, 1), 500);
 
     const revision = this.rowStore.getRowCount(doc);
-    const cacheKey = `master:colopts:v7:${revision}:${headerNormKey(resolvedHeader)}:${headerNormKey(header)}:${q ?? ''}:${effectiveLimit}`;
+    const cacheKey = `master:colopts:v8:${revision}:${headerNormKey(resolvedHeader)}:${headerNormKey(header)}:${q ?? ''}:${effectiveLimit}`;
     return this.cache.wrap(
       cacheKey,
       cacheTtlSeconds(this.config, 'short'),

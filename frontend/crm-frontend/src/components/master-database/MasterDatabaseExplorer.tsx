@@ -54,6 +54,7 @@ import {
   canAutoSearchMasterData,
   enrichFilterColumnOptions,
   emptyDynamicMasterDbFilters,
+  filterHeadersMatchIntent,
   fullScanFilterOptionLimit,
   hasAnyDynamicSearchCriteria,
   hasValidEmail,
@@ -216,6 +217,7 @@ export function MasterDatabaseExplorer({
       columns = columns.map((col) => {
         const row = optionsByRequest.get(headerNormKey(col.header));
         if (!row?.options.length) return col;
+        if (!filterHeadersMatchIntent(col.header, row.header)) return col;
         const resolvedHeader = normalizeFilterHeaderName(row.header);
         return enrichFilterColumnOptions({
           ...col,
@@ -954,7 +956,8 @@ export function MasterDatabaseExplorer({
               data={gridData}
               dataResetKey={gridResetKey}
               editable={false}
-              fillHeight={!isDbAdminPreview}
+              fillHeight
+              enableDragScroll
               batchedByRow={mergedBatchedByRow}
               campaignRowFilter={embedded ? campaignRowFilter : undefined}
               externalSourceIndices={pageSourceIndices}

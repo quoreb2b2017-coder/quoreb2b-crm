@@ -320,7 +320,7 @@ export function ExcelPreviewGrid({
   const { containerRef, isActive, setCell, activeCell, focusCell } = useExcelTableNavigation({
     rowCount: displayRows.length,
     colCount: headers.length,
-    enabled: editable && headers.length > 0,
+    enabled: headers.length > 0,
     isEditing,
     onEnter: (pos, seed) => {
       if (!editable) return;

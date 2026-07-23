@@ -433,7 +433,8 @@
   box-shadow: 0 1px 3px rgb(15 23 42 / 5%);
   display: flex;
   flex-direction: column;
-  min-height: 320px;
+  flex: 1;
+  min-height: 0;
 }
 
 .mdb-table-toolbar {
@@ -726,7 +727,6 @@
 .mdb-xl-grid {
   flex: 1;
   min-height: 0;
-  max-height: calc(100vh - 260px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2402,14 +2402,13 @@
 
 .mdb-page--db-admin .mdb-xl-grid {
   border-top: none;
-  min-height: 460px;
-  max-height: calc(100vh - 220px);
+  min-height: 0;
+  flex: 1;
 }
 
 .mdb-page--db-admin .mdb-xl-grid--preview {
-  min-height: auto;
-  max-height: none;
-  flex: 0 0 auto;
+  min-height: 0;
+  flex: 1;
 }
 
 .mdb-pagination--preview {

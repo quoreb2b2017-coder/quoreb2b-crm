@@ -1,6 +1,46 @@
 /** Column helpers + dynamic filter state for master database */
 
+import { MASTER_DATA_TEMPLATE_HEADERS } from '@/lib/spreadsheet/master-data-format';
+
+const JOB_TITLE_TEMPLATE_INDEX = MASTER_DATA_TEMPLATE_HEADERS.indexOf('Job Title');
+const JOB_TITLE_LEVEL_TEMPLATE_INDEX = MASTER_DATA_TEMPLATE_HEADERS.indexOf('Job Title Level');
+const JOB_TITLE_DEPARTMENT_TEMPLATE_INDEX =
+  MASTER_DATA_TEMPLATE_HEADERS.indexOf('Job Title Department');
+
+const JOB_TITLE_DEPARTMENT_NORM_KEYS = new Set([
+  'jobtitledepartment',
+  'jobtitledept',
+  'jobtitledepartement',
+  'jobtitledeperment',
+]);
+
+function resolveJobTitleTemplateIndex(
+  headers: string[],
+  field: 'jobTitle' | 'jobTitleLevel' | 'jobTitleDepartment',
+): number {
+  const idx =
+    field === 'jobTitle'
+      ? JOB_TITLE_TEMPLATE_INDEX
+      : field === 'jobTitleLevel'
+        ? JOB_TITLE_LEVEL_TEMPLATE_INDEX
+        : JOB_TITLE_DEPARTMENT_TEMPLATE_INDEX;
+  return idx >= 0 && idx < headers.length ? idx : -1;
+}
+
 export function colIndex(headers: string[], header: string): number {
+  if (columnMatchesFilterField(header, 'jobTitleDepartment')) {
+    const templateIdx = resolveJobTitleTemplateIndex(headers, 'jobTitleDepartment');
+    if (templateIdx >= 0) return templateIdx;
+  }
+  if (columnMatchesFilterField(header, 'jobTitleLevel')) {
+    const templateIdx = resolveJobTitleTemplateIndex(headers, 'jobTitleLevel');
+    if (templateIdx >= 0) return templateIdx;
+  }
+  if (columnMatchesFilterField(header, 'jobTitle')) {
+    const templateIdx = resolveJobTitleTemplateIndex(headers, 'jobTitle');
+    if (templateIdx >= 0) return templateIdx;
+  }
+
   const exact = headers.findIndex(
     (h) => h.toLowerCase() === header.toLowerCase(),
   );
@@ -193,21 +233,12 @@ function columnMatchesFilterField(
   if (isJobTitleLinkHeader(normalized)) return false;
 
   if (field === 'jobTitleDepartment') {
-    if (norm.includes('level') && !norm.includes('department') && !norm.includes('dept')) {
-      return false;
-    }
-    return (
-      FILTER_FIELD_NORM_KEYS.jobTitleDepartment.some((k) => norm === k) ||
-      (norm.includes('jobtitle') &&
-        (norm.includes('department') || norm.includes('dept')))
-    );
+    if (norm === 'jobtitle' || norm === 'jobtitlelevel') return false;
+    return JOB_TITLE_DEPARTMENT_NORM_KEYS.has(norm);
   }
   if (field === 'jobTitleLevel') {
-    if (norm.includes('department') || norm.includes('dept')) return false;
-    return (
-      FILTER_FIELD_NORM_KEYS.jobTitleLevel.some((k) => norm === k) ||
-      (norm.includes('jobtitle') && norm.includes('level'))
-    );
+    if (norm === 'jobtitle' || JOB_TITLE_DEPARTMENT_NORM_KEYS.has(norm)) return false;
+    return norm === 'jobtitlelevel';
   }
   if (field === 'jobTitle') {
     if (!FILTER_FIELD_NORM_KEYS.jobTitle.some((k) => norm === k)) return false;
@@ -247,6 +278,15 @@ function filterColumnMatchScore(
   const norm = headerNormKey(header);
   const canonical = MASTER_FILTER_CANONICAL_HEADERS[field];
   let score = 0;
+  if (
+    (field === 'jobTitle' ||
+      field === 'jobTitleLevel' ||
+      field === 'jobTitleDepartment') &&
+    resolveJobTitleTemplateIndex(knownHeaders, field) >= 0 &&
+    knownHeaders[resolveJobTitleTemplateIndex(knownHeaders, field)] === header
+  ) {
+    score += 500;
+  }
   if (knownHeaders.some((h) => headerNormKey(h) === norm)) score += 200;
   if (FILTER_FIELD_NORM_KEYS[field].some((k) => norm === k)) score += 120;
   if (normalizeFilterHeaderName(header).toLowerCase() === canonical.toLowerCase()) {
@@ -298,6 +338,30 @@ export function resolveFilterColumnByField(
   field: MasterFilterFieldKey,
   knownHeaders: string[] = [],
 ): MasterDataColumnFilterSchema | undefined {
+  if (
+    (field === 'jobTitle' || field === 'jobTitleLevel' || field === 'jobTitleDepartment') &&
+    knownHeaders.length > 0
+  ) {
+    const templateIdx = resolveJobTitleTemplateIndex(knownHeaders, field);
+    if (templateIdx >= 0) {
+      const sheetHeader = normalizeFilterHeaderName(knownHeaders[templateIdx]);
+      const found =
+        columns.find((c) => headerNormKey(c.header) === headerNormKey(sheetHeader)) ??
+        columns.find(
+          (c) =>
+            columnMatchesFilterField(c.header, field) &&
+            !isExcludedDropdownColumn(c.header),
+        );
+      if (found) {
+        return enrichFilterColumnOptions({
+          ...found,
+          header: sheetHeader,
+          filledCount: Math.max(found.filledCount, 1),
+        });
+      }
+    }
+  }
+
   const matches = columns.filter(
     (c) =>
       columnMatchesFilterField(c.header, field) &&

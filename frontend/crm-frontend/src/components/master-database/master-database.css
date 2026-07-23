@@ -435,6 +435,7 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 .mdb-table-toolbar {
@@ -2362,7 +2363,8 @@
   border-color: #c6d4e6;
   box-shadow: 0 4px 20px rgb(15 23 42 / 8%);
   overflow: hidden;
-  min-height: 380px;
+  flex: 1;
+  min-height: 0;
 }
 
 .mdb-page--db-admin .mdb-table-card--workbook {

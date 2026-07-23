@@ -278,6 +278,7 @@ export function MasterDatabaseQuickFilters({
         displayMode="chips"
         className="mdb-filter-block__select"
         menuMinWidth={menuMinWidth}
+        menuMaxHeight={460}
         values={selected}
         placeholder="All"
         searchable

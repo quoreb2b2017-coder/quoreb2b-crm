@@ -17,7 +17,7 @@ type MenuStyle = {
 
 const MENU_GAP = 6;
 const VIEWPORT_PAD = 8;
-const DEFAULT_MENU_MAX = 300;
+const DEFAULT_MENU_MAX = 420;
 
 export function XlToolbarMultiSelect({
   values,
@@ -28,6 +28,7 @@ export function XlToolbarMultiSelect({
   className,
   tone = 'light',
   menuMinWidth = 260,
+  menuMaxHeight = DEFAULT_MENU_MAX,
   onApply,
   searchable = true,
   displayMode = 'label',
@@ -42,6 +43,7 @@ export function XlToolbarMultiSelect({
   className?: string;
   tone?: 'toolbar' | 'light';
   menuMinWidth?: number;
+  menuMaxHeight?: number;
   onApply?: (values: Set<string>) => void;
   searchable?: boolean;
   displayMode?: 'label' | 'chips';
@@ -163,7 +165,7 @@ export function XlToolbarMultiSelect({
         bottom: window.innerHeight - rect.top + MENU_GAP,
         left,
         width,
-        maxHeight: Math.min(DEFAULT_MENU_MAX, Math.max(140, spaceAbove)),
+        maxHeight: Math.min(menuMaxHeight, Math.max(180, spaceAbove)),
       });
       return;
     }
@@ -173,9 +175,9 @@ export function XlToolbarMultiSelect({
       top: rect.bottom + MENU_GAP,
       left,
       width,
-      maxHeight: Math.min(DEFAULT_MENU_MAX, Math.max(140, spaceBelow)),
+      maxHeight: Math.min(menuMaxHeight, Math.max(180, spaceBelow)),
     });
-  }, [menuMinWidth]);
+  }, [menuMaxHeight, menuMinWidth]);
 
   const closeMenu = useCallback(() => {
     setOpen(false);
@@ -235,7 +237,9 @@ export function XlToolbarMultiSelect({
   const isChipBox = displayMode === 'chips';
   const showChips = isChipBox && values.size > 0;
 
-  const listMaxHeight = menuStyle ? menuStyle.maxHeight - (searchable ? 88 : 44) : 200;
+  const listMaxHeight = menuStyle
+    ? Math.max(140, menuStyle.maxHeight - (searchable ? 96 : 52))
+    : 220;
 
   const menu =
     open && menuStyle && typeof document !== 'undefined'
@@ -272,7 +276,7 @@ export function XlToolbarMultiSelect({
             )}
             <ul
               className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-1 scrollbar-thin"
-              style={{ maxHeight: listMaxHeight }}
+              style={{ maxHeight: listMaxHeight, WebkitOverflowScrolling: 'touch' }}
             >
               {filteredOptions.length === 0 ? (
                 <li className="px-3 py-3 text-center text-xs text-slate-400">

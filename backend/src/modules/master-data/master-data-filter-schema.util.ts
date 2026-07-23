@@ -1,3 +1,17 @@
+import { MASTER_DATA_TEMPLATE_HEADERS } from './master-data-template.constants';
+
+const JOB_TITLE_TEMPLATE_INDEX = MASTER_DATA_TEMPLATE_HEADERS.indexOf('Job Title');
+const JOB_TITLE_LEVEL_TEMPLATE_INDEX = MASTER_DATA_TEMPLATE_HEADERS.indexOf('Job Title Level');
+const JOB_TITLE_DEPARTMENT_TEMPLATE_INDEX =
+  MASTER_DATA_TEMPLATE_HEADERS.indexOf('Job Title Department');
+
+const JOB_TITLE_DEPARTMENT_NORM_KEYS = new Set([
+  'jobtitledepartment',
+  'jobtitledept',
+  'jobtitledepartement',
+  'jobtitledeperment',
+]);
+
 export type MasterDataColumnKind = 'text' | 'select' | 'status' | 'email' | 'phone';
 
 export interface MasterDataColumnFilterSchema {
@@ -78,25 +92,16 @@ export function isJobTitleDepartmentHeader(header: string): boolean {
   const normalized = normalizeFilterHeaderName(header);
   if (isJobTitleLinkHeader(normalized)) return false;
   const norm = headerNormKey(normalized);
-  if (norm.includes('level') && !norm.includes('department') && !norm.includes('dept')) {
-    return false;
-  }
-  return (
-    norm === 'jobtitledepartment' ||
-    norm === 'jobtitledept' ||
-    norm === 'jobtitledepartement' ||
-    norm === 'jobtitledeperment' ||
-    (norm.includes('jobtitle') &&
-      (norm.includes('department') || norm.includes('dept')))
-  );
+  if (norm === 'jobtitle' || norm === 'jobtitlelevel') return false;
+  return JOB_TITLE_DEPARTMENT_NORM_KEYS.has(norm);
 }
 
 export function isJobTitleLevelHeader(header: string): boolean {
   const normalized = normalizeFilterHeaderName(header);
   if (isJobTitleLinkHeader(normalized)) return false;
   const norm = headerNormKey(normalized);
-  if (norm.includes('department') || norm.includes('dept')) return false;
-  return norm === 'jobtitlelevel' || (norm.includes('jobtitle') && norm.includes('level'));
+  if (norm === 'jobtitle' || JOB_TITLE_DEPARTMENT_NORM_KEYS.has(norm)) return false;
+  return norm === 'jobtitlelevel';
 }
 
 export function isJobTitleOnlyHeader(header: string): boolean {
@@ -128,11 +133,28 @@ export function resolveMasterDataColumnIndex(
   headers: string[],
   requestedHeader: string,
 ): number {
+  const normalized = normalizeFilterHeaderName(requestedHeader);
+  if (!normalized) return -1;
+
+  if (isJobTitleOnlyHeader(normalized) && JOB_TITLE_TEMPLATE_INDEX >= 0) {
+    return JOB_TITLE_TEMPLATE_INDEX < headers.length ? JOB_TITLE_TEMPLATE_INDEX : -1;
+  }
+  if (isJobTitleLevelHeader(normalized) && JOB_TITLE_LEVEL_TEMPLATE_INDEX >= 0) {
+    return JOB_TITLE_LEVEL_TEMPLATE_INDEX < headers.length
+      ? JOB_TITLE_LEVEL_TEMPLATE_INDEX
+      : -1;
+  }
+  if (isJobTitleDepartmentHeader(normalized) && JOB_TITLE_DEPARTMENT_TEMPLATE_INDEX >= 0) {
+    return JOB_TITLE_DEPARTMENT_TEMPLATE_INDEX < headers.length
+      ? JOB_TITLE_DEPARTMENT_TEMPLATE_INDEX
+      : -1;
+  }
+
   const resolved = resolveMasterDataColumnHeader(headers, requestedHeader);
   if (!resolved) return -1;
-  const normalized = normalizeFilterHeaderName(resolved).toLowerCase();
+  const resolvedNorm = normalizeFilterHeaderName(resolved).toLowerCase();
   return headers.findIndex(
-    (h) => normalizeFilterHeaderName(h).toLowerCase() === normalized,
+    (h) => normalizeFilterHeaderName(h).toLowerCase() === resolvedNorm,
   );
 }
 
@@ -199,6 +221,22 @@ export function resolveMasterDataColumnHeader(
 ): string | null {
   const normalized = normalizeFilterHeaderName(requestedHeader);
   if (!normalized) return null;
+
+  if (isJobTitleOnlyHeader(normalized) && JOB_TITLE_TEMPLATE_INDEX >= 0) {
+    return JOB_TITLE_TEMPLATE_INDEX < headers.length
+      ? headers[JOB_TITLE_TEMPLATE_INDEX]
+      : null;
+  }
+  if (isJobTitleLevelHeader(normalized) && JOB_TITLE_LEVEL_TEMPLATE_INDEX >= 0) {
+    return JOB_TITLE_LEVEL_TEMPLATE_INDEX < headers.length
+      ? headers[JOB_TITLE_LEVEL_TEMPLATE_INDEX]
+      : null;
+  }
+  if (isJobTitleDepartmentHeader(normalized) && JOB_TITLE_DEPARTMENT_TEMPLATE_INDEX >= 0) {
+    return JOB_TITLE_DEPARTMENT_TEMPLATE_INDEX < headers.length
+      ? headers[JOB_TITLE_DEPARTMENT_TEMPLATE_INDEX]
+      : null;
+  }
 
   const exact = headers.find(
     (h) =>

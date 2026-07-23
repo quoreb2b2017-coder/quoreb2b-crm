@@ -959,7 +959,7 @@ export function MasterDatabaseExplorer({
             </div>
           )}
           <div
-            className={`mdb-xl-grid min-h-0 flex-1${isDbAdminPreview ? ' mdb-xl-grid--preview' : ''}`}
+            className={`mdb-xl-grid min-h-0 flex-1 flex flex-col overflow-hidden${isDbAdminPreview ? ' mdb-xl-grid--preview' : ''}`}
           >
             <ExcelPreviewGrid
               data={gridData}

@@ -21,6 +21,9 @@ import {
   isIndustryHeader,
   isLeadTypeHeader,
   isStatusHeader,
+  isJobTitleOnlyHeader,
+  isJobTitleLevelHeader,
+  isJobTitleDepartmentHeader,
   headerNormKey,
   resolveMasterDataColumnHeader,
   masterDataHeadersMatchFilterIntent,
@@ -4268,7 +4271,7 @@ export class MasterDataService {
     const revision =
       (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? rowCount;
     return this.cache.wrap(
-      `master:filter-schema:v8-status:${revision}`,
+      `master:filter-schema:v9-status:${revision}`,
       cacheTtlSeconds(this.config, 'long'),
       async () => {
         const headers = doc.headers as string[];
@@ -4279,19 +4282,27 @@ export class MasterDataService {
         for (const scanHeader of fullScanHeaders) {
           try {
             const distinctLimit = fullScanDistinctLimit(scanHeader);
-            const searchValues = await this.elasticsearch.getDistinctMasterFieldValues(
-              flatFieldName(scanHeader),
-              MASTER_DATA_KEY,
-              undefined,
-              distinctLimit,
-            );
-            const allValues =
-              searchValues ??
-              (await this.rowStore.collectDistinctColumnValues(
-                doc as Parameters<typeof this.rowStore.collectDistinctColumnValues>[0],
-                scanHeader,
-                distinctLimit,
-              ));
+            const preferMongoDistinct =
+              isJobTitleOnlyHeader(scanHeader) ||
+              isJobTitleLevelHeader(scanHeader) ||
+              isJobTitleDepartmentHeader(scanHeader);
+            const allValues = preferMongoDistinct
+              ? await this.rowStore.collectDistinctColumnValues(
+                  doc as Parameters<typeof this.rowStore.collectDistinctColumnValues>[0],
+                  scanHeader,
+                  distinctLimit,
+                )
+              : ((await this.elasticsearch.getDistinctMasterFieldValues(
+                  flatFieldName(scanHeader),
+                  MASTER_DATA_KEY,
+                  undefined,
+                  distinctLimit,
+                )) ??
+                (await this.rowStore.collectDistinctColumnValues(
+                  doc as Parameters<typeof this.rowStore.collectDistinctColumnValues>[0],
+                  scanHeader,
+                  distinctLimit,
+                )));
             if (allValues.length > 0) {
               const colNorm = headerNormKey(scanHeader);
               const existingIdx = columns.findIndex(
@@ -4364,19 +4375,27 @@ export class MasterDataService {
       : Math.min(Math.max(limit || 40, 1), 500);
 
     const revision = this.rowStore.getRowCount(doc);
-    const cacheKey = `master:colopts:v8:${revision}:${headerNormKey(resolvedHeader)}:${headerNormKey(header)}:${q ?? ''}:${effectiveLimit}`;
+    const cacheKey = `master:colopts:v9:${revision}:${headerNormKey(resolvedHeader)}:${headerNormKey(header)}:${q ?? ''}:${effectiveLimit}`;
     return this.cache.wrap(
       cacheKey,
       cacheTtlSeconds(this.config, 'short'),
       async () => {
         if (fullScan) {
-          const searchOptions = await this.elasticsearch.getDistinctMasterFieldValues(
-            flatFieldName(resolvedHeader),
-            MASTER_DATA_KEY,
-            q,
-            effectiveLimit,
-          );
-          if (searchOptions !== null) return { header: resolvedHeader, options: searchOptions };
+          const useMongoDistinct =
+            isJobTitleOnlyHeader(resolvedHeader) ||
+            isJobTitleLevelHeader(resolvedHeader) ||
+            isJobTitleDepartmentHeader(resolvedHeader);
+          if (!useMongoDistinct) {
+            const searchOptions = await this.elasticsearch.getDistinctMasterFieldValues(
+              flatFieldName(resolvedHeader),
+              MASTER_DATA_KEY,
+              q,
+              effectiveLimit,
+            );
+            if (searchOptions !== null) {
+              return { header: resolvedHeader, options: searchOptions };
+            }
+          }
 
           const needle = q?.trim().toLowerCase();
           const options = await this.rowStore.collectDistinctColumnValues(

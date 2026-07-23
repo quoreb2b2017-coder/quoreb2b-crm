@@ -51,6 +51,40 @@ const SIZE_CATEGORY_DEFAULTS: Record<string, string[]> = {
   ],
 };
 
+/** Job-title phrases wrongly stored in Job Title Department — exclude from department filters. */
+const JOB_TITLE_PHRASE_IN_DEPARTMENT =
+  /\b(assistant|associate|asst\.?|vice president|v\.?p\.?|avp|svp|evp|director|chief|president|officer|superintendent|principal|executive|ceo|cfo|cio|cmo|chro|coo|founder|partner|specialist|analyst|consultant|coordinator|administrator|representative|developer|architect)\b/i;
+
+/** True when a cell value is a department (Finance, IT), not a job title pasted into department. */
+export function isPlausibleJobTitleDepartmentValue(raw: string): boolean {
+  const v = normalizeFilterOptionValue(raw);
+  if (!v) return false;
+  if (v.length > 64) return false;
+  if (/\s+at\s+/i.test(v)) return false;
+  if (/\(\s*(19|20)\d{2}/.test(v)) return false;
+  if ((v.match(/,/g) ?? []).length >= 2) return false;
+
+  const lower = v.toLowerCase();
+  if (JOB_TITLE_PHRASE_IN_DEPARTMENT.test(lower)) return false;
+  if (/\bhead\s+(of\s+)?[a-z]/i.test(v)) return false;
+  if (/\bmanager\b/.test(lower) && (v.length > 28 || /\b(and|&|of|at)\b/i.test(lower))) {
+    return false;
+  }
+  return true;
+}
+
+export function filterJobTitleDepartmentOptions(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of values) {
+    const v = normalizeFilterOptionValue(raw);
+    if (!v || !isPlausibleJobTitleDepartmentValue(v) || seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
+  }
+  return out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
 /** Strip Excel-style quotes and blank placeholders from filter dropdown values. */
 export function normalizeFilterOptionValue(raw: string): string {
   let v = String(raw ?? '').trim();
@@ -349,10 +383,13 @@ export function enrichFilterSchemaColumns(
     const cap = isFullScanSelectHeader(col.header)
       ? fullScanDistinctLimit(col.header)
       : MAX_OPTIONS;
-    const options = dedupeNormalizedOptions(
+    let options = dedupeNormalizedOptions(
       [...col.options, ...(defaults ?? [])],
       cap,
     );
+    if (isJobTitleDepartmentHeader(col.header)) {
+      options = filterJobTitleDepartmentOptions(options).slice(0, cap);
+    }
     if (isFullScanSelectHeader(col.header) || options.length >= 2) {
       return {
         ...col,

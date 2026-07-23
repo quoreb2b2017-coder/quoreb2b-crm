@@ -482,6 +482,25 @@ export function normalizeFilterOptionValue(raw: string): string {
   return v;
 }
 
+const JOB_TITLE_PHRASE_IN_DEPARTMENT =
+  /\b(assistant|associate|asst\.?|vice president|v\.?p\.?|avp|svp|evp|director|chief|president|officer|superintendent|principal|executive|ceo|cfo|cio|cmo|chro|coo|founder|partner|specialist|analyst|consultant|coordinator|administrator|representative|developer|architect)\b/i;
+
+export function isPlausibleJobTitleDepartmentValue(raw: string): boolean {
+  const v = normalizeFilterOptionValue(raw);
+  if (!v) return false;
+  if (v.length > 64) return false;
+  if (/\s+at\s+/i.test(v)) return false;
+  if (/\(\s*(19|20)\d{2}/.test(v)) return false;
+  if ((v.match(/,/g) ?? []).length >= 2) return false;
+  const lower = v.toLowerCase();
+  if (JOB_TITLE_PHRASE_IN_DEPARTMENT.test(lower)) return false;
+  if (/\bhead\s+(of\s+)?[a-z]/i.test(v)) return false;
+  if (/\bmanager\b/.test(lower) && (v.length > 28 || /\b(and|&|of|at)\b/i.test(lower))) {
+    return false;
+  }
+  return true;
+}
+
 export function isFullScanFilterHeader(header: string): boolean {
   const normalized = normalizeFilterHeaderName(header);
   if (isJobTitleLinkHeader(normalized)) return false;
@@ -523,7 +542,14 @@ export function enrichFilterColumnOptions(
   const merged = new Set<string>();
   for (const raw of [...col.options, ...(defaults ?? [])]) {
     const v = normalizeFilterOptionValue(raw);
-    if (v) merged.add(v);
+    if (!v) continue;
+    if (
+      columnMatchesFilterField(col.header, 'jobTitleDepartment') &&
+      !isPlausibleJobTitleDepartmentValue(v)
+    ) {
+      continue;
+    }
+    merged.add(v);
   }
   const isLeadType = /^lead type$/i.test(col.header.trim());
   const isStatus = /^status$/i.test(col.header.trim());

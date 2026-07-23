@@ -688,6 +688,7 @@ export class MasterDataRowStore {
     doc: Pick<MasterDataRecord, 'key' | 'rows' | 'storage' | 'headers'>,
     header: string,
     maxUnique = 500,
+    accept?: (value: string) => boolean,
   ): Promise<string[]> {
     const headers = (doc.headers as string[]) ?? [];
     const colIdx = resolveMasterDataColumnIndex(headers, header);
@@ -698,7 +699,7 @@ export class MasterDataRowStore {
     const addFromRows = (rows: string[][]) => {
       for (const row of rows) {
         const v = normalizeFilterOptionValue(String(row[colIdx] ?? ''));
-        if (!v) continue;
+        if (!v || (accept && !accept(v))) continue;
         set.add(v);
         if (set.size >= maxUnique) return true;
       }

@@ -9,6 +9,12 @@ import { formatMasterDataCell } from './master-data-format.util';
 import {
   extractRowCheckKey,
 } from '../delivered-data/suppression-match.util';
+import {
+  isJobTitleDepartmentHeader,
+  isJobTitleLevelHeader,
+  isJobTitleOnlyHeader,
+  resolveMasterDataColumnIndex,
+} from './master-data-filter-schema.util';
 
 /**
  * Normalize spreadsheet header into a safe field key
@@ -26,6 +32,27 @@ export function headerToFieldKey(header: string): string {
 /** Flat keyword field used by Amazon OpenSearch Optimized (SQL) engine. */
 export function flatFieldName(headerOrKey: string): string {
   return `f_${headerToFieldKey(headerOrKey)}`;
+}
+
+/** Stable OpenSearch fields for RPF job-title columns (template index, not header label). */
+export const MASTER_JOB_TITLE_SEARCH_FIELDS = {
+  jobTitle: 'f_job_title',
+  jobTitleLevel: 'f_job_title_level',
+  jobTitleDepartment: 'f_job_title_department',
+} as const;
+
+/** Map filter/column headers to canonical search fields (avoids duplicate-header bleed). */
+export function masterSearchFieldForFilterHeader(header: string): string {
+  if (isJobTitleDepartmentHeader(header)) {
+    return MASTER_JOB_TITLE_SEARCH_FIELDS.jobTitleDepartment;
+  }
+  if (isJobTitleLevelHeader(header)) {
+    return MASTER_JOB_TITLE_SEARCH_FIELDS.jobTitleLevel;
+  }
+  if (isJobTitleOnlyHeader(header)) {
+    return MASTER_JOB_TITLE_SEARCH_FIELDS.jobTitle;
+  }
+  return flatFieldName(header);
 }
 
 function escapeWildcard(value: string): string {
@@ -163,7 +190,7 @@ function buildColumnClause(
   value: string,
   match: 'contains' | 'equals' | 'startsWith' = 'contains',
 ): Record<string, unknown> {
-  const field = flatFieldName(header);
+  const field = masterSearchFieldForFilterHeader(header);
   const v = value.trim();
   if (!v) return { match_all: {} };
   if (match === 'equals') {
@@ -231,7 +258,7 @@ function buildSqlNumericRangeFilter(
   from?: string,
   to?: string,
 ): string | null {
-  const field = flatFieldName(header);
+  const field = masterSearchFieldForFilterHeader(header);
   const castField = `CAST(REPLACE(${field}, ',', '') AS DOUBLE)`;
   const parts: string[] = [];
   const fromN = from?.trim() ? Number(from.trim().replace(/,/g, '')) : NaN;
@@ -246,7 +273,7 @@ function buildNumericRangeDsl(
   from?: string,
   to?: string,
 ): Record<string, unknown> | null {
-  const field = flatFieldName(header);
+  const field = masterSearchFieldForFilterHeader(header);
   const fromN = from?.trim() ? Number(from.trim().replace(/,/g, '')) : NaN;
   const toN = to?.trim() ? Number(to.trim().replace(/,/g, '')) : NaN;
   if (!Number.isFinite(fromN) && !Number.isFinite(toN)) return null;
@@ -312,7 +339,7 @@ function buildSqlColumnFilter(headers: string[], header: string, value: string, 
   if (isEmailColumnHeader(header) || looksLikeEmail(value)) {
     return buildEmailSqlClause(headers, value, match);
   }
-  const field = flatFieldName(header);
+  const field = masterSearchFieldForFilterHeader(header);
   const v = value.trim();
   if (match === 'equals') return sqlCiEquals(field, v);
   const safe = sanitizeSqlLikeInput(v);
@@ -384,7 +411,7 @@ export function buildMasterDataOpenSearchQuery(
 
   for (const f of input.columnDateRangeFilters ?? []) {
     if (!f.header?.trim()) continue;
-    const field = flatFieldName(f.header);
+    const field = masterSearchFieldForFilterHeader(f.header);
     const range: Record<string, string> = {};
     if (f.from?.trim()) range.gte = f.from.trim();
     if (f.to?.trim()) range.lte = f.to.trim();
@@ -413,7 +440,7 @@ export function buildMasterDataOpenSearchQuery(
       });
       continue;
     }
-    filter.push({ exists: { field: flatFieldName(header) } });
+    filter.push({ exists: { field: masterSearchFieldForFilterHeader(header) } });
   }
 
   if (hasAdvancedMasterFilters(input) && input.filters) {
@@ -499,7 +526,7 @@ export function buildMasterDataSqlWhere(
 
   for (const f of input.columnValueFilters ?? []) {
     if (!f.header?.trim() || !f.values?.length) continue;
-    const field = flatFieldName(f.header);
+    const field = masterSearchFieldForFilterHeader(f.header);
     const values = f.values.map((v) => v.trim()).filter(Boolean);
     if (!values.length) continue;
     const exactOnly = isSizeCategoryHeader(f.header);
@@ -525,7 +552,7 @@ export function buildMasterDataSqlWhere(
     const orParts = f.headers
       .map((header) => {
         if (!header?.trim()) return null;
-        const field = flatFieldName(header);
+        const field = masterSearchFieldForFilterHeader(header);
         const exactOnly = isSizeCategoryHeader(header);
         if (exactOnly) {
           if (values.length === 1) return sqlCiEquals(field, values[0]);
@@ -544,7 +571,7 @@ export function buildMasterDataSqlWhere(
 
   for (const f of input.columnDateRangeFilters ?? []) {
     if (!f.header?.trim()) continue;
-    const field = flatFieldName(f.header);
+    const field = masterSearchFieldForFilterHeader(f.header);
     if (f.from?.trim()) parts.push(`${field} >= ${sqlQuote(f.from.trim())}`);
     if (f.to?.trim()) parts.push(`${field} <= ${sqlQuote(f.to.trim())}`);
   }
@@ -564,7 +591,7 @@ export function buildMasterDataSqlWhere(
       );
       continue;
     }
-    const field = flatFieldName(header);
+    const field = masterSearchFieldForFilterHeader(header);
     parts.push(`${field} IS NOT NULL AND ${field} != ''`);
   }
 
@@ -649,6 +676,22 @@ export function buildMasterRowSearchDocument(
       doc[field] = isEmailColumnHeader(header) ? raw.toLowerCase() : raw;
     }
     parts.push(raw);
+  }
+
+  const canonicalJobTitleFields = [
+    { header: 'Job Title', field: MASTER_JOB_TITLE_SEARCH_FIELDS.jobTitle },
+    { header: 'Job Title Level', field: MASTER_JOB_TITLE_SEARCH_FIELDS.jobTitleLevel },
+    {
+      header: 'Job Title Department',
+      field: MASTER_JOB_TITLE_SEARCH_FIELDS.jobTitleDepartment,
+    },
+  ] as const;
+  for (const { header, field } of canonicalJobTitleFields) {
+    const idx = resolveMasterDataColumnIndex(headers, header);
+    if (idx < 0) continue;
+    const raw = String(row[idx] ?? '').trim();
+    if (raw) doc[field] = raw;
+    else delete doc[field];
   }
 
   doc.searchText = parts.join(' ');

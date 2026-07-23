@@ -45,6 +45,9 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
   private incrementalIndexChain: Promise<void> = Promise.resolve();
   private static readonly REINDEX_SHA_CACHE_KEY = 'master:search_reindex_sha';
   private static readonly REINDEX_LOCK_KEY = 'master:search_reindex_lock';
+  /** Bump when OpenSearch document mapping changes (forces one full rebuild). */
+  private static readonly INDEX_MAPPING_VERSION = 'job-title-canonical-v1';
+  private static readonly INDEX_MAPPING_VERSION_KEY = 'master:search_index_mapping_version';
   private static readonly REINDEX_LOCK_TTL_SEC = 180;
   /** Observed ≈ 90–100k docs/min on Optimized Engine t3.large. */
   private static readonly ROWS_PER_MINUTE = 95_000;
@@ -81,6 +84,22 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
     const buildSha = process.env.BUILD_SHA?.trim();
     if (!buildSha) return;
     try {
+      const lastMapping = await this.cache.get(
+        MasterDataSearchIndexService.INDEX_MAPPING_VERSION_KEY,
+      );
+      if (lastMapping !== MasterDataSearchIndexService.INDEX_MAPPING_VERSION) {
+        this.logger.log(
+          `Search index mapping ${MasterDataSearchIndexService.INDEX_MAPPING_VERSION} — scheduling full rebuild…`,
+        );
+        this.enqueueFullReindex(MASTER_DATA_KEY, buildSha, { wipeFirst: true });
+        await this.cache.set(
+          MasterDataSearchIndexService.INDEX_MAPPING_VERSION_KEY,
+          MasterDataSearchIndexService.INDEX_MAPPING_VERSION,
+          60 * 60 * 24 * 365,
+        );
+        return;
+      }
+
       const lastSha = await this.cache.get(MasterDataSearchIndexService.REINDEX_SHA_CACHE_KEY);
       if (lastSha === buildSha) return;
 

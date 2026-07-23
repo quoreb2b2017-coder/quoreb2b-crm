@@ -150,7 +150,11 @@ function resolveFilterHeaderForSearch(
 export function normalizeMasterDataFilterInput(
   headers: string[],
   input: {
-    columnFilters?: Array<{ header: string; value: string; match?: string }>;
+    columnFilters?: Array<{
+      header: string;
+      value: string;
+      match?: 'contains' | 'equals' | 'startsWith';
+    }>;
     columnValueFilters?: Array<{ header: string; values: string[] }>;
     columnValueOrFilters?: Array<{ headers: string[]; values: string[] }>;
     columnDateRangeFilters?: Array<{ header: string; from?: string; to?: string }>;

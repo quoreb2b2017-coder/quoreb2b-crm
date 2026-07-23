@@ -46,7 +46,7 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
   private static readonly REINDEX_SHA_CACHE_KEY = 'master:search_reindex_sha';
   private static readonly REINDEX_LOCK_KEY = 'master:search_reindex_lock';
   /** Bump when OpenSearch document mapping changes (forces one full rebuild). */
-  private static readonly INDEX_MAPPING_VERSION = 'job-title-canonical-v1';
+  private static readonly INDEX_MAPPING_VERSION = 'job-title-canonical-v2';
   private static readonly INDEX_MAPPING_VERSION_KEY = 'master:search_index_mapping_version';
   private static readonly REINDEX_LOCK_TTL_SEC = 180;
   /** Observed ≈ 90–100k docs/min on Optimized Engine t3.large. */

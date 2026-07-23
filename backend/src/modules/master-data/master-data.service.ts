@@ -21,9 +21,6 @@ import {
   isIndustryHeader,
   isLeadTypeHeader,
   isStatusHeader,
-  isJobTitleOnlyHeader,
-  isJobTitleLevelHeader,
-  isJobTitleDepartmentHeader,
   headerNormKey,
   resolveMasterDataColumnHeader,
   masterDataHeadersMatchFilterIntent,
@@ -4272,7 +4269,7 @@ export class MasterDataService {
     const revision =
       (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? rowCount;
     return this.cache.wrap(
-      `master:filter-schema:v11-status:${revision}`,
+      `master:filter-schema:v12-status:${revision}`,
       cacheTtlSeconds(this.config, 'long'),
       async () => {
         const headers = doc.headers as string[];
@@ -4286,28 +4283,19 @@ export class MasterDataService {
               const resolvedScanHeader =
                 resolveMasterDataColumnHeader(headers, scanHeader) ?? scanHeader;
               const distinctLimit = fullScanDistinctLimit(resolvedScanHeader);
-              const preferMongoDistinct =
-                isJobTitleOnlyHeader(resolvedScanHeader) ||
-                isJobTitleLevelHeader(resolvedScanHeader) ||
-                isJobTitleDepartmentHeader(resolvedScanHeader);
               const searchField = masterSearchFieldForFilterHeader(resolvedScanHeader);
-              const allValues = preferMongoDistinct
-                ? await this.rowStore.collectDistinctColumnValues(
-                    doc as Parameters<typeof this.rowStore.collectDistinctColumnValues>[0],
-                    resolvedScanHeader,
-                    distinctLimit,
-                  )
-                : ((await this.elasticsearch.getDistinctMasterFieldValues(
-                    searchField,
-                    MASTER_DATA_KEY,
-                    undefined,
-                    distinctLimit,
-                  )) ??
-                  (await this.rowStore.collectDistinctColumnValues(
-                    doc as Parameters<typeof this.rowStore.collectDistinctColumnValues>[0],
-                    resolvedScanHeader,
-                    distinctLimit,
-                  )));
+              const allValues =
+                (await this.elasticsearch.getDistinctMasterFieldValues(
+                  searchField,
+                  MASTER_DATA_KEY,
+                  undefined,
+                  distinctLimit,
+                )) ??
+                (await this.rowStore.collectDistinctColumnValues(
+                  doc as Parameters<typeof this.rowStore.collectDistinctColumnValues>[0],
+                  resolvedScanHeader,
+                  distinctLimit,
+                ));
               return { scanHeader, allValues };
             } catch (err) {
               this.logger.warn(
@@ -4385,26 +4373,20 @@ export class MasterDataService {
       : Math.min(Math.max(limit || 40, 1), 500);
 
     const revision = this.rowStore.getRowCount(doc);
-    const cacheKey = `master:colopts:v11:${revision}:${headerNormKey(resolvedHeader)}:${headerNormKey(header)}:${q ?? ''}:${effectiveLimit}`;
+    const cacheKey = `master:colopts:v12:${revision}:${headerNormKey(resolvedHeader)}:${headerNormKey(header)}:${q ?? ''}:${effectiveLimit}`;
     return this.cache.wrap(
       cacheKey,
       cacheTtlSeconds(this.config, fullScan ? 'long' : 'short'),
       async () => {
         if (fullScan) {
-          const preferMongoDistinct =
-            isJobTitleOnlyHeader(resolvedHeader) ||
-            isJobTitleLevelHeader(resolvedHeader) ||
-            isJobTitleDepartmentHeader(resolvedHeader);
-          if (!preferMongoDistinct) {
-            const searchOptions = await this.elasticsearch.getDistinctMasterFieldValues(
-              masterSearchFieldForFilterHeader(resolvedHeader),
-              MASTER_DATA_KEY,
-              q,
-              effectiveLimit,
-            );
-            if (searchOptions !== null) {
-              return { header: resolvedHeader, options: searchOptions };
-            }
+          const searchOptions = await this.elasticsearch.getDistinctMasterFieldValues(
+            masterSearchFieldForFilterHeader(resolvedHeader),
+            MASTER_DATA_KEY,
+            q,
+            effectiveLimit,
+          );
+          if (searchOptions !== null) {
+            return { header: resolvedHeader, options: searchOptions };
           }
 
           const needle = q?.trim().toLowerCase();

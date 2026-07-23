@@ -43,11 +43,12 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
   private reindexChain: Promise<void> = Promise.resolve();
   /** Serialize upload batches to avoid overwhelming OpenSearch on large imports. */
   private incrementalIndexChain: Promise<void> = Promise.resolve();
-  private static readonly REINDEX_SHA_CACHE_KEY = 'master:search_reindex_sha';
-  private static readonly REINDEX_LOCK_KEY = 'master:search_reindex_lock';
+  private static readonly REINDEX_SHA_CACHE_KEY = 'search-meta:reindex_sha';
+  private static readonly REINDEX_LOCK_KEY = 'search-meta:reindex_lock';
   /** Bump when OpenSearch document mapping changes (forces one full rebuild). */
   private static readonly INDEX_MAPPING_VERSION = 'job-title-canonical-v2';
-  private static readonly INDEX_MAPPING_VERSION_KEY = 'master:search_index_mapping_version';
+  /** Outside master: prefix so upload cache busts do not wipe search metadata. */
+  private static readonly INDEX_MAPPING_VERSION_KEY = 'search-meta:mapping_version';
   private static readonly REINDEX_LOCK_TTL_SEC = 180;
   /** Observed ≈ 90–100k docs/min on Optimized Engine t3.large. */
   private static readonly ROWS_PER_MINUTE = 95_000;
@@ -88,10 +89,23 @@ export class MasterDataSearchIndexService implements OnApplicationBootstrap {
         MasterDataSearchIndexService.INDEX_MAPPING_VERSION_KEY,
       );
       if (lastMapping !== MasterDataSearchIndexService.INDEX_MAPPING_VERSION) {
-        this.logger.log(
-          `Search index mapping ${MasterDataSearchIndexService.INDEX_MAPPING_VERSION} — scheduling full rebuild…`,
-        );
-        this.enqueueFullReindex(MASTER_DATA_KEY, buildSha, { wipeFirst: true });
+        const status = await this.getSearchIndexStatus();
+        const mappingVersionChanged =
+          Boolean(lastMapping) &&
+          lastMapping !== MasterDataSearchIndexService.INDEX_MAPPING_VERSION;
+        const needsMappingRebuild =
+          mappingVersionChanged || !status.inSync || status.openSearchCount === 0;
+
+        if (needsMappingRebuild) {
+          this.logger.log(
+            `Search index mapping ${MasterDataSearchIndexService.INDEX_MAPPING_VERSION} — scheduling full rebuild…`,
+          );
+          this.enqueueFullReindex(MASTER_DATA_KEY, buildSha, { wipeFirst: true });
+        } else {
+          this.logger.log(
+            `Search mapping cache missing but index in sync (${status.openSearchCount.toLocaleString()} docs) — skipping rebuild`,
+          );
+        }
         await this.cache.set(
           MasterDataSearchIndexService.INDEX_MAPPING_VERSION_KEY,
           MasterDataSearchIndexService.INDEX_MAPPING_VERSION,

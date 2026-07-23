@@ -188,8 +188,17 @@ export function MasterDatabaseExplorer({
       const lazyHeaders = columns.filter(needsLazyColumnOptions);
       if (lazyHeaders.length === 0) return;
 
-      const fetched = await Promise.all(
-        lazyHeaders.map(async (col) => {
+      const fetched: Array<{
+        requestHeader: string;
+        header: string;
+        options: string[];
+      }> = new Array(lazyHeaders.length);
+      let nextIdx = 0;
+      const lazyPoolSize = 3;
+      const fetchLazyColumn = async () => {
+        while (nextIdx < lazyHeaders.length) {
+          const idx = nextIdx++;
+          const col = lazyHeaders[idx];
           try {
             const limit = fullScanFilterOptionLimit(col.header);
             const result = await masterDataService.getColumnOptions(
@@ -197,19 +206,22 @@ export function MasterDatabaseExplorer({
               undefined,
               limit,
             );
-            return {
+            fetched[idx] = {
               requestHeader: col.header,
               header: result.header,
               options: result.options,
             };
           } catch {
-            return {
+            fetched[idx] = {
               requestHeader: col.header,
               header: col.header,
-              options: [] as string[],
+              options: [],
             };
           }
-        }),
+        }
+      };
+      await Promise.all(
+        Array.from({ length: Math.min(lazyPoolSize, lazyHeaders.length) }, fetchLazyColumn),
       );
       const optionsByRequest = new Map(
         fetched.map((row) => [headerNormKey(row.requestHeader), row]),

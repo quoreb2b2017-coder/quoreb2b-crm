@@ -21,9 +21,6 @@ import {
   isIndustryHeader,
   isLeadTypeHeader,
   isStatusHeader,
-  isJobTitleOnlyHeader,
-  isJobTitleLevelHeader,
-  isJobTitleDepartmentHeader,
   headerNormKey,
   resolveMasterDataColumnHeader,
   masterDataHeadersMatchFilterIntent,
@@ -4271,7 +4268,7 @@ export class MasterDataService {
     const revision =
       (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? rowCount;
     return this.cache.wrap(
-      `master:filter-schema:v9-status:${revision}`,
+      `master:filter-schema:v10-status:${revision}`,
       cacheTtlSeconds(this.config, 'long'),
       async () => {
         const headers = doc.headers as string[];
@@ -4279,62 +4276,61 @@ export class MasterDataService {
         let columns = enrichFilterSchemaColumns(buildMasterDataFilterSchema(headers, rows));
 
         const fullScanHeaders = headers.filter((h) => isFullScanSelectHeader(h));
-        for (const scanHeader of fullScanHeaders) {
-          try {
-            const distinctLimit = fullScanDistinctLimit(scanHeader);
-            const preferMongoDistinct =
-              isJobTitleOnlyHeader(scanHeader) ||
-              isJobTitleLevelHeader(scanHeader) ||
-              isJobTitleDepartmentHeader(scanHeader);
-            const allValues = preferMongoDistinct
-              ? await this.rowStore.collectDistinctColumnValues(
-                  doc as Parameters<typeof this.rowStore.collectDistinctColumnValues>[0],
-                  scanHeader,
-                  distinctLimit,
-                )
-              : ((await this.elasticsearch.getDistinctMasterFieldValues(
-                  flatFieldName(scanHeader),
+        const scanResults = await Promise.all(
+          fullScanHeaders.map(async (scanHeader) => {
+            try {
+              const resolvedScanHeader =
+                resolveMasterDataColumnHeader(headers, scanHeader) ?? scanHeader;
+              const distinctLimit = fullScanDistinctLimit(resolvedScanHeader);
+              const allValues =
+                (await this.elasticsearch.getDistinctMasterFieldValues(
+                  flatFieldName(resolvedScanHeader),
                   MASTER_DATA_KEY,
                   undefined,
                   distinctLimit,
                 )) ??
                 (await this.rowStore.collectDistinctColumnValues(
                   doc as Parameters<typeof this.rowStore.collectDistinctColumnValues>[0],
-                  scanHeader,
+                  resolvedScanHeader,
                   distinctLimit,
-                )));
-            if (allValues.length > 0) {
-              const colNorm = headerNormKey(scanHeader);
-              const existingIdx = columns.findIndex(
-                (col) => headerNormKey(col.header) === colNorm,
+                ));
+              return { scanHeader, allValues };
+            } catch (err) {
+              this.logger.warn(
+                `Full distinct for "${scanHeader}" failed: ${err instanceof Error ? err.message : err}`,
               );
-              if (existingIdx >= 0) {
-                columns = columns.map((col, idx) =>
-                  idx === existingIdx
-                    ? {
-                        ...col,
-                        header: scanHeader,
-                        kind: isStatusHeader(col.header)
-                          ? ('status' as const)
-                          : ('select' as const),
-                        options: allValues,
-                        filledCount: Math.max(col.filledCount, 1),
-                      }
-                    : col,
-                );
-              } else {
-                columns.push({
-                  header: scanHeader,
-                  kind: isStatusHeader(scanHeader) ? ('status' as const) : ('select' as const),
-                  options: allValues,
-                  filledCount: 1,
-                });
-              }
+              return { scanHeader, allValues: [] as string[] };
             }
-          } catch (err) {
-            this.logger.warn(
-              `Full distinct for "${scanHeader}" failed: ${err instanceof Error ? err.message : err}`,
+          }),
+        );
+
+        for (const { scanHeader, allValues } of scanResults) {
+          if (allValues.length === 0) continue;
+          const colNorm = headerNormKey(scanHeader);
+          const existingIdx = columns.findIndex(
+            (col) => headerNormKey(col.header) === colNorm,
+          );
+          if (existingIdx >= 0) {
+            columns = columns.map((col, idx) =>
+              idx === existingIdx
+                ? {
+                    ...col,
+                    header: scanHeader,
+                    kind: isStatusHeader(col.header)
+                      ? ('status' as const)
+                      : ('select' as const),
+                    options: allValues,
+                    filledCount: Math.max(col.filledCount, 1),
+                  }
+                : col,
             );
+          } else {
+            columns.push({
+              header: scanHeader,
+              kind: isStatusHeader(scanHeader) ? ('status' as const) : ('select' as const),
+              options: allValues,
+              filledCount: 1,
+            });
           }
         }
 
@@ -4375,26 +4371,20 @@ export class MasterDataService {
       : Math.min(Math.max(limit || 40, 1), 500);
 
     const revision = this.rowStore.getRowCount(doc);
-    const cacheKey = `master:colopts:v9:${revision}:${headerNormKey(resolvedHeader)}:${headerNormKey(header)}:${q ?? ''}:${effectiveLimit}`;
+    const cacheKey = `master:colopts:v10:${revision}:${headerNormKey(resolvedHeader)}:${headerNormKey(header)}:${q ?? ''}:${effectiveLimit}`;
     return this.cache.wrap(
       cacheKey,
-      cacheTtlSeconds(this.config, 'short'),
+      cacheTtlSeconds(this.config, fullScan ? 'long' : 'short'),
       async () => {
         if (fullScan) {
-          const useMongoDistinct =
-            isJobTitleOnlyHeader(resolvedHeader) ||
-            isJobTitleLevelHeader(resolvedHeader) ||
-            isJobTitleDepartmentHeader(resolvedHeader);
-          if (!useMongoDistinct) {
-            const searchOptions = await this.elasticsearch.getDistinctMasterFieldValues(
-              flatFieldName(resolvedHeader),
-              MASTER_DATA_KEY,
-              q,
-              effectiveLimit,
-            );
-            if (searchOptions !== null) {
-              return { header: resolvedHeader, options: searchOptions };
-            }
+          const searchOptions = await this.elasticsearch.getDistinctMasterFieldValues(
+            flatFieldName(resolvedHeader),
+            MASTER_DATA_KEY,
+            q,
+            effectiveLimit,
+          );
+          if (searchOptions !== null) {
+            return { header: resolvedHeader, options: searchOptions };
           }
 
           const needle = q?.trim().toLowerCase();

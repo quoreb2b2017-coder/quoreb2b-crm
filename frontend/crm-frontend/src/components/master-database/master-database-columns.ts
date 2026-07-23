@@ -508,7 +508,9 @@ export function fullScanFilterOptionLimit(header: string): number {
 }
 
 export function needsLazyColumnOptions(col: MasterDataColumnFilterSchema): boolean {
-  if (isFullScanFilterHeader(col.header)) return true;
+  if (isFullScanFilterHeader(col.header)) {
+    return col.options.length < 2;
+  }
   if (col.options.length >= 2) return false;
   return CURATED_OPTION_PATTERNS.some((p) => p.test(col.header.trim()));
 }

@@ -443,17 +443,26 @@ export function MasterDatabaseExplorer({
     await executeFilteredSearch(1, pageSize, { resetSelection: true });
   }, [executeFilteredSearch, isDbAdmin, pageSize]);
 
-  /** Excel column Search → Apply: full-template rows from OpenSearch, not current page only */
-  const handleColumnContainsApply = useCallback(
-    (header: string, query: string) => {
+  /** Excel column filter → Apply: full-template rows from OpenSearch, not current page only */
+  const handleColumnFilterApply = useCallback(
+    (header: string, payload: { contains?: string; values?: string[] }) => {
       if (!useServerSearch) return false;
-      const q = query.trim();
-      if (!q) return false;
+      const q = payload.contains?.trim() ?? '';
+      const values = payload.values?.map((v) => v.trim()).filter(Boolean) ?? [];
+      if (!q && values.length === 0) return false;
+
       const current = filtersRef.current;
       const next = {
         ...current,
-        columnText: { ...current.columnText, [header]: q },
+        columnText: { ...current.columnText },
+        columnValues: { ...current.columnValues },
       };
+      if (q) next.columnText[header] = q;
+      else delete next.columnText[header];
+
+      if (values.length) next.columnValues[header] = new Set(values);
+      else delete next.columnValues[header];
+
       filtersRef.current = next;
       setFilters(next);
       setPage(1);
@@ -968,8 +977,8 @@ export function MasterDatabaseExplorer({
               onTogglePageSelection={toggleSelectAllPage}
               datasetRowCount={embedded ? filteredTotal : undefined}
               onCreateBatch={embedded ? onCreateBatch : undefined}
-              onColumnContainsApply={
-                useServerSearch ? handleColumnContainsApply : undefined
+              onColumnFilterApply={
+                useServerSearch ? handleColumnFilterApply : undefined
               }
             />
           </div>

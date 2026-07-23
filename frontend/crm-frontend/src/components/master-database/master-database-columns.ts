@@ -266,6 +266,26 @@ export function filterHeadersMatchIntent(
   return headerNormKey(requestedHeader) === headerNormKey(resolvedHeader);
 }
 
+/** Resolve sidebar/canonical filter header to the actual sheet column name. */
+export function resolveHeaderForSearch(headers: string[], filterHeader: string): string {
+  const idx = colIndex(headers, filterHeader);
+  if (idx >= 0) return headers[idx];
+  return normalizeFilterHeaderName(filterHeader);
+}
+
+function uniqueFilterHeaders(headers: string[], ...filterHeaders: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of filterHeaders) {
+    const header = resolveHeaderForSearch(headers, raw);
+    const norm = headerNormKey(header);
+    if (!norm || seen.has(norm)) continue;
+    seen.add(norm);
+    out.push(header);
+  }
+  return out;
+}
+
 function filterFieldPresentInHeaders(
   headers: string[],
   field: MasterFilterFieldKey,
@@ -850,8 +870,17 @@ export function serializeDynamicSearchPayload(
   headers: string[],
   options?: { availabilityFilter?: 'all' | 'remaining' | 'in_campaign' },
 ) {
-  const columnFilters = headers
-    .map((header) => ({ header, value: (filters.columnText[header] ?? '').trim() }))
+  const columnFilters = uniqueFilterHeaders(
+    headers,
+    ...Object.keys(filters.columnText),
+  )
+    .map((header) => {
+      const rawKey = Object.keys(filters.columnText).find(
+        (k) => headerNormKey(resolveHeaderForSearch(headers, k)) === headerNormKey(header),
+      );
+      const value = (rawKey ? filters.columnText[rawKey] : filters.columnText[header] ?? '').trim();
+      return { header, value };
+    })
     .filter((f) => f.value.length > 0)
     .map((f) => ({
       ...f,
@@ -863,11 +892,20 @@ export function serializeDynamicSearchPayload(
   ];
   const industryHeaders = resolveCombinedIndustryHeaders(headers);
 
-  const columnValueFilters = headers
-    .map((header) => ({
-      header,
-      values: [...(filters.columnValues[header] ?? [])],
-    }))
+  const valueFilterHeaders = uniqueFilterHeaders(
+    headers,
+    ...Object.keys(filters.columnValues).filter((k) => k !== COMBINED_INDUSTRY_FILTER_KEY),
+  );
+  const columnValueFilters = valueFilterHeaders
+    .map((header) => {
+      const rawKey = Object.keys(filters.columnValues).find(
+        (k) =>
+          k !== COMBINED_INDUSTRY_FILTER_KEY &&
+          headerNormKey(resolveHeaderForSearch(headers, k)) === headerNormKey(header),
+      );
+      const values = [...(rawKey ? filters.columnValues[rawKey] : filters.columnValues[header] ?? [])];
+      return { header, values };
+    })
     .filter((f) => f.values.length > 0);
 
   let columnValueOrFilters: Array<{ headers: string[]; values: string[] }> | undefined;
@@ -875,22 +913,42 @@ export function serializeDynamicSearchPayload(
     columnValueOrFilters = [{ headers: industryHeaders, values: combinedIndustryValues }];
   }
 
-  const mustExistColumns = [...filters.mustExist];
+  const mustExistColumns = uniqueFilterHeaders(headers, ...filters.mustExist);
 
-  const columnDateRangeFilters = Object.entries(filters.columnDateRanges)
-    .map(([header, range]) => ({
-      header,
-      from: range.from?.trim() || undefined,
-      to: range.to?.trim() || undefined,
-    }))
+  const columnDateRangeFilters = uniqueFilterHeaders(
+    headers,
+    ...Object.keys(filters.columnDateRanges),
+  )
+    .map((header) => {
+      const rawKey = Object.keys(filters.columnDateRanges).find(
+        (k) => headerNormKey(resolveHeaderForSearch(headers, k)) === headerNormKey(header),
+      );
+      const range = rawKey ? filters.columnDateRanges[rawKey] : filters.columnDateRanges[header];
+      return {
+        header,
+        from: range?.from?.trim() || undefined,
+        to: range?.to?.trim() || undefined,
+      };
+    })
     .filter((f) => f.from || f.to);
 
-  const columnNumericRangeFilters = Object.entries(filters.columnNumericRanges)
-    .map(([header, range]) => ({
-      header,
-      from: range.from?.trim() || undefined,
-      to: range.to?.trim() || undefined,
-    }))
+  const columnNumericRangeFilters = uniqueFilterHeaders(
+    headers,
+    ...Object.keys(filters.columnNumericRanges),
+  )
+    .map((header) => {
+      const rawKey = Object.keys(filters.columnNumericRanges).find(
+        (k) => headerNormKey(resolveHeaderForSearch(headers, k)) === headerNormKey(header),
+      );
+      const range = rawKey
+        ? filters.columnNumericRanges[rawKey]
+        : filters.columnNumericRanges[header];
+      return {
+        header,
+        from: range?.from?.trim() || undefined,
+        to: range?.to?.trim() || undefined,
+      };
+    })
     .filter((f) => f.from || f.to);
 
   return {

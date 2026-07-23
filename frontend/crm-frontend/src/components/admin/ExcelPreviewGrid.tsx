@@ -148,6 +148,11 @@ interface ExcelPreviewGridProps {
    * instead of filtering only the current page. Return true if handled.
    */
   onColumnContainsApply?: (header: string, query: string) => boolean | void;
+  /** Full-data search for checkbox value picks and/or contains text. Return true if handled. */
+  onColumnFilterApply?: (
+    header: string,
+    payload: { contains?: string; values?: string[] },
+  ) => boolean | void;
   /** Fired when user scrolls near the bottom (infinite load) */
   onScrollNearEnd?: () => void;
 }
@@ -186,6 +191,7 @@ export function ExcelPreviewGrid({
   dispositionSelectOptions,
   onDispositionSelect,
   onColumnContainsApply,
+  onColumnFilterApply,
   onScrollNearEnd,
 }: ExcelPreviewGridProps) {
   const editable = editableProp ?? Boolean(onDataChange);
@@ -608,6 +614,28 @@ export function ExcelPreviewGrid({
     if (openCol == null) return;
     const q = search.trim();
     const header = headers[openCol] ?? '';
+    const current = filters[openCol];
+    const allValues = uniqueValues;
+    const selected =
+      current?.selected === null || current?.selected === undefined
+        ? null
+        : current.selected;
+    const hasValueFilter =
+      selected !== null && selected.size > 0 && selected.size < allValues.length;
+    const values = hasValueFilter ? [...selected] : undefined;
+
+    if (onColumnFilterApply?.(header, { contains: q || undefined, values })) {
+      setFilters((prev) => {
+        const next = { ...prev };
+        delete next[openCol];
+        return next;
+      });
+      setOpenFilterCol(null);
+      setFilterMenuPos(null);
+      setSearch('');
+      requestAnimationFrame(() => scrollGridToTop());
+      return;
+    }
 
     if (q && onColumnContainsApply?.(header, q)) {
       setFilters((prev) => {

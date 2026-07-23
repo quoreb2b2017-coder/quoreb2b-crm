@@ -24,6 +24,7 @@ import {
   headerNormKey,
   resolveMasterDataColumnHeader,
   masterDataHeadersMatchFilterIntent,
+  normalizeMasterDataFilterInput,
 } from './master-data-filter-schema.util';
 import {
   distinctColumnValues,
@@ -4094,12 +4095,14 @@ export class MasterDataService {
 
     const filterInput: MasterDataFilterInput = {
       query,
-      columnFilters,
-      columnValueFilters: dto.columnValueFilters,
-      columnValueOrFilters: dto.columnValueOrFilters,
-      columnDateRangeFilters: dto.columnDateRangeFilters,
-      columnNumericRangeFilters: dto.columnNumericRangeFilters,
-      mustExistColumns: dto.mustExistColumns,
+      ...normalizeMasterDataFilterInput(headers, {
+        columnFilters,
+        columnValueFilters: dto.columnValueFilters,
+        columnValueOrFilters: dto.columnValueOrFilters,
+        columnDateRangeFilters: dto.columnDateRangeFilters,
+        columnNumericRangeFilters: dto.columnNumericRangeFilters,
+        mustExistColumns: dto.mustExistColumns,
+      }),
       filters: dto.filters,
       availabilityFilter: dto.availabilityFilter,
     };

@@ -136,6 +136,59 @@ export function resolveMasterDataColumnIndex(
   );
 }
 
+function resolveFilterHeaderForSearch(
+  headers: string[],
+  requestedHeader: string,
+): string | null {
+  const resolved = resolveMasterDataColumnHeader(headers, requestedHeader);
+  if (!resolved) return null;
+  if (!masterDataHeadersMatchFilterIntent(requestedHeader, resolved)) return null;
+  return resolved;
+}
+
+/** Map API/search filter headers to actual sheet columns before OpenSearch/Mongo. */
+export function normalizeMasterDataFilterInput(
+  headers: string[],
+  input: {
+    columnFilters?: Array<{ header: string; value: string; match?: string }>;
+    columnValueFilters?: Array<{ header: string; values: string[] }>;
+    columnValueOrFilters?: Array<{ headers: string[]; values: string[] }>;
+    columnDateRangeFilters?: Array<{ header: string; from?: string; to?: string }>;
+    columnNumericRangeFilters?: Array<{ header: string; from?: string; to?: string }>;
+    mustExistColumns?: string[];
+  },
+) {
+  const resolve = (header: string) =>
+    resolveFilterHeaderForSearch(headers, header) ?? header.trim();
+
+  return {
+    ...input,
+    columnFilters: (input.columnFilters ?? [])
+      .map((f) => ({ ...f, header: resolve(f.header) }))
+      .filter((f) => f.header && f.value?.trim()),
+    columnValueFilters: (input.columnValueFilters ?? [])
+      .map((f) => ({
+        ...f,
+        header: resolve(f.header),
+        values: (f.values ?? []).map((v) => v.trim()).filter(Boolean),
+      }))
+      .filter((f) => f.header && f.values.length > 0),
+    columnValueOrFilters: (input.columnValueOrFilters ?? [])
+      .map((f) => ({
+        headers: (f.headers ?? []).map((h) => resolve(h)).filter(Boolean),
+        values: (f.values ?? []).map((v) => v.trim()).filter(Boolean),
+      }))
+      .filter((f) => f.headers.length > 0 && f.values.length > 0),
+    columnDateRangeFilters: (input.columnDateRangeFilters ?? [])
+      .map((f) => ({ ...f, header: resolve(f.header) }))
+      .filter((f) => f.header && (f.from?.trim() || f.to?.trim())),
+    columnNumericRangeFilters: (input.columnNumericRangeFilters ?? [])
+      .map((f) => ({ ...f, header: resolve(f.header) }))
+      .filter((f) => f.header && (f.from?.trim() || f.to?.trim())),
+    mustExistColumns: [...new Set((input.mustExistColumns ?? []).map((h) => resolve(h)).filter(Boolean))],
+  };
+}
+
 export function resolveMasterDataColumnHeader(
   headers: string[],
   requestedHeader: string,

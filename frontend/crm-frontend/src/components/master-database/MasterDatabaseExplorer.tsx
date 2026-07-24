@@ -20,6 +20,7 @@ import {
   Upload,
   UserCheck,
   Users,
+  Clock,
 } from 'lucide-react';
 import type { SpreadsheetData } from '@/lib/spreadsheet/parse-spreadsheet';
 import { ExcelPreviewGrid } from '@/components/admin/ExcelPreviewGrid';
@@ -31,6 +32,7 @@ import {
   masterDataService,
   recordToSpreadsheet,
   type MasterBatchCoverage,
+  type MasterDataSearchIndexStatus,
 } from '@/lib/api/master-data.service';
 import { enqueueMasterDataImport } from '@/lib/master-data/master-data-import-tracker';
 import { useMasterDataImportStore } from '@/store/master-data-import.store';
@@ -38,6 +40,7 @@ import { batchesService } from '@/lib/api/batches.service';
 import { extractApiError } from '@/lib/api/errors';
 import { toast } from '@/stores/toast.store';
 import { useCanExportSpreadsheet } from '@/hooks/useSpreadsheetCopyGuard';
+import { cn } from '@/lib/utils/cn';
 import { DbAdminCampaignWizard } from '@/components/db-admin/DbAdminCampaignWizard';
 import { MasterDatabaseFilterPanel, MasterDatabaseFilterTags } from './MasterDatabaseFilterPanel';
 import { MasterDatabaseFilterSidebar } from './MasterDatabaseFilterSidebar';
@@ -156,6 +159,7 @@ export function MasterDatabaseExplorer({
   const [batchDesc, setBatchDesc] = useState('');
   const [savingBatch, setSavingBatch] = useState(false);
   const [loadingCampaignRows, setLoadingCampaignRows] = useState(false);
+  const [searchIndexStatus, setSearchIndexStatus] = useState<MasterDataSearchIndexStatus | null>(null);
 
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
@@ -171,6 +175,15 @@ export function MasterDatabaseExplorer({
       setCoverage(c);
     } catch {
       setCoverage(null);
+    }
+  }, []);
+
+  const loadSearchIndexStatus = useCallback(async () => {
+    try {
+      const status = await masterDataService.getSearchIndexStatus();
+      setSearchIndexStatus(status);
+    } catch {
+      setSearchIndexStatus(null);
     }
   }, []);
 
@@ -352,6 +365,7 @@ export function MasterDatabaseExplorer({
     const onRefresh = () => {
       void loadCoverage();
       void loadData();
+      void loadSearchIndexStatus();
     };
     window.addEventListener('batch-created', onRefresh);
     window.addEventListener('master-data-updated', onRefresh);
@@ -359,7 +373,19 @@ export function MasterDatabaseExplorer({
       window.removeEventListener('batch-created', onRefresh);
       window.removeEventListener('master-data-updated', onRefresh);
     };
-  }, [loadCoverage, loadData]);
+  }, [loadCoverage, loadData, loadSearchIndexStatus]);
+
+  useEffect(() => {
+    if (!isDbAdmin || masterTotalRows <= 0) {
+      setSearchIndexStatus(null);
+      return;
+    }
+    void loadSearchIndexStatus();
+    const intervalId = window.setInterval(() => {
+      void loadSearchIndexStatus();
+    }, 5000);
+    return () => window.clearInterval(intervalId);
+  }, [isDbAdmin, loadSearchIndexStatus, masterTotalRows]);
 
   const useServerSearch = embedded || isDbAdmin || isLargeMasterDataset;
   const useFilterSidebar = embedded || isDbAdmin || isLargeMasterDataset;
@@ -649,6 +675,92 @@ export function MasterDatabaseExplorer({
 
   const tags = activeDynamicFilterTags(filters);
   const primaryHeader = useMemo(() => primaryDisplayHeader(headers), [headers]);
+
+  const reindexRunning = Boolean(searchIndexStatus?.reindex?.running);
+  const indexedCount = safeCount(searchIndexStatus?.openSearchCount);
+  const pendingIndexedCount =
+    reindexRunning && (searchIndexStatus?.reindex?.total ?? 0) > 0
+      ? Math.max(
+          0,
+          safeCount(searchIndexStatus?.reindex?.total) -
+            safeCount(searchIndexStatus?.reindex?.indexed),
+        )
+      : searchIndexStatus?.inSync
+        ? 0
+        : Math.max(0, safeCount(searchIndexStatus?.mongoRowCount) - indexedCount);
+
+  const indexStatusStrip =
+    isDbAdmin && masterTotalRows > 0 ? (
+      <div className="border-b border-slate-200/90 bg-gradient-to-b from-slate-50 to-white px-3 py-3 sm:px-4">
+        <div
+          className="flex gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          aria-label="Search index status"
+        >
+          <div className="flex min-w-[10.5rem] flex-1 items-center gap-2.5 rounded-xl border border-emerald-200/90 bg-gradient-to-br from-emerald-50/90 to-white px-3 py-2.5 shadow-sm">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-100 text-emerald-700">
+              <Search className="h-4 w-4" strokeWidth={2.25} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                Total indexed
+              </span>
+              <span className="mt-0.5 block text-lg font-bold tabular-nums leading-none tracking-tight text-emerald-950">
+                {indexedCount.toLocaleString('en-US')}
+              </span>
+              <span className="mt-1 block truncate text-[10px] leading-snug text-slate-500">
+                Searchable in OpenSearch
+              </span>
+            </span>
+            {reindexRunning && (
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-emerald-600" />
+            )}
+          </div>
+          <div
+            className={cn(
+              'flex min-w-[10.5rem] flex-1 items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left',
+              pendingIndexedCount > 0
+                ? 'border-amber-300/80 bg-gradient-to-br from-amber-50 to-white shadow-sm'
+                : 'border-slate-200/90 bg-white/90 shadow-sm',
+            )}
+          >
+            <span
+              className={cn(
+                'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border',
+                pendingIndexedCount > 0
+                  ? 'border-amber-200 bg-amber-100 text-amber-800'
+                  : 'border-slate-200 bg-slate-50 text-slate-500',
+              )}
+            >
+              {reindexRunning && pendingIndexedCount > 0 ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Clock className="h-4 w-4" strokeWidth={2.25} />
+              )}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                Pending indexed
+              </span>
+              <span
+                className={cn(
+                  'mt-0.5 block text-lg font-bold tabular-nums leading-none tracking-tight',
+                  pendingIndexedCount > 0 ? 'text-amber-950' : 'text-slate-800',
+                )}
+              >
+                {pendingIndexedCount.toLocaleString('en-US')}
+              </span>
+              <span className="mt-1 block truncate text-[10px] leading-snug text-slate-500">
+                {reindexRunning
+                  ? 'Indexing in progress…'
+                  : pendingIndexedCount > 0
+                    ? 'Waiting to index into search'
+                    : 'All contacts indexed'}
+              </span>
+            </span>
+          </div>
+        </div>
+      </div>
+    ) : null;
 
   const gridData = useMemo<SpreadsheetData>(
     () => ({
@@ -1383,6 +1495,8 @@ export function MasterDatabaseExplorer({
             </div>
           </div>
         )}
+
+        {indexStatusStrip}
 
         {/* Global search — small admin layout only */}
         {!isDbAdmin && !useFilterSidebar && (

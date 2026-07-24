@@ -855,9 +855,9 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
       {!isDbAdminView && data && (
         <div className="border-b border-slate-200/90 bg-gradient-to-b from-slate-50 to-white px-3 py-3 sm:px-4">
           <div
-            className="grid grid-cols-1 gap-2 sm:grid-cols-3"
-            role="tablist"
-            aria-label="Master data views"
+            className="flex gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            role="group"
+            aria-label="Master data and search index status"
           >
             {MASTER_DATA_VIEW_TABS.map((tab) => {
               const active = dataViewTab === tab.id;
@@ -871,19 +871,19 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
                   aria-selected={active}
                   onClick={() => setDataViewTab(tab.id)}
                   className={cn(
-                    'group relative flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-all duration-200',
+                    'group relative flex min-w-[10.5rem] flex-1 items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-all duration-200',
                     active
                       ? tab.tone === 'amber'
                         ? 'border-amber-300/80 bg-gradient-to-br from-amber-50 to-white shadow-md shadow-amber-100/60 ring-2 ring-amber-400/35'
                         : tab.tone === 'blue'
                           ? 'border-[#2e7ad1]/35 bg-gradient-to-br from-[#e8f1fb] to-white shadow-md shadow-[#2e7ad1]/10 ring-2 ring-[#2e7ad1]/30'
                           : 'border-slate-300/80 bg-white shadow-md shadow-slate-200/50 ring-2 ring-[#2e7ad1]/25'
-                      : 'border-slate-200/90 bg-white/80 hover:border-slate-300 hover:bg-white hover:shadow-sm',
+                      : 'border-slate-200/90 bg-white/90 hover:border-slate-300 hover:bg-white hover:shadow-sm',
                   )}
                 >
                   <span
                     className={cn(
-                      'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border transition-colors',
+                      'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition-colors',
                       active
                         ? tab.tone === 'amber'
                           ? 'border-amber-200 bg-amber-100 text-amber-800'
@@ -896,13 +896,12 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
                     <Icon className="h-4 w-4" strokeWidth={2.25} />
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      <span className="hidden sm:inline">{tab.label}</span>
-                      <span className="sm:hidden">{tab.shortLabel}</span>
+                    <span className="block truncate text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                      {tab.label}
                     </span>
                     <span
                       className={cn(
-                        'mt-0.5 block text-xl font-bold tabular-nums leading-none tracking-tight',
+                        'mt-0.5 block text-lg font-bold tabular-nums leading-none tracking-tight',
                         active
                           ? tab.tone === 'amber'
                             ? 'text-amber-950'
@@ -914,14 +913,14 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
                     >
                       {count}
                     </span>
-                    <span className="mt-1 hidden text-[11px] leading-snug text-slate-500 sm:block">
+                    <span className="mt-1 block truncate text-[10px] leading-snug text-slate-500">
                       {tab.description}
                     </span>
                   </span>
                   {active && (
                     <span
                       className={cn(
-                        'absolute bottom-0 left-4 right-4 h-0.5 rounded-full',
+                        'absolute bottom-0 left-3 right-3 h-0.5 rounded-full',
                         tab.tone === 'amber'
                           ? 'bg-amber-500'
                           : tab.tone === 'blue'
@@ -933,30 +932,27 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
                 </button>
               );
             })}
-          </div>
-          <div
-            className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2"
-            aria-label="Search index status"
-          >
-            <div className="flex items-center gap-3 rounded-xl border border-emerald-200/90 bg-gradient-to-br from-emerald-50/80 to-white px-3.5 py-3 shadow-sm">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-100 text-emerald-700">
+
+            <div className="flex min-w-[10.5rem] flex-1 items-center gap-2.5 rounded-xl border border-emerald-200/90 bg-gradient-to-br from-emerald-50/90 to-white px-3 py-2.5 shadow-sm">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-100 text-emerald-700">
                 <Search className="h-4 w-4" strokeWidth={2.25} />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  Total indexed data
+                <span className="block truncate text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  Total indexed
                 </span>
-                <span className="mt-0.5 block text-xl font-bold tabular-nums leading-none tracking-tight text-emerald-950">
+                <span className="mt-0.5 block text-lg font-bold tabular-nums leading-none tracking-tight text-emerald-950">
                   {indexedCount.toLocaleString('en-US')}
                 </span>
-                <span className="mt-1 hidden text-[11px] leading-snug text-slate-500 sm:block">
-                  Contacts searchable in OpenSearch
+                <span className="mt-1 block truncate text-[10px] leading-snug text-slate-500">
+                  Searchable in OpenSearch
                 </span>
               </span>
               {reindexRunning && (
                 <Loader2 className="h-4 w-4 shrink-0 animate-spin text-emerald-600" />
               )}
             </div>
+
             {(() => {
               const pendingClickable =
                 !isDbAdminView && pendingIndexedCount > 0 && !reindexRunning && !indexSyncStarting;
@@ -966,17 +962,17 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
                   type={pendingClickable ? 'button' : undefined}
                   onClick={pendingClickable ? () => void handleStartPendingIndex() : undefined}
                   className={cn(
-                    'flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-all duration-200',
+                    'flex min-w-[10.5rem] flex-1 items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-all duration-200',
                     pendingIndexedCount > 0
                       ? pendingClickable
                         ? 'cursor-pointer border-amber-300/80 bg-gradient-to-br from-amber-50 to-white shadow-sm hover:border-amber-400 hover:shadow-md hover:ring-2 hover:ring-amber-300/40'
                         : 'border-amber-300/80 bg-gradient-to-br from-amber-50 to-white shadow-sm'
-                      : 'border-slate-200/90 bg-white/80',
+                      : 'border-slate-200/90 bg-white/90 shadow-sm',
                   )}
                 >
                   <span
                     className={cn(
-                      'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border',
+                      'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border',
                       pendingIndexedCount > 0
                         ? 'border-amber-200 bg-amber-100 text-amber-800'
                         : 'border-slate-200 bg-slate-50 text-slate-500',
@@ -989,25 +985,25 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
                     )}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                      Pending indexed data
+                    <span className="block truncate text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                      Pending indexed
                     </span>
                     <span
                       className={cn(
-                        'mt-0.5 block text-xl font-bold tabular-nums leading-none tracking-tight',
+                        'mt-0.5 block text-lg font-bold tabular-nums leading-none tracking-tight',
                         pendingIndexedCount > 0 ? 'text-amber-950' : 'text-slate-800',
                       )}
                     >
                       {pendingIndexedCount.toLocaleString('en-US')}
                     </span>
-                    <span className="mt-1 hidden text-[11px] leading-snug text-slate-500 sm:block">
+                    <span className="mt-1 block truncate text-[10px] leading-snug text-slate-500">
                       {reindexRunning
                         ? 'Indexing in progress…'
                         : pendingIndexedCount > 0
                           ? pendingClickable
-                            ? 'Click to start search indexing'
-                            : 'Waiting to index into search'
-                          : 'All contacts indexed for search'}
+                            ? 'Click to start indexing'
+                            : 'Waiting to index'
+                          : 'All contacts indexed'}
                     </span>
                   </span>
                 </PendingTag>

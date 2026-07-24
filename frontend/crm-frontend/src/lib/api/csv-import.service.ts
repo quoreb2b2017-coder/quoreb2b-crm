@@ -43,6 +43,17 @@ export interface CsvImportJobStatus {
   progress: CsvImportJobProgress;
   errorMessage?: string;
   errorCsvAvailable?: boolean;
+  duplicateRowsHeld?: number;
+  incompleteRowsHeld?: number;
+  result?: {
+    addedRows?: number;
+    skippedDuplicates?: number;
+    missingRowCount?: number;
+    fileRowCount?: number;
+    duplicateFileSaved?: boolean;
+    duplicateFileId?: string | null;
+    rowCount?: number;
+  };
 }
 
 interface PresignResult {

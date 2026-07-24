@@ -31,7 +31,10 @@ export class MasterDataUploadRequest extends Document {
   @Prop({ default: 'pending' })
   status: string;
 
-  @Prop({ enum: ['db_admin', 'employee'], default: 'db_admin' })
+  @Prop({
+    enum: ['employee', 'db_admin', 'master', 'admin', 'super_admin'],
+    default: 'db_admin',
+  })
   sourceRole: string;
 
   @Prop({ type: [[String]], default: [] })

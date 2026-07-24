@@ -133,6 +133,7 @@ export interface MasterDataRecord {
   addedRows?: number;
   skippedDuplicates?: number;
   skippedIncomplete?: number;
+  skippedEmptyRows?: number;
   missingRowCount?: number;
   duplicateFileId?: string | null;
   duplicateFileSaved?: boolean;

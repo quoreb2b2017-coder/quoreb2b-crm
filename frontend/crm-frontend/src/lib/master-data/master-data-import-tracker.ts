@@ -5,8 +5,18 @@ import {
 } from '@/lib/api/csv-import.service';
 import { useMasterDataImportStore } from '@/store/master-data-import.store';
 import { toast } from '@/stores/toast.store';
+import { notifyMasterImportComplete } from '@/lib/master-data/master-data-import-notify';
+import {
+  summaryFromImportResult,
+  type MasterDataUploadSummary,
+} from '@/lib/master-data/master-data-upload-summary';
 
 const STORAGE_KEY = 'quoreb2b-master-import-job';
+
+function safeNum(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
 
 type ImportPipeline = 'csv-import' | 'legacy';
 
@@ -138,7 +148,33 @@ async function pollCsvImportUntilDone(
         if (!options?.silentComplete) {
           clearPersistedJob();
           useMasterDataImportStore.getState().markDone();
-          const rowCount = status.progress?.success ?? status.progress?.processed ?? 0;
+          const result = (status as { result?: Record<string, unknown> }).result;
+          const rowCount =
+            typeof result?.rowCount === 'number'
+              ? result.rowCount
+              : status.progress?.success ?? status.progress?.processed ?? 0;
+          const summary: MasterDataUploadSummary = result
+            ? summaryFromImportResult(fileName, result, {
+                startedAt: readPersistedJob()?.startedAt,
+              })
+            : {
+                fileName,
+                startedAt: readPersistedJob()?.startedAt ?? new Date().toISOString(),
+                completedAt: new Date().toISOString(),
+                status: 'done',
+                fileRowCount: status.progress?.totalEstimate ?? rowCount,
+                addedRows: status.progress?.success ?? rowCount,
+                duplicateCount: safeNum((status as { duplicateRowsHeld?: number }).duplicateRowsHeld),
+                missingCount: safeNum((status as { incompleteRowsHeld?: number }).incompleteRowsHeld),
+                duplicateFileSaved: Boolean(result?.duplicateFileSaved),
+                duplicateFileId: (result?.duplicateFileId as string | null | undefined) ?? null,
+              };
+          useMasterDataImportStore.getState().setUploadSummary(summary);
+          notifyMasterImportComplete({
+            fileName,
+            summary,
+            totalRows: rowCount,
+          });
           toast.success(
             mode === 'append' ? 'Master data import complete' : 'Master data replaced',
             rowCount > 0
@@ -156,8 +192,37 @@ async function pollCsvImportUntilDone(
         clearPersistedJob();
         useMasterDataImportStore.getState().markFailed();
         const msg = status.errorMessage || status.progress?.message || 'Import failed';
+        const result = (status as { result?: Record<string, unknown> }).result;
+        const addedRows = safeNum(result?.addedRows ?? status.progress?.success ?? status.checkpoint?.successRows);
+        const duplicateCount = safeNum(result?.skippedDuplicates ?? (status as { duplicateRowsHeld?: number }).duplicateRowsHeld);
+        const missingCount = safeNum(result?.missingRowCount ?? (status as { incompleteRowsHeld?: number }).incompleteRowsHeld);
+        const fileRowCount = safeNum(
+          result?.fileRowCount ?? status.progress?.totalEstimate ?? addedRows + duplicateCount + missingCount,
+        );
+        if (addedRows > 0 || duplicateCount > 0 || missingCount > 0 || fileRowCount > 0) {
+          const summary: MasterDataUploadSummary = result
+            ? {
+                ...summaryFromImportResult(fileName, result, {
+                  startedAt: readPersistedJob()?.startedAt,
+                }),
+                status: 'failed',
+              }
+            : {
+                fileName,
+                startedAt: readPersistedJob()?.startedAt ?? new Date().toISOString(),
+                completedAt: new Date().toISOString(),
+                status: 'failed',
+                fileRowCount,
+                addedRows,
+                duplicateCount,
+                missingCount,
+                duplicateFileSaved: Boolean(result?.duplicateFileSaved),
+                duplicateFileId: (result?.duplicateFileId as string | null | undefined) ?? null,
+              };
+          useMasterDataImportStore.getState().setUploadSummary(summary);
+        }
         toast.error('Master data import failed', msg);
-        setTimeout(() => useMasterDataImportStore.getState().reset(), 3000);
+        setTimeout(() => useMasterDataImportStore.getState().reset(), 8000);
         throw new Error(msg);
       }
     }
@@ -224,27 +289,22 @@ async function pollImportUntilDone(
         if (!options?.silentComplete) {
           clearPersistedJob();
           useMasterDataImportStore.getState().markDone();
+          const result = status.result as Record<string, unknown>;
           const rowCount =
-            typeof status.result.rowCount === 'number'
-              ? status.result.rowCount
+            typeof result.rowCount === 'number'
+              ? result.rowCount
               : status.rowsProcessed;
-          const skipped = status.result.skippedDuplicates ?? 0;
-          const missingRowCount = status.result.missingRowCount ?? 0;
-          const duplicateFileSaved = Boolean(status.result.duplicateFileSaved);
-          if (duplicateFileSaved || skipped > 0) {
-            toast.info(
-              'Duplicates saved to folder',
-              `${skipped.toLocaleString('en-US')} duplicate contact(s) saved under Admin → Duplicates`,
-            );
-          }
-          if (missingRowCount > 0) {
-            toast.info(
-              'Missing data saved',
-              `${missingRowCount.toLocaleString('en-US')} incomplete row(s) saved under Admin → Missing data`,
-            );
-          }
+          const summary = summaryFromImportResult(fileName, result, {
+            startedAt: readPersistedJob()?.startedAt,
+          });
+          useMasterDataImportStore.getState().setUploadSummary(summary);
+          notifyMasterImportComplete({
+            fileName,
+            summary,
+            totalRows: safeNum(rowCount),
+          });
           const partial =
-            Boolean(status.result.partial) || Boolean(status.result.hitRowCap);
+            Boolean(result.partial) || Boolean(result.hitRowCap);
           toast.success(
             partial
               ? 'Master data saved'
@@ -253,7 +313,7 @@ async function pollImportUntilDone(
                 : 'Master data replaced',
             status.message ||
               (rowCount != null
-                ? `${rowCount.toLocaleString()} rows in database · search indexed`
+                ? `${Number(rowCount).toLocaleString()} rows in database · search indexed`
                 : 'Import finished successfully'),
           );
           window.dispatchEvent(new CustomEvent('master-data-updated'));

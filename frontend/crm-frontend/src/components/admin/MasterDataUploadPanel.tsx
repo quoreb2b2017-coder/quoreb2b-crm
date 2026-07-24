@@ -3,7 +3,7 @@
 import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Upload, Download, Cloud, Loader2, Save, Database, Megaphone, CircleDot, Search, Clock } from 'lucide-react';
+import { Upload, Download, Cloud, Loader2, Save, Database, Megaphone, CircleDot, Search, Clock, Copy, AlertTriangle, FileUp } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { ExcelPreviewGrid } from '@/components/admin/ExcelPreviewGrid';
 import { downloadMasterDataTemplate } from '@/lib/spreadsheet/master-data-template';
@@ -21,10 +21,26 @@ import {
 } from '@/lib/api/master-data.service';
 import { enqueueMasterDataImport } from '@/lib/master-data/master-data-import-tracker';
 import {
-  emitMasterDataDuplicatePopup,
   MASTER_DATA_UPLOAD_DUPLICATES_EVENT,
   type MasterDataDuplicatePopupDetail,
 } from '@/lib/master-data/master-data-duplicate-popup';
+import {
+  MASTER_DATA_UPLOAD_SUMMARY_EVENT,
+  isUploadSummaryToday,
+  readPersistedUploadSummary,
+  summaryFromActivityLog,
+  summaryFromSaveRecord,
+  uploadStatusLabel,
+  type MasterDataUploadSummary,
+} from '@/lib/master-data/master-data-upload-summary';
+import { notifyMasterImportComplete } from '@/lib/master-data/master-data-import-notify';
+import {
+  findTodayUploadRequestMatch,
+  resolveUploadDuplicatesPath,
+  resolveUploadMissingPath,
+} from '@/lib/master-data/master-data-upload-stat-nav';
+import { uploadRequestFilePath } from '@/lib/master-data/upload-request-nav';
+import { isEmployeeDuplicateFile } from '@/lib/master-data/employee-upload-file.util';
 import { useMasterDataImportStore } from '@/store/master-data-import.store';
 import { batchesService } from '@/lib/api/batches.service';
 import { extractApiError } from '@/lib/api/errors';
@@ -100,10 +116,16 @@ function MasterCsvDownloadSparkline({ history }: { history: number[] }) {
   );
 }
 
-type MasterDataViewTab = 'total' | 'in_campaign' | 'remaining';
+type MasterDataViewTab =
+  | 'total'
+  | 'in_campaign'
+  | 'remaining'
+  | 'upload_total'
+  | 'upload_duplicates'
+  | 'upload_missing';
 
-const MASTER_DATA_VIEW_TABS: Array<{
-  id: MasterDataViewTab;
+const DATABASE_VIEW_TABS: Array<{
+  id: Extract<MasterDataViewTab, 'total' | 'in_campaign' | 'remaining'>;
   label: string;
   shortLabel: string;
   description: string;
@@ -139,6 +161,42 @@ const MASTER_DATA_VIEW_TABS: Array<{
     tone: 'blue',
   },
 ];
+
+const UPLOAD_VIEW_TABS: Array<{
+  id: Extract<MasterDataViewTab, 'upload_total' | 'upload_duplicates' | 'upload_missing'>;
+  label: string;
+  shortLabel: string;
+  description: string;
+  icon: typeof Database;
+  tone: 'violet' | 'rose' | 'orange';
+}> = [
+  {
+    id: 'upload_total',
+    label: "Today's upload",
+    shortLabel: 'Total file',
+    description: 'Total rows in latest file uploaded today',
+    icon: FileUp,
+    tone: 'violet',
+  },
+  {
+    id: 'upload_duplicates',
+    label: 'Duplicates',
+    shortLabel: 'Duplicates',
+    description: 'Skipped as duplicate in latest upload',
+    icon: Copy,
+    tone: 'orange',
+  },
+  {
+    id: 'upload_missing',
+    label: 'Missing data',
+    shortLabel: 'Missing',
+    description: 'Incomplete rows from latest upload',
+    icon: AlertTriangle,
+    tone: 'rose',
+  },
+];
+
+const MASTER_DATA_VIEW_TABS = [...DATABASE_VIEW_TABS, ...UPLOAD_VIEW_TABS];
 
 function safeCount(value: unknown): number {
   const n = typeof value === 'number' ? value : Number(value);
@@ -249,6 +307,8 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   const importPhase = useMasterDataImportStore((s) => s.uiPhase);
   const importProgress = useMasterDataImportStore((s) => s.progress);
   const importFileName = useMasterDataImportStore((s) => s.fileName);
+  const uploadSummary = useMasterDataImportStore((s) => s.uploadSummary);
+  const setUploadSummary = useMasterDataImportStore((s) => s.setUploadSummary);
   const [savingBatch, setSavingBatch] = useState(false);
   const [duplicateModal, setDuplicateModal] = useState<{
     fileName: string;
@@ -262,6 +322,80 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   const [csvDownloadProgress, setCsvDownloadProgress] =
     useState<MasterDataCsvDownloadProgress | null>(null);
   const [csvDownloadHistory, setCsvDownloadHistory] = useState<number[]>([]);
+
+  useEffect(() => {
+    if (importPhase === 'active') {
+      setDataViewTab('upload_total');
+    }
+  }, [importPhase]);
+
+  useEffect(() => {
+    const persisted = readPersistedUploadSummary();
+    if (persisted && isUploadSummaryToday(persisted)) {
+      setUploadSummary(persisted);
+    }
+  }, [setUploadSummary]);
+
+  const loadTodayUploadFromLogs = useCallback(async () => {
+    try {
+      const { data } = await activityLogsService.list({
+        action: 'MASTER_DATA_UPLOAD',
+        date: todayDateKey(),
+        limit: 5,
+      });
+      const latest = data
+        .map(summaryFromActivityLog)
+        .find((entry): entry is MasterDataUploadSummary => entry != null);
+      if (latest) {
+        setUploadSummary(latest);
+      }
+    } catch {
+      /* non-blocking */
+    }
+  }, [setUploadSummary]);
+
+  useEffect(() => {
+    void loadTodayUploadFromLogs();
+  }, [loadTodayUploadFromLogs]);
+
+  useEffect(() => {
+    const onSummary = (event: Event) => {
+      const detail = (event as CustomEvent<MasterDataUploadSummary>).detail;
+      if (!detail) return;
+      setUploadSummary(detail);
+    };
+    window.addEventListener(MASTER_DATA_UPLOAD_SUMMARY_EVENT, onSummary);
+    return () => window.removeEventListener(MASTER_DATA_UPLOAD_SUMMARY_EVENT, onSummary);
+  }, [setUploadSummary]);
+
+  useEffect(() => {
+    const refreshUpload = () => {
+      void loadTodayUploadFromLogs();
+    };
+    window.addEventListener('master-data-updated', refreshUpload);
+    return () => window.removeEventListener('master-data-updated', refreshUpload);
+  }, [loadTodayUploadFromLogs]);
+
+  useEffect(() => {
+    if (importPhase !== 'active' || !importProgress) return;
+    setUploadSummary({
+      fileName: importFileName || 'Uploading…',
+      startedAt: new Date().toISOString(),
+      status:
+        importProgress.phase === 'uploading'
+          ? 'uploading'
+          : importProgress.phase === 'failed'
+            ? 'failed'
+            : 'processing',
+      fileRowCount: importProgress.totalRows ?? 0,
+      addedRows: 0,
+      duplicateCount: 0,
+      missingCount: 0,
+      duplicateFileSaved: false,
+      importPercent: importProgress.percent,
+      importMessage: importProgress.message,
+    });
+  }, [importPhase, importProgress, importFileName, setUploadSummary]);
 
   const applyLargeDatasetRecord = useCallback(
     (record: Awaited<ReturnType<typeof masterDataService.getCurrent>> & { rowCount: number }) => {
@@ -357,12 +491,15 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
             ? ` · ${record.skippedDuplicates} duplicate(s) skipped` : '';
           toast.success('Added to master database', `+${record.addedRows} contacts · ${record.rowCount} total${skipped}`);
           window.dispatchEvent(new CustomEvent('master-data-updated'));
-          if ((record.skippedDuplicates ?? 0) > 0) {
-            toast.info(
-              'Duplicates saved to folder',
-              `${record.skippedDuplicates?.toLocaleString()} duplicate(s) saved under Admin → Duplicates`,
-            );
-          }
+          const summary = summaryFromSaveRecord(payload.fileName, record);
+          setUploadSummary(summary);
+          notifyMasterImportComplete({
+            fileName: payload.fileName,
+            summary,
+            duplicatePreviewRows: duplicatePreview?.duplicateRows,
+            headers: duplicatePreview?.headers ?? record.headers,
+            totalRows: record.rowCount,
+          });
         } else {
           toast.success('Saved to database', `${record.rowCount} contacts in master data`);
           window.dispatchEvent(new CustomEvent('master-data-updated'));
@@ -372,7 +509,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
         throw e;
       } finally { setSavingDb(false); }
     },
-    [applyRecord, logUploadActivity],
+    [applyRecord, logUploadActivity, setUploadSummary],
   );
 
   const saveEditsToDb = useCallback(async () => {
@@ -753,11 +890,215 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
 
   const activeViewTab =
     MASTER_DATA_VIEW_TABS.find((tab) => tab.id === dataViewTab) ?? MASTER_DATA_VIEW_TABS[0];
+  const campaignRowFilter = activeViewTab.filter ?? 'all';
+
+  const todayUploadSummary =
+    uploadSummary && (isUploadSummaryToday(uploadSummary) || importPhase === 'active')
+      ? uploadSummary
+      : null;
+
+  const uploadTabCounts = {
+    upload_total: todayUploadSummary?.fileRowCount ?? 0,
+    upload_duplicates: todayUploadSummary?.duplicateCount ?? 0,
+    upload_missing: todayUploadSummary?.missingCount ?? 0,
+  };
+
+  const uploadTabDescriptions: Partial<Record<MasterDataViewTab, string>> = {
+    upload_total: todayUploadSummary
+      ? importPhase === 'active'
+        ? `${uploadStatusLabel(todayUploadSummary)} · ${todayUploadSummary.fileName}`
+        : todayUploadSummary.status === 'failed'
+          ? `${todayUploadSummary.addedRows.toLocaleString('en-US')} uploaded · ${todayUploadSummary.duplicateCount.toLocaleString('en-US')} dup · ${todayUploadSummary.missingCount.toLocaleString('en-US')} missing`
+          : `${todayUploadSummary.addedRows.toLocaleString('en-US')} added · ${todayUploadSummary.fileName}`
+      : 'No upload today',
+    upload_duplicates: todayUploadSummary
+      ? todayUploadSummary.duplicateFileSaved
+        ? 'Click to open duplicate file →'
+        : todayUploadSummary.duplicateCount > 0
+          ? 'Click to open Duplicates folder →'
+          : 'No duplicates in latest upload'
+      : 'No upload today',
+    upload_missing: todayUploadSummary
+      ? todayUploadSummary.missingCount > 0
+        ? 'Click to open Missing data →'
+        : 'No incomplete rows in latest upload'
+      : 'No upload today',
+  };
 
   const tabCounts: Record<MasterDataViewTab, number> = {
     total: coverageStats.total,
     in_campaign: coverageStats.inCampaign,
     remaining: coverageStats.remaining,
+    upload_total: uploadTabCounts.upload_total,
+    upload_duplicates: uploadTabCounts.upload_duplicates,
+    upload_missing: uploadTabCounts.upload_missing,
+  };
+
+  const pendingClickable =
+    !isDbAdminView && pendingIndexedCount > 0 && !reindexRunning && !indexSyncStarting;
+
+  const handleStatTabClick = useCallback(
+    async (tab: (typeof DATABASE_VIEW_TABS)[number] | (typeof UPLOAD_VIEW_TABS)[number]) => {
+      if (tab.id === 'upload_missing') {
+        router.push(resolveUploadMissingPath(todayUploadSummary));
+        return;
+      }
+      if (tab.id === 'upload_duplicates') {
+        router.push(resolveUploadDuplicatesPath(todayUploadSummary));
+        return;
+      }
+      if (tab.id === 'upload_total') {
+        setDataViewTab('total');
+        if (todayUploadSummary?.fileName) {
+          try {
+            const inbox = await masterDataService.getEmployeeUploadRequestsInbox('all');
+            const receipt = findTodayUploadRequestMatch(todayUploadSummary, inbox);
+            if (receipt && !isEmployeeDuplicateFile(receipt)) {
+              router.push(uploadRequestFilePath('admin_employee', receipt.id));
+              return;
+            }
+          } catch {
+            /* inbox optional */
+          }
+          toast.info(
+            "Today's upload",
+            `${todayUploadSummary.addedRows.toLocaleString('en-US')} rows added to master · ${todayUploadSummary.fileName}`,
+          );
+        }
+        return;
+      }
+      setDataViewTab(tab.id);
+    },
+    [router, todayUploadSummary],
+  );
+
+  const renderStatTab = (
+    tab: (typeof DATABASE_VIEW_TABS)[number] | (typeof UPLOAD_VIEW_TABS)[number],
+  ) => {
+    const isUploadTab = tab.id.startsWith('upload_');
+    const active = !isUploadTab && dataViewTab === tab.id;
+    const Icon = tab.icon;
+    const uploadActive = isUploadTab && importPhase === 'active';
+    const uploadClickHint =
+      tab.id === 'upload_missing'
+        ? 'Open Admin → Missing data'
+        : tab.id === 'upload_duplicates'
+          ? todayUploadSummary?.duplicateFileId
+            ? "Open today's duplicate file"
+            : 'Open Admin → Duplicates'
+          : tab.id === 'upload_total'
+            ? "View today's upload in master database"
+            : undefined;
+    const displayCount =
+      tab.id === 'upload_total' && uploadActive && importProgress
+        ? `${Math.round(importProgress.percent)}%`
+        : safeCount(tabCounts[tab.id as MasterDataViewTab]).toLocaleString('en-US');
+    const description = uploadTabDescriptions[tab.id as MasterDataViewTab] ?? tab.description;
+    const toneActiveClass =
+      tab.tone === 'amber'
+        ? 'border-amber-300/80 bg-gradient-to-br from-amber-50 to-white shadow-md shadow-amber-100/60 ring-2 ring-amber-400/35'
+        : tab.tone === 'blue'
+          ? 'border-[#2e7ad1]/35 bg-gradient-to-br from-[#e8f1fb] to-white shadow-md shadow-[#2e7ad1]/10 ring-2 ring-[#2e7ad1]/30'
+          : tab.tone === 'violet'
+            ? 'border-violet-300/80 bg-gradient-to-br from-violet-50 to-white shadow-md shadow-violet-100/60 ring-2 ring-violet-400/35'
+            : tab.tone === 'orange'
+              ? 'border-orange-300/80 bg-gradient-to-br from-orange-50 to-white shadow-md shadow-orange-100/60 ring-2 ring-orange-400/35'
+              : tab.tone === 'rose'
+                ? 'border-rose-300/80 bg-gradient-to-br from-rose-50 to-white shadow-md shadow-rose-100/60 ring-2 ring-rose-400/35'
+                : 'border-slate-300/80 bg-white shadow-md shadow-slate-200/50 ring-2 ring-[#2e7ad1]/25';
+    const iconActiveClass =
+      tab.tone === 'amber'
+        ? 'border-amber-200 bg-amber-100 text-amber-800'
+        : tab.tone === 'blue'
+          ? 'border-[#2e7ad1]/25 bg-[#2e7ad1] text-white'
+          : tab.tone === 'violet'
+            ? 'border-violet-200 bg-violet-100 text-violet-800'
+            : tab.tone === 'orange'
+              ? 'border-orange-200 bg-orange-100 text-orange-800'
+              : tab.tone === 'rose'
+                ? 'border-rose-200 bg-rose-100 text-rose-800'
+                : 'border-slate-200 bg-slate-100 text-slate-700';
+    const countActiveClass =
+      tab.tone === 'amber'
+        ? 'text-amber-950'
+        : tab.tone === 'blue'
+          ? 'text-[#1d5a9e]'
+          : tab.tone === 'violet'
+            ? 'text-violet-950'
+            : tab.tone === 'orange'
+              ? 'text-orange-950'
+              : tab.tone === 'rose'
+                ? 'text-rose-950'
+                : 'text-slate-900';
+    const barActiveClass =
+      tab.tone === 'amber'
+        ? 'bg-amber-500'
+        : tab.tone === 'blue'
+          ? 'bg-[#2e7ad1]'
+          : tab.tone === 'violet'
+            ? 'bg-violet-500'
+            : tab.tone === 'orange'
+              ? 'bg-orange-500'
+              : tab.tone === 'rose'
+                ? 'bg-rose-500'
+                : 'bg-slate-400';
+
+    return (
+      <button
+        key={tab.id}
+        type="button"
+        role="tab"
+        aria-selected={active}
+        title={uploadClickHint}
+        onClick={() => void handleStatTabClick(tab)}
+        className={cn(
+          'group relative flex min-w-0 w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-all duration-200',
+          isUploadTab && 'cursor-pointer',
+          active
+            ? toneActiveClass
+            : 'border-slate-200/90 bg-white/90 hover:border-slate-300 hover:bg-white hover:shadow-sm',
+        )}
+      >
+        <span
+          className={cn(
+            'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition-colors',
+            active
+              ? iconActiveClass
+              : 'border-slate-200 bg-slate-50 text-slate-500 group-hover:bg-slate-100 group-hover:text-slate-700',
+          )}
+        >
+          {uploadActive ? (
+            <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2.25} />
+          ) : (
+            <Icon className="h-4 w-4" strokeWidth={2.25} />
+          )}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            {tab.label}
+          </span>
+          <span
+            className={cn(
+              'mt-0.5 block text-lg font-bold tabular-nums leading-none tracking-tight',
+              active ? countActiveClass : 'text-slate-800',
+            )}
+          >
+            {displayCount}
+          </span>
+          <span className="mt-1 block truncate text-[10px] leading-snug text-slate-500">
+            {description}
+          </span>
+        </span>
+        {active && (
+          <span
+            className={cn(
+              'absolute bottom-0 left-3 right-3 h-0.5 rounded-full',
+              barActiveClass,
+            )}
+          />
+        )}
+      </button>
+    );
   };
 
   return (
@@ -852,163 +1193,99 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
         </div>
       </div>
 
-      {!isDbAdminView && data && (
+      {!isDbAdminView && (data || todayUploadSummary || importPhase === 'active') && (
         <div className="border-b border-slate-200/90 bg-gradient-to-b from-slate-50 to-white px-3 py-3 sm:px-4">
-          <div
-            className="flex gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            role="group"
-            aria-label="Master data and search index status"
-          >
-            {MASTER_DATA_VIEW_TABS.map((tab) => {
-              const active = dataViewTab === tab.id;
-              const Icon = tab.icon;
-              const count = safeCount(tabCounts[tab.id]).toLocaleString('en-US');
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => setDataViewTab(tab.id)}
-                  className={cn(
-                    'group relative flex min-w-[10.5rem] flex-1 items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-all duration-200',
-                    active
-                      ? tab.tone === 'amber'
-                        ? 'border-amber-300/80 bg-gradient-to-br from-amber-50 to-white shadow-md shadow-amber-100/60 ring-2 ring-amber-400/35'
-                        : tab.tone === 'blue'
-                          ? 'border-[#2e7ad1]/35 bg-gradient-to-br from-[#e8f1fb] to-white shadow-md shadow-[#2e7ad1]/10 ring-2 ring-[#2e7ad1]/30'
-                          : 'border-slate-300/80 bg-white shadow-md shadow-slate-200/50 ring-2 ring-[#2e7ad1]/25'
-                      : 'border-slate-200/90 bg-white/90 hover:border-slate-300 hover:bg-white hover:shadow-sm',
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition-colors',
-                      active
-                        ? tab.tone === 'amber'
-                          ? 'border-amber-200 bg-amber-100 text-amber-800'
-                          : tab.tone === 'blue'
-                            ? 'border-[#2e7ad1]/25 bg-[#2e7ad1] text-white'
-                            : 'border-slate-200 bg-slate-100 text-slate-700'
-                        : 'border-slate-200 bg-slate-50 text-slate-500 group-hover:bg-slate-100 group-hover:text-slate-700',
-                    )}
-                  >
-                    <Icon className="h-4 w-4" strokeWidth={2.25} />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                      {tab.label}
-                    </span>
-                    <span
-                      className={cn(
-                        'mt-0.5 block text-lg font-bold tabular-nums leading-none tracking-tight',
-                        active
-                          ? tab.tone === 'amber'
-                            ? 'text-amber-950'
-                            : tab.tone === 'blue'
-                              ? 'text-[#1d5a9e]'
-                              : 'text-slate-900'
-                          : 'text-slate-800',
-                      )}
-                    >
-                      {count}
-                    </span>
-                    <span className="mt-1 block truncate text-[10px] leading-snug text-slate-500">
-                      {tab.description}
-                    </span>
-                  </span>
-                  {active && (
-                    <span
-                      className={cn(
-                        'absolute bottom-0 left-3 right-3 h-0.5 rounded-full',
-                        tab.tone === 'amber'
-                          ? 'bg-amber-500'
-                          : tab.tone === 'blue'
-                            ? 'bg-[#2e7ad1]'
-                            : 'bg-slate-400',
-                      )}
-                    />
-                  )}
-                </button>
-              );
-            })}
+          <div className="space-y-2">
+            <div
+              className="grid grid-cols-2 gap-2 lg:grid-cols-4"
+              role="tablist"
+              aria-label="Master database and search index"
+            >
+              {DATABASE_VIEW_TABS.map(renderStatTab)}
 
-            <div className="flex min-w-[10.5rem] flex-1 items-center gap-2.5 rounded-xl border border-emerald-200/90 bg-gradient-to-br from-emerald-50/90 to-white px-3 py-2.5 shadow-sm">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-100 text-emerald-700">
-                <Search className="h-4 w-4" strokeWidth={2.25} />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                  Total indexed
+              <div className="flex min-w-0 w-full items-center gap-2.5 rounded-xl border border-emerald-200/90 bg-gradient-to-br from-emerald-50/90 to-white px-3 py-2.5 shadow-sm">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-100 text-emerald-700">
+                  <Search className="h-4 w-4" strokeWidth={2.25} />
                 </span>
-                <span className="mt-0.5 block text-lg font-bold tabular-nums leading-none tracking-tight text-emerald-950">
-                  {indexedCount.toLocaleString('en-US')}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    Total indexed
+                  </span>
+                  <span className="mt-0.5 block text-lg font-bold tabular-nums leading-none tracking-tight text-emerald-950">
+                    {indexedCount.toLocaleString('en-US')}
+                  </span>
+                  <span className="mt-1 block truncate text-[10px] leading-snug text-slate-500">
+                    Searchable in OpenSearch
+                  </span>
                 </span>
-                <span className="mt-1 block truncate text-[10px] leading-snug text-slate-500">
-                  Searchable in OpenSearch
-                </span>
-              </span>
-              {reindexRunning && (
-                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-emerald-600" />
-              )}
+                {reindexRunning && (
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-emerald-600" />
+                )}
+              </div>
             </div>
 
-            {(() => {
-              const pendingClickable =
-                !isDbAdminView && pendingIndexedCount > 0 && !reindexRunning && !indexSyncStarting;
-              const PendingTag = pendingClickable ? 'button' : 'div';
-              return (
-                <PendingTag
-                  type={pendingClickable ? 'button' : undefined}
-                  onClick={pendingClickable ? () => void handleStartPendingIndex() : undefined}
-                  className={cn(
-                    'flex min-w-[10.5rem] flex-1 items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-all duration-200',
-                    pendingIndexedCount > 0
-                      ? pendingClickable
-                        ? 'cursor-pointer border-amber-300/80 bg-gradient-to-br from-amber-50 to-white shadow-sm hover:border-amber-400 hover:shadow-md hover:ring-2 hover:ring-amber-300/40'
-                        : 'border-amber-300/80 bg-gradient-to-br from-amber-50 to-white shadow-sm'
-                      : 'border-slate-200/90 bg-white/90 shadow-sm',
-                  )}
-                >
-                  <span
+            <div
+              className="grid grid-cols-2 gap-2 lg:grid-cols-4"
+              role="tablist"
+              aria-label="Today's upload status"
+            >
+              {UPLOAD_VIEW_TABS.map(renderStatTab)}
+
+              {(() => {
+                const PendingTag = pendingClickable ? 'button' : 'div';
+                return (
+                  <PendingTag
+                    type={pendingClickable ? 'button' : undefined}
+                    onClick={pendingClickable ? () => void handleStartPendingIndex() : undefined}
                     className={cn(
-                      'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border',
+                      'flex min-w-0 w-full items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-all duration-200',
                       pendingIndexedCount > 0
-                        ? 'border-amber-200 bg-amber-100 text-amber-800'
-                        : 'border-slate-200 bg-slate-50 text-slate-500',
+                        ? pendingClickable
+                          ? 'cursor-pointer border-amber-300/80 bg-gradient-to-br from-amber-50 to-white shadow-sm hover:border-amber-400 hover:shadow-md hover:ring-2 hover:ring-amber-300/40'
+                          : 'border-amber-300/80 bg-gradient-to-br from-amber-50 to-white shadow-sm'
+                        : 'border-slate-200/90 bg-white/90 shadow-sm',
                     )}
                   >
-                    {indexSyncStarting || (reindexRunning && pendingIndexedCount > 0) ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Clock className="h-4 w-4" strokeWidth={2.25} />
-                    )}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                      Pending indexed
-                    </span>
                     <span
                       className={cn(
-                        'mt-0.5 block text-lg font-bold tabular-nums leading-none tracking-tight',
-                        pendingIndexedCount > 0 ? 'text-amber-950' : 'text-slate-800',
+                        'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border',
+                        pendingIndexedCount > 0
+                          ? 'border-amber-200 bg-amber-100 text-amber-800'
+                          : 'border-slate-200 bg-slate-50 text-slate-500',
                       )}
                     >
-                      {pendingIndexedCount.toLocaleString('en-US')}
+                      {indexSyncStarting || (reindexRunning && pendingIndexedCount > 0) ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Clock className="h-4 w-4" strokeWidth={2.25} />
+                      )}
                     </span>
-                    <span className="mt-1 block truncate text-[10px] leading-snug text-slate-500">
-                      {reindexRunning
-                        ? 'Indexing in progress…'
-                        : pendingIndexedCount > 0
-                          ? pendingClickable
-                            ? 'Click to start indexing'
-                            : 'Waiting to index'
-                          : 'All contacts indexed'}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                        Pending indexed
+                      </span>
+                      <span
+                        className={cn(
+                          'mt-0.5 block text-lg font-bold tabular-nums leading-none tracking-tight',
+                          pendingIndexedCount > 0 ? 'text-amber-950' : 'text-slate-800',
+                        )}
+                      >
+                        {pendingIndexedCount.toLocaleString('en-US')}
+                      </span>
+                      <span className="mt-1 block truncate text-[10px] leading-snug text-slate-500">
+                        {reindexRunning
+                          ? 'Indexing in progress…'
+                          : pendingIndexedCount > 0
+                            ? pendingClickable
+                              ? 'Click to start indexing'
+                              : 'Waiting to index'
+                            : 'All contacts indexed'}
+                      </span>
                     </span>
-                  </span>
-                </PendingTag>
-              );
-            })()}
+                  </PendingTag>
+                );
+              })()}
+            </div>
           </div>
         </div>
       )}
@@ -1078,7 +1355,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
           <MasterDatabaseExplorer
             variant="db_admin"
             embedded
-            campaignRowFilter={activeViewTab.filter}
+            campaignRowFilter={campaignRowFilter}
             onCreateBatch={openBatchModal}
           />
         </div>
@@ -1098,7 +1375,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
             onFilteredDataChange={setFilteredRows}
             onFilteredViewChange={({ hasActiveViewFilter }) => setFilteredViewActive(hasActiveViewFilter)}
             batchedByRow={coverage?.batchedByRow}
-            campaignRowFilter={!isDbAdminView ? activeViewTab.filter : undefined}
+            campaignRowFilter={!isDbAdminView ? campaignRowFilter : undefined}
             onCreateBatch={openBatchModal}
             fillHeight
             enableDragScroll
@@ -1386,7 +1663,9 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
                   <p className="mt-1 text-xs text-amber-800">
                     {duplicateModal.duplicateRows.length > 0
                       ? 'Download the duplicate sheet to review them.'
-                      : 'Large import — duplicate list is not stored, but the count above is accurate.'}
+                      : duplicateModal.duplicateCount > 0
+                        ? 'Full duplicate list is in Admin → Duplicates (large import stores count + preview only).'
+                        : 'Large import — duplicate list is not stored, but the count above is accurate.'}
                   </p>
                 </div>
               </div>

@@ -366,18 +366,12 @@ export class CsvImportProcessorService {
     if (failedBuffer.length) {
       await this.jobs.recordFailedRows(job.jobId, failedBuffer.splice(0));
     }
-    await flushDupBuffer();
-    if (holdRequestId && targetHeaders.length) {
-      await this.duplicateHold.finalizeHold(
-        holdRequestId,
-        holdKey || this.duplicateHold.holdKeyForJob(job.jobId),
-        targetHeaders,
-        duplicateRowsHeld,
-        job.fileName,
-      );
-    }
 
     await this.jobs.setTotalBatches(job.jobId, batchNumber);
+
+    await this.jobs.updateStatus(job.jobId, job.status, {
+      incompleteRowsHeld: incompleteRows.length,
+    } as Partial<CsvImportJob>);
 
     if (incompleteRows.length && targetHeaders.length && job.uploadedBy) {
       const sourceRole =
@@ -403,6 +397,22 @@ export class CsvImportProcessorService {
         );
       }
     }
+
+    await flushDupBuffer();
+    if (holdRequestId && targetHeaders.length) {
+      await this.duplicateHold.finalizeHold(
+        holdRequestId,
+        holdKey || this.duplicateHold.holdKeyForJob(job.jobId),
+        targetHeaders,
+        duplicateRowsHeld,
+        job.fileName,
+      );
+    }
+
+    await this.jobs.updateStatus(job.jobId, job.status, {
+      duplicateRowsHeld,
+      duplicateHoldRequestId: holdRequestId,
+    } as Partial<CsvImportJob>);
   }
 
   private async persistBatch(
@@ -510,18 +520,18 @@ export class CsvImportProcessorService {
 
     const successRows = job.checkpoint.successRows;
     const duplicateRowsHeld = job.duplicateRowsHeld || 0;
-    // Always sync metadata to the real chunk total (not just this job's inserted rows),
-    // otherwise append imports leave dashboards showing a stale/wrong TOTAL DATA count.
+    const missingCount = job.incompleteRowsHeld || 0;
     const totalRows = await this.countChunkRows(job.masterKey || MASTER_DATA_KEY);
     await this.patchMasterMeta(job, job.headers, totalRows, job.fileName);
 
-    // Personal library: show both "Your uploads" + "Duplicates" for the uploader (DB Admin).
+    let uploadReceiptId: string | null = null;
     try {
-      await this.duplicateHold.createUploadReceipt(job, {
+      uploadReceiptId = await this.duplicateHold.createUploadReceipt(job, {
         headers: job.headers ?? [],
         addedRows: successRows,
         duplicateCount: duplicateRowsHeld,
-        totalRowsEstimate: job.progress?.totalEstimate || successRows + duplicateRowsHeld,
+        missingValueCount: missingCount,
+        totalRowsEstimate: job.progress?.totalEstimate || successRows + duplicateRowsHeld + missingCount,
       });
     } catch (err) {
       this.logger.warn(
@@ -529,9 +539,16 @@ export class CsvImportProcessorService {
       );
     }
 
+    const duplicateFileId =
+      duplicateRowsHeld > 0 && job.duplicateHoldRequestId
+        ? job.duplicateHoldRequestId
+        : '';
+
     await this.jobs.updateStatus(job.jobId, 'completed', {
       completedAt: new Date(),
       errorCsvS3Key,
+      uploadReceiptId: uploadReceiptId || '',
+      duplicateFileId,
     });
     await this.jobs.updateProgress(job.jobId, {
       success: successRows,
@@ -542,9 +559,10 @@ export class CsvImportProcessorService {
         (successRows ? ` (+${successRows.toLocaleString()} new from this file)` : '') +
         ` · search ready` +
         (duplicateRowsHeld
-          ? `, ${duplicateRowsHeld.toLocaleString()} duplicates in temp folder`
+          ? ` · ${duplicateRowsHeld.toLocaleString()} duplicates saved`
           : '') +
-        (failedCount ? `, ${failedCount.toLocaleString()} failed` : ''),
+        (missingCount ? ` · ${missingCount.toLocaleString()} missing data saved` : '') +
+        (failedCount ? ` · ${failedCount.toLocaleString()} failed` : ''),
     });
 
     this.logger.log(

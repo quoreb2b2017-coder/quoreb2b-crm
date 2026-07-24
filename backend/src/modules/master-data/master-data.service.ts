@@ -263,7 +263,7 @@ export class MasterDataService {
       rows,
     );
     if (incompleteRows.length) {
-      this.captureMissingData({
+      void this.captureMissingData({
         ...capture,
         headers,
         rows: incompleteRows,
@@ -273,7 +273,7 @@ export class MasterDataService {
   }
 
   /** Copy incomplete critical-field rows into Missing Data (does not block upload). */
-  private captureMissingData(input: {
+  private async captureMissingData(input: {
     sourceKey: string;
     sourceType: 'upload_request' | 'master_import';
     sourceRequestId?: string;
@@ -284,10 +284,10 @@ export class MasterDataService {
     actor: ActivityActor;
     sourceRole: MissingDataSourceRole;
     fallbackDate?: Date;
-  }): void {
+  }): Promise<void> {
     if (!input.rows.length || !input.headers.length) return;
-    void this.missingData
-      .ingest({
+    try {
+      await this.missingData.ingest({
         sourceKey: input.sourceKey,
         sourceType: input.sourceType,
         sourceRequestId: input.sourceRequestId,
@@ -300,12 +300,12 @@ export class MasterDataService {
         uploadedByName: displayName(input.actor),
         sourceRole: input.sourceRole,
         fallbackDate: input.fallbackDate ?? new Date(),
-      })
-      .catch((err) => {
-        this.logger.warn(
-          `Missing-data capture failed: ${err instanceof Error ? err.message : err}`,
-        );
       });
+    } catch (err) {
+      this.logger.warn(
+        `Missing-data capture failed: ${err instanceof Error ? err.message : err}`,
+      );
+    }
   }
 
   private masterImportSourceRole(actor: ActivityActor): MissingDataSourceRole {
@@ -335,7 +335,7 @@ export class MasterDataService {
   }): Promise<{ duplicateFileId: string | null; missingRowCount: number }> {
     const missingRowCount = params.incompleteRows.length;
     if (missingRowCount > 0 && params.headers.length) {
-      this.captureMissingData({
+      await this.captureMissingData({
         sourceKey: this.missingDataSourceKey({
           sourceType: 'master_import',
           fileName: params.fileName,
@@ -927,6 +927,7 @@ export class MasterDataService {
     let addedRows = 0;
     let skippedDuplicates = 0;
     let skippedIncomplete = 0;
+    let skippedEmptyRows = 0;
     const incompleteBatch: string[][] = [];
     let duplicateBatch: string[][] = [];
     let duplicateHoldKey: string | undefined;
@@ -983,7 +984,7 @@ export class MasterDataService {
     for (const rawRow of dto.rows) {
       processed += 1;
       if (!rowHasSourceData(rawRow, sourceHeaders)) {
-        skippedDuplicates += 1;
+        skippedEmptyRows += 1;
         continue;
       }
       const aligned = alignRowWithIndex(
@@ -1026,33 +1027,17 @@ export class MasterDataService {
 
     await flushBatch(true);
 
-    if (incompleteBatch.length) {
-      this.captureMissingData({
-        sourceKey: this.missingDataSourceKey({
-          sourceType: 'master_import',
-          fileName: dto.fileName,
-          actorId: actor.id,
-        }),
-        sourceType: 'master_import',
-        fileName: dto.fileName,
-        sheetName: dto.sheetName || existing?.sheetName || 'Master Data',
-        headers: targetHeaders,
-        rows: incompleteBatch,
-        actor,
-        sourceRole: this.masterImportSourceRole(actor),
-      });
-    }
-
     await flushDuplicateSidecar();
+    const actualDuplicateCount = trackedDuplicateCount + duplicateBatch.length;
     const sidecars = await this.finalizeMasterImportSidecars({
       actor,
       fileName: dto.fileName,
       sheetName: dto.sheetName || existing?.sheetName || 'Master Data',
       headers: targetHeaders,
-      incompleteRows: [],
+      incompleteRows: incompleteBatch,
       duplicateRows: duplicateBatch,
       duplicateHoldKey,
-      duplicateCount: trackedDuplicateCount + duplicateBatch.length,
+      duplicateCount: actualDuplicateCount,
     });
 
     const finalRowCount = baseRowCount + addedRows;
@@ -1078,8 +1063,13 @@ export class MasterDataService {
           fileName: dto.fileName,
           sheetName: dto.sheetName,
           addedRows,
-          skippedDuplicates,
+          skippedDuplicates: actualDuplicateCount,
           skippedIncomplete,
+          skippedEmptyRows,
+          missingRowCount: sidecars.missingRowCount,
+          duplicateFileId: sidecars.duplicateFileId,
+          duplicateFileSaved: Boolean(sidecars.duplicateFileId),
+          fileRowCount: totalIncoming,
           totalRows: finalRowCount,
           columnCount: targetHeaders.length,
           mode,
@@ -1098,11 +1088,13 @@ export class MasterDataService {
     return {
       ...(await this.toResponse(doc)),
       addedRows,
-      skippedDuplicates,
+      skippedDuplicates: actualDuplicateCount,
       skippedIncomplete,
-      missingRowCount: incompleteBatch.length,
+      skippedEmptyRows,
+      missingRowCount: sidecars.missingRowCount,
       duplicateFileId: sidecars.duplicateFileId,
       duplicateFileSaved: Boolean(sidecars.duplicateFileId),
+      fileRowCount: totalIncoming,
       mode,
     };
   }
@@ -1128,6 +1120,7 @@ export class MasterDataService {
     let addedRows = 0;
     let skippedDuplicates = 0;
     let skippedIncomplete = 0;
+    let skippedEmptyRows = 0;
     const incompleteRows: string[][] = [];
     let duplicateBatch: string[][] = [];
     let duplicateHoldKey: string | undefined;
@@ -1215,7 +1208,7 @@ export class MasterDataService {
         if (hitRowCap) break;
         processed += 1;
         if (!rowHasSourceData(rawRow, sourceHeaders)) {
-          skippedDuplicates += 1;
+          skippedEmptyRows += 1;
           continue;
         }
         const aligned = alignRowWithIndex(
@@ -1381,6 +1374,7 @@ export class MasterDataService {
     await flushBatch(true);
     await flushDuplicateSidecar();
 
+    const actualDuplicateCount = trackedDuplicateCount + duplicateBatch.length;
     const sidecars = await this.finalizeMasterImportSidecars({
       actor,
       fileName,
@@ -1389,7 +1383,7 @@ export class MasterDataService {
       incompleteRows,
       duplicateRows: duplicateBatch,
       duplicateHoldKey,
-      duplicateCount: trackedDuplicateCount + duplicateBatch.length,
+      duplicateCount: actualDuplicateCount,
     });
 
     const finalRowCount = baseRowCount + addedRows;
@@ -1423,8 +1417,9 @@ export class MasterDataService {
           fileName,
           sheetName,
           addedRows,
-          skippedDuplicates,
+          skippedDuplicates: actualDuplicateCount,
           skippedIncomplete,
+          skippedEmptyRows,
           missingRowCount: sidecars.missingRowCount,
           duplicateFileId: sidecars.duplicateFileId,
           duplicateFileSaved: Boolean(sidecars.duplicateFileId),
@@ -1451,8 +1446,9 @@ export class MasterDataService {
       result: {
         ...(await this.toResponse(doc)),
         addedRows,
-        skippedDuplicates,
+        skippedDuplicates: actualDuplicateCount,
         skippedIncomplete,
+        skippedEmptyRows,
         missingRowCount: sidecars.missingRowCount,
         duplicateFileId: sidecars.duplicateFileId,
         duplicateFileSaved: Boolean(sidecars.duplicateFileId),

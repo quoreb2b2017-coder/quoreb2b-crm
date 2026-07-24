@@ -141,6 +141,18 @@ export class CsvImportJob extends Document {
   @Prop({ default: 0 })
   duplicateRowsHeld: number;
 
+  /** Rows skipped for missing critical fields (saved to Missing Data). */
+  @Prop({ default: 0 })
+  incompleteRowsHeld: number;
+
+  /** Upload receipt (master_data_upload_requests) created on complete */
+  @Prop({ default: '' })
+  uploadReceiptId: string;
+
+  /** Duplicate companion file id */
+  @Prop({ default: '' })
+  duplicateFileId: string;
+
   @Prop({ default: 1000 })
   batchSize: number;
 

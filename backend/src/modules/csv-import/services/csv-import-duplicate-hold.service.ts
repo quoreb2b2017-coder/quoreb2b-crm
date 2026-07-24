@@ -7,6 +7,7 @@ import {
 } from '../../master-data/schemas/master-data-upload-request.schema';
 import { MASTER_DATA_CHUNK_SIZE } from '../../master-data/master-data-row.store';
 import { CsvImportJob } from '../schemas/csv-import-job.schema';
+import { normalizeUploadRequestSourceRole } from '../../master-data/upload-request-source-role.util';
 
 const PREVIEW_LIMIT = 100;
 
@@ -81,7 +82,7 @@ export class CsvImportDuplicateHoldService {
       adminName: job.uploadedByEmail || 'Super Admin',
       isDuplicateFile: true,
       rowsHoldKey: holdKey,
-      sourceRole: job.uploadSourceRole || 'db_admin',
+      sourceRole: normalizeUploadRequestSourceRole(job.uploadSourceRole),
       status: 'active',
     });
 
@@ -209,6 +210,7 @@ export class CsvImportDuplicateHoldService {
       headers: string[];
       addedRows: number;
       duplicateCount: number;
+      missingValueCount?: number;
       totalRowsEstimate?: number;
     },
   ): Promise<string | null> {
@@ -231,11 +233,11 @@ export class CsvImportDuplicateHoldService {
       submittedRowCount: params.totalRowsEstimate ?? addedRows + duplicateCount,
       duplicateCount,
       duplicatePreviewRows: [],
-      missingValueCount: 0,
+      missingValueCount: Math.max(0, params.missingValueCount ?? 0),
       submittedBy: job.uploadedBy,
       submittedByEmail: job.uploadedByEmail || '',
       submittedByName: job.uploadedByEmail || 'Admin',
-      sourceRole: job.uploadSourceRole || 'db_admin',
+      sourceRole: normalizeUploadRequestSourceRole(job.uploadSourceRole),
       status: 'approved',
       mergedAddedRows: addedRows,
       mergedTotalRows: undefined,

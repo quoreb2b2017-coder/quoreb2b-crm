@@ -384,6 +384,18 @@ export class CsvImportService {
 
   private toStatusResponse(job: CsvImportJob): Record<string, unknown> {
     const remaining = Math.max(0, job.progress.totalEstimate - job.progress.processed);
+    const addedRows = job.checkpoint?.successRows ?? job.progress.success ?? 0;
+    const duplicateCount = job.duplicateRowsHeld ?? 0;
+    const missingCount = job.incompleteRowsHeld ?? 0;
+    const fileRowCount = Math.max(
+      job.progress.totalEstimate || 0,
+      addedRows + duplicateCount + missingCount,
+    );
+    const duplicateFileSaved =
+      duplicateCount > 0 && Boolean(job.duplicateHoldRequestId || job.duplicateFileId);
+    const importDone = job.status === 'completed';
+    const importFailed = job.status === 'failed';
+    const showResult = importDone || importFailed;
     return {
       jobId: job.jobId,
       status: job.status,
@@ -408,6 +420,28 @@ export class CsvImportService {
       completedAt: job.completedAt,
       createdAt: (job as CsvImportJob & { createdAt?: Date }).createdAt,
       updatedAt: (job as CsvImportJob & { updatedAt?: Date }).updatedAt,
+      duplicateRowsHeld: duplicateCount,
+      incompleteRowsHeld: missingCount,
+      uploadReceiptId: job.uploadReceiptId || '',
+      duplicateFileId: job.duplicateFileId || job.duplicateHoldRequestId || '',
+      ...(showResult
+        ? {
+            result: {
+              addedRows,
+              skippedDuplicates: duplicateCount,
+              missingRowCount: missingCount,
+              skippedIncomplete: missingCount,
+              fileRowCount,
+              duplicateFileSaved,
+              duplicateFileId: duplicateFileSaved
+                ? job.duplicateFileId || job.duplicateHoldRequestId
+                : null,
+              uploadReceiptId: job.uploadReceiptId || null,
+              rowCount: addedRows,
+              partial: importFailed,
+            },
+          }
+        : {}),
     };
   }
 }

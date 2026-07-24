@@ -41,6 +41,10 @@ export interface CsvImportJobStatus {
   fileName?: string;
   mode?: MasterDataSaveMode;
   progress: CsvImportJobProgress;
+  checkpoint?: {
+    successRows?: number;
+    lastRowNumber?: number;
+  };
   errorMessage?: string;
   errorCsvAvailable?: boolean;
   duplicateRowsHeld?: number;

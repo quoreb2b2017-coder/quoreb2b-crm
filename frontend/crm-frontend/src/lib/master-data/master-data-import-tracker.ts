@@ -164,10 +164,10 @@ async function pollCsvImportUntilDone(
                 status: 'done',
                 fileRowCount: status.progress?.totalEstimate ?? rowCount,
                 addedRows: status.progress?.success ?? rowCount,
-                duplicateCount: safeNum((status as { duplicateRowsHeld?: number }).duplicateRowsHeld),
-                missingCount: safeNum((status as { incompleteRowsHeld?: number }).incompleteRowsHeld),
-                duplicateFileSaved: Boolean(result?.duplicateFileSaved),
-                duplicateFileId: (result?.duplicateFileId as string | null | undefined) ?? null,
+                duplicateCount: safeNum(status.duplicateRowsHeld),
+                missingCount: safeNum(status.incompleteRowsHeld),
+                duplicateFileSaved: false,
+                duplicateFileId: null,
               };
           useMasterDataImportStore.getState().setUploadSummary(summary);
           notifyMasterImportComplete({
@@ -193,9 +193,11 @@ async function pollCsvImportUntilDone(
         useMasterDataImportStore.getState().markFailed();
         const msg = status.errorMessage || status.progress?.message || 'Import failed';
         const result = (status as { result?: Record<string, unknown> }).result;
-        const addedRows = safeNum(result?.addedRows ?? status.progress?.success ?? status.checkpoint?.successRows);
-        const duplicateCount = safeNum(result?.skippedDuplicates ?? (status as { duplicateRowsHeld?: number }).duplicateRowsHeld);
-        const missingCount = safeNum(result?.missingRowCount ?? (status as { incompleteRowsHeld?: number }).incompleteRowsHeld);
+        const addedRows = safeNum(
+          result?.addedRows ?? status.progress?.success ?? status.checkpoint?.successRows,
+        );
+        const duplicateCount = safeNum(result?.skippedDuplicates ?? status.duplicateRowsHeld);
+        const missingCount = safeNum(result?.missingRowCount ?? status.incompleteRowsHeld);
         const fileRowCount = safeNum(
           result?.fileRowCount ?? status.progress?.totalEstimate ?? addedRows + duplicateCount + missingCount,
         );
@@ -216,8 +218,8 @@ async function pollCsvImportUntilDone(
                 addedRows,
                 duplicateCount,
                 missingCount,
-                duplicateFileSaved: Boolean(result?.duplicateFileSaved),
-                duplicateFileId: (result?.duplicateFileId as string | null | undefined) ?? null,
+                duplicateFileSaved: duplicateCount > 0,
+                duplicateFileId: null,
               };
           useMasterDataImportStore.getState().setUploadSummary(summary);
         }
@@ -289,7 +291,7 @@ async function pollImportUntilDone(
         if (!options?.silentComplete) {
           clearPersistedJob();
           useMasterDataImportStore.getState().markDone();
-          const result = status.result as Record<string, unknown>;
+          const result = status.result as unknown as Record<string, unknown>;
           const rowCount =
             typeof result.rowCount === 'number'
               ? result.rowCount

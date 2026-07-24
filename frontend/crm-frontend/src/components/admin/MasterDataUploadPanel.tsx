@@ -888,9 +888,9 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
     remaining: safeCount(coverage?.summary?.availableRows ?? totalRows),
   };
 
-  const activeViewTab =
-    MASTER_DATA_VIEW_TABS.find((tab) => tab.id === dataViewTab) ?? MASTER_DATA_VIEW_TABS[0];
-  const campaignRowFilter = activeViewTab.filter ?? 'all';
+  const activeDatabaseTab =
+    DATABASE_VIEW_TABS.find((tab) => tab.id === dataViewTab) ?? DATABASE_VIEW_TABS[0];
+  const campaignRowFilter = activeDatabaseTab.filter ?? 'all';
 
   const todayUploadSummary =
     uploadSummary && (isUploadSummaryToday(uploadSummary) || importPhase === 'active')

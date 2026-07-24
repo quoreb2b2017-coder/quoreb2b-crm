@@ -3881,17 +3881,34 @@ export class MasterDataService {
       updatedAt?: Date;
     },
   ): Promise<number> {
+    const declared = this.rowStore.getRowCount(doc);
+
+    // Chunked append imports update Mongo chunks immediately but rowCount metadata
+    // can lag — always reconcile against chunk totals for accurate dashboard counts.
+    if (this.rowStore.isChunked(doc)) {
+      const rowCount = await this.rowStore.countStoredRows(doc);
+      if (rowCount > 0 && rowCount !== declared) {
+        await this.masterDataModel
+          .updateOne({ key: doc.key }, { $set: { rowCount } })
+          .exec()
+          .catch(() => undefined);
+      }
+      const revision =
+        (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? rowCount;
+      const cacheKey = `${MASTER_COUNT_CACHE_KEY}:${revision}:${rowCount}`;
+      await this.cache.setJson(cacheKey, rowCount, cacheTtlSeconds(this.config, 'long'));
+      await this.cache.setJson(MASTER_COUNT_CACHE_KEY, rowCount, cacheTtlSeconds(this.config, 'long'));
+      return rowCount;
+    }
+
     const revision =
-      (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? this.rowStore.getRowCount(doc);
+      (doc as { updatedAt?: Date }).updatedAt?.getTime?.() ?? declared;
     const cacheKey = `${MASTER_COUNT_CACHE_KEY}:${revision}`;
     const cached = await this.cache.getJson<number>(cacheKey);
     if (typeof cached === 'number' && Number.isFinite(cached) && cached >= 0) {
       return cached;
     }
 
-    // Trust declared rowCount for chunked masters — full chunk aggregate is multi-second
-    // and was the main reason bootstrap/search felt slow even with OpenSearch.
-    const declared = this.rowStore.getRowCount(doc);
     if (declared > 0) {
       await this.cache.setJson(cacheKey, declared, cacheTtlSeconds(this.config, 'long'));
       await this.cache.setJson(MASTER_COUNT_CACHE_KEY, declared, cacheTtlSeconds(this.config, 'long'));

@@ -46,3 +46,33 @@ export function formatActivityActionForLog(
   }
   return base;
 }
+
+function safeCount(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Rich detail line for master upload rows in activity logs. */
+export function formatMasterUploadActivityDetail(
+  metadata?: Record<string, unknown>,
+): string | null {
+  if (!metadata) return null;
+  const fileName = String(metadata.fileName ?? '').trim();
+  const addedRows = safeCount(metadata.addedRows);
+  const duplicateCount = safeCount(metadata.skippedDuplicates);
+  const missingCount = safeCount(metadata.missingRowCount ?? metadata.skippedIncomplete);
+  const fileRowCount = safeCount(
+    metadata.fileRowCount ?? addedRows + duplicateCount + missingCount,
+  );
+  if (!fileName && !addedRows && !duplicateCount && !missingCount && !fileRowCount) {
+    return null;
+  }
+  const parts = [
+    fileName || 'upload',
+    fileRowCount > 0 ? `${fileRowCount.toLocaleString('en-US')} in file` : null,
+    addedRows > 0 ? `+${addedRows.toLocaleString('en-US')} added` : null,
+    duplicateCount > 0 ? `${duplicateCount.toLocaleString('en-US')} dup` : null,
+    missingCount > 0 ? `${missingCount.toLocaleString('en-US')} missing` : null,
+  ].filter(Boolean);
+  return parts.join(' · ');
+}

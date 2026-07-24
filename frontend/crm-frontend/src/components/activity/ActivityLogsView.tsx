@@ -22,7 +22,7 @@ import {
   formatRoleLabel,
   type ActivityLogRow,
 } from '@/lib/api/activity-logs.service';
-import { formatActivityActionForLog } from '@/lib/constants/activity-labels';
+import { formatActivityActionForLog, formatMasterUploadActivityDetail } from '@/lib/constants/activity-labels';
 import { extractApiError } from '@/lib/api/errors';
 import { cn } from '@/lib/utils/cn';
 import { usersService } from '@/lib/api/users.service';
@@ -618,6 +618,11 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
                       userName: logUserName,
                       showActorOnAuth: !isSystem,
                     });
+                    const uploadDetail =
+                      log.action === 'MASTER_DATA_UPLOAD'
+                        ? formatMasterUploadActivityDetail(log.metadata)
+                        : null;
+                    const resourceLabel = uploadDetail ?? log.path ?? log.resource ?? '—';
 
                     return (
                       <tr
@@ -678,9 +683,9 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
                         <td className="max-w-[220px] px-3 py-3">
                           <span
                             className="al-resource-path inline-block max-w-full truncate font-mono text-[11px] text-slate-500"
-                            title={log.path ?? log.resource}
+                            title={resourceLabel}
                           >
-                            {log.path ?? log.resource ?? '—'}
+                            {resourceLabel}
                           </span>
                         </td>
                       </tr>

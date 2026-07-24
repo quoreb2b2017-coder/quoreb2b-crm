@@ -38,6 +38,8 @@ import {
 } from '../../master-data/master-data-format.util';
 import { rowHasCriticalMissing } from '../../missing-data/missing-data.util';
 import { MissingDataService } from '../../missing-data/missing-data.service';
+import { ActivityLogsService } from '../../activity-logs/activity-logs.service';
+import type { ActivityActor } from '../../activity-logs/activity-user.util';
 import {
   alignRowWithIndex,
   buildHeaderIndexMap,
@@ -70,6 +72,7 @@ export class CsvImportProcessorService {
     private readonly chunkModel: Model<MasterDataChunk>,
     private readonly searchIndex: MasterDataSearchIndexService,
     private readonly missingData: MissingDataService,
+    private readonly activityLogs: ActivityLogsService,
   ) {}
 
   async runOrchestrator(jobId: string): Promise<void> {
@@ -565,6 +568,15 @@ export class CsvImportProcessorService {
         (failedCount ? ` · ${failedCount.toLocaleString()} failed` : ''),
     });
 
+    await this.logCsvImportActivity(job, {
+      addedRows: successRows,
+      duplicateCount: duplicateRowsHeld,
+      missingCount,
+      totalRows,
+      duplicateFileId,
+      uploadReceiptId,
+    });
+
     this.logger.log(
       `Import ${job.jobId} done: +${successRows} new, ${duplicateRowsHeld} dups held, ${totalRows} total in master, ${failedCount} failed`,
     );
@@ -633,5 +645,60 @@ export class CsvImportProcessorService {
       )
       .exec();
     void this.cache.delByPrefix('master:');
+  }
+
+  private async logCsvImportActivity(
+    job: CsvImportJob,
+    stats: {
+      addedRows: number;
+      duplicateCount: number;
+      missingCount: number;
+      totalRows: number;
+      duplicateFileId: string;
+      uploadReceiptId: string | null;
+    },
+  ): Promise<void> {
+    if (!job.uploadedBy) return;
+
+    const fileRowCount = Math.max(
+      job.progress?.totalEstimate || 0,
+      stats.addedRows + stats.duplicateCount + stats.missingCount,
+    );
+    const actor: ActivityActor = {
+      id: String(job.uploadedBy),
+      email: job.uploadedByEmail,
+      roles: job.uploadSourceRole ? [job.uploadSourceRole] : ['super_admin'],
+    };
+
+    try {
+      await this.activityLogs.logWithActor(actor, {
+        action: 'MASTER_DATA_UPLOAD',
+        resource: 'master-data',
+        path: '/admin/master-data-upload',
+        metadata: {
+          fileName: job.fileName,
+          sheetName: job.fileName?.replace(/\.[^.]+$/, '') || 'CSV',
+          addedRows: stats.addedRows,
+          skippedDuplicates: stats.duplicateCount,
+          skippedIncomplete: stats.missingCount,
+          missingRowCount: stats.missingCount,
+          duplicateFileId: stats.duplicateFileId || null,
+          duplicateFileSaved: Boolean(stats.duplicateFileId),
+          uploadReceiptId: stats.uploadReceiptId,
+          fileRowCount,
+          totalRows: stats.totalRows,
+          columnCount: job.headers?.length ?? 0,
+          mode: job.mode,
+          detailAction: job.mode === 'replace' ? 'MASTER_DATA_REPLACE' : 'MASTER_DATA_APPEND',
+          streaming: true,
+          pipeline: 'csv-import',
+          jobId: job.jobId,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Activity log failed for CSV import ${job.jobId}: ${err instanceof Error ? err.message : err}`,
+      );
+    }
   }
 }

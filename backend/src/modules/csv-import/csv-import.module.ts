@@ -40,6 +40,7 @@ import {
 import { RedisModule } from '../../redis/redis.module';
 import { MasterDataModule } from '../master-data/master-data.module';
 import { MissingDataModule } from '../missing-data/missing-data.module';
+import { ActivityLogsModule } from '../activity-logs/activity-logs.module';
 import { CsvImportDuplicateHoldService } from './services/csv-import-duplicate-hold.service';
 
 const mongooseFeatures = MongooseModule.forFeature([
@@ -76,6 +77,7 @@ export class CsvImportModule {
           RedisModule,
           MasterDataModule,
           MissingDataModule,
+          ActivityLogsModule,
           BullModule.registerQueue(
             { name: CSV_IMPORT_QUEUE },
             { name: CSV_IMPORT_BATCH_QUEUE },
@@ -94,7 +96,7 @@ export class CsvImportModule {
 
     return {
       module: CsvImportModule,
-      imports: [mongooseFeatures, MasterDataModule, MissingDataModule],
+      imports: [mongooseFeatures, MasterDataModule, MissingDataModule, ActivityLogsModule],
       controllers,
       providers: [
         ...coreProvidersWithoutLock,

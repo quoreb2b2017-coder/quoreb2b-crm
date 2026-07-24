@@ -3,7 +3,7 @@
 import { WORKSPACE_TIMEZONE, todayDateKey } from '@/lib/constants/workspace-timezone';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Upload, Download, Cloud, Loader2, Save, Database, Megaphone, CircleDot } from 'lucide-react';
+import { Upload, Download, Cloud, Loader2, Save, Database, Megaphone, CircleDot, Search, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { ExcelPreviewGrid } from '@/components/admin/ExcelPreviewGrid';
 import { downloadMasterDataTemplate } from '@/lib/spreadsheet/master-data-template';
@@ -17,6 +17,7 @@ import {
   recordToSpreadsheet,
   type MasterBatchCoverage,
   type MasterDataCsvDownloadProgress,
+  type MasterDataSearchIndexStatus,
 } from '@/lib/api/master-data.service';
 import { enqueueMasterDataImport } from '@/lib/master-data/master-data-import-tracker';
 import {
@@ -232,6 +233,8 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   const [dirty, setDirty] = useState(false);
   // ── Batch create modal state ──
   const [coverage, setCoverage] = useState<MasterBatchCoverage | null>(null);
+  const [searchIndexStatus, setSearchIndexStatus] = useState<MasterDataSearchIndexStatus | null>(null);
+  const [indexSyncStarting, setIndexSyncStarting] = useState(false);
   const [dataViewTab, setDataViewTab] = useState<MasterDataViewTab>('total');
   const [batchModal, setBatchModal] = useState<{
     rows: string[][];
@@ -386,6 +389,15 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
     }
   }, []);
 
+  const loadSearchIndexStatus = useCallback(async () => {
+    try {
+      const status = await masterDataService.getSearchIndexStatus();
+      setSearchIndexStatus(status);
+    } catch {
+      setSearchIndexStatus(null);
+    }
+  }, []);
+
   const loadFromDb = useCallback(async () => {
     setLoadingDb(true);
     setError('');
@@ -481,6 +493,18 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
   useEffect(() => { loadFromDb(); }, [loadFromDb]);
 
   useEffect(() => {
+    if (!data) {
+      setSearchIndexStatus(null);
+      return;
+    }
+    void loadSearchIndexStatus();
+    const intervalId = window.setInterval(() => {
+      void loadSearchIndexStatus();
+    }, 5000);
+    return () => window.clearInterval(intervalId);
+  }, [data, loadSearchIndexStatus]);
+
+  useEffect(() => {
     const onDuplicates = (event: Event) => {
       const detail = (event as CustomEvent<MasterDataDuplicatePopupDetail>).detail;
       if (!detail || detail.duplicateCount <= 0) return;
@@ -499,6 +523,7 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
         const meta = lastPreviewMeta.current;
         if (hasPreview && meta.rowCount > 0) {
           void loadCoverage();
+          void loadSearchIndexStatus();
           void masterDataService.getCurrent().then((record) => {
             if (!record) return;
             setTotalRows(safeCount(record.rowCount));
@@ -518,7 +543,43 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
       window.removeEventListener('master-data-updated', refresh);
       window.removeEventListener('batch-created', refresh);
     };
-  }, [loadFromDb]);
+  }, [loadFromDb, loadSearchIndexStatus]);
+
+  const reindexRunning = Boolean(searchIndexStatus?.reindex?.running);
+  const indexedCount = safeCount(searchIndexStatus?.openSearchCount);
+  const pendingIndexedCount = reindexRunning && (searchIndexStatus?.reindex?.total ?? 0) > 0
+    ? Math.max(0, safeCount(searchIndexStatus?.reindex?.total) - safeCount(searchIndexStatus?.reindex?.indexed))
+    : searchIndexStatus?.inSync
+      ? 0
+      : Math.max(0, safeCount(searchIndexStatus?.mongoRowCount) - indexedCount);
+
+  const handleStartPendingIndex = useCallback(async () => {
+    if (isDbAdminView || indexSyncStarting || reindexRunning || pendingIndexedCount <= 0) return;
+    setIndexSyncStarting(true);
+    try {
+      const result = await masterDataService.syncSearchIndex();
+      if (result.started) {
+        toast.success('Search indexing started', result.message ?? 'Pending contacts are being indexed…');
+      } else if (result.inSync) {
+        toast.success('Already indexed', result.message ?? 'All contacts are searchable');
+      } else if (result.alreadyRunning) {
+        toast.info('Indexing in progress', result.message ?? 'Search indexing is already running');
+      } else {
+        toast.info('Search index', result.message ?? 'No action needed');
+      }
+      await loadSearchIndexStatus();
+    } catch (err) {
+      toast.error('Could not start indexing', extractApiError(err, 'Search index sync failed'));
+    } finally {
+      setIndexSyncStarting(false);
+    }
+  }, [
+    indexSyncStarting,
+    isDbAdminView,
+    loadSearchIndexStatus,
+    pendingIndexedCount,
+    reindexRunning,
+  ]);
 
   const processFile = useCallback((file: File) => {
     setError('');
@@ -872,6 +933,86 @@ export function MasterDataUploadPanel({ variant = 'admin' }: { variant?: MasterD
                 </button>
               );
             })}
+          </div>
+          <div
+            className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2"
+            aria-label="Search index status"
+          >
+            <div className="flex items-center gap-3 rounded-xl border border-emerald-200/90 bg-gradient-to-br from-emerald-50/80 to-white px-3.5 py-3 shadow-sm">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-100 text-emerald-700">
+                <Search className="h-4 w-4" strokeWidth={2.25} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Total indexed data
+                </span>
+                <span className="mt-0.5 block text-xl font-bold tabular-nums leading-none tracking-tight text-emerald-950">
+                  {indexedCount.toLocaleString('en-US')}
+                </span>
+                <span className="mt-1 hidden text-[11px] leading-snug text-slate-500 sm:block">
+                  Contacts searchable in OpenSearch
+                </span>
+              </span>
+              {reindexRunning && (
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-emerald-600" />
+              )}
+            </div>
+            {(() => {
+              const pendingClickable =
+                !isDbAdminView && pendingIndexedCount > 0 && !reindexRunning && !indexSyncStarting;
+              const PendingTag = pendingClickable ? 'button' : 'div';
+              return (
+                <PendingTag
+                  type={pendingClickable ? 'button' : undefined}
+                  onClick={pendingClickable ? () => void handleStartPendingIndex() : undefined}
+                  className={cn(
+                    'flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-all duration-200',
+                    pendingIndexedCount > 0
+                      ? pendingClickable
+                        ? 'cursor-pointer border-amber-300/80 bg-gradient-to-br from-amber-50 to-white shadow-sm hover:border-amber-400 hover:shadow-md hover:ring-2 hover:ring-amber-300/40'
+                        : 'border-amber-300/80 bg-gradient-to-br from-amber-50 to-white shadow-sm'
+                      : 'border-slate-200/90 bg-white/80',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border',
+                      pendingIndexedCount > 0
+                        ? 'border-amber-200 bg-amber-100 text-amber-800'
+                        : 'border-slate-200 bg-slate-50 text-slate-500',
+                    )}
+                  >
+                    {indexSyncStarting || (reindexRunning && pendingIndexedCount > 0) ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Clock className="h-4 w-4" strokeWidth={2.25} />
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      Pending indexed data
+                    </span>
+                    <span
+                      className={cn(
+                        'mt-0.5 block text-xl font-bold tabular-nums leading-none tracking-tight',
+                        pendingIndexedCount > 0 ? 'text-amber-950' : 'text-slate-800',
+                      )}
+                    >
+                      {pendingIndexedCount.toLocaleString('en-US')}
+                    </span>
+                    <span className="mt-1 hidden text-[11px] leading-snug text-slate-500 sm:block">
+                      {reindexRunning
+                        ? 'Indexing in progress…'
+                        : pendingIndexedCount > 0
+                          ? pendingClickable
+                            ? 'Click to start search indexing'
+                            : 'Waiting to index into search'
+                          : 'All contacts indexed for search'}
+                    </span>
+                  </span>
+                </PendingTag>
+              );
+            })()}
           </div>
         </div>
       )}

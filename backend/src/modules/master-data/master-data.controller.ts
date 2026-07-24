@@ -222,6 +222,13 @@ export class MasterDataController {
     return this.masterDataService.reindexSearchEngine(user.roles ?? []);
   }
 
+  /** Queue background sync for contacts pending in OpenSearch (append-safe, no wipe). */
+  @Post('search-index/sync')
+  @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN)
+  syncSearchIndex(@CurrentUser() user: Parameters<typeof actorFromJwt>[0]) {
+    return this.masterDataService.enqueueSearchIndexSync(user.roles ?? []);
+  }
+
   /** Compare Mongo row count vs OpenSearch indexed docs. */
   @Get('search-index/status')
   @Roles(SystemRole.SUPER_ADMIN, SystemRole.ADMIN, SystemRole.DB_ADMIN)

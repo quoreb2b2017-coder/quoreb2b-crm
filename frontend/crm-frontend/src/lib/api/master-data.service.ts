@@ -926,6 +926,20 @@ export const masterDataService = {
     return unwrap<MasterDataSearchIndexStatus>({ data });
   },
 
+  /** Queue background indexing for contacts not yet searchable in OpenSearch. */
+  syncSearchIndex: async (): Promise<{
+    ok: boolean;
+    started?: boolean;
+    alreadyRunning?: boolean;
+    inSync?: boolean;
+    message?: string;
+  } & Partial<MasterDataSearchIndexStatus>> => {
+    const { data } = await apiClient.post('/master-data/search-index/sync', {}, {
+      timeout: 60_000,
+    });
+    return unwrap({ data });
+  },
+
   /** Remove duplicate contacts already in master data (keeps first copy). Runs as background job. */
   deduplicate: async (
     onProgress?: (progress: MasterDataImportProgress) => void,

@@ -5315,6 +5315,55 @@ export class MasterDataService {
     };
   }
 
+  /** Admin: queue background sync for contacts not yet in OpenSearch (no wipe). */
+  async enqueueSearchIndexSync(roles: string[] = []) {
+    const isAdmin =
+      roles.includes(SystemRole.SUPER_ADMIN) || roles.includes(SystemRole.ADMIN);
+    if (!isAdmin) throw new ForbiddenException('Access denied');
+    if (!this.elasticsearch.isEnabled) {
+      return {
+        ok: false,
+        message: 'Search engine disabled',
+        started: false,
+      };
+    }
+
+    const progress = this.searchIndex.getReindexProgress();
+    if (progress.running) {
+      const status = await this.searchIndex.getSearchIndexStatus(MASTER_DATA_KEY);
+      return {
+        ok: true,
+        started: false,
+        alreadyRunning: true,
+        message: 'Search indexing is already running',
+        ...status,
+      };
+    }
+
+    const status = await this.searchIndex.getSearchIndexStatus(MASTER_DATA_KEY);
+    if (status.inSync) {
+      return {
+        ok: true,
+        started: false,
+        inSync: true,
+        message: 'All contacts are already indexed for search',
+        ...status,
+      };
+    }
+
+    const wipeFirst = status.openSearchCount === 0;
+    this.searchIndex.enqueueFullReindex(MASTER_DATA_KEY, undefined, { wipeFirst });
+    return {
+      ok: true,
+      started: true,
+      wipeFirst,
+      message: wipeFirst
+        ? 'Full search index rebuild started'
+        : 'Indexing pending contacts into search',
+      ...status,
+    };
+  }
+
   /** Admin: Mongo vs OpenSearch coverage for master-data search. */
   async getSearchIndexStatus(roles: string[] = []) {
     const isAdmin =

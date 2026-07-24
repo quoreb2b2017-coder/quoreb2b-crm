@@ -162,15 +162,7 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
   const [error, setError] = useState('');
   const [stats, setStats] = useState<ActivityLogStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
-
-  const todayMasterUploads = useMemo(
-    () =>
-      logs
-        .filter((log) => log.action === 'MASTER_DATA_UPLOAD')
-        .map((log) => parseMasterUploadActivityMeta(log.metadata))
-        .filter((meta): meta is NonNullable<typeof meta> => meta != null),
-    [logs],
-  );
+  const [todayUploadLogs, setTodayUploadLogs] = useState<ActivityLogRow[]>([]);
 
   const monthOptions = useMemo(
     () =>
@@ -284,10 +276,32 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
     }
   }, [page, queryParams, listLimit]);
 
+  const loadTodayUploadLogs = useCallback(async () => {
+    if (period !== 'today') {
+      setTodayUploadLogs([]);
+      return;
+    }
+    try {
+      const result = await activityLogsService.list({
+        action: 'MASTER_DATA_UPLOAD',
+        date: selectedDate,
+        limit: 50,
+        page: 1,
+        search: search.trim() || undefined,
+        role: isSystem && role ? role : undefined,
+        userId: isSystem && selectedUserId ? selectedUserId : undefined,
+      });
+      setTodayUploadLogs(result.data ?? []);
+    } catch {
+      setTodayUploadLogs([]);
+    }
+  }, [period, selectedDate, search, role, selectedUserId, isSystem]);
+
   const refreshAll = useCallback(() => {
     loadStats();
     loadList();
-  }, [loadStats, loadList]);
+    void loadTodayUploadLogs();
+  }, [loadStats, loadList, loadTodayUploadLogs]);
 
   useEffect(() => {
     setPage(1);
@@ -300,6 +314,26 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
   useEffect(() => {
     loadList();
   }, [loadList]);
+
+  useEffect(() => {
+    void loadTodayUploadLogs();
+  }, [loadTodayUploadLogs]);
+
+  const todayUploadIds = useMemo(
+    () => new Set(todayUploadLogs.map((log) => log.id)),
+    [todayUploadLogs],
+  );
+
+  const tableLogs = useMemo(() => {
+    if (period !== 'today' || todayUploadLogs.length === 0) return logs;
+    const sortedUploads = [...todayUploadLogs].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+    const otherLogs = logs.filter(
+      (log) => log.action !== 'MASTER_DATA_UPLOAD' && !todayUploadIds.has(log.id),
+    );
+    return [...sortedUploads, ...otherLogs];
+  }, [period, todayUploadLogs, todayUploadIds, logs]);
 
   const heading = title ?? (isSystem ? 'System activity logs' : 'My activity logs');
   const sub = useMemo(() => {
@@ -566,28 +600,6 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
       {/* Main content */}
       <div className="al-body flex w-full min-w-0 flex-col gap-4 rounded-b-xl p-4 sm:p-5 lg:flex-row lg:items-start">
         <div className="al-table-card min-w-0 flex-1 overflow-hidden">
-          {period === 'today' && todayMasterUploads.length > 0 && (
-            <div className="border-b border-slate-100 bg-gradient-to-r from-[#f0f7ff] to-white px-4 py-4">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-[#2e7ad1]">
-                    Today&apos;s master uploads
-                  </p>
-                  <p className="text-[11px] text-slate-500">
-                    Added · Duplicates · Missing for each file uploaded today
-                  </p>
-                </div>
-                <span className="rounded-full bg-[#2e7ad1]/10 px-2.5 py-1 text-[10px] font-bold text-[#2e7ad1]">
-                  {todayMasterUploads.length} file{todayMasterUploads.length === 1 ? '' : 's'}
-                </span>
-              </div>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {todayMasterUploads.map((meta) => (
-                  <MasterUploadActivityDetail key={`${meta.fileName}-${meta.addedRows}`} meta={meta} />
-                ))}
-              </div>
-            </div>
-          )}
           <div className="flex items-center justify-between border-b border-slate-100 bg-gradient-to-r from-[#f0faf4]/80 to-white px-4 py-3">
             <div className="flex items-center gap-2.5">
               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#2e7ad1]/10 text-[#2e7ad1] shadow-sm">
@@ -623,13 +635,13 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
                   )}
                   {!isSystem && <th className="px-3 py-3 text-left">User</th>}
                   <th className="al-action-cell px-3 py-3 text-left">Action</th>
-                  <th className="min-w-[320px] px-3 py-3 text-left">Upload details</th>
+                  <th className="min-w-[280px] px-3 py-3 text-left">Details</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <LogRowSkeleton cols={colCount} />
-                ) : logs.length === 0 ? (
+                ) : tableLogs.length === 0 ? (
                   <tr>
                     <td colSpan={colCount} className="px-4 py-20 text-center">
                       <div className="al-empty-state mx-auto flex max-w-xs flex-col items-center gap-3 rounded-2xl px-6 py-8">
@@ -644,7 +656,7 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
                     </td>
                   </tr>
                 ) : (
-                  logs.map((log, idx) => {
+                  tableLogs.map((log, idx) => {
                     const logUserName = resolveLogUserName(log);
                     const { date, time } = splitDateTime(log.dateFormatted);
                     const actionLabel = formatActivityActionForLog(log.action, {
@@ -655,9 +667,6 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
                       log.action === 'MASTER_DATA_UPLOAD'
                         ? parseMasterUploadActivityMeta(log.metadata)
                         : null;
-                    const actionDisplay = uploadMeta
-                      ? `${actionLabel} · ${uploadMeta.fileName}`
-                      : actionLabel;
 
                     return (
                       <tr
@@ -709,15 +718,15 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
                         <td className="al-action-cell al-badge-cell px-3 py-3">
                           <span
                             className={actionBadgeClass(log.action)}
-                            title={actionDisplay}
+                            title={actionLabel}
                           >
-                            {actionDisplay}
+                            {actionLabel}
                           </span>
                         </td>
 
                         <td className="px-3 py-3 align-top">
                           {uploadMeta ? (
-                            <MasterUploadActivityDetail meta={uploadMeta} compact />
+                            <MasterUploadActivityDetail meta={uploadMeta} />
                           ) : (
                             <span
                               className="al-resource-path inline-block max-w-full truncate font-mono text-[11px] text-slate-500"

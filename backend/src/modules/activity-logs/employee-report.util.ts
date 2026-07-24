@@ -1,5 +1,6 @@
 import {
   calendarDateKey,
+  combineDateAndWallTime,
   formatInWorkspace,
   formatTime12hInZone,
   nextCalendarMidnightMs,
@@ -619,8 +620,8 @@ export function buildEmployeeReport(
 }
 
 export function dayBounds(dateStr: string): { start: Date; end: Date; label: string } {
-  const start = new Date(`${dateStr}T00:00:00.000`);
-  const end = new Date(`${dateStr}T23:59:59.999`);
+  const start = combineDateAndWallTime(dateStr, '00:00');
+  const end = new Date(nextCalendarMidnightMs(start) - 1);
   const label = formatInWorkspace(start, {
     weekday: 'short',
     day: 'numeric',

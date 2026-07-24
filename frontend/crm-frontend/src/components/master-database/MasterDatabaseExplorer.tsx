@@ -70,8 +70,8 @@ import {
 
 const ACCEPT = '.csv,.xlsx,.xls';
 const PAGE_SIZES = [20, 50, 100, 200, 500, 1000];
-const EMBEDDED_PAGE_SIZES = [100, 200, 500, 1000];
-const DB_ADMIN_PREVIEW_LIMIT = 100;
+const EMBEDDED_PAGE_SIZES = [50, 100, 200, 500, 1000];
+const DB_ADMIN_PREVIEW_LIMIT = 50;
 const CAMPAIGN_MAX_ROWS = 50_000;
 
 function campaignPartCount(contactCount: number): number {
@@ -249,7 +249,7 @@ export function MasterDatabaseExplorer({
     setLoading(true);
     try {
       const bootstrap = await masterDataService
-        .getBootstrap(100)
+        .getBootstrap(DB_ADMIN_PREVIEW_LIMIT)
         .catch((err: unknown) => {
           const status = (err as { response?: { status?: number } })?.response?.status;
           if (status === 404 || status === 403) return null;
@@ -978,6 +978,7 @@ export function MasterDatabaseExplorer({
               dataResetKey={gridResetKey}
               editable={false}
               fillHeight
+              showScrollRails={false}
               enableDragScroll
               batchedByRow={mergedBatchedByRow}
               campaignRowFilter={embedded ? campaignRowFilter : undefined}

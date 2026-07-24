@@ -5345,7 +5345,6 @@ export class MasterDataService {
       return {
         ok: true,
         started: false,
-        inSync: true,
         message: 'All contacts are already indexed for search',
         ...status,
       };

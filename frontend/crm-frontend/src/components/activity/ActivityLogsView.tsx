@@ -22,7 +22,8 @@ import {
   formatRoleLabel,
   type ActivityLogRow,
 } from '@/lib/api/activity-logs.service';
-import { formatActivityActionForLog, formatMasterUploadActivityDetail } from '@/lib/constants/activity-labels';
+import { formatActivityActionForLog, parseMasterUploadActivityMeta } from '@/lib/constants/activity-labels';
+import { MasterUploadActivityDetail } from '@/components/activity/MasterUploadActivityDetail';
 import { extractApiError } from '@/lib/api/errors';
 import { cn } from '@/lib/utils/cn';
 import { usersService } from '@/lib/api/users.service';
@@ -41,7 +42,7 @@ import {
   userInitials,
 } from '@/components/activity/activity-log-ui';
 
-const PAGE_LIMIT_TODAY = 15;
+const PAGE_LIMIT_TODAY = 50;
 const PAGE_LIMIT_MONTH = 50;
 
 const ROLE_OPTIONS = [
@@ -133,6 +134,7 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
   const isSystem = scope === 'system';
   const { user } = useAuthStore();
   const now = new Date();
+
   const colCount = isSystem ? 6 : 4;
 
   const selfDisplayName = useMemo(() => {
@@ -160,6 +162,15 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
   const [error, setError] = useState('');
   const [stats, setStats] = useState<ActivityLogStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
+
+  const todayMasterUploads = useMemo(
+    () =>
+      logs
+        .filter((log) => log.action === 'MASTER_DATA_UPLOAD')
+        .map((log) => parseMasterUploadActivityMeta(log.metadata))
+        .filter((meta): meta is NonNullable<typeof meta> => meta != null),
+    [logs],
+  );
 
   const monthOptions = useMemo(
     () =>
@@ -555,6 +566,28 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
       {/* Main content */}
       <div className="al-body flex w-full min-w-0 flex-col gap-4 rounded-b-xl p-4 sm:p-5 lg:flex-row lg:items-start">
         <div className="al-table-card min-w-0 flex-1 overflow-hidden">
+          {period === 'today' && todayMasterUploads.length > 0 && (
+            <div className="border-b border-slate-100 bg-gradient-to-r from-[#f0f7ff] to-white px-4 py-4">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-[#2e7ad1]">
+                    Today&apos;s master uploads
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    Added · Duplicates · Missing for each file uploaded today
+                  </p>
+                </div>
+                <span className="rounded-full bg-[#2e7ad1]/10 px-2.5 py-1 text-[10px] font-bold text-[#2e7ad1]">
+                  {todayMasterUploads.length} file{todayMasterUploads.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {todayMasterUploads.map((meta) => (
+                  <MasterUploadActivityDetail key={`${meta.fileName}-${meta.addedRows}`} meta={meta} />
+                ))}
+              </div>
+            </div>
+          )}
           <div className="flex items-center justify-between border-b border-slate-100 bg-gradient-to-r from-[#f0faf4]/80 to-white px-4 py-3">
             <div className="flex items-center gap-2.5">
               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#2e7ad1]/10 text-[#2e7ad1] shadow-sm">
@@ -590,7 +623,7 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
                   )}
                   {!isSystem && <th className="px-3 py-3 text-left">User</th>}
                   <th className="al-action-cell px-3 py-3 text-left">Action</th>
-                  <th className="px-3 py-3 text-left">Resource</th>
+                  <th className="min-w-[320px] px-3 py-3 text-left">Upload details</th>
                 </tr>
               </thead>
               <tbody>
@@ -618,11 +651,13 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
                       userName: logUserName,
                       showActorOnAuth: !isSystem,
                     });
-                    const uploadDetail =
+                    const uploadMeta =
                       log.action === 'MASTER_DATA_UPLOAD'
-                        ? formatMasterUploadActivityDetail(log.metadata)
+                        ? parseMasterUploadActivityMeta(log.metadata)
                         : null;
-                    const resourceLabel = uploadDetail ?? log.path ?? log.resource ?? '—';
+                    const actionDisplay = uploadMeta
+                      ? `${actionLabel} · ${uploadMeta.fileName}`
+                      : actionLabel;
 
                     return (
                       <tr
@@ -674,19 +709,23 @@ export function ActivityLogsView({ scope, title, subtitle }: ActivityLogsViewPro
                         <td className="al-action-cell al-badge-cell px-3 py-3">
                           <span
                             className={actionBadgeClass(log.action)}
-                            title={actionLabel}
+                            title={actionDisplay}
                           >
-                            {actionLabel}
+                            {actionDisplay}
                           </span>
                         </td>
 
-                        <td className="max-w-[220px] px-3 py-3">
-                          <span
-                            className="al-resource-path inline-block max-w-full truncate font-mono text-[11px] text-slate-500"
-                            title={resourceLabel}
-                          >
-                            {resourceLabel}
-                          </span>
+                        <td className="px-3 py-3 align-top">
+                          {uploadMeta ? (
+                            <MasterUploadActivityDetail meta={uploadMeta} compact />
+                          ) : (
+                            <span
+                              className="al-resource-path inline-block max-w-full truncate font-mono text-[11px] text-slate-500"
+                              title={log.path ?? log.resource}
+                            >
+                              {log.path ?? log.resource ?? '—'}
+                            </span>
+                          )}
                         </td>
                       </tr>
                     );

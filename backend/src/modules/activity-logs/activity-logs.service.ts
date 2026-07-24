@@ -223,13 +223,18 @@ export class ActivityLogsService {
       ];
     }
     if (dto.search) {
+      const searchRegex = { $regex: dto.search, $options: 'i' };
       filter.$or = [
-        { userName: { $regex: dto.search, $options: 'i' } },
-        { userEmail: { $regex: dto.search, $options: 'i' } },
-        { employeeId: { $regex: dto.search, $options: 'i' } },
-        { action: { $regex: dto.search, $options: 'i' } },
-        { resource: { $regex: dto.search, $options: 'i' } },
-        { path: { $regex: dto.search, $options: 'i' } },
+        { userName: searchRegex },
+        { userEmail: searchRegex },
+        { employeeId: searchRegex },
+        { action: searchRegex },
+        { resource: searchRegex },
+        { path: searchRegex },
+        { 'metadata.fileName': searchRegex },
+        { 'metadata.addedRows': searchRegex },
+        { 'metadata.skippedDuplicates': searchRegex },
+        { 'metadata.missingRowCount': searchRegex },
       ];
     }
 

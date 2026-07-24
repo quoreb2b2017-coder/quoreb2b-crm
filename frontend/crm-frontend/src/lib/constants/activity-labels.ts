@@ -52,10 +52,17 @@ function safeCount(value: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** Rich detail line for master upload rows in activity logs. */
-export function formatMasterUploadActivityDetail(
+export interface MasterUploadActivityMeta {
+  fileName: string;
+  fileRowCount: number;
+  addedRows: number;
+  duplicateCount: number;
+  missingCount: number;
+}
+
+export function parseMasterUploadActivityMeta(
   metadata?: Record<string, unknown>,
-): string | null {
+): MasterUploadActivityMeta | null {
   if (!metadata) return null;
   const fileName = String(metadata.fileName ?? '').trim();
   const addedRows = safeCount(metadata.addedRows);
@@ -67,12 +74,27 @@ export function formatMasterUploadActivityDetail(
   if (!fileName && !addedRows && !duplicateCount && !missingCount && !fileRowCount) {
     return null;
   }
+  return {
+    fileName: fileName || 'Master upload',
+    fileRowCount,
+    addedRows,
+    duplicateCount,
+    missingCount,
+  };
+}
+
+/** Rich detail line for master upload rows in activity logs. */
+export function formatMasterUploadActivityDetail(
+  metadata?: Record<string, unknown>,
+): string | null {
+  const parsed = parseMasterUploadActivityMeta(metadata);
+  if (!parsed) return null;
   const parts = [
-    fileName || 'upload',
-    fileRowCount > 0 ? `${fileRowCount.toLocaleString('en-US')} in file` : null,
-    addedRows > 0 ? `+${addedRows.toLocaleString('en-US')} added` : null,
-    duplicateCount > 0 ? `${duplicateCount.toLocaleString('en-US')} dup` : null,
-    missingCount > 0 ? `${missingCount.toLocaleString('en-US')} missing` : null,
+    parsed.fileName,
+    parsed.fileRowCount > 0 ? `${parsed.fileRowCount.toLocaleString('en-US')} in file` : null,
+    `${parsed.addedRows.toLocaleString('en-US')} added`,
+    `${parsed.duplicateCount.toLocaleString('en-US')} dup`,
+    `${parsed.missingCount.toLocaleString('en-US')} missing`,
   ].filter(Boolean);
   return parts.join(' · ');
 }
